@@ -54,5 +54,12 @@
         "allow-plugins": {
             "symfony/runtime": true
         }
+    },
+    "scripts": {
+        "test": [
+            "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
+            "vendor/bin/phpunit",
+            "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+        ]
     }
 }
