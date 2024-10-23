@@ -46,6 +46,7 @@ final class ServerWorker
         $worker->group = $group ?? '';
         $worker->count = $serverConfig['processes'] ?? Utils::cpuCount() * 2;
         $worker->transport = $transport;
+        $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig) {
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
