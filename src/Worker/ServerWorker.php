@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Worker;
 
 use Luzrain\WorkermanBundle\KernelFactory;
+use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
+use Luzrain\WorkermanBundle\Protocol\Symfony;
 use Luzrain\WorkermanBundle\Utils;
 use Workerman\Connection\TcpConnection;
+use Workerman\Protocols\Http;
 use Workerman\Protocols\Http\Request;
 use Workerman\Worker;
 
@@ -49,13 +52,26 @@ final class ServerWorker
         $worker->count = $serverConfig['processes'] ?? Utils::cpuCount() * 2;
         $worker->transport = $transport;
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
+
+        if (($serverConfig['symfony_native_handler'] ?? false) === true) {
+            $worker->log('Warning using experimental feature symfony_native_handler.');
+            $worker->onConnect = function ($connection): void {
+                if ($connection instanceof TcpConnection && $connection->protocol === Http::class) {
+                    Http::requestClass(SymfonyRequest::class);
+                }
+            };
+        }
+
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig) {
             $serveFiles = $serverConfig['serve_files'] ?? true;
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $worker->onMessage =
-                function (TcpConnection $connection, Request $workermanRequest) use ($serveFiles, $kernel): void {
+                function (TcpConnection $connection, Request | SymfonyRequest $workermanRequest) use (
+                    $serveFiles,
+                    $kernel
+                ): void {
                     $kernel->getContainer()->get('workerman.http_request_handler')(
                         $connection,
                         $workermanRequest,

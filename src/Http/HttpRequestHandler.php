@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Http;
 
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
 use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Luzrain\WorkermanBundle\Utils;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -32,19 +33,27 @@ final class HttpRequestHandler
     ) {
     }
 
-    public function __invoke(TcpConnection $connection, Request $workermanRequest, bool $serveFiles = true): void
-    {
+    public function __invoke(
+        TcpConnection $connection,
+        Request | SymfonyRequest $workermanRequest,
+        bool $serveFiles = true,
+    ): void {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
 
-        $psrRequest = $this->workermanHttpFactory->createRequest($workermanRequest);
-        $shouldCloseConnection = $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->getHeaderLine('Connection') === 'close';
+        if ($workermanRequest instanceof Request) {
+            $request = $this->workermanHttpFactory->createRequest($workermanRequest);
+        } else {
+            $request = $workermanRequest;
+        }
 
-        if ($serveFiles === true && \is_file($file = $this->getPublicPathFile($psrRequest))) {
+        $shouldCloseConnection = $this->shouldCloseConnection($request);
+
+        if ($serveFiles === true && \is_file($file = $this->getPublicPathFile($request))) {
             $this->createfileResponse($connection, $shouldCloseConnection, $file);
         } else {
-            $this->createApplicationResponse($connection, $shouldCloseConnection, $psrRequest);
+            $this->createApplicationResponse($connection, $shouldCloseConnection, $request);
         }
     }
 
@@ -64,11 +73,18 @@ final class HttpRequestHandler
         }
     }
 
-    private function createApplicationResponse(TcpConnection $connection, bool $shouldCloseConnection, ServerRequestInterface $psrRequest): void
+    private function createApplicationResponse(
+        TcpConnection $connection,
+        bool $shouldCloseConnection,
+        SymfonyRequest | ServerRequestInterface $request
+    ): void
     {
         $this->kernel->boot();
 
-        $symfonyRequest = $this->httpFoundationFactory->createRequest($psrRequest);
+
+        $symfonyRequest =
+            $request instanceof SymfonyRequest ? $request : $this->httpFoundationFactory->createRequest($request);
+
         $symfonyResponse = $this->kernel->handle($symfonyRequest);
         $sprResponse = $this->psrHttpFactory->createResponse($symfonyResponse);
 
@@ -93,9 +109,14 @@ final class HttpRequestHandler
         }
     }
 
-    private function getPublicPathFile(ServerRequestInterface $request): string
+    private function getPublicPathFile(SymfonyRequest | ServerRequestInterface $request): string
     {
-        $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getUri()->getPath()}";
+        if ($request instanceof SymfonyRequest) {
+            $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getPathInfo()}";
+        } else {
+            $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getUri()->getPath()}";
+        }
+
         $checkFile = str_replace('..', '/', $checkFile);
 
         return $checkFile;
@@ -128,5 +149,14 @@ final class HttpRequestHandler
             yield $response->getBody()->read($this->chunkSize);
         }
         $response->getBody()->close();
+    }
+
+    public function shouldCloseConnection(SymfonyRequest | ServerRequestInterface $psrRequest): bool
+    {
+        if ($psrRequest instanceof SymfonyRequest) {
+            return $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->headers->get('Connection') === 'close';
+        }
+
+        return $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->getHeaderLine('Connection') === 'close';
     }
 }
