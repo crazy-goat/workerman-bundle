@@ -59,6 +59,7 @@ final class Runner implements RunnerInterface
                 user: $config['user'],
                 group: $config['group'],
                 serverConfig: $serverConfig,
+                symfonyNative: $config['symfony_native'] ?? false,
             );
         }
 

@@ -17,8 +17,13 @@ final class ServerWorker
 {
     protected const PROCESS_TITLE = '[Server]';
 
-    public function __construct(KernelFactory $kernelFactory, string|null $user, string|null $group, array $serverConfig)
-    {
+    public function __construct(
+        KernelFactory $kernelFactory,
+        string | null $user,
+        string | null $group,
+        array $serverConfig,
+        $symfonyNative = false
+    ) {
         $listen = $serverConfig['listen'] ?? '';
         $transport = 'tcp';
         $context = [];
@@ -53,8 +58,7 @@ final class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
 
-        if (($serverConfig['symfony_native_handler'] ?? false) === true) {
-            $worker->log('Warning using experimental feature symfony_native_handler.');
+        if ($symfonyNative === true) {
             $worker->onConnect = function ($connection): void {
                 if ($connection instanceof TcpConnection && $connection->protocol === Http::class) {
                     Http::requestClass(SymfonyRequest::class);
