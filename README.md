@@ -9,11 +9,20 @@ This bundle allows you to replace a traditional web application stack like php-f
 The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
 making your application faster with less (or no) code changes.
 
+## What new in this fork
+* `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
+* `servers.serve_files` - set to `false` to disable serving file. Use this option for RestAPI projects.
+* `workerman.symfony_native` - By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
+By setting this option to `true`, `workerman-bundle` will create symfony request without psr7. This
+option increase performance, but it is still experimental. 
 ## Getting started
 ### Install composer packages
 ```bash
-$ composer require luzrain/workerman-bundle nyholm/psr7
+composer config repositories.workerman-bundle vcs https://github.com/s2x/workerman-bundle
+composer require luzrain/workerman-bundle nyholm/psr7
 ```
+
+Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
 
 ### Enable the bundle
 ```php
