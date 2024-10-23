@@ -32,7 +32,7 @@ final class HttpRequestHandler
     ) {
     }
 
-    public function __invoke(TcpConnection $connection, Request $workermanRequest): void
+    public function __invoke(TcpConnection $connection, Request $workermanRequest, bool $serveFiles = true): void
     {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
@@ -41,7 +41,7 @@ final class HttpRequestHandler
         $psrRequest = $this->workermanHttpFactory->createRequest($workermanRequest);
         $shouldCloseConnection = $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->getHeaderLine('Connection') === 'close';
 
-        if (\is_file($file = $this->getPublicPathFile($psrRequest))) {
+        if ($serveFiles === true && \is_file($file = $this->getPublicPathFile($psrRequest))) {
             $this->createfileResponse($connection, $shouldCloseConnection, $file);
         } else {
             $this->createApplicationResponse($connection, $shouldCloseConnection, $psrRequest);

@@ -6,6 +6,8 @@ namespace Luzrain\WorkermanBundle\Worker;
 
 use Luzrain\WorkermanBundle\KernelFactory;
 use Luzrain\WorkermanBundle\Utils;
+use Workerman\Connection\TcpConnection;
+use Workerman\Protocols\Http\Request;
 use Workerman\Worker;
 
 final class ServerWorker
@@ -48,10 +50,18 @@ final class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig) {
+            $serveFiles = $serverConfig['serve_files'] ?? true;
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
-            $worker->onMessage = $kernel->getContainer()->get('workerman.http_request_handler');
+            $worker->onMessage =
+                function (TcpConnection $connection, Request $workermanRequest) use ($serveFiles, $kernel): void {
+                    $kernel->getContainer()->get('workerman.http_request_handler')(
+                        $connection,
+                        $workermanRequest,
+                        $serveFiles
+                    );
+                };
         };
     }
 }
