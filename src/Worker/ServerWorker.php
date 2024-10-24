@@ -75,6 +75,10 @@ final class ServerWorker
                     $serveFiles,
                     $kernel
                 ): void {
+                    if ($workermanRequest instanceof SymfonyRequest) {
+                        $workermanRequest->server->set('REMOTE_ADDR', $connection->getRemoteIp());
+                    }
+
                     $kernel->getContainer()->get('workerman.http_request_handler')(
                         $connection,
                         $workermanRequest,
