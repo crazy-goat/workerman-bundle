@@ -161,6 +161,23 @@ return static function (DefinitionConfigurator $definition) {
                                 ->end()
                             ->end()
                         ->end()
+                    ->arrayNode('memory')
+                        ->info('Reload worker when memory usage reaches a certain threshold')
+                        ->addDefaultsIfNotSet()
+                        ->children()
+                            ->booleanNode('active')
+                                ->info('Is memory strategy active')
+                                ->defaultFalse()
+                            ->end()
+                            ->integerNode('limit')
+                                ->info('Maximum memory usage after which the worker will be reloaded')
+                                ->defaultValue(134_217_728) //128MB
+                            ->end()
+                            ->integerNode('gc_limit')
+                                ->info('Maximum memory usage after which gc_collect_cycles will be called to free memory')
+                                ->defaultValue(100_663_296) //96MB
+                            ->end()
+                        ->end()
                     ->end()
                 ->end()
             ->end();

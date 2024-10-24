@@ -3,6 +3,7 @@
 
 namespace Luzrain\WorkermanBundle\Protocol\Http\Request;
 
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Workerman\Connection\ConnectionInterface;
 
@@ -20,7 +21,7 @@ class SymfonyRequest extends Request
             $this->rawRequest->post(),
             [],
             $this->rawRequest->cookie(),
-            [], //@todo
+            [],
             [
                 'REQUEST_URI' => $this->rawRequest->uri(),
                 'REQUEST_METHOD' => $this->rawRequest->method(),
@@ -31,6 +32,14 @@ class SymfonyRequest extends Request
 
         foreach ($this->rawRequest->header() as $name => $value) {
             $this->headers->set($name, $value);
+        }
+
+        foreach ($this->rawRequest->file() as $key => $value) {
+            $type = $value['type'] ?? 'application/octet-stream';
+            $this->files->set(
+                $key,
+                new UploadedFile($value['tmp_name'], $value['name'], $type === '' ? 'application/octet-stream' : $type),
+            );
         }
     }
 }

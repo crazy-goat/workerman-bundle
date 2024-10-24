@@ -9,6 +9,7 @@ use Luzrain\WorkermanBundle\Http\WorkermanHttpMessageFactory;
 use Luzrain\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use Luzrain\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use Luzrain\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
+use Luzrain\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use Luzrain\WorkermanBundle\Scheduler\TaskErrorListener;
 use Luzrain\WorkermanBundle\Supervisor\ProcessErrorListener;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -124,6 +125,17 @@ return static function (array $config, ContainerBuilder $container) {
             ])
             ->setArguments([
                 $config['reload_strategy']['exception']['allowed_exceptions'],
+            ])
+        ;
+    }
+
+    if ($config['reload_strategy']['memory']['active'] === true) {
+        $container
+            ->register('workerman.memory_reboot_strategy', MemoryRebootStrategy::class)
+            ->addTag('workerman.reboot_strategy')
+            ->setArguments([
+                $config['reload_strategy']['memory']['limit'],
+                $config['reload_strategy']['memory']['gc_limit'],
             ])
         ;
     }
