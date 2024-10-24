@@ -6,7 +6,6 @@ namespace Luzrain\WorkermanBundle\Worker;
 
 use Luzrain\WorkermanBundle\KernelFactory;
 use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
-use Luzrain\WorkermanBundle\Protocol\Symfony;
 use Luzrain\WorkermanBundle\Utils;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
@@ -22,7 +21,7 @@ final class ServerWorker
         string | null $user,
         string | null $group,
         array $serverConfig,
-        $symfonyNative = false
+        $symfonyNative = false,
     ) {
         $listen = $serverConfig['listen'] ?? '';
         $transport = 'tcp';

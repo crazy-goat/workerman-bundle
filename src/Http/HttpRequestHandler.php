@@ -76,9 +76,8 @@ final class HttpRequestHandler
     private function createApplicationResponse(
         TcpConnection $connection,
         bool $shouldCloseConnection,
-        SymfonyRequest | ServerRequestInterface $request
-    ): void
-    {
+        SymfonyRequest | ServerRequestInterface $request,
+    ): void {
         $this->kernel->boot();
 
 
