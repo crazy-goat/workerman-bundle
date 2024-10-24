@@ -16,7 +16,7 @@ final class SchedulerWorker
 {
     private const PROCESS_TITLE = '[Scheduler]';
 
-    private Worker $worker;
+    private readonly Worker $worker;
     private TaskHandler $handler;
 
     public function __construct(KernelFactory $kernelFactory, string|null $user, string|null $group, array $schedulerConfig)
@@ -27,7 +27,7 @@ final class SchedulerWorker
         $this->worker->group = $group ?? '';
         $this->worker->count = 1;
         $this->worker->reloadable = true;
-        $this->worker->onWorkerStart = function () use ($kernelFactory, $schedulerConfig) {
+        $this->worker->onWorkerStart = function () use ($kernelFactory, $schedulerConfig): void {
             $this->worker->log($this->worker->name . 'started');
             pcntl_signal(SIGCHLD, SIG_IGN);
             $kernel = $kernelFactory->createKernel();
@@ -62,7 +62,7 @@ final class SchedulerWorker
     {
         $currentDate = new \DateTimeImmutable();
         $nextRunDate = $trigger->getNextRunDate($currentDate);
-        if ($nextRunDate !== null) {
+        if ($nextRunDate instanceof \DateTimeImmutable) {
             $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
             Timer::add($interval, $this->runCallback(...), [$trigger, $service, $taskName], false);
         }
@@ -110,6 +110,8 @@ final class SchedulerWorker
     private function deleteTaskPid(string $service): void
     {
         $pidFile = $this->getTaskPidPath($service);
-        is_file($pidFile) && unlink($pidFile);
+        if (is_file($pidFile)) {
+            unlink($pidFile);
+        }
     }
 }

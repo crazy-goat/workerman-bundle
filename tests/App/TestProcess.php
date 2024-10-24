@@ -12,11 +12,11 @@ final class TestProcess
 {
     public function __construct(
         #[Autowire(value: '%kernel.project_dir%/var/process_status.log')]
-        private string $statusFile,
+        private readonly string $statusFile,
     ) {
     }
 
-    public function __invoke(): void
+    public function __invoke(): never
     {
         file_put_contents($this->statusFile, time());
         sleep(1);

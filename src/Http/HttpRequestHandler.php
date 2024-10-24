@@ -22,14 +22,14 @@ use Workerman\Protocols\Http\Request;
 final class HttpRequestHandler
 {
     public function __construct(
-        private KernelInterface $kernel,
-        private StreamFactoryInterface $streamFactory,
-        private ResponseFactoryInterface $responseFactory,
-        private RebootStrategyInterface $rebootStrategy,
-        private HttpMessageFactoryInterface $psrHttpFactory,
-        private HttpFoundationFactoryInterface $httpFoundationFactory,
-        private WorkermanHttpMessageFactory $workermanHttpFactory,
-        private int $chunkSize,
+        private readonly KernelInterface $kernel,
+        private readonly StreamFactoryInterface $streamFactory,
+        private readonly ResponseFactoryInterface $responseFactory,
+        private readonly RebootStrategyInterface $rebootStrategy,
+        private readonly HttpMessageFactoryInterface $psrHttpFactory,
+        private readonly HttpFoundationFactoryInterface $httpFoundationFactory,
+        private readonly WorkermanHttpMessageFactory $workermanHttpFactory,
+        private readonly int $chunkSize,
     ) {
     }
 
@@ -50,7 +50,7 @@ final class HttpRequestHandler
 
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
-        if ($serveFiles === true && \is_file($file = $this->getPublicPathFile($request))) {
+        if ($serveFiles && \is_file($file = $this->getPublicPathFile($request))) {
             $this->createfileResponse($connection, $shouldCloseConnection, $file);
         } else {
             $this->createApplicationResponse($connection, $shouldCloseConnection, $request);
@@ -116,9 +116,7 @@ final class HttpRequestHandler
             $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getUri()->getPath()}";
         }
 
-        $checkFile = str_replace('..', '/', $checkFile);
-
-        return $checkFile;
+        return str_replace('..', '/', $checkFile);
     }
 
     private function generateResponse(ResponseInterface $response): \Generator

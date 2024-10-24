@@ -7,7 +7,7 @@ namespace Luzrain\WorkermanBundle\Reboot\Strategy;
 final class MaxJobsRebootStrategy implements RebootStrategyInterface
 {
     private int $jobsCount = 0;
-    private int $maxJobs;
+    private readonly int $maxJobs;
 
     public function __construct(int $maxJobs, int $dispersion = 0)
     {

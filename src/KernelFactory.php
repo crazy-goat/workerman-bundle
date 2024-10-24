@@ -8,11 +8,11 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class KernelFactory
 {
-    private string $projectDir;
-    private string $environment;
-    private bool $isDebug;
+    private readonly string $projectDir;
+    private readonly string $environment;
+    private readonly bool $isDebug;
 
-    public function __construct(private \Closure $app, private array $args, array $options)
+    public function __construct(private readonly \Closure $app, private readonly array $args, array $options)
     {
         $this->projectDir = $options['project_dir'];
         $this->environment = $_SERVER[$options['env_var_name']];

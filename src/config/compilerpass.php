@@ -82,7 +82,7 @@ return new class implements CompilerPassInterface {
     private function referenceMap(array $taggedServices): array
     {
         $result = [];
-        foreach ($taggedServices as $id => $tags) {
+        foreach (array_keys($taggedServices) as $id) {
             $result[$id] = new Reference($id);
         }
         return $result;

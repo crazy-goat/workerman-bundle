@@ -12,7 +12,7 @@ final class TestTask
 {
     public function __construct(
         #[Autowire(value: '%kernel.project_dir%/var/task_status.log')]
-        private string $statusFile,
+        private readonly string $statusFile,
     ) {
     }
 

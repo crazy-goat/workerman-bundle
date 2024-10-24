@@ -8,7 +8,7 @@ use Symfony\Contracts\EventDispatcher\Event;
 
 final class TaskStartEvent extends Event
 {
-    public function __construct(private string $serviceClass, private string $taskName)
+    public function __construct(private readonly string $serviceClass, private readonly string $taskName)
     {
     }
 

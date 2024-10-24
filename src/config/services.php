@@ -22,7 +22,7 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 
-return static function (array $config, ContainerBuilder $container) {
+return static function (array $config, ContainerBuilder $container): void {
     $container
         ->setParameter('workerman.response_chunk_size', $config['response_chunk_size'])
     ;
@@ -79,7 +79,7 @@ return static function (array $config, ContainerBuilder $container) {
         ])
     ;
 
-    $container->registerAttributeForAutoconfiguration(AsProcess::class, static function (ChildDefinition $definition, AsProcess $attribute) {
+    $container->registerAttributeForAutoconfiguration(AsProcess::class, static function (ChildDefinition $definition, AsProcess $attribute): void {
         $definition->addTag('workerman.process', [
             'name' => $attribute->name,
             'processes' => $attribute->processes,
@@ -87,7 +87,7 @@ return static function (array $config, ContainerBuilder $container) {
         ]);
     });
 
-    $container->registerAttributeForAutoconfiguration(AsTask::class, static function (ChildDefinition $definition, AsTask $attribute) {
+    $container->registerAttributeForAutoconfiguration(AsTask::class, static function (ChildDefinition $definition, AsTask $attribute): void {
         $definition->addTag('workerman.task', [
             'name' => $attribute->name,
             'schedule' => $attribute->schedule,

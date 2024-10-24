@@ -23,7 +23,7 @@ final class ServerWorker
         array $serverConfig,
         $symfonyNative = false,
     ) {
-        $listen = $serverConfig['listen'] ?? '';
+        $listen = strval($serverConfig['listen'] ?? '');
         $transport = 'tcp';
         $context = [];
 
@@ -65,7 +65,7 @@ final class ServerWorker
             };
         }
 
-        $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig) {
+        $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
             $serveFiles = $serverConfig['serve_files'] ?? true;
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();

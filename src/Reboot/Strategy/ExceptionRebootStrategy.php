@@ -14,7 +14,7 @@ final class ExceptionRebootStrategy implements RebootStrategyInterface
     /**
      * @param array<class-string> $allowedExceptions
      */
-    public function __construct(private array $allowedExceptions = [])
+    public function __construct(private readonly array $allowedExceptions = [])
     {
     }
 
@@ -35,6 +35,6 @@ final class ExceptionRebootStrategy implements RebootStrategyInterface
 
     public function shouldReboot(): bool
     {
-        return $this->exception !== null;
+        return $this->exception instanceof \Throwable;
     }
 }

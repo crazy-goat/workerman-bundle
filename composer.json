@@ -28,10 +28,13 @@
         "workerman/workerman": "^4.1"
     },
     "require-dev": {
+        "dragonmantank/cron-expression": "^3.4",
         "friendsofphp/php-cs-fixer": "^3.35",
         "guzzlehttp/guzzle": "^7.8",
         "nyholm/psr7": "^1.8",
+        "phpstan/phpstan": "^1.12",
         "phpunit/phpunit": "^10.4",
+        "rector/rector": "^1.2",
         "symfony/framework-bundle": "^7.0"
     },
     "suggest": {
@@ -60,6 +63,11 @@
             "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
             "vendor/bin/phpunit",
             "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+        ],
+        "lint": [
+            "vendor/bin/php-cs-fixer fix -v --dry-run",
+            "vendor/bin/phpstan analyse --level 1 src",
+            "vendor/bin/rector"
         ]
     }
 }

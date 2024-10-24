@@ -14,9 +14,9 @@ use Workerman\Protocols\Http\Request;
 final class WorkermanHttpMessageFactory
 {
     public function __construct(
-        private ServerRequestFactoryInterface $serverRequestFactory,
-        private StreamFactoryInterface $streamFactory,
-        private UploadedFileFactoryInterface $uploadedFileFactory,
+        private readonly ServerRequestFactoryInterface $serverRequestFactory,
+        private readonly StreamFactoryInterface $streamFactory,
+        private readonly UploadedFileFactoryInterface $uploadedFileFactory,
     ) {
     }
 

@@ -8,7 +8,7 @@ use Symfony\Contracts\EventDispatcher\Event;
 
 final class ProcessStartEvent extends Event
 {
-    public function __construct(private string $serviceClass, private string $processName)
+    public function __construct(private readonly string $serviceClass, private readonly string $processName)
     {
     }
 

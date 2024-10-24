@@ -11,8 +11,8 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 final class ConfigLoader implements CacheWarmerInterface
 {
     private array $config;
-    private ConfigCache $cache;
-    private string $yamlConfigFilePath;
+    private readonly ConfigCache $cache;
+    private readonly string $yamlConfigFilePath;
 
     public function __construct(string $projectDir, string $cacheDir, bool $isDebug)
     {

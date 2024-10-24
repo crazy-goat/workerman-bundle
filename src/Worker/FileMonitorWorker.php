@@ -19,7 +19,7 @@ final class FileMonitorWorker
         $worker->group = $group ?? '';
         $worker->count = 1;
         $worker->reloadable = false;
-        $worker->onWorkerStart = function (Worker $worker) use ($sourceDir, $filePattern) {
+        $worker->onWorkerStart = function (Worker $worker) use ($sourceDir, $filePattern): void {
             $worker->log($worker->name . ' started');
             $fileMonitor = FileMonitorWatcher::create($worker, $sourceDir, $filePattern);
             $fileMonitor->start();

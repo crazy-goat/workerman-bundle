@@ -12,8 +12,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class TaskHandler
 {
     public function __construct(
-        private ContainerInterface $locator,
-        private EventDispatcherInterface $eventDispatcher,
+        private readonly ContainerInterface $locator,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 

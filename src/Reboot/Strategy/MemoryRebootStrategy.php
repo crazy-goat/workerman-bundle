@@ -15,11 +15,6 @@ class MemoryRebootStrategy implements RebootStrategyInterface
         if ($this->gcLimit !== null &&  memory_get_usage() > $this->gcLimit) {
             gc_collect_cycles();
         }
-
-        if (memory_get_usage() > $this->limit) {
-            return true;
-        }
-
-        return false;
+        return memory_get_usage() > $this->limit;
     }
 }

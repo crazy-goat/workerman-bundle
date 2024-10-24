@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 
 /** @php-cs-fixer-ignore */
-return static function (DefinitionConfigurator $definition) {
+return static function (DefinitionConfigurator $definition): void {
     $definition->rootNode()
         ->addDefaultsIfNotSet()
         ->children()
@@ -101,7 +101,7 @@ return static function (DefinitionConfigurator $definition) {
                                 ->info('List of allowed exceptions that do not trigger a reload')
                                 ->prototype('scalar')->end()
                                 ->defaultValue([
-                                    'Symfony\Component\HttpKernel\Exception\HttpExceptionInterface',
+                                    \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface::class,
                                     'Symfony\Component\Serializer\Exception\ExceptionInterface',
                                 ])
                                 ->end()

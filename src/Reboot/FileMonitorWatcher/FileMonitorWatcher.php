@@ -9,9 +9,7 @@ use Workerman\Worker;
 
 abstract class FileMonitorWatcher
 {
-    protected readonly Worker $worker;
     protected readonly array $sourceDir;
-    private array $filePattern;
 
     public static function create(Worker $worker, array $sourceDir, array $filePattern): self
     {
@@ -21,11 +19,9 @@ abstract class FileMonitorWatcher
         ;
     }
 
-    protected function __construct(Worker $worker, array $sourceDir, array $filePattern)
+    protected function __construct(protected readonly Worker $worker, array $sourceDir, private readonly array $filePattern)
     {
-        $this->worker = $worker;
         $this->sourceDir = array_filter($sourceDir, is_dir(...));
-        $this->filePattern = $filePattern;
     }
 
     abstract public function start(): void;

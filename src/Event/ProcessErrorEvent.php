@@ -8,7 +8,7 @@ use Symfony\Contracts\EventDispatcher\Event;
 
 final class ProcessErrorEvent extends Event
 {
-    public function __construct(private \Throwable $error, private string $serviceClass, private $processName)
+    public function __construct(private \Throwable $error, private readonly string $serviceClass, private $processName)
     {
     }
 

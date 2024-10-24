@@ -9,7 +9,7 @@ final class StackRebootStrategy implements RebootStrategyInterface
     /**
      * @param iterable<RebootStrategyInterface> $strategies
      */
-    public function __construct(private iterable $strategies)
+    public function __construct(private readonly iterable $strategies)
     {
     }
 

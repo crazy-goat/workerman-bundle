@@ -44,7 +44,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
     {
         $events = \inotify_read($inotifyFd) ?: [];
 
-        if ($this->rebootCallback !== null) {
+        if ($this->rebootCallback instanceof \Closure) {
             return;
         }
 
@@ -63,7 +63,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 continue;
             }
 
-            $this->rebootCallback = function () {
+            $this->rebootCallback = function (): void {
                 $this->rebootCallback = null;
                 $this->reboot();
             };

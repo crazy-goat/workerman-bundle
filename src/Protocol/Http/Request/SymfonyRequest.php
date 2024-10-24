@@ -10,11 +10,11 @@ use Workerman\Connection\ConnectionInterface;
 
 class SymfonyRequest extends Request
 {
-    private \Workerman\Protocols\Http\Request $rawRequest;
+    private readonly \Workerman\Protocols\Http\Request $rawRequest;
 
     public ?ConnectionInterface $connection = null;
 
-    public function __construct(private readonly string $buffer)
+    public function __construct(string $buffer)
     {
         $this->rawRequest = new \Workerman\Protocols\Http\Request($buffer);
         parent::__construct(

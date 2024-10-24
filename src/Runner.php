@@ -15,7 +15,7 @@ use Workerman\Worker;
 final class Runner implements RunnerInterface
 {
     public function __construct(
-        private KernelFactory $kernelFactory,
+        private readonly KernelFactory $kernelFactory,
     ) {
     }
 
@@ -42,7 +42,7 @@ final class Runner implements RunnerInterface
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
-        if (!is_dir($varRunDir = dirname($config['pid_file']))) {
+        if (!is_dir($varRunDir = dirname((string) $config['pid_file']))) {
             mkdir(directory: $varRunDir, recursive: true);
         }
 
@@ -63,7 +63,7 @@ final class Runner implements RunnerInterface
             );
         }
 
-        if (!empty($schedulerConfig)) {
+        if ($schedulerConfig !== []) {
             new SchedulerWorker(
                 kernelFactory: $this->kernelFactory,
                 user: $config['user'],
@@ -81,7 +81,7 @@ final class Runner implements RunnerInterface
             );
         }
 
-        if (!empty($processConfig)) {
+        if ($processConfig !== []) {
             new SupervisorWorker(
                 kernelFactory: $this->kernelFactory,
                 user: $config['user'],
