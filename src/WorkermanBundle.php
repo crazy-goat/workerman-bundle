@@ -24,6 +24,9 @@ final class WorkermanBundle extends AbstractBundle
         $container->addCompilerPass(require __DIR__ . '/config/compilerpass.php');
     }
 
+    /**
+     * @param mixed[] $config
+     */
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
         $configurator = require __DIR__ . '/config/services.php';

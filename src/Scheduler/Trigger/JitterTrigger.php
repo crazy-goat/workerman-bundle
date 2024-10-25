@@ -20,6 +20,6 @@ final class JitterTrigger implements TriggerInterface
 
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
-        return $this->trigger->getNextRunDate($now)->modify(sprintf('+%d seconds', random_int(0, $this->maxSeconds)));
+        return $this->trigger->getNextRunDate($now)?->modify(sprintf('+%d seconds', random_int(0, $this->maxSeconds)));
     }
 }

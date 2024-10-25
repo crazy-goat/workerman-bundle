@@ -44,7 +44,7 @@ final class Utils
     {
         if (function_exists('opcache_get_status') && $status = opcache_get_status()) {
             foreach (array_keys($status['scripts'] ?? []) as $file) {
-                opcache_invalidate($file, true);
+                opcache_invalidate(strval($file), true);
             }
         }
     }

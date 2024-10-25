@@ -13,13 +13,17 @@ final class PeriodicalTrigger implements TriggerInterface
     {
         try {
             if (is_int($interval)) {
-                $this->interval = \DateInterval::createFromDateString(sprintf('%d seconds', $interval));
+                $dateTime = \DateInterval::createFromDateString(sprintf('%d seconds', $interval));
+                assert($dateTime instanceof \DateInterval);
+                $this->interval = $dateTime;
                 $this->description = sprintf('every %s', $interval);
             } elseif (\is_string($interval) && str_starts_with($interval, 'P')) {
                 $this->interval = new \DateInterval($interval);
                 $this->description = sprintf('DateInterval (%s)', $interval);
             } elseif (\is_string($interval)) {
-                $this->interval = @\DateInterval::createFromDateString($interval);
+                $dateTime = \DateInterval::createFromDateString($interval);
+                assert($dateTime instanceof \DateInterval);
+                $this->interval = $dateTime;
                 $this->description = sprintf('every %s', $interval);
             } else {
                 $this->interval = $interval;
@@ -34,6 +38,7 @@ final class PeriodicalTrigger implements TriggerInterface
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
         $period = new \DatePeriod($now, $this->interval, $now->modify('+10 year'));
+        /** @var \InternalIterator<\DateTime> $iterator */
         $iterator = $period->getIterator();
         $iterator->next();
         $date = $iterator->current();

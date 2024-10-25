@@ -17,11 +17,13 @@ class SymfonyRequest extends Request
     public function __construct(string $buffer)
     {
         $this->rawRequest = new \Workerman\Protocols\Http\Request($buffer);
+        $cookies = $this->rawRequest->cookie();
+
         parent::__construct(
             $this->rawRequest->get(),
             $this->rawRequest->post(),
             [],
-            $this->rawRequest->cookie(),
+            is_array($cookies) ? $cookies : [],
             [],
             [
                 'REQUEST_URI' => $this->rawRequest->uri(),
@@ -31,11 +33,14 @@ class SymfonyRequest extends Request
             $this->rawRequest->rawBody(),
         );
 
-        foreach ($this->rawRequest->header() as $name => $value) {
-            $this->headers->set($name, $value);
+        $headers = $this->rawRequest->header();
+        if (is_array($headers)) {
+            foreach ($headers as $name => $value) {
+                $this->headers->set($name, $value);
+            }
         }
 
-        foreach ($this->rawRequest->file() as $key => $value) {
+        foreach ($this->rawRequest->file() ?? [] as $key => $value) {
             $type = $value['type'] ?? 'application/octet-stream';
             $this->files->set(
                 $key,

@@ -55,12 +55,14 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "symfony/runtime": true
+            "symfony/runtime": true,
+            "phpstan/extension-installer": true
         }
     },
     "scripts": {
         "test": [
             "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
+            "sleep 1",
             "vendor/bin/phpunit",
             "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],

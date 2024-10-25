@@ -9,8 +9,13 @@ use Workerman\Worker;
 
 abstract class FileMonitorWatcher
 {
+    /** @var string[] */
     protected readonly array $sourceDir;
 
+    /**
+     * @param string[] $sourceDir
+     * @param string[] $filePattern
+     */
     public static function create(Worker $worker, array $sourceDir, array $filePattern): self
     {
         return \extension_loaded('inotify')
@@ -19,6 +24,10 @@ abstract class FileMonitorWatcher
         ;
     }
 
+    /**
+     * @param string[] $sourceDir
+     * @param string[] $filePattern
+     */
     protected function __construct(protected readonly Worker $worker, array $sourceDir, private readonly array $filePattern)
     {
         $this->sourceDir = array_filter($sourceDir, is_dir(...));

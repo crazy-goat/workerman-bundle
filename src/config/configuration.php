@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 
 /** @php-cs-fixer-ignore */
 return static function (DefinitionConfigurator $definition): void {
-    $definition->rootNode()
-        ->addDefaultsIfNotSet()
+    $root = $definition->rootNode();
+    assert($root instanceof ArrayNodeDefinition);
+    $root->addDefaultsIfNotSet()
         ->children()
             ->scalarNode('user')
                 ->info('Unix user of processes. Default: current user')

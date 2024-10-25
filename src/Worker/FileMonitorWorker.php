@@ -11,7 +11,11 @@ final class FileMonitorWorker
 {
     public const PROCESS_TITLE = '[FileMonitor]';
 
-    public function __construct(string|null $user, string|null $group, array $sourceDir, array $filePattern)
+    /**
+     * @param string[] $sourceDir
+     * @param string[] $filePattern
+     */
+    public function __construct(?string $user, ?string $group, array $sourceDir, array $filePattern)
     {
         $worker = new Worker();
         $worker->name = self::PROCESS_TITLE;

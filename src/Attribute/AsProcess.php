@@ -8,9 +8,9 @@ namespace Luzrain\WorkermanBundle\Attribute;
 final class AsProcess
 {
     public function __construct(
-        public string|null $name = null,
-        public int|null $processes = null,
-        public string|null $method = null,
+        public ?string $name = null,
+        public ?int $processes = null,
+        public ?string $method = null,
     ) {
     }
 }

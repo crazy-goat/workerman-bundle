@@ -8,6 +8,9 @@ use Symfony\Component\Runtime\ResolverInterface;
 
 final class Resolver implements ResolverInterface
 {
+    /**
+     * @param mixed[] $options
+     */
     public function __construct(private readonly ResolverInterface $resolver, private readonly array $options)
     {
     }

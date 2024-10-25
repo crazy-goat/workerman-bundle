@@ -30,20 +30,28 @@ final class WorkermanHttpMessageFactory
             ],
         );
 
-        foreach ($workermanRequest->header() as $name => $value) {
-            $psrRequest = $psrRequest->withHeader($name, $value);
+        if (is_array($workermanRequest->header())) {
+            foreach ($workermanRequest->header() as $name => $value) {
+                $psrRequest = $psrRequest->withHeader($name, $value);
+            }
         }
+        $cookies = $workermanRequest->cookie();
 
         return $psrRequest
             ->withProtocolVersion($workermanRequest->protocolVersion())
-            ->withCookieParams($workermanRequest->cookie())
+            ->withCookieParams(is_array($cookies) ? $cookies : [])
             ->withQueryParams($workermanRequest->get())
-            ->withParsedBody($workermanRequest->post())
-            ->withUploadedFiles($this->normalizeFiles($workermanRequest->file()))
+            ->withParsedBody($workermanRequest->post() ?? [])
+            ->withUploadedFiles($this->normalizeFiles($workermanRequest->file() ?? []))
             ->withBody($this->streamFactory->createStream($workermanRequest->rawBody()))
         ;
     }
 
+    /**
+     * @param mixed[] $files
+     *
+     * @return mixed[]
+     */
     private function normalizeFiles(array $files): array
     {
         $normalized = [];
@@ -59,6 +67,8 @@ final class WorkermanHttpMessageFactory
     }
 
     /**
+     * @param mixed[] $value
+     *
      * @return list<UploadedFileInterface>|UploadedFileInterface
      */
     private function createUploadedFileFromSpec(array $value): array|UploadedFileInterface
@@ -77,7 +87,9 @@ final class WorkermanHttpMessageFactory
     }
 
     /**
-     * @return list<UploadedFileInterface>
+     * @param mixed[] $files
+     *
+     * @return mixed[]
      */
     private function normalizeNestedFileSpec(array $files = []): array
     {

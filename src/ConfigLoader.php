@@ -10,6 +10,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
 final class ConfigLoader implements CacheWarmerInterface
 {
+    /** @var mixed[] */
     private array $config;
     private readonly ConfigCache $cache;
     private readonly string $yamlConfigFilePath;
@@ -39,36 +40,43 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->cache->isFresh();
     }
 
+    /** @return mixed[] */
     private function getConfig(): array
     {
         return $this->config ??= require $this->cache->getPath();
     }
 
+    /** @param mixed[] $config */
     public function setWorkermanConfig(array $config): void
     {
         $this->config[0] = $config;
     }
 
+    /** @param mixed[] $config */
     public function setProcessConfig(array $config): void
     {
         $this->config[1] = $config;
     }
 
+    /** @param mixed[] $config */
     public function setSchedulerConfig(array $config): void
     {
         $this->config[2] = $config;
     }
 
+    /** @return mixed[] */
     public function getWorkermanConfig(): array
     {
         return $this->getConfig()[0];
     }
 
+    /** @return mixed[] */
     public function getProcessConfig(): array
     {
         return $this->getConfig()[1];
     }
 
+    /** @return mixed[] */
     public function getSchedulerConfig(): array
     {
         return $this->getConfig()[2];

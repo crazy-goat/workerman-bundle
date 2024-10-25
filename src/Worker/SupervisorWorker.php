@@ -12,7 +12,10 @@ final class SupervisorWorker
 {
     private const PROCESS_TITLE = '[Process]';
 
-    public function __construct(KernelFactory $kernelFactory, string|null $user, string|null $group, array $processConfig)
+    /**
+     * @param mixed[] $processConfig
+     */
+    public function __construct(KernelFactory $kernelFactory, ?string $user, ?string $group, array $processConfig)
     {
         foreach ($processConfig as $serviceId => $serviceConfig) {
             if ($serviceConfig['processes'] !== null && $serviceConfig['processes'] <= 0) {

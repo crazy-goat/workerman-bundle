@@ -16,12 +16,15 @@ final class ServerWorker
 {
     protected const PROCESS_TITLE = '[Server]';
 
+    /**
+     * @param mixed[] $serverConfig
+     */
     public function __construct(
         KernelFactory $kernelFactory,
-        string | null $user,
-        string | null $group,
+        ?string $user,
+        ?string $group,
         array $serverConfig,
-        $symfonyNative = false,
+        bool $symfonyNative = false,
     ) {
         $listen = strval($serverConfig['listen'] ?? '');
         $transport = 'tcp';
@@ -59,6 +62,7 @@ final class ServerWorker
 
         if ($symfonyNative === true) {
             $worker->onConnect = function ($connection): void {
+                //@phpstan-ignore-next-line
                 if ($connection instanceof TcpConnection && $connection->protocol === Http::class) {
                     Http::requestClass(SymfonyRequest::class);
                 }
@@ -79,11 +83,10 @@ final class ServerWorker
                         $workermanRequest->server->set('REMOTE_ADDR', $connection->getRemoteIp());
                     }
 
-                    $kernel->getContainer()->get('workerman.http_request_handler')(
-                        $connection,
-                        $workermanRequest,
-                        $serveFiles
-                    );
+                    $callable = $kernel->getContainer()->get('workerman.http_request_handler');
+                    assert(is_callable($callable));
+
+                    $callable($connection, $workermanRequest, $serveFiles);
                 };
         };
     }

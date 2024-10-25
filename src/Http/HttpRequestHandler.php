@@ -61,7 +61,7 @@ final class HttpRequestHandler
     {
         $mimeTypedetector = new FinfoMimeTypeDetector();
         $response = $this->responseFactory->createResponse()
-            ->withHeader('Content-Type', $mimeTypedetector->detectMimeTypeFromPath($file))
+            ->withHeader('Content-Type', $mimeTypedetector->detectMimeTypeFromPath($file) ?? 'application/octet-stream')
             ->withBody($this->streamFactory->createStreamFromFile($file));
 
         foreach ($this->generateResponse($response) as $chunk) {

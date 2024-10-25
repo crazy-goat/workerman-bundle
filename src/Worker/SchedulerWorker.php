@@ -19,7 +19,10 @@ final class SchedulerWorker
     private readonly Worker $worker;
     private TaskHandler $handler;
 
-    public function __construct(KernelFactory $kernelFactory, string|null $user, string|null $group, array $schedulerConfig)
+    /**
+     * @param mixed[] $schedulerConfig
+     */
+    public function __construct(KernelFactory $kernelFactory, ?string $user, ?string $group, array $schedulerConfig)
     {
         $this->worker = new Worker();
         $this->worker->name = self::PROCESS_TITLE;
@@ -32,7 +35,9 @@ final class SchedulerWorker
             pcntl_signal(SIGCHLD, SIG_IGN);
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
-            $this->handler = $kernel->getContainer()->get('workerman.task_handler');
+            $handler = $kernel->getContainer()->get('workerman.task_handler');
+            assert($handler instanceof TaskHandler);
+            $this->handler = $handler;
 
             foreach ($schedulerConfig as $serviceId => $serviceConfig) {
                 $taskName = empty($serviceConfig['name']) ? $serviceId : $serviceConfig['name'];
@@ -85,7 +90,7 @@ final class SchedulerWorker
         } else {
             // Child process start
             Timer::delAll();
-            $title = str_replace(self::PROCESS_TITLE, sprintf('%s "%s"', self::PROCESS_TITLE, $taskName), cli_get_process_title());
+            $title = str_replace(self::PROCESS_TITLE, sprintf('%s "%s"', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
             cli_set_process_title($title);
             $this->saveTaskPid($service);
             ($this->handler)($service, $taskName);

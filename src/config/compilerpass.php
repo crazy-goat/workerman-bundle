@@ -79,6 +79,11 @@ return new class implements CompilerPassInterface {
         ;
     }
 
+    /**
+     * @param string[] $taggedServices
+     *
+     * @return Reference[]
+     */
     private function referenceMap(array $taggedServices): array
     {
         $result = [];

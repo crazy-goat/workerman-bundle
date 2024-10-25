@@ -12,6 +12,10 @@ final class KernelFactory
     private readonly string $environment;
     private readonly bool $isDebug;
 
+    /**
+     * @param mixed[] $args
+     * @param mixed[] $options
+     */
     public function __construct(private readonly \Closure $app, private readonly array $args, array $options)
     {
         $this->projectDir = $options['project_dir'];
