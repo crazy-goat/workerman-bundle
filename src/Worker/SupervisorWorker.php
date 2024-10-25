@@ -18,6 +18,10 @@ final class SupervisorWorker
     public function __construct(KernelFactory $kernelFactory, ?string $user, ?string $group, array $processConfig)
     {
         foreach ($processConfig as $serviceId => $serviceConfig) {
+            if (!is_array($serviceConfig)) {
+                continue;
+            }
+
             if ($serviceConfig['processes'] !== null && $serviceConfig['processes'] <= 0) {
                 continue;
             }

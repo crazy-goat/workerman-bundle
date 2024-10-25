@@ -40,6 +40,7 @@ final class SchedulerWorker
             $this->handler = $handler;
 
             foreach ($schedulerConfig as $serviceId => $serviceConfig) {
+                assert(is_array($serviceConfig));
                 $taskName = empty($serviceConfig['name']) ? $serviceId : $serviceConfig['name'];
 
                 if (empty($serviceConfig['schedule'])) {

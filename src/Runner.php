@@ -42,17 +42,29 @@ final class Runner implements RunnerInterface
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
-        if (!is_dir($varRunDir = dirname((string) $config['pid_file']))) {
+        $pidFile = $config['pid_file'];
+        $logFile = $config['log_file'];
+        $stdoutFile = $config['stdout_file'];
+        $stopTimeout = $config['stop_timeout'];
+        $maxPackageSize = $config['max_package_size'];
+        assert(is_string($pidFile));
+        assert(is_string($logFile));
+        assert(is_string($stdoutFile));
+        assert(is_int($stopTimeout));
+        assert(is_int($maxPackageSize));
+
+        if (!is_dir($varRunDir = dirname($pidFile))) {
             mkdir(directory: $varRunDir, recursive: true);
         }
 
-        TcpConnection::$defaultMaxPackageSize = $config['max_package_size'];
-        Worker::$pidFile = $config['pid_file'];
-        Worker::$logFile = $config['log_file'];
-        Worker::$stdoutFile = $config['stdout_file'];
-        Worker::$stopTimeout = $config['stop_timeout'];
+        TcpConnection::$defaultMaxPackageSize = $maxPackageSize;
+        Worker::$pidFile = $pidFile;
+        Worker::$logFile = $logFile;
+        Worker::$stdoutFile = $stdoutFile;
+        Worker::$stopTimeout = $stopTimeout;
         Worker::$onMasterReload = Utils::clearOpcache(...);
 
+        assert(is_array($config['servers']));
         foreach ($config['servers'] as $serverConfig) {
             new ServerWorker(
                 kernelFactory: $this->kernelFactory,

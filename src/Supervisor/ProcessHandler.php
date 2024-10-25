@@ -21,6 +21,7 @@ final class ProcessHandler
     {
         [$serviceName, $method] = explode('::', $service, 2);
         $service = $this->locator->get($serviceName);
+        assert(is_object($service));
 
         $this->eventDispatcher->dispatch(new ProcessStartEvent($service::class, $processName));
 

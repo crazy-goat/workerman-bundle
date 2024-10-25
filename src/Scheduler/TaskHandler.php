@@ -21,6 +21,7 @@ final class TaskHandler
     {
         [$serviceName, $method] = explode('::', $service, 2);
         $service = $this->locator->get($serviceName);
+        assert(is_object($service));
 
         $this->eventDispatcher->dispatch(new TaskStartEvent($service::class, $taskName));
 

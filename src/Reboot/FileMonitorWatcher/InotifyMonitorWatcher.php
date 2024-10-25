@@ -11,7 +11,8 @@ use Workerman\Worker;
 final class InotifyMonitorWatcher extends FileMonitorWatcher
 {
     private const REBOOT_DELAY = 0.33;
-    private mixed $fd;
+    /** @var resource */
+    private $fd;
     /** @var string[] */
     private array $pathByWd = [];
     private \Closure|null $rebootCallback = null;

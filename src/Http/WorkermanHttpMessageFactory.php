@@ -22,9 +22,18 @@ final class WorkermanHttpMessageFactory
 
     public function createRequest(Request $workermanRequest): ServerRequestInterface
     {
+        $uri = $workermanRequest->uri();
+        $query = $workermanRequest->get() ?? [];
+        $post = $workermanRequest->post() ?? [];
+        $cookies = $workermanRequest->cookie() ?? [];
+        assert(is_string($uri));
+        assert(is_array($query));
+        assert(is_array($post));
+        assert(is_array($cookies));
+
         $psrRequest = $this->serverRequestFactory->createServerRequest(
             method: $workermanRequest->method(),
-            uri: $workermanRequest->uri(),
+            uri: $uri,
             serverParams: $_SERVER + [
                 'REMOTE_ADDR' => $workermanRequest->connection->getRemoteIp(),
             ],
@@ -35,13 +44,12 @@ final class WorkermanHttpMessageFactory
                 $psrRequest = $psrRequest->withHeader($name, $value);
             }
         }
-        $cookies = $workermanRequest->cookie();
 
         return $psrRequest
             ->withProtocolVersion($workermanRequest->protocolVersion())
-            ->withCookieParams(is_array($cookies) ? $cookies : [])
-            ->withQueryParams($workermanRequest->get())
-            ->withParsedBody($workermanRequest->post() ?? [])
+            ->withCookieParams($cookies)
+            ->withQueryParams($query)
+            ->withParsedBody($post)
             ->withUploadedFiles($this->normalizeFiles($workermanRequest->file() ?? []))
             ->withBody($this->streamFactory->createStream($workermanRequest->rawBody()))
         ;
@@ -69,14 +77,14 @@ final class WorkermanHttpMessageFactory
     /**
      * @param mixed[] $value
      *
-     * @return list<UploadedFileInterface>|UploadedFileInterface
+     * @return mixed[]
      */
     private function createUploadedFileFromSpec(array $value): array|UploadedFileInterface
     {
         if (is_array($value['tmp_name'])) {
             return $this->normalizeNestedFileSpec($value);
         }
-
+        assert(is_string($value['tmp_name']));
         return $this->uploadedFileFactory->createUploadedFile(
             stream: $this->streamFactory->createStreamFromFile($value['tmp_name']),
             size: (int) $value['size'],
@@ -94,6 +102,8 @@ final class WorkermanHttpMessageFactory
     private function normalizeNestedFileSpec(array $files = []): array
     {
         $normalizedFiles = [];
+        $files = $files['tmp_name'];
+        assert(is_array($files));
         foreach (array_keys($files['tmp_name']) as $key) {
             $normalizedFiles[$key] = $this->createUploadedFileFromSpec([
                 'tmp_name' => $files['tmp_name'][$key],

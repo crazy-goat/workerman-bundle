@@ -18,10 +18,12 @@ class SymfonyRequest extends Request
     {
         $this->rawRequest = new \Workerman\Protocols\Http\Request($buffer);
         $cookies = $this->rawRequest->cookie();
+        $query = $this->rawRequest->get();
+        $post = $this->rawRequest->post();
 
         parent::__construct(
-            $this->rawRequest->get(),
-            $this->rawRequest->post(),
+            is_array($query) ? $query : [],
+            is_array($post) ? $post : [],
             [],
             is_array($cookies) ? $cookies : [],
             [],

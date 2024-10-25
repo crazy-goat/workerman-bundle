@@ -18,7 +18,10 @@ final class KernelFactory
      */
     public function __construct(private readonly \Closure $app, private readonly array $args, array $options)
     {
-        $this->projectDir = $options['project_dir'];
+        $projectDir = $options['project_dir'];
+        assert(is_string($projectDir));
+
+        $this->projectDir = $projectDir;
         $this->environment = $_SERVER[$options['env_var_name']];
         $this->isDebug = (bool) $_SERVER[$options['debug_var_name']];
     }

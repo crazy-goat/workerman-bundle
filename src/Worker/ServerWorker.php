@@ -26,7 +26,8 @@ final class ServerWorker
         array $serverConfig,
         bool $symfonyNative = false,
     ) {
-        $listen = strval($serverConfig['listen'] ?? '');
+        $listen = $serverConfig['listen'] ?? '';
+        assert(is_string($listen));
         $transport = 'tcp';
         $context = [];
 
@@ -60,9 +61,8 @@ final class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
 
-        if ($symfonyNative === true) {
+        if ($symfonyNative) {
             $worker->onConnect = function ($connection): void {
-                //@phpstan-ignore-next-line
                 if ($connection instanceof TcpConnection && $connection->protocol === Http::class) {
                     Http::requestClass(SymfonyRequest::class);
                 }

@@ -25,6 +25,11 @@ final class RequestTestController extends AbstractController
         ]);
     }
 
+    /**
+     * @param array<string, UploadedFile> $files
+     *
+     * @return array<int, array<string,scalar>>
+     */
     private function normalizeFiles(array $files): array
     {
         $array = [];

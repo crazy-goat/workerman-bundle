@@ -38,7 +38,7 @@ final class PeriodicalTrigger implements TriggerInterface
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
         $period = new \DatePeriod($now, $this->interval, $now->modify('+10 year'));
-        /** @var \InternalIterator<\DateTime> $iterator */
+        /** @var \Iterator<\DateTimeImmutable> $iterator */
         $iterator = $period->getIterator();
         $iterator->next();
         $date = $iterator->current();

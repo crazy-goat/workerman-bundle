@@ -40,7 +40,7 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->cache->isFresh();
     }
 
-    /** @return mixed[] */
+    /** @return array<int, mixed[]> */
     private function getConfig(): array
     {
         return $this->config ??= require $this->cache->getPath();
