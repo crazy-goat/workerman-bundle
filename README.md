@@ -19,7 +19,7 @@ option increase performance, but it is still experimental.
 ### Install composer packages
 ```bash
 composer config repositories.workerman-bundle vcs https://github.com/s2x/workerman-bundle
-composer require luzrain/workerman-bundle nyholm/psr7
+composer require s2x/workerman-bundle nyholm/psr7
 ```
 
 Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
