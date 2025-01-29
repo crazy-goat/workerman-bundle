@@ -5,66 +5,51 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Http;
 
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
-use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
 use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Luzrain\WorkermanBundle\Utils;
-use Psr\Http\Message\ResponseFactoryInterface;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Message\StreamFactoryInterface;
-use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
-use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http\Request;
 
 final class HttpRequestHandler
 {
     public function __construct(
-        private readonly KernelInterface $kernel,
-        private readonly StreamFactoryInterface $streamFactory,
-        private readonly ResponseFactoryInterface $responseFactory,
+        private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-        private readonly HttpMessageFactoryInterface $psrHttpFactory,
-        private readonly HttpFoundationFactoryInterface $httpFoundationFactory,
-        private readonly WorkermanHttpMessageFactory $workermanHttpFactory,
-        private readonly int $chunkSize,
+        private readonly int                     $chunkSize,
     ) {
     }
 
     public function __invoke(
         TcpConnection $connection,
-        Request | SymfonyRequest $workermanRequest,
-        bool $serveFiles = true,
+        Request       $request,
+        bool          $serveFiles = true,
     ): void {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
 
-        if ($workermanRequest instanceof Request) {
-            $request = $this->workermanHttpFactory->createRequest($workermanRequest);
-        } else {
-            $request = $workermanRequest;
-        }
-
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
         if ($serveFiles && \is_file($file = $this->getPublicPathFile($request))) {
-            $this->createfileResponse($connection, $shouldCloseConnection, $file);
+            $this->createFileResponse($connection, $file, $request, $shouldCloseConnection);
         } else {
-            $this->createApplicationResponse($connection, $shouldCloseConnection, $request);
+            $this->createApplicationResponse($connection, $request, $shouldCloseConnection);
         }
     }
 
-    private function createfileResponse(TcpConnection $connection, bool $shouldCloseConnection, string $file): void
+    private function createFileResponse(TcpConnection $connection, string $file, Request $request, bool $shouldCloseConnection): void
     {
-        $mimeTypedetector = new FinfoMimeTypeDetector();
-        $response = $this->responseFactory->createResponse()
-            ->withHeader('Content-Type', $mimeTypedetector->detectMimeTypeFromPath($file) ?? 'application/octet-stream')
-            ->withBody($this->streamFactory->createStreamFromFile($file));
+        $response = new BinaryFileResponse($file);
+        $response->headers->set(
+            'Content-Type',
+            (new FinfoMimeTypeDetector())->detectMimeTypeFromPath($file) ?? 'application/octet-stream',
+        );
 
-        foreach ($this->generateResponse($response) as $chunk) {
+        foreach ($this->generateResponse($request, $response, $shouldCloseConnection) as $chunk) {
             $connection->send($chunk, true);
         }
 
@@ -75,23 +60,14 @@ final class HttpRequestHandler
 
     private function createApplicationResponse(
         TcpConnection $connection,
-        bool $shouldCloseConnection,
-        SymfonyRequest | ServerRequestInterface $request,
+        Request       $request,
+        bool          $shouldCloseConnection,
     ): void {
         $this->kernel->boot();
 
+        $response = $this->kernel->handle($request);
 
-        $symfonyRequest =
-            $request instanceof SymfonyRequest ? $request : $this->httpFoundationFactory->createRequest($request);
-
-        $symfonyResponse = $this->kernel->handle($symfonyRequest);
-        $sprResponse = $this->psrHttpFactory->createResponse($symfonyResponse);
-
-        if ($shouldCloseConnection) {
-            $sprResponse = $sprResponse->withAddedHeader('Connection', 'close');
-        }
-
-        foreach ($this->generateResponse($sprResponse) as $chunk) {
+        foreach ($this->generateResponse($request, $response, $shouldCloseConnection) as $chunk) {
             $connection->send($chunk, true);
         }
 
@@ -100,7 +76,7 @@ final class HttpRequestHandler
         }
 
         if ($this->kernel instanceof TerminableInterface) {
-            $this->kernel->terminate($symfonyRequest, $symfonyResponse);
+            $this->kernel->terminate($request, $response);
         }
 
         if ($this->rebootStrategy->shouldReboot()) {
@@ -108,52 +84,44 @@ final class HttpRequestHandler
         }
     }
 
-    private function getPublicPathFile(SymfonyRequest | ServerRequestInterface $request): string
+    private function getPublicPathFile(Request $request): string
     {
-        if ($request instanceof SymfonyRequest) {
-            $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getPathInfo()}";
-        } else {
-            $checkFile = "{$this->kernel->getProjectDir()}/public{$request->getUri()->getPath()}";
-        }
-
-        return str_replace('..', '/', $checkFile);
+        return str_replace(
+            '..',
+            '/',
+            "{$this->kernel->getProjectDir()}/public{$request->getPathInfo()}",
+        );
     }
 
-    private function generateResponse(ResponseInterface $response): \Generator
+    private function generateResponse(Request $request, Response $response, bool $shouldCloseConnection): \Generator
     {
-        $msg = 'HTTP/' . $response->getProtocolVersion() . ' ' . $response->getStatusCode() . ' ' . $response->getReasonPhrase() . "\r\n";
+        $response->prepare($request);
 
-        if ($response->getHeaderLine('Transfer-Encoding') === '' && $response->getHeaderLine('Content-Length') === '') {
-            $msg .= 'Content-Length: ' . $response->getBody()->getSize() . "\r\n";
-        }
-        if ($response->getHeaderLine('Content-Type') === '') {
-            $msg .= "Content-Type: text/html\r\n";
-        }
-        if ($response->getHeaderLine('Connection') === '') {
-            $msg .= "Connection: keep-alive\r\n";
-        }
-        if ($response->getHeaderLine('Server') === '') {
-            $msg .= "Server: workerman\r\n";
-        }
-        foreach ($response->getHeaders() as $name => $values) {
-            $msg .= "$name: " . implode(', ', $values) . "\r\n";
+        if ($response->headers->get('Connection', '') === '') {
+            if ($shouldCloseConnection) {
+                $response->headers->set('Connection', 'close');
+            } else {
+                $response->headers->set('Connection', 'keep-alive');
+            }
         }
 
-        yield "$msg\r\n";
-
-        $response->getBody()->rewind();
-        while (!$response->getBody()->eof()) {
-            yield $response->getBody()->read($this->chunkSize);
+        if ($response->headers->get('Transfer-Encoding', '') === '' &&
+            $response->headers->get('Content-Length', '') === '') {
+            $length = strlen((string) $response->getContent());
+            $response->headers->set('Content-Length', strval($length));
         }
-        $response->getBody()->close();
+
+        if ($response->headers->get('Server', '') === '') {
+            $response->headers->set('Server', 'workerman');
+        }
+
+        foreach (str_split($response->__toString(), $this->chunkSize) as $chunk) {
+            yield $chunk;
+        }
     }
 
-    public function shouldCloseConnection(SymfonyRequest | ServerRequestInterface $psrRequest): bool
+    public function shouldCloseConnection(Request $request): bool
     {
-        if ($psrRequest instanceof SymfonyRequest) {
-            return $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->headers->get('Connection') === 'close';
-        }
-
-        return $psrRequest->getProtocolVersion() === '1.0' || $psrRequest->getHeaderLine('Connection') === 'close';
+        return $request->getProtocolVersion() === '1.0' || $request->headers->get('Connection') === 'close';
     }
 }

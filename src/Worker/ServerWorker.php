@@ -8,7 +8,6 @@ use Luzrain\WorkermanBundle\KernelFactory;
 use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
 use Luzrain\WorkermanBundle\Utils;
 use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http;
 use Workerman\Protocols\Http\Request;
 use Workerman\Worker;
 
@@ -21,10 +20,9 @@ final class ServerWorker
      */
     public function __construct(
         KernelFactory $kernelFactory,
-        ?string $user,
-        ?string $group,
-        array $serverConfig,
-        bool $symfonyNative = false,
+        ?string       $user,
+        ?string       $group,
+        array         $serverConfig,
     ) {
         $listen = $serverConfig['listen'] ?? '';
         assert(is_string($listen));
@@ -61,32 +59,17 @@ final class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
 
-        if ($symfonyNative) {
-            $worker->onConnect = function ($connection): void {
-                if ($connection instanceof TcpConnection && $connection->protocol === Http::class) {
-                    Http::requestClass(SymfonyRequest::class);
-                }
-            };
-        }
-
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
             $serveFiles = $serverConfig['serve_files'] ?? true;
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $worker->onMessage =
-                function (TcpConnection $connection, Request | SymfonyRequest $workermanRequest) use (
-                    $serveFiles,
-                    $kernel
-                ): void {
-                    if ($workermanRequest instanceof SymfonyRequest) {
-                        $workermanRequest->server->set('REMOTE_ADDR', $connection->getRemoteIp());
-                    }
-
+                function (TcpConnection $connection, Request $workermanRequest) use ($serveFiles, $kernel): void {
                     $callable = $kernel->getContainer()->get('workerman.http_request_handler');
                     assert(is_callable($callable));
 
-                    $callable($connection, $workermanRequest, $serveFiles);
+                    $callable($connection, new SymfonyRequest($workermanRequest->__toString()), $serveFiles);
                 };
         };
     }

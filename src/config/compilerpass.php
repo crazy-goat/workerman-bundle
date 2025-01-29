@@ -6,8 +6,6 @@ use Luzrain\WorkermanBundle\Http\HttpRequestHandler;
 use Luzrain\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
 use Luzrain\WorkermanBundle\Scheduler\TaskHandler;
 use Luzrain\WorkermanBundle\Supervisor\ProcessHandler;
-use Psr\Http\Message\ResponseFactoryInterface;
-use Psr\Http\Message\StreamFactoryInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -50,12 +48,7 @@ return new class implements CompilerPassInterface {
             ->setPublic(true)
             ->setArguments([
                 new Reference(KernelInterface::class),
-                new Reference(StreamFactoryInterface::class),
-                new Reference(ResponseFactoryInterface::class),
                 new Reference('workerman.reboot_strategy'),
-                new Reference('workerman.symfony_http_message_factory'),
-                new Reference('workerman.http_foundation_factory'),
-                new Reference('workerman.workerman_http_message_factory'),
                 '%workerman.response_chunk_size%',
             ])
         ;

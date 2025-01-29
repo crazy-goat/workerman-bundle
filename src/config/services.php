@@ -5,19 +5,12 @@ declare(strict_types=1);
 use Luzrain\WorkermanBundle\Attribute\AsProcess;
 use Luzrain\WorkermanBundle\Attribute\AsTask;
 use Luzrain\WorkermanBundle\ConfigLoader;
-use Luzrain\WorkermanBundle\Http\WorkermanHttpMessageFactory;
 use Luzrain\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use Luzrain\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use Luzrain\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use Luzrain\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use Luzrain\WorkermanBundle\Scheduler\TaskErrorListener;
 use Luzrain\WorkermanBundle\Supervisor\ProcessErrorListener;
-use Psr\Http\Message\ResponseFactoryInterface;
-use Psr\Http\Message\ServerRequestFactoryInterface;
-use Psr\Http\Message\StreamFactoryInterface;
-use Psr\Http\Message\UploadedFileFactoryInterface;
-use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
-use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -35,29 +28,6 @@ return static function (array $config, ContainerBuilder $container): void {
             $container->getParameter('kernel.project_dir'),
             $container->getParameter('kernel.cache_dir'),
             $container->getParameter('kernel.debug'),
-        ])
-    ;
-
-    $container
-        ->register('workerman.symfony_http_message_factory', PsrHttpFactory::class)
-        ->setArguments([
-            new Reference(ServerRequestFactoryInterface::class),
-            new Reference(StreamFactoryInterface::class),
-            new Reference(UploadedFileFactoryInterface::class),
-            new Reference(ResponseFactoryInterface::class),
-        ])
-    ;
-
-    $container
-        ->register('workerman.http_foundation_factory', HttpFoundationFactory::class)
-    ;
-
-    $container
-        ->register('workerman.workerman_http_message_factory', WorkermanHttpMessageFactory::class)
-        ->setArguments([
-            new Reference(ServerRequestFactoryInterface::class),
-            new Reference(StreamFactoryInterface::class),
-            new Reference(UploadedFileFactoryInterface::class),
         ])
     ;
 
