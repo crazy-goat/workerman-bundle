@@ -26,7 +26,7 @@ final class RequestTestController extends AbstractController
     }
 
     /**
-     * @param array<string, UploadedFile> $files
+     * @param array<string, mixed> $files
      *
      * @return array<int, array<string,scalar>>
      */

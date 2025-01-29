@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Reboot\FileMonitorWatcher;
 
+use Workerman\Events\EventInterface;
 use Workerman\Timer;
 use Workerman\Worker;
 
@@ -18,7 +19,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
 
     public function start(): void
     {
-        if (function_exists('inotify_init')) {
+        if (function_exists('inotify_init') && Worker::$globalEvent instanceof EventInterface) {
             $this->fd = \inotify_init();
             stream_set_blocking($this->fd, false);
 

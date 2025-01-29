@@ -115,7 +115,7 @@ final class HttpRequestHandler
             $response->headers->set('Server', 'workerman');
         }
 
-        foreach (str_split($response->__toString(), $this->chunkSize) as $chunk) {
+        foreach (str_split($response->__toString(), max(1, $this->chunkSize)) as $chunk) {
             yield $chunk;
         }
     }

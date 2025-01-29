@@ -20,7 +20,7 @@ final class Utils
             return 1;
         }
 
-        if (!is_callable('shell_exec')) {
+        if (!function_exists('shell_exec')) {
             return 1;
         }
 

@@ -28,7 +28,7 @@ final class CronExpressionTrigger implements TriggerInterface
         return (string) $this->expression->getExpression();
     }
 
-    public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
+    public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable
     {
         return \DateTimeImmutable::createFromMutable($this->expression->getNextRunDate($now));
     }
