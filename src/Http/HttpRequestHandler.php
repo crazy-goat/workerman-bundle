@@ -26,7 +26,7 @@ final class HttpRequestHandler
     public function __invoke(
         TcpConnection $connection,
         Request       $request,
-        bool          $serveFiles = true,
+        ?string       $rootDirectory = null,
     ): void {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
@@ -34,7 +34,7 @@ final class HttpRequestHandler
 
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
-        if ($serveFiles && \is_file($file = $this->getPublicPathFile($request))) {
+        if ($rootDirectory !== null && \is_file($file = $this->getPublicPathFile($request, $rootDirectory))) {
             $this->createFileResponse($connection, $file, $request, $shouldCloseConnection);
         } else {
             $this->createApplicationResponse($connection, $request, $shouldCloseConnection);
@@ -84,12 +84,14 @@ final class HttpRequestHandler
         }
     }
 
-    private function getPublicPathFile(Request $request): string
+    private function getPublicPathFile(Request $request, string $rootDirectory): string
     {
+        $projectDir = rtrim($rootDirectory, "/");
+
         return str_replace(
             '..',
             '/',
-            "{$this->kernel->getProjectDir()}/public{$request->getPathInfo()}",
+            "{$projectDir}{$request->getPathInfo()}",
         );
     }
 
@@ -117,6 +119,12 @@ final class HttpRequestHandler
 
         foreach (str_split($response->__toString(), max(1, $this->chunkSize)) as $chunk) {
             yield $chunk;
+        }
+
+        if ($response->getContent() === false) {
+            ob_start();
+            $response->sendContent();
+            yield (string) ob_get_clean();
         }
     }
 

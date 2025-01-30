@@ -1,0 +1,1 @@
+Test for serve files option

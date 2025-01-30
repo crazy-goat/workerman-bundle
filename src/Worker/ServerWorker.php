@@ -61,15 +61,17 @@ final class ServerWorker
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
             $serveFiles = $serverConfig['serve_files'] ?? true;
+            $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
+
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $worker->onMessage =
-                function (TcpConnection $connection, Request $workermanRequest) use ($serveFiles, $kernel): void {
+                function (TcpConnection $connection, Request $workermanRequest) use ($rootDir, $kernel): void {
                     $callable = $kernel->getContainer()->get('workerman.http_request_handler');
                     assert(is_callable($callable));
 
-                    $callable($connection, new SymfonyRequest($workermanRequest->__toString()), $serveFiles);
+                    $callable($connection, new SymfonyRequest($workermanRequest->__toString()), $rootDir);
                 };
         };
     }

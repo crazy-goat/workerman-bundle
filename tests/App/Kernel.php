@@ -41,6 +41,8 @@ final class Kernel extends BaseKernel
                         'name' => 'Test server',
                         'listen' => 'http://127.0.0.1:8888',
                         'processes' => 1,
+                        'serve_files' => true,
+                        'root_dir' => '%kernel.project_dir%/tests/data/',
                     ],
                 ],
             ]);
