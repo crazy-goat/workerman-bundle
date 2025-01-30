@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Http;
 
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Luzrain\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
 use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Luzrain\WorkermanBundle\Utils;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -43,13 +43,18 @@ final class HttpRequestHandler
 
     private function createFileResponse(TcpConnection $connection, string $file, Request $request, bool $shouldCloseConnection): void
     {
-        $response = new BinaryFileResponse($file);
+        $response = new StreamedBinaryFileResponse($file);
         $response->headers->set(
             'Content-Type',
             (new FinfoMimeTypeDetector())->detectMimeTypeFromPath($file) ?? 'application/octet-stream',
         );
 
-        foreach ($this->generateResponse($request, $response, $shouldCloseConnection) as $chunk) {
+        $response->setChunkSize($this->chunkSize);
+        $response->prepare($request);
+        $this->prepareHeaders($response, $shouldCloseConnection);
+        $connection->send($response->__toString(), true);
+
+        foreach ($response->streamContent() as $chunk) {
             $connection->send($chunk, true);
         }
 
@@ -95,10 +100,8 @@ final class HttpRequestHandler
         );
     }
 
-    private function generateResponse(Request $request, Response $response, bool $shouldCloseConnection): \Generator
+    private function prepareHeaders(Response $response, bool $shouldCloseConnection): void
     {
-        $response->prepare($request);
-
         if ($response->headers->get('Connection', '') === '') {
             if ($shouldCloseConnection) {
                 $response->headers->set('Connection', 'close');
@@ -116,6 +119,12 @@ final class HttpRequestHandler
         if ($response->headers->get('Server', '') === '') {
             $response->headers->set('Server', 'workerman');
         }
+    }
+
+    private function generateResponse(Request $request, Response $response, bool $shouldCloseConnection): \Generator
+    {
+        $response->prepare($request);
+        $this->prepareHeaders($response, $shouldCloseConnection);
 
         foreach (str_split($response->__toString(), max(1, $this->chunkSize)) as $chunk) {
             yield $chunk;
