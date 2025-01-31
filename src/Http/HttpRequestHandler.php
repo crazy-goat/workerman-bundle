@@ -23,8 +23,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-    )
-    {
+    ) {
     }
 
     public function withRootDirectory(?string $rootDirectory): self
@@ -36,8 +35,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __invoke(
         TcpConnection                     $connection,
         \Workerman\Protocols\Http\Request $request,
-    ): void
-    {
+    ): void {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
@@ -130,11 +128,11 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     private function generateResponse(Response $response, bool $shouldCloseConnection): \Generator
     {
         yield \sprintf(
-                'HTTP/%s %s %s',
-                $response->getProtocolVersion(),
-                $response->getStatusCode(),
-                Response::$statusTexts[$response->getStatusCode()],
-            ) . "\r\n";
+            'HTTP/%s %s %s',
+            $response->getProtocolVersion(),
+            $response->getStatusCode(),
+            Response::$statusTexts[$response->getStatusCode()],
+        ) . "\r\n";
 
         yield from $this->prepareHeaders($response, $shouldCloseConnection);
 
@@ -147,7 +145,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     private function streamContent(StreamedBinaryFileResponse $response): \Generator
     {
         foreach ($response->streamContent() as $chunk) {
-            yield dechex(strlen($chunk)) . "\r\n" . $chunk . "\r\n";
+            yield dechex(strlen((string) $chunk)) . "\r\n" . $chunk . "\r\n";
         }
     }
 
