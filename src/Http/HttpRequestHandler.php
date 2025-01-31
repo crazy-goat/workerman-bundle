@@ -128,16 +128,29 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
 
     private function generateResponse(Response $response, bool $shouldCloseConnection): \Generator
     {
-        $headers = $this->prepareHeaders($response, $shouldCloseConnection);
         yield \sprintf(
             'HTTP/%s %s %s',
             $response->getProtocolVersion(),
             $response->getStatusCode(),
             Response::$statusTexts[$response->getStatusCode()],
-        ) . "\r\n" . $headers . "\r\n";
+        ) . "\r\n" . $this->prepareHeaders($response, $shouldCloseConnection) . "\r\n";
 
+        yield from $response instanceof StreamedBinaryFileResponse ?
+            $this->streamContent($response) : $this->emulateStreamContent($response);
+
+        yield "0\r\n\r\n";
+    }
+
+    private function streamContent(StreamedBinaryFileResponse $response): \Generator
+    {
+        foreach ($response->streamContent() as $chunk) {
+            yield dechex(strlen($chunk)) . "\r\n" . $chunk . "\r\n";
+        }
+    }
+
+    private function emulateStreamContent(Response $response): \Generator
+    {
         $content = $response->getContent();
-
         if ($content === false) {
             \ob_start();
             $response->sendContent();
@@ -145,16 +158,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         }
 
         if ($content === false || $content === '') {
-            yield "0\r\n\r\n";
-
             return;
         }
 
         foreach (str_split($content, self::CHUNK_SIZE) as $chunk) {
             yield dechex(strlen($chunk)) . "\r\n" . $chunk . "\r\n";
         }
-
-        yield "0\r\n\r\n";
     }
 
     public function shouldCloseConnection(\Workerman\Protocols\Http\Request $request): bool
