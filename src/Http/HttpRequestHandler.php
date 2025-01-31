@@ -17,12 +17,12 @@ use Workerman\Connection\TcpConnection;
 
 final class HttpRequestHandler implements StaticFileHandlerInterface
 {
+    private const CHUNK_SIZE = 4096;
     private ?string $rootDirectory = null;
 
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-        private readonly int                     $chunkSize,
     ) {
     }
 
@@ -57,14 +57,21 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
             (new FinfoMimeTypeDetector())->detectMimeTypeFromPath($file) ?? 'application/octet-stream',
         );
 
-        $response->setChunkSize($this->chunkSize);
+        $response->setChunkSize(self::CHUNK_SIZE);
         $response->prepare($request);
-        $this->prepareHeaders($response, $shouldCloseConnection);
-        $connection->send($response->__toString(), true);
+        $headers = $this->prepareHeaders($response, $shouldCloseConnection);
+        $connection->send(\sprintf(
+            'HTTP/%s %s %s',
+            $response->getProtocolVersion(),
+            $response->getStatusCode(),
+            Response::$statusTexts[$response->getStatusCode()],
+        ) . "\r\n" . $headers . "\r\n", true);
 
         foreach ($response->streamContent() as $chunk) {
-            $connection->send($chunk, true);
+            $connection->send(dechex(strlen((string) $chunk)) . "\r\n" . $chunk . "\r\n", true);
         }
+
+        $connection->send("0\r\n\r\n", true);
 
         if ($shouldCloseConnection) {
             $connection->close();
@@ -106,59 +113,62 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         );
     }
 
-    private function prepareHeaders(Response $response, bool $shouldCloseConnection): void
+    private function prepareHeaders(Response $response, bool $shouldCloseConnection): string
     {
-        if ($response->headers->get('Connection', '') === '') {
-            if ($shouldCloseConnection) {
-                $response->headers->set('Connection', 'close');
-            } else {
-                $response->headers->set('Connection', 'keep-alive');
+        $headers = $response->headers->all();
+
+        if (($headers['connection'][0] ?? '') === '') {
+            $headers['Connection'][0] = $shouldCloseConnection ? 'close' : 'keep-alive';
+        }
+
+        if (($headers['transfer-encoding'][0] ?? '') === '') {
+            $headers['transfer-encoding'][0] = 'chunked';
+        }
+
+        $lines = [];
+        foreach ($headers as $name => $values) {
+            foreach ($values as $value) {
+                $lines[] = "$name: $value";
             }
         }
-
-        if ($response->headers->get('Transfer-Encoding', '') === '' &&
-            $response->headers->get('Content-Length', '') === '') {
-            $length = strlen((string) $response->getContent());
-            $response->headers->set('Content-Length', strval($length));
-        }
-
-        if ($response->headers->get('Server', '') === '') {
-            $response->headers->set('Server', 'workerman');
-        }
+        return implode("\r\n", $lines) . "\r\n";
     }
 
     private function generateResponse(Request $request, Response $response, bool $shouldCloseConnection): \Generator
     {
         $response->prepare($request);
-        $this->prepareHeaders($response, $shouldCloseConnection);
 
-
+        $headers = $this->prepareHeaders($response, $shouldCloseConnection);
         yield \sprintf(
             'HTTP/%s %s %s',
             $response->getProtocolVersion(),
             $response->getStatusCode(),
             Response::$statusTexts[$response->getStatusCode()],
-        ) . "\r\n" . $response->headers->__toString() . "\r\n";
+        ) . "\r\n" . $headers . "\r\n";
 
         $content = $response->getContent();
 
         if ($content === false) {
-            ob_start();
+            \ob_start();
             $response->sendContent();
-            $content = ob_get_clean();
+            $content = \ob_get_clean();
         }
 
         if ($content === false || $content === '') {
+            yield "0\r\n\r\n";
+
             return;
         }
 
-        foreach (str_split($content, max(1, $this->chunkSize)) as $chunk) {
-            yield $chunk;
+        foreach (str_split($content, self::CHUNK_SIZE) as $chunk) {
+            yield dechex(strlen($chunk)) . "\r\n" . $chunk . "\r\n";
         }
+
+        yield "0\r\n\r\n";
     }
 
     public function shouldCloseConnection(\Workerman\Protocols\Http\Request $request): bool
     {
-        return $request->protocolVersion() === '1.0' || $request->header('Connection', '') !== 'keep-alive';
+        return $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
     }
 }
