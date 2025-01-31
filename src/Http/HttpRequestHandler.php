@@ -23,8 +23,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-    )
-    {
+    ) {
     }
 
     public function withRootDirectory(?string $rootDirectory): self
@@ -132,11 +131,11 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     {
         $headers = $this->prepareHeaders($response, $shouldCloseConnection);
         yield \sprintf(
-                'HTTP/%s %s %s',
-                $response->getProtocolVersion(),
-                $response->getStatusCode(),
-                Response::$statusTexts[$response->getStatusCode()],
-            ) . "\r\n" . $headers . "\r\n";
+            'HTTP/%s %s %s',
+            $response->getProtocolVersion(),
+            $response->getStatusCode(),
+            Response::$statusTexts[$response->getStatusCode()],
+        ) . "\r\n" . $headers . "\r\n";
 
         $content = $response->getContent();
 
