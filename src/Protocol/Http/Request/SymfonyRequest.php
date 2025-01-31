@@ -6,17 +6,11 @@ namespace Luzrain\WorkermanBundle\Protocol\Http\Request;
 
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
-use Workerman\Connection\ConnectionInterface;
 
 class SymfonyRequest extends Request
 {
-    private readonly \Workerman\Protocols\Http\Request $rawRequest;
-
-    public ?ConnectionInterface $connection = null;
-
-    public function __construct(string $buffer)
+    public function __construct(private readonly \Workerman\Protocols\Http\Request $rawRequest)
     {
-        $this->rawRequest = new \Workerman\Protocols\Http\Request($buffer);
         $cookies = $this->rawRequest->cookie();
         $query = $this->rawRequest->get();
         $post = $this->rawRequest->post();

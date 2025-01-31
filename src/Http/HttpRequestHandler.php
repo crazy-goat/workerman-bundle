@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Http;
 
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
 use Luzrain\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
 use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Luzrain\WorkermanBundle\Utils;
@@ -14,8 +15,10 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 use Workerman\Connection\TcpConnection;
 
-final class HttpRequestHandler
+final class HttpRequestHandler implements StaticFileHandlerInterface
 {
+    private ?string $rootDirectory = null;
+
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
@@ -23,10 +26,15 @@ final class HttpRequestHandler
     ) {
     }
 
+    public function withRootDirectory(?string $rootDirectory): self
+    {
+        $this->rootDirectory = $rootDirectory !== null ? rtrim($rootDirectory, '/') : null;
+        return $this;
+    }
+
     public function __invoke(
-        TcpConnection $connection,
-        Request       $request,
-        ?string       $rootDirectory = null,
+        TcpConnection                     $connection,
+        \Workerman\Protocols\Http\Request $request,
     ): void {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
@@ -34,10 +42,10 @@ final class HttpRequestHandler
 
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
-        if ($rootDirectory !== null && \is_file($file = $this->getPublicPathFile($request, $rootDirectory))) {
-            $this->createFileResponse($connection, $file, $request, $shouldCloseConnection);
+        if ($this->rootDirectory !== null && \is_file($file = $this->getPublicPathFile($request))) {
+            $this->createFileResponse($connection, $file, new SymfonyRequest($request), $shouldCloseConnection);
         } else {
-            $this->createApplicationResponse($connection, $request, $shouldCloseConnection);
+            $this->createApplicationResponse($connection, new SymfonyRequest($request), $shouldCloseConnection);
         }
     }
 
@@ -89,14 +97,12 @@ final class HttpRequestHandler
         }
     }
 
-    private function getPublicPathFile(Request $request, string $rootDirectory): string
+    private function getPublicPathFile(\Workerman\Protocols\Http\Request $request): string
     {
-        $projectDir = rtrim($rootDirectory, "/");
-
         return str_replace(
             '..',
             '/',
-            "{$projectDir}{$request->getPathInfo()}",
+            "{$this->rootDirectory}{$request->path()}",
         );
     }
 
@@ -126,19 +132,33 @@ final class HttpRequestHandler
         $response->prepare($request);
         $this->prepareHeaders($response, $shouldCloseConnection);
 
-        foreach (str_split($response->__toString(), max(1, $this->chunkSize)) as $chunk) {
-            yield $chunk;
-        }
 
-        if ($response->getContent() === false) {
+        yield \sprintf(
+            'HTTP/%s %s %s',
+            $response->getProtocolVersion(),
+            $response->getStatusCode(),
+            Response::$statusTexts[$response->getStatusCode()],
+        ) . "\r\n" . $response->headers->__toString() . "\r\n";
+
+        $content = $response->getContent();
+
+        if ($content === false) {
             ob_start();
             $response->sendContent();
-            yield (string) ob_get_clean();
+            $content = ob_get_clean();
+        }
+
+        if ($content === false || $content === '') {
+            return;
+        }
+
+        foreach (str_split($content, max(1, $this->chunkSize)) as $chunk) {
+            yield $chunk;
         }
     }
 
-    public function shouldCloseConnection(Request $request): bool
+    public function shouldCloseConnection(\Workerman\Protocols\Http\Request $request): bool
     {
-        return $request->getProtocolVersion() === '1.0' || $request->headers->get('Connection') === 'close';
+        return $request->protocolVersion() === '1.0' || $request->header('Connection', '') !== 'keep-alive';
     }
 }

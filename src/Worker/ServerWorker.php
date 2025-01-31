@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Worker;
 
+use Luzrain\WorkermanBundle\Http\StaticFileHandlerInterface;
 use Luzrain\WorkermanBundle\KernelFactory;
-use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
 use Luzrain\WorkermanBundle\Utils;
-use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http\Request;
 use Workerman\Worker;
 
 final class ServerWorker
@@ -66,13 +64,13 @@ final class ServerWorker
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
-            $worker->onMessage =
-                function (TcpConnection $connection, Request $workermanRequest) use ($rootDir, $kernel): void {
-                    $callable = $kernel->getContainer()->get('workerman.http_request_handler');
-                    assert(is_callable($callable));
+            $callable = $kernel->getContainer()->get('workerman.http_request_handler');
+            assert(is_callable($callable));
+            if ($callable instanceof StaticFileHandlerInterface) {
+                $callable->withRootDirectory($rootDir);
+            }
 
-                    $callable($connection, new SymfonyRequest($workermanRequest->__toString()), $rootDir);
-                };
+            $worker->onMessage = $callable;
         };
     }
 }
