@@ -38,11 +38,17 @@ final class Kernel extends BaseKernel
             $container->loadFromExtension('workerman', [
                 'servers' => [
                     [
-                        'name' => 'Test server',
+                        'name' => 'Test server with files',
                         'listen' => 'http://127.0.0.1:8888',
                         'processes' => 1,
                         'serve_files' => true,
                         'root_dir' => '%kernel.project_dir%/tests/data/',
+                    ],
+                    [
+                        'name' => 'Test server no files',
+                        'listen' => 'http://127.0.0.1:9999',
+                        'processes' => 1,
+                        'serve_files' => false,
                     ],
                 ],
             ]);

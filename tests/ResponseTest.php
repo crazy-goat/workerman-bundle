@@ -37,4 +37,12 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame('Test for serve files option', (string) $response->getBody());
         $this->assertSame(200, $response->getStatusCode());
     }
+
+    public function testNoFileServe(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/readme.txt');
+        $this->assertSame(404, $response->getStatusCode());
+    }
 }
