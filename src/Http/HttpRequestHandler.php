@@ -23,7 +23,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-    ) {
+    )
+    {
     }
 
     public function withRootDirectory(?string $rootDirectory): self
@@ -42,14 +43,38 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
 
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
+        $symfonyRequest = new SymfonyRequest($request);
         if ($this->rootDirectory !== null && \is_file($file = $this->getPublicPathFile($request))) {
-            $this->createFileResponse($connection, $file, new SymfonyRequest($request), $shouldCloseConnection);
-        } else {
-            $this->createApplicationResponse($connection, new SymfonyRequest($request), $shouldCloseConnection);
+            $response = $this->handleFileRequest($file, $symfonyRequest);
+            $this->sendAndClose($connection, $response, $shouldCloseConnection);
+
+            return;
+        }
+
+        $response = $this->handleApplicationRequest($symfonyRequest);
+        $this->sendAndClose($connection, $response, $shouldCloseConnection);
+
+        if ($this->kernel instanceof TerminableInterface) {
+            $this->kernel->terminate($symfonyRequest, $response);
+        }
+
+        if ($this->rebootStrategy->shouldReboot()) {
+            Utils::reboot();
         }
     }
 
-    private function createFileResponse(TcpConnection $connection, string $file, Request $request, bool $shouldCloseConnection): void
+    private function sendAndClose(TcpConnection $connection, Response $response, bool $shouldCloseConnection): void
+    {
+        foreach ($this->generateResponse($response, $shouldCloseConnection) as $chunk) {
+            $connection->send($chunk, true);
+        }
+
+        if ($shouldCloseConnection) {
+            $connection->close();
+        }
+    }
+
+    private function handleFileRequest(string $file, Request $request): Response
     {
         $response = new StreamedBinaryFileResponse($file);
         $response->headers->set(
@@ -59,49 +84,18 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
 
         $response->setChunkSize(self::CHUNK_SIZE);
         $response->prepare($request);
-        $headers = $this->prepareHeaders($response, $shouldCloseConnection);
-        $connection->send(\sprintf(
-            'HTTP/%s %s %s',
-            $response->getProtocolVersion(),
-            $response->getStatusCode(),
-            Response::$statusTexts[$response->getStatusCode()],
-        ) . "\r\n" . $headers . "\r\n", true);
 
-        foreach ($response->streamContent() as $chunk) {
-            $connection->send(dechex(strlen((string) $chunk)) . "\r\n" . $chunk . "\r\n", true);
-        }
-
-        $connection->send("0\r\n\r\n", true);
-
-        if ($shouldCloseConnection) {
-            $connection->close();
-        }
+        return $response;
     }
 
-    private function createApplicationResponse(
-        TcpConnection $connection,
-        Request       $request,
-        bool          $shouldCloseConnection,
-    ): void {
+    private function handleApplicationRequest(Request $request): Response
+    {
         $this->kernel->boot();
 
         $response = $this->kernel->handle($request);
+        $response->prepare($request);
 
-        foreach ($this->generateResponse($request, $response, $shouldCloseConnection) as $chunk) {
-            $connection->send($chunk, true);
-        }
-
-        if ($shouldCloseConnection) {
-            $connection->close();
-        }
-
-        if ($this->kernel instanceof TerminableInterface) {
-            $this->kernel->terminate($request, $response);
-        }
-
-        if ($this->rebootStrategy->shouldReboot()) {
-            Utils::reboot();
-        }
+        return $response;
     }
 
     private function getPublicPathFile(\Workerman\Protocols\Http\Request $request): string
@@ -134,17 +128,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         return implode("\r\n", $lines) . "\r\n";
     }
 
-    private function generateResponse(Request $request, Response $response, bool $shouldCloseConnection): \Generator
+    private function generateResponse(Response $response, bool $shouldCloseConnection): \Generator
     {
-        $response->prepare($request);
-
         $headers = $this->prepareHeaders($response, $shouldCloseConnection);
         yield \sprintf(
-            'HTTP/%s %s %s',
-            $response->getProtocolVersion(),
-            $response->getStatusCode(),
-            Response::$statusTexts[$response->getStatusCode()],
-        ) . "\r\n" . $headers . "\r\n";
+                'HTTP/%s %s %s',
+                $response->getProtocolVersion(),
+                $response->getStatusCode(),
+                Response::$statusTexts[$response->getStatusCode()],
+            ) . "\r\n" . $headers . "\r\n";
 
         $content = $response->getContent();
 
