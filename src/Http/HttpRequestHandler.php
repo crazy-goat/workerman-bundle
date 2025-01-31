@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Luzrain\WorkermanBundle\Http;
 
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
-use Luzrain\WorkermanBundle\Protocol\Http\Request\SymfonyRequest;
+use Luzrain\WorkermanBundle\DTO\RequestConverter;
 use Luzrain\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
 use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Luzrain\WorkermanBundle\Utils;
@@ -39,17 +39,16 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
-
         $shouldCloseConnection = $this->shouldCloseConnection($request);
 
-        $symfonyRequest = new SymfonyRequest($request);
         if ($this->rootDirectory !== null && \is_file($file = $this->getPublicPathFile($request))) {
-            $response = $this->handleFileRequest($file, $symfonyRequest);
+            $response = $this->handleFileRequest($file, RequestConverter::toSymfonyRequest($request));
             $this->sendAndClose($connection, $response, $shouldCloseConnection);
 
             return;
         }
 
+        $symfonyRequest =  RequestConverter::toSymfonyRequest($request);
         $response = $this->handleApplicationRequest($symfonyRequest);
         $this->sendAndClose($connection, $response, $shouldCloseConnection);
 
