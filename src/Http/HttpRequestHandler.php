@@ -23,7 +23,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-    ) {
+    )
+    {
     }
 
     public function withRootDirectory(?string $rootDirectory): self
@@ -35,7 +36,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
     public function __invoke(
         TcpConnection                     $connection,
         \Workerman\Protocols\Http\Request $request,
-    ): void {
+    ): void
+    {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
@@ -48,7 +50,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
             return;
         }
 
-        $symfonyRequest =  RequestConverter::toSymfonyRequest($request);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($request);
         $response = $this->handleApplicationRequest($symfonyRequest);
         $this->sendAndClose($connection, $response, $shouldCloseConnection);
 
@@ -105,35 +107,36 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         );
     }
 
-    private function prepareHeaders(Response $response, bool $shouldCloseConnection): string
+    private function prepareHeaders(Response $response, bool $shouldCloseConnection): \Generator
     {
         $headers = $response->headers->all();
 
         if (($headers['connection'][0] ?? '') === '') {
-            $headers['Connection'][0] = $shouldCloseConnection ? 'close' : 'keep-alive';
+            yield "connection: " . ($shouldCloseConnection ? 'close' : 'keep-alive') . "\r\n";
         }
 
         if (($headers['transfer-encoding'][0] ?? '') === '') {
-            $headers['transfer-encoding'][0] = 'chunked';
+            yield "transfer-encoding: chunked\r\n";
         }
 
-        $lines = [];
         foreach ($headers as $name => $values) {
             foreach ($values as $value) {
-                $lines[] = "$name: $value";
+                yield "$name: $value\r\n";
             }
         }
-        return implode("\r\n", $lines) . "\r\n";
+        yield "\r\n";
     }
 
     private function generateResponse(Response $response, bool $shouldCloseConnection): \Generator
     {
         yield \sprintf(
-            'HTTP/%s %s %s',
-            $response->getProtocolVersion(),
-            $response->getStatusCode(),
-            Response::$statusTexts[$response->getStatusCode()],
-        ) . "\r\n" . $this->prepareHeaders($response, $shouldCloseConnection) . "\r\n";
+                'HTTP/%s %s %s',
+                $response->getProtocolVersion(),
+                $response->getStatusCode(),
+                Response::$statusTexts[$response->getStatusCode()],
+            ) . "\r\n";
+
+        yield from $this->prepareHeaders($response, $shouldCloseConnection);
 
         yield from $response instanceof StreamedBinaryFileResponse ?
             $this->streamContent($response) : $this->emulateStreamContent($response);
