@@ -11,17 +11,14 @@ making your application faster with less (or no) code changes.
 
 ## What new in this fork
 * `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
-* `servers.serve_files` - set to `false` to disable serving file. Use this option for RestAPI projects.
-* `workerman.symfony_native` - By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
-By setting this option to `true`, `workerman-bundle` will create symfony request without psr7. This
-option increase performance, but it is still experimental. 
+* `servers.serve_files` - set to `false` to disable serving file. Use this option for RestAPI projects. Default: `false`
+*  By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
+This `workerman-bundle` will create symfony request without psr7 it increase performance, but it is still experimental. 
 ## Getting started
 ### Install composer packages
 ```bash
 composer require crazy-goat/workerman-bundle
 ```
-
-Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
 
 ### Enable the bundle
 

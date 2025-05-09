@@ -78,7 +78,7 @@ return static function (DefinitionConfigurator $definition): void {
                             ->end()
                         ->booleanNode('serve_files')
                             ->info('Should current worker serve files from public directory')
-                            ->defaultTrue()
+                            ->defaultFalse()
                             ->end()
                         ->scalarNode('root_dir')
                             ->info('Should current worker serve files from public directory')

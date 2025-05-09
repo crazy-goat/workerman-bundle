@@ -58,7 +58,7 @@ final class ServerWorker
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
-            $serveFiles = $serverConfig['serve_files'] ?? true;
+            $serveFiles = $serverConfig['serve_files'] ?? false;
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
 
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
