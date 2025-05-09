@@ -32,7 +32,7 @@ final class SupervisorWorker
             $worker->user = $user ?? '';
             $worker->group = $group ?? '';
             $worker->count = $serviceConfig['processes'] ?? 1;
-            $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serviceId, $serviceConfig, $taskName): void {
+            $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serviceId, $serviceConfig, $taskName): never {
                 $worker->log(sprintf('%s "%s" started', $worker->name, $taskName));
                 $kernel = $kernelFactory->createKernel();
                 $kernel->boot();

@@ -6,4 +6,4 @@ use Luzrain\WorkermanBundle\Test\App\Kernel;
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload_runtime.php';
 
-return fn(array $context) => new Kernel($context['APP_ENV'], (bool) $context['APP_DEBUG']);
+return fn(array $context): Kernel => new Kernel($context['APP_ENV'], (bool) $context['APP_DEBUG']);

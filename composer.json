@@ -1,5 +1,5 @@
 {
-    "name": "s2x/workerman-bundle",
+    "name": "crazygoat/workerman-bundle",
     "description": "Workerman runtime for symfony applications",
     "keywords": ["workerman", "symfony", "runtime", "php-runtime"],
     "homepage": "https://github.com/luzrain/workerman-bundle",
@@ -9,6 +9,10 @@
         {
             "name": "Anton Zenkov",
             "email": "anton.z@live.com"
+        },
+        {
+            "name": "Piotr Halas",
+            "email": "halaspiotr@gmail.com"
         }
     ],
     "require": {
