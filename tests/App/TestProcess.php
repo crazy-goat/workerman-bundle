@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Test\App;
+namespace CrazyGoat\WorkermanBundle\Test\App;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;

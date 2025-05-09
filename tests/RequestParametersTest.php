@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Test;
+namespace CrazyGoat\WorkermanBundle\Test;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;

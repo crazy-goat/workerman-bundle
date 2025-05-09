@@ -2,7 +2,7 @@
     "name": "crazygoat/workerman-bundle",
     "description": "Workerman runtime for symfony applications",
     "keywords": ["workerman", "symfony", "runtime", "php-runtime"],
-    "homepage": "https://github.com/luzrain/workerman-bundle",
+    "homepage": "https://github.com/crazy-goat/workerman-bundle",
     "type": "symfony-bundle",
     "license": "MIT",
     "authors": [
@@ -49,7 +49,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Luzrain\\WorkermanBundle\\Test\\": "tests"
+            "CrazyGoat\\WorkermanBundle\\Test\\": "tests/"
         }
     },
     "config": {
@@ -66,10 +66,14 @@
             "vendor/bin/phpunit",
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
+        "lint-fix": [
+            "vendor/bin/php-cs-fixer fix -v",
+            "vendor/bin/rector process"
+        ],
         "lint": [
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
-            "vendor/bin/rector"
+            "vendor/bin/rector process --dry-run"
         ]
     }
 }
