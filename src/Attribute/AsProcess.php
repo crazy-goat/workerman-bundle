@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Attribute;
+namespace CrazyGoat\WorkermanBundle\Attribute;
 
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final class AsProcess

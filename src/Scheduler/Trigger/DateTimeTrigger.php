@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Scheduler\Trigger;
+namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
 
 final class DateTimeTrigger implements TriggerInterface
 {

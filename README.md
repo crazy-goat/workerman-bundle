@@ -25,13 +25,14 @@ composer require s2x/workerman-bundle:dev-devel nyholm/psr7
 Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
 
 ### Enable the bundle
+
 ```php
 <?php
 // config/bundles.php
 
 return [
     // ...
-    Luzrain\WorkermanBundle\WorkermanBundle::class => ['all' => true],
+    \CrazyGoat\WorkermanBundle\WorkermanBundle::class => ['all' => true],
 ];
 ```
 
@@ -119,7 +120,7 @@ Schedule string can be formatted in several ways:
 ```php
 <?php
 
-use Luzrain\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 
 /**
  * Attribute parameters
@@ -145,7 +146,7 @@ Processes are kept alive and wake up if one of them dies.
 ```php
 <?php
 
-use Luzrain\WorkermanBundle\Attribute\AsProcess;
+use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 
 /**
  * Attribute parameters

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Worker;
+namespace CrazyGoat\WorkermanBundle\Worker;
 
-use Luzrain\WorkermanBundle\KernelFactory;
-use Luzrain\WorkermanBundle\Scheduler\TaskHandler;
-use Luzrain\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
-use Luzrain\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
-use Luzrain\WorkermanBundle\Utils;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
+use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Timer;
 use Workerman\Worker;
 

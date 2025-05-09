@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Reboot\FileMonitorWatcher;
+namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
 use Workerman\Events\EventInterface;
 use Workerman\Timer;

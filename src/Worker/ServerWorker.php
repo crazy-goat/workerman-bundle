@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Worker;
+namespace CrazyGoat\WorkermanBundle\Worker;
 
-use Luzrain\WorkermanBundle\Http\StaticFileHandlerInterface;
-use Luzrain\WorkermanBundle\KernelFactory;
-use Luzrain\WorkermanBundle\Utils;
+use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Worker;
 
 final class ServerWorker

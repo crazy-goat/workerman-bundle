@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Http;
+namespace CrazyGoat\WorkermanBundle\Http;
 
+use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
+use CrazyGoat\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
+use CrazyGoat\WorkermanBundle\Utils;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
-use Luzrain\WorkermanBundle\DTO\RequestConverter;
-use Luzrain\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
-use Luzrain\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
-use Luzrain\WorkermanBundle\Utils;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;

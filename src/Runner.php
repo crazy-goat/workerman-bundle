@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle;
+namespace CrazyGoat\WorkermanBundle;
 
-use Luzrain\WorkermanBundle\Worker\FileMonitorWorker;
-use Luzrain\WorkermanBundle\Worker\SchedulerWorker;
-use Luzrain\WorkermanBundle\Worker\ServerWorker;
-use Luzrain\WorkermanBundle\Worker\SupervisorWorker;
+use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
+use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
+use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
+use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
 use Symfony\Component\Runtime\RunnerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Worker;

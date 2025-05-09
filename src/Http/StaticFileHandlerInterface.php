@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Http;
+namespace CrazyGoat\WorkermanBundle\Http;
 
 interface StaticFileHandlerInterface
 {

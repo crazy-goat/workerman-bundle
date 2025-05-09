@@ -40,7 +40,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Luzrain\\WorkermanBundle\\": "src/"
+            "CrazyGoat\\WorkermanBundle\\": "src/"
         }
     },
     "autoload-dev": {
@@ -57,10 +57,10 @@
     },
     "scripts": {
         "test": [
-            "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
             "sleep 1",
             "vendor/bin/phpunit",
-            "APP_RUNTIME=Luzrain\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
         "lint": [
             "vendor/bin/php-cs-fixer fix -v --dry-run",

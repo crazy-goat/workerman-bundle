@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle;
+namespace CrazyGoat\WorkermanBundle;
 
 use Symfony\Component\Runtime\ResolverInterface;
 use Symfony\Component\Runtime\RunnerInterface;

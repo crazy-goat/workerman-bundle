@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Test\App;
 
-use Luzrain\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 #[AsTask(name: 'Test task', schedule: '1 second')]

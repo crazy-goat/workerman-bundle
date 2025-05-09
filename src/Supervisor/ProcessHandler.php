@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Supervisor;
+namespace CrazyGoat\WorkermanBundle\Supervisor;
 
-use Luzrain\WorkermanBundle\Event\ProcessErrorEvent;
-use Luzrain\WorkermanBundle\Event\ProcessStartEvent;
+use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
+use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 

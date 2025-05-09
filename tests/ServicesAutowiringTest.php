@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Test;
 
-use Luzrain\WorkermanBundle\Http\HttpRequestHandler;
-use Luzrain\WorkermanBundle\Scheduler\TaskHandler;
-use Luzrain\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
 use Psr\Container\ContainerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 

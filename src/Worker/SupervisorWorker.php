@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Worker;
+namespace CrazyGoat\WorkermanBundle\Worker;
 
-use Luzrain\WorkermanBundle\KernelFactory;
-use Luzrain\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
 use Workerman\Worker;
 
 final class SupervisorWorker

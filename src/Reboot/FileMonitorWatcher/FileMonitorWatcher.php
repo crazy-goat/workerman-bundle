@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Reboot\FileMonitorWatcher;
+namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
-use Luzrain\WorkermanBundle\Utils;
+use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Worker;
 
 abstract class FileMonitorWatcher

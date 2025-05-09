@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Event;
+namespace CrazyGoat\WorkermanBundle\Event;
 
 use Symfony\Contracts\EventDispatcher\Event;
 

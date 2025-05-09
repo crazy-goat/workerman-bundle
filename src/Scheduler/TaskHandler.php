@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Scheduler;
+namespace CrazyGoat\WorkermanBundle\Scheduler;
 
-use Luzrain\WorkermanBundle\Event\TaskErrorEvent;
-use Luzrain\WorkermanBundle\Event\TaskStartEvent;
+use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
+use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 

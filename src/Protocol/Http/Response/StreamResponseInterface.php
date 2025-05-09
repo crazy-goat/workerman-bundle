@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Protocol\Http\Response;
+namespace CrazyGoat\WorkermanBundle\Protocol\Http\Response;
 
 interface StreamResponseInterface
 {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Test\App;
 
-use Luzrain\WorkermanBundle\Attribute\AsProcess;
+use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 #[AsProcess(name: 'Test process')]

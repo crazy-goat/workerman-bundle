@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Scheduler;
+namespace CrazyGoat\WorkermanBundle\Scheduler;
 
-use Luzrain\WorkermanBundle\Event\TaskErrorEvent;
+use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 

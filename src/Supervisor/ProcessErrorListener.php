@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Supervisor;
+namespace CrazyGoat\WorkermanBundle\Supervisor;
 
-use Luzrain\WorkermanBundle\Event\ProcessErrorEvent;
+use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 

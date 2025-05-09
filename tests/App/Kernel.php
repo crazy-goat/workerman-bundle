@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Luzrain\WorkermanBundle\Test\App;
 
-use Luzrain\WorkermanBundle\WorkermanBundle;
+use CrazyGoat\WorkermanBundle\WorkermanBundle;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;

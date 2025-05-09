@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use Luzrain\WorkermanBundle\Attribute\AsProcess;
-use Luzrain\WorkermanBundle\Attribute\AsTask;
-use Luzrain\WorkermanBundle\ConfigLoader;
-use Luzrain\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
-use Luzrain\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
-use Luzrain\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
-use Luzrain\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
-use Luzrain\WorkermanBundle\Scheduler\TaskErrorListener;
-use Luzrain\WorkermanBundle\Supervisor\ProcessErrorListener;
+use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
+use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
+use CrazyGoat\WorkermanBundle\Scheduler\TaskErrorListener;
+use CrazyGoat\WorkermanBundle\Supervisor\ProcessErrorListener;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;

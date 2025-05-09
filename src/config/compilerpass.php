@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-use Luzrain\WorkermanBundle\Http\HttpRequestHandler;
-use Luzrain\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
-use Luzrain\WorkermanBundle\Scheduler\TaskHandler;
-use Luzrain\WorkermanBundle\Supervisor\ProcessHandler;
+namespace CrazyGoat\WorkermanBundle\config;
+
+use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
+use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -23,25 +25,21 @@ return new class implements CompilerPassInterface {
         $container
             ->getDefinition('workerman.config_loader')
             ->addMethodCall('setProcessConfig', [$processes])
-            ->addMethodCall('setSchedulerConfig', [$tasks])
-        ;
+            ->addMethodCall('setSchedulerConfig', [$tasks]);
 
         $container
             ->register('workerman.task_locator', ServiceLocator::class)
             ->addTag('container.service_locator')
-            ->setArguments([$this->referenceMap($tasks)])
-        ;
+            ->setArguments([$this->referenceMap($tasks)]);
 
         $container
             ->register('workerman.process_locator', ServiceLocator::class)
             ->addTag('container.service_locator')
-            ->setArguments([$this->referenceMap($processes)])
-        ;
+            ->setArguments([$this->referenceMap($processes)]);
 
         $container
             ->register('workerman.reboot_strategy', StackRebootStrategy::class)
-            ->setArguments([$this->referenceMap($rebootStrategies)])
-        ;
+            ->setArguments([$this->referenceMap($rebootStrategies)]);
 
         $container
             ->register('workerman.http_request_handler', HttpRequestHandler::class)
@@ -50,8 +48,7 @@ return new class implements CompilerPassInterface {
                 new Reference(KernelInterface::class),
                 new Reference('workerman.reboot_strategy'),
                 '%workerman.response_chunk_size%',
-            ])
-        ;
+            ]);
 
         $container
             ->register('workerman.task_handler', TaskHandler::class)
@@ -59,8 +56,7 @@ return new class implements CompilerPassInterface {
             ->setArguments([
                 new Reference('workerman.task_locator'),
                 new Reference(EventDispatcherInterface::class),
-            ])
-        ;
+            ]);
 
         $container
             ->register('workerman.process_handler', ProcessHandler::class)
@@ -68,8 +64,7 @@ return new class implements CompilerPassInterface {
             ->setArguments([
                 new Reference('workerman.process_locator'),
                 new Reference(EventDispatcherInterface::class),
-            ])
-        ;
+            ]);
     }
 
     /**

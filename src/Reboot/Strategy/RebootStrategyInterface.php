@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Luzrain\WorkermanBundle\Reboot\Strategy;
+namespace CrazyGoat\WorkermanBundle\Reboot\Strategy;
 
 interface RebootStrategyInterface
 {
