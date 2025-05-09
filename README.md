@@ -18,7 +18,7 @@ option increase performance, but it is still experimental.
 ## Getting started
 ### Install composer packages
 ```bash
-composer require crazy-goat/workerman-bundle:dev-devel
+composer require crazy-goat/workerman-bundle
 ```
 
 Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
