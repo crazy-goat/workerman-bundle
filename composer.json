@@ -1,5 +1,5 @@
 {
-    "name": "crazygoat/workerman-bundle",
+    "name": "crazy-goat/workerman-bundle",
     "description": "Workerman runtime for symfony applications",
     "keywords": ["workerman", "symfony", "runtime", "php-runtime"],
     "homepage": "https://github.com/crazy-goat/workerman-bundle",
