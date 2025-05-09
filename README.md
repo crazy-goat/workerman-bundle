@@ -18,8 +18,7 @@ option increase performance, but it is still experimental.
 ## Getting started
 ### Install composer packages
 ```bash
-composer config repositories.workerman-bundle vcs https://github.com/s2x/workerman-bundle
-composer require s2x/workerman-bundle:dev-devel nyholm/psr7
+composer require crazy-goat/workerman-bundle:dev-devel
 ```
 
 Note: If you use experimental option `symfony_native` then you don't need to install package `nyholm/psr7` 
@@ -62,7 +61,7 @@ workerman:
 
 ### Start application
 ```bash
-$ APP_RUNTIME=Luzrain\\WorkermanBundle\\Runtime php public/index.php start
+$ APP_RUNTIME=CrazyGoat\\WorkermanBundle\\Runtime php public/index.php start
 ```
 
 \* For better performance, Workerman recommends installing the _php-event_ extension.
@@ -93,7 +92,7 @@ You can create reload strategy with your own logic by implementing the RebootStr
 ```php
 <?php
 
-use Luzrain\WorkermanBundle\Reboot\RebootStrategyInterface;
+use CrazyGoat\WorkermanBundle\Reboot\RebootStrategyInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('workerman.reboot_strategy')]
