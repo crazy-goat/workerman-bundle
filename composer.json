@@ -75,5 +75,12 @@
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run"
         ]
+    },
+    "extra": {
+        "symfony": {
+            "allow-contrib": true,
+            "require": "*",
+            "recipes_dir": "config/recipes/"
+        }
     }
 }

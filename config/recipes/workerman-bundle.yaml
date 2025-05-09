@@ -1,0 +1,16 @@
+workerman:
+  - 'config/packages/workerman.yaml':
+      type: file
+      contents: |
+        workerman:
+          servers:
+            - name: 'Symfony webserver'
+              listen: 'http://0.0.0.0:80'
+              processes: 4
+        
+          reload_strategy:
+            exception:
+              active: true
+        
+            file_monitor:
+              active: true
