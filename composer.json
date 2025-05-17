@@ -35,7 +35,7 @@
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^10.4",
         "rector/rector": "^2.0",
-        "symfony/framework-bundle": "^7.0"
+        "symfony/framework-bundle": "^6.4|^7.0"
     },
     "suggest": {
         "ext-event": "For better performance",
