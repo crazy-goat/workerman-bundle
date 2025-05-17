@@ -1,7 +1,7 @@
 # Workerman runtime for symfony applications
 ![PHP ^8.1](https://img.shields.io/badge/PHP-^8.1-777bb3.svg?style=flat)
 ![Symfony ^6.4|^7.0](https://img.shields.io/badge/Symfony-^6.4|^7.0-374151.svg?style=flat)
-[![Tests Status](https://img.shields.io/github/actions/workflow/status/luzrain/workerman-bundle/tests.yaml?branch=master)](../../actions/workflows/tests.yaml)
+[![Tests Status](https://img.shields.io/github/actions/workflow/status/crazy-goat/workerman-bundle/tests.yaml?branch=master)](../../actions/workflows/tests.yaml)
 
 [Workerman](https://github.com/walkor/workerman) is a high-performance, asynchronous event-driven PHP framework written in pure PHP.  
 This bundle provides a Workerman integration in Symfony, allowing you to easily create a http server, scheduler and supervisor all in one place.
