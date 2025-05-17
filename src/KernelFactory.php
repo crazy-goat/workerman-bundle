@@ -8,42 +8,41 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class KernelFactory
 {
-    private readonly string $projectDir;
-    private readonly string $environment;
-    private readonly bool $isDebug;
+    private ?KernelInterface $kernel = null;
 
     /**
      * @param mixed[] $args
-     * @param mixed[] $options
      */
-    public function __construct(private readonly \Closure $app, private readonly array $args, array $options)
+    public function __construct(private readonly \Closure $app, private readonly array $args)
     {
-        $projectDir = $options['project_dir'];
-        assert(is_string($projectDir));
-
-        $this->projectDir = $projectDir;
-        $this->environment = $_SERVER[$options['env_var_name']];
-        $this->isDebug = (bool) $_SERVER[$options['debug_var_name']];
     }
 
     public function createKernel(): KernelInterface
     {
-        return ($this->app)(...$this->args);
+        if (!$this->kernel instanceof KernelInterface) {
+            $this->kernel = ($this->app)(...$this->args);
+        }
+
+        if (!$this->kernel instanceof KernelInterface) {
+            throw new \RuntimeException('Error creating Kernel instance');
+        }
+
+        return $this->kernel;
     }
 
     public function getEnvironment(): string
     {
-        return $this->environment;
+        return $this->createKernel()->getEnvironment();
     }
 
     public function isDebug(): bool
     {
-        return $this->isDebug;
+        return $this->createKernel()->isDebug();
     }
 
     public function getProjectDir(): string
     {
-        return $this->projectDir;
+        return $this->createKernel()->getProjectDir();
     }
 
     public function getCacheDir(): string
