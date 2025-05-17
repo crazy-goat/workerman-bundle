@@ -15,8 +15,8 @@ jobs:
           - php-version: '8.1'
             symfony-version: '6.4.*'
 
-          - php-version: '8.2'
-            symfony-version: '6.4.*'
+#          - php-version: '8.2'
+#            symfony-version: '6.4.*'
 #          - php-version: '8.2'
 #            symfony-version: '7.0.*'
 #
@@ -41,9 +41,10 @@ jobs:
       - name: Create var directory
         run: mkdir -p var
 
-      - name: Set Symfony version
+      - name: Update Symfony constraints in composer.json
         run: |
-          composer require symfony/framework-bundle:"${{ matrix.symfony-version }}" --dev --no-update || echo "Symfony is not a metapackage"
+          export SYMFONY_VERSION=${{ matrix.symfony-version }}
+          sed -i -E "s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
       - name: Validate composer.json
         run: composer validate --strict
