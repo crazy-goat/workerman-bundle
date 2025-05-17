@@ -67,11 +67,11 @@
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
         "lint-fix": [
-            "vendor/bin/php-cs-fixer fix -v",
+            "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v",
             "vendor/bin/rector process"
         ],
         "lint": [
-            "vendor/bin/php-cs-fixer fix -v --dry-run",
+            "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run"
         ]
