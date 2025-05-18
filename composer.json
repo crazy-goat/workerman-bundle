@@ -30,9 +30,8 @@
     },
     "require-dev": {
         "dragonmantank/cron-expression": "^3.4",
-        "friendsofphp/php-cs-fixer": "^3.35",
         "guzzlehttp/guzzle": "^7.8",
-        "phpstan/phpstan": "^2.0",
+        "php-cs-fixer/shim": "^3.75",
         "phpunit/phpunit": "^10.4",
         "rector/rector": "^2.0",
         "symfony/framework-bundle": "^6.4|^7.0"
@@ -67,7 +66,7 @@
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
         "lint-fix": [
-            "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v",
+            "vendor/bin/php-cs-fixer fix -v",
             "vendor/bin/rector process"
         ],
         "lint": [

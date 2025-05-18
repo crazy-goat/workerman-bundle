@@ -6,7 +6,29 @@ on:
   pull_request:
 
 jobs:
-  run:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Composer Audit
+        run: composer audit
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run code style checks
+        run: composer lint
+
+  tests:
     name: Tests
     runs-on: ubuntu-latest
     strategy:
@@ -55,14 +77,8 @@ jobs:
           export SYMFONY_VERSION=${{ matrix.symfony-version }}
           sed -i -E "s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
-      - name: Validate composer.json
-        run: composer validate --strict
-
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Run code style checks
-        run: composer lint || echo "No lint script defined"
-
       - name: Run tests
-        run: composer test || echo "No test script defined"
+        run: composer test
