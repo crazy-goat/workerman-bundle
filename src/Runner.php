@@ -23,7 +23,7 @@ final class Runner implements RunnerInterface
     {
         $configLoader = new ConfigLoader(
             projectDir: $this->kernelFactory->getProjectDir(),
-            cacheDir: $this->kernelFactory->getCacheDir(),
+            cacheDir: $this->getCacheDir(),
             isDebug: $this->kernelFactory->isDebug(),
         );
 
@@ -104,5 +104,14 @@ final class Runner implements RunnerInterface
         Worker::runAll();
 
         return 0;
+    }
+
+    private function getCacheDir(): string
+    {
+        if (isset($_SERVER['APP_CACHE_DIR'])) {
+            return $_SERVER['APP_CACHE_DIR'].'/'.$this->kernelFactory->getEnvironment();
+        }
+
+        return $this->kernelFactory->getCacheDir();
     }
 }
