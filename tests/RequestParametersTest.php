@@ -55,9 +55,12 @@ final class RequestParametersTest extends KernelTestCase
     public function testCookiesParameters(): void
     {
         $response = $this->createResponse('POST', [
-            'cookies' => CookieJar::fromArray(domain: '127.0.0.1', cookies: [
-                'test-cookie-1' => '94bt5trqjfqe6seo0',
-            ]),
+            'cookies' => CookieJar::fromArray(
+                cookies: [
+                    'test-cookie-1' => '94bt5trqjfqe6seo0',
+                ],
+                domain: '127.0.0.1',
+            ),
         ]);
 
         assertIsArray($response['cookies']);
@@ -70,13 +73,16 @@ final class RequestParametersTest extends KernelTestCase
             'headers' => [
                 'Content-Type' => 'multipart/form-data; boundary=OEZCxUAIiopEcaUw',
             ],
-            'body' => new MultipartStream(boundary: 'OEZCxUAIiopEcaUw', elements: [
-                [
-                    'name' => 'test-file-1',
-                    'filename' => 'test1.txt',
-                    'contents' => 'b8owxkeuhjeq3kqz7kx610uewmcwygap',
+            'body' => new MultipartStream(
+                elements: [
+                    [
+                        'name' => 'test-file-1',
+                        'filename' => 'test1.txt',
+                        'contents' => 'b8owxkeuhjeq3kqz7kx610uewmcwygap',
+                    ],
                 ],
-            ]),
+                boundary: 'OEZCxUAIiopEcaUw',
+            ),
         ]);
 
         assertIsArray($response['files']);

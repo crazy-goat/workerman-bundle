@@ -109,7 +109,7 @@ final class Runner implements RunnerInterface
     private function getCacheDir(): string
     {
         if (isset($_SERVER['APP_CACHE_DIR'])) {
-            return $_SERVER['APP_CACHE_DIR'].'/'.$this->kernelFactory->getEnvironment();
+            return $_SERVER['APP_CACHE_DIR'] . '/' . $this->kernelFactory->getEnvironment();
         }
 
         return $this->kernelFactory->getCacheDir();
