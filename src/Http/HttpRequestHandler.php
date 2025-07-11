@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http;
 
+use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
@@ -14,6 +15,9 @@ use Workerman\Protocols\Http;
 
 final class HttpRequestHandler implements StaticFileHandlerInterface
 {
+    /**
+     * @param array<MiddlewareInterface> $middlewares
+     */
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,

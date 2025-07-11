@@ -24,7 +24,7 @@ class SymfonyController
         $symfonyResponse = $this->kernel->handle($symfonyRequest);
         $symfonyResponse->prepare($symfonyRequest);
 
-        $response = new Response($symfonyResponse->getStatusCode(), $symfonyResponse->headers->all(), $symfonyResponse->getContent());
+        $response = new Response($symfonyResponse->getStatusCode(), $symfonyResponse->headers->all(), strval($symfonyResponse->getContent()));
 
         if ($this->kernel instanceof TerminableInterface) {
             $this->kernel->terminate($symfonyRequest, $symfonyResponse);
