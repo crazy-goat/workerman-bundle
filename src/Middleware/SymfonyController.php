@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Middleware;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
+use CrazyGoat\WorkermanBundle\Http\Request;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
-use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 
 class SymfonyController

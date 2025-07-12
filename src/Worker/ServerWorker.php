@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Worker;
 
+use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
+use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Utils;
+use Workerman\Protocols\Http;
 use Workerman\Worker;
 
 final class ServerWorker
@@ -58,6 +62,8 @@ final class ServerWorker
         $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
+            Http::requestClass(Request::class);
+
             $serveFiles = $serverConfig['serve_files'] ?? false;
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
 
@@ -65,11 +71,20 @@ final class ServerWorker
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $callable = $kernel->getContainer()->get('workerman.http_request_handler');
+            $middlewares = array_map(function (string $middleware) use ($kernel): MiddlewareInterface {
+                $service = $kernel->getContainer()->get($middleware);
+                if (!$service instanceof MiddlewareInterface) {
+                    throw new \InvalidArgumentException(sprintf('Service "%s" must implement "%s"', $middleware, MiddlewareInterface::class));
+                }
+                return $service;
+            }, $serverConfig['middlewares'] ?? []);
             assert(is_callable($callable));
             if ($callable instanceof StaticFileHandlerInterface) {
                 $callable->withRootDirectory($rootDir);
             }
-
+            if ($callable instanceof MiddlewareDispatchInterface && $middlewares !== []) {
+                $callable->withMiddlewares(...$middlewares);
+            }
             $worker->onMessage = $callable;
         };
     }

@@ -13,16 +13,24 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 
-final class HttpRequestHandler implements StaticFileHandlerInterface
+final class HttpRequestHandler implements StaticFileHandlerInterface, MiddlewareDispatchInterface
 {
+    /** @var MiddlewareInterface[] */
+    private array $middlewares = [];
+
     /**
-     * @param array<MiddlewareInterface> $middlewares
      */
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
-        private array $middlewares = [],
     ) {
+    }
+
+    public function withMiddlewares(MiddlewareInterface ...$middlewares): self
+    {
+        $this->middlewares = $middlewares;
+
+        return $this;
     }
 
     public function withRootDirectory(?string $rootDirectory): self
@@ -34,7 +42,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
         return $this;
     }
 
-    public function __invoke(TcpConnection $connection, Http\Request  $request): void
+    public function __invoke(TcpConnection $connection, Request $request): void
     {
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
@@ -43,7 +51,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface
 
         $next = new SymfonyController($this->kernel);
         foreach (array_reverse($this->middlewares) as $middleware) {
-            $next = fn(Http\Request $input): Http\Response => $middleware($request, $next);
+            $next = fn(Request $input): Http\Response => $middleware($request, $next);
         }
 
         $response = $next($request);

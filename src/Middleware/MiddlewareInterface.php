@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Middleware;
 
-use Workerman\Protocols\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Request;
 use Workerman\Protocols\Http\Response;
 
 interface MiddlewareInterface
