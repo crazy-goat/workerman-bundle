@@ -17,6 +17,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 {
     /** @var MiddlewareInterface[] */
     private array $middlewares = [];
+    private readonly SymfonyController $controller;
 
     /**
      */
@@ -24,6 +25,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
     ) {
+        $this->controller = new SymfonyController($this->kernel);
     }
 
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self
@@ -47,32 +49,23 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         if (PHP_VERSION_ID >= 80200) {
             \memory_reset_peak_usage();
         }
-        $shouldCloseConnection = $this->shouldCloseConnection($request);
+        $shouldCloseConnection = $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
 
-        $next = new SymfonyController($this->kernel);
+        $next = $this->controller;
         foreach (array_reverse($this->middlewares) as $middleware) {
             $next = fn(Request $input): Http\Response => $middleware($request, $next);
         }
 
         $response = $next($request);
-        $this->sendAndClose($connection, $response, $shouldCloseConnection);
 
-        if ($this->rebootStrategy->shouldReboot()) {
-            Utils::reboot();
-        }
-    }
-
-    private function sendAndClose(TcpConnection $connection, Http\Response $response, bool $shouldCloseConnection): void
-    {
         $connection->send(Http::encode($response, $connection), true);
 
         if ($shouldCloseConnection) {
             $connection->close();
         }
-    }
 
-    public function shouldCloseConnection(Http\Request $request): bool
-    {
-        return $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
+        if ($this->rebootStrategy->shouldReboot()) {
+            Utils::reboot();
+        }
     }
 }
