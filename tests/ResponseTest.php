@@ -45,4 +45,15 @@ final class ResponseTest extends KernelTestCase
         $response = $client->request('GET', 'http://127.0.0.1:9999/readme.txt');
         $this->assertSame(404, $response->getStatusCode());
     }
+
+    public function testContentTypeJsonResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_json');
+        $this->assertSame(200, $response->getStatusCode());
+
+        self::assertTrue($response->hasHeader('Content-Type'));
+        self::assertSame('application/json', $response->getHeaderLine('content-type'));
+    }
 }
