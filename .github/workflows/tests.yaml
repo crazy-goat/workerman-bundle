@@ -17,11 +17,11 @@ jobs:
       - name: Validate composer.json
         run: composer validate --strict
 
-      - name: Composer Audit
-        run: composer audit
-
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
+
+      - name: Composer Audit
+        run: composer audit
 
       - name: Run code style checks
         run: composer lint
@@ -60,6 +60,25 @@ jobs:
             symfony-version: '7.2.*'
           - php-version: '8.4'
             symfony-version: '7.3.*'
+          - php-version: '8.4'
+            symfony-version: '7.4.*'
+          - php-version: '8.4'
+            symfony-version: '8.0.*'
+
+          - php-version: '8.5'
+            symfony-version: '6.4.*'
+          - php-version: '8.5'
+            symfony-version: '7.0.*'
+          - php-version: '8.5'
+            symfony-version: '7.1.*'
+          - php-version: '8.5'
+            symfony-version: '7.2.*'
+          - php-version: '8.5'
+            symfony-version: '7.3.*'
+          - php-version: '8.5'
+            symfony-version: '7.4.*'
+          - php-version: '8.5'
+            symfony-version: '8.0.*'
 
     steps:
       - name: Checkout
