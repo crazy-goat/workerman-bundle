@@ -9,7 +9,6 @@ use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use CrazyGoat\WorkermanBundle\Utils;
-use Workerman\Timer;
 use Workerman\Worker;
 
 final class SchedulerWorker
@@ -70,7 +69,7 @@ final class SchedulerWorker
         $nextRunDate = $trigger->getNextRunDate($currentDate);
         if ($nextRunDate instanceof \DateTimeImmutable) {
             $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
-            Timer::add($interval, $this->runCallback(...), [$trigger, $service, $taskName], false);
+            $this->worker::$globalEvent?->delay($interval, fn() => $this->runCallback($trigger, $service, $taskName));
         }
     }
 
@@ -90,7 +89,7 @@ final class SchedulerWorker
             $this->scheduleCallback($trigger, $service, $taskName);
         } else {
             // Child process start
-            Timer::delAll();
+            $this->worker::$globalEvent?->deleteAllTimer();
             $title = str_replace(self::PROCESS_TITLE, sprintf('%s "%s"', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
             cli_set_process_title($title);
             $this->saveTaskPid($service);

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
 use Workerman\Events\EventInterface;
-use Workerman\Timer;
 use Workerman\Worker;
 
 final class InotifyMonitorWatcher extends FileMonitorWatcher
@@ -73,7 +72,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                     $this->reboot();
                 };
 
-                Timer::add(self::REBOOT_DELAY, $this->rebootCallback, [], false);
+                $this->worker::$globalEvent?->delay(self::REBOOT_DELAY, $this->rebootCallback);
 
                 return;
             }
