@@ -58,6 +58,10 @@
     },
     "config": {
         "sort-packages": true,
+        "audit": {
+            "block-insecure": false,
+            "abandoned": "ignore"
+        },
         "allow-plugins": {
             "symfony/runtime": true,
             "phpstan/extension-installer": true
