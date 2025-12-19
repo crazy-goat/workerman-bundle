@@ -7,10 +7,10 @@ $finder = PhpCsFixer\Finder::create()
 
 $rules = [
     // Rules that follow PSR-12 standard.
-    '@PER-CS2.0' => true,
+    '@PER-CS2x0' => true,
 
     // Rules that follow PSR-12 standard. This set contains rules that are risky.
-    '@PER-CS2.0:risky' => true,
+    '@PER-CS2x0:risky' => true,
 
     // PHP arrays should be declared using the short syntax.
     'array_syntax' => ['syntax' => 'short'],

@@ -7,13 +7,12 @@ namespace CrazyGoat\WorkermanBundle\Test\App;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 final class RequestTestController extends AbstractController
 {
     #[Route('/request_test', name: 'app_request_test')]
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request): \Symfony\Component\HttpFoundation\JsonResponse
     {
         return $this->json([
             'headers' => $request->headers->all(),
