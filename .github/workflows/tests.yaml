@@ -17,6 +17,9 @@ jobs:
       - name: Validate composer.json
         run: composer validate --strict
 
+      - name: Composer Audit
+        run: composer audit
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
