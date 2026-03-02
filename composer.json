@@ -82,6 +82,12 @@
             "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run"
+        ],
+        "post-install-cmd": [
+            "cp src/command/WorkermanCommand.php src/Command/"
+        ],
+        "post-update-cmd": [
+            "cp src/command/WorkermanCommand.php src/Command/"
         ]
     }
 }
