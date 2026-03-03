@@ -27,22 +27,25 @@ class WorkermanCommand extends Command
     {
         $this->addArgument('action', InputArgument::REQUIRED, 'Action: start|stop|restart|reload|status|connections')
             ->addOption('daemon', 'd', InputOption::VALUE_NONE, 'Run in daemon mode')
+            ->addOption('grace', 'g', InputOption::VALUE_NONE, 'Gracefully operate')
         ;
     }
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
         $action = $input->getArgument('action');
+        $cmd = sprintf('%s %s %s', $this->runtime, $this->phpCmd, $action);
         if ($input->getOption('daemon')) {
-            $cmd = sprintf('%s %s %s -d > /dev/null 2>&1 &', $this->runtime, $this->phpCmd, $action);
-        } else {
-            $cmd = sprintf('%s %s %s', $this->runtime, $this->phpCmd, $action);
+            $cmd .= ' -d';
+        }
+        if ($input->getOption('grace')) {
+            $cmd .= ' -g';
         }
         passthru($cmd, $returnCode);
         if ($returnCode !== 0) {
             $io->error(sprintf("Failed to execute cmd %s with exit code %s \n", $cmd, $returnCode,));
         }
-        $io->success(sprintf("Workerman Http Server started. \n"));
+        $io->success(sprintf("Workerman Http Server $action success. \n"));
         return Command::SUCCESS;
     }
 }
