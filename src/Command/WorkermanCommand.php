@@ -13,8 +13,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'workerman', description: 'cmd for workerman bundle')]
 class WorkermanCommand extends Command
 {
-    protected $pidFile = 'var/run/workerman.pid';
-    protected $channelName = 'Workerman';
     private string $runtime;
     private string $phpCmd;
 
@@ -28,7 +26,7 @@ class WorkermanCommand extends Command
     protected function configure(): void
     {
         $this->addArgument('action', InputArgument::REQUIRED, 'Action: start|stop|restart|reload|status|connections')
-            ->addOption('daemon', 'd', InputOption::VALUE_NONE, '-d Run in daemon mode')
+            ->addOption('daemon', 'd', InputOption::VALUE_NONE, 'Run in daemon mode')
         ;
     }
     protected function execute(InputInterface $input, OutputInterface $output): int
