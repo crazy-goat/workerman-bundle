@@ -90,7 +90,7 @@ final class SchedulerWorker
         } else {
             // Child process start
             $this->worker::$globalEvent?->deleteAllTimer();
-            $title = str_replace(self::PROCESS_TITLE, sprintf('%s "%s"', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
+            $title = str_replace(self::PROCESS_TITLE, sprintf('%s %s', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
             cli_set_process_title($title);
             $this->saveTaskPid($service);
             ($this->handler)($service, $taskName);
