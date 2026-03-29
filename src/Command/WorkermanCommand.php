@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Command;
+namespace CrazyGoat\WorkermanBundle\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -34,6 +34,10 @@ class WorkermanCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $action = $input->getArgument('action');
+        if (!in_array($action, ['start', 'stop', 'restart', 'reload', 'status', 'connections'])) {
+            $io->error(sprintf("Invalid action %s \n", $action));
+            return Command::FAILURE;
+        }
         $cmd = sprintf('%s %s %s', $this->runtime, $this->phpCmd, $action);
         if ($input->getOption('daemon')) {
             $cmd .= ' -d';
@@ -44,8 +48,10 @@ class WorkermanCommand extends Command
         passthru($cmd, $returnCode);
         if ($returnCode !== 0) {
             $io->error(sprintf("Failed to execute cmd %s with exit code %s \n", $cmd, $returnCode,));
+            return Command::FAILURE;
+        } else {
+            $io->success(sprintf("Workerman Http Server $action success. \n"));
+            return Command::SUCCESS;
         }
-        $io->success(sprintf("Workerman Http Server $action success. \n"));
-        return Command::SUCCESS;
     }
 }
