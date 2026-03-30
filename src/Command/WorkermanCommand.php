@@ -25,7 +25,7 @@ class WorkermanCommand extends Command
 
     protected function configure(): void
     {
-        $this->addArgument('action', InputArgument::REQUIRED, 'Action: start|stop|restart|reload|status|connections')
+        $this->addArgument('action', InputArgument::REQUIRED, 'Action: start|stop|restart|reload|status|connections', suggestedValues: ['start', 'stop', 'restart', 'reload', 'status', 'connections'])
             ->addOption('daemon', 'd', InputOption::VALUE_NONE, 'Run in daemon mode')
             ->addOption('grace', 'g', InputOption::VALUE_NONE, 'Gracefully operate')
         ;
