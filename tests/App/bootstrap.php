@@ -26,6 +26,6 @@ function workerman_start(): void
 
 function workerman_stop(): void
 {
-    \shell_exec(\workerman_create_console_command('stop'));
+    \shell_exec(\workerman_create_command('stop'));
     @unlink(__DIR__ . '/../../var/task_status.log');
 }

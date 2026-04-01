@@ -33,7 +33,8 @@ class WorkermanCommand extends Command
             'action',
             InputArgument::REQUIRED,
             'Action: ' . implode('|', self::ALLOWED_ACTIONS),
-            suggestedValues: self::ALLOWED_ACTIONS,
+            null,
+            self::ALLOWED_ACTIONS,
         )
             ->addOption('daemon', 'd', InputOption::VALUE_NONE, 'Run in daemon mode')
             ->addOption('grace', 'g', InputOption::VALUE_NONE, 'Gracefully operate')
