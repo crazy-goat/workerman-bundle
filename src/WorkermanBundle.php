@@ -8,18 +8,9 @@ use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
-use Symfony\Component\Console\Application;
-use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 
 final class WorkermanBundle extends AbstractBundle
 {
-
-    public function registerCommands(Application $application): void
-    {
-        parent::registerCommands($application);
-        $application->addCommand(new WorkermanCommand());
-    }
-
     public function configure(DefinitionConfigurator $definition): void
     {
         $configurator = require __DIR__ . '/config/configuration.php';

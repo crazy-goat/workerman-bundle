@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
@@ -109,4 +110,10 @@ return static function (array $config, ContainerBuilder $container): void {
             ])
         ;
     }
+
+    $container
+        ->register(WorkermanCommand::class)
+        ->addTag('console.command')
+        ->setAutowired(true)
+    ;
 };

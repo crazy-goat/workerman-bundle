@@ -1,0 +1,17 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use CrazyGoat\WorkermanBundle\Test\App\Kernel;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\ConsoleOutput;
+
+require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
+
+$kernel = new Kernel('test', true);
+$kernel->boot();
+
+$application = new Application($kernel);
+$application->run(new ArgvInput(), new ConsoleOutput());

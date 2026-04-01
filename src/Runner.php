@@ -62,6 +62,7 @@ final class Runner implements RunnerInterface
         Worker::$logFile = $logFile;
         Worker::$stdoutFile = $stdoutFile;
         Worker::$stopTimeout = $stopTimeout;
+        Worker::$statusFile = (string) preg_replace('/\.pid$/', '.status', $pidFile);
         Worker::$onMasterReload = Utils::clearOpcache(...);
 
         assert(is_array($config['servers']));
