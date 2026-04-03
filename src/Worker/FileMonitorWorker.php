@@ -9,7 +9,7 @@ use Workerman\Worker;
 
 final readonly class FileMonitorWorker
 {
-    public const PROCESS_TITLE = '[FileMonitor]';
+    private const PROCESS_TITLE = '[FileMonitor]';
 
     /**
      * @param string[] $sourceDir
