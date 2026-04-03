@@ -101,4 +101,34 @@ final class JitterTriggerTest extends TestCase
         $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun);
         $this->assertEquals($innerNextRun->getTimestamp(), $jitterNextRun->getTimestamp());
     }
+
+    public function testJitterWithSeededRandomizer(): void
+    {
+        $engine = new \Random\Engine\Xoshiro256StarStar(12345);
+        $randomizer = new \Random\Randomizer($engine);
+        $innerTrigger = new PeriodicalTrigger(60);
+        $jitterTrigger = new JitterTrigger($innerTrigger, 10, $randomizer);
+        $now = new \DateTimeImmutable('2024-01-15 12:00:00');
+
+        $innerNextRun = $innerTrigger->getNextRunDate($now);
+        $jitterNextRun = $jitterTrigger->getNextRunDate($now);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $innerNextRun);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun);
+
+        /** @var \DateTimeImmutable $innerNextRun */
+        /** @var \DateTimeImmutable $jitterNextRun */
+
+        // With seeded randomizer, we get deterministic results
+        // First value from this seed is 0 seconds
+        $expectedTimestamp = $innerNextRun->getTimestamp();
+        $this->assertSame($expectedTimestamp, $jitterNextRun->getTimestamp());
+
+        // Second call should also be deterministic (next value from the sequence is 10)
+        $jitterNextRun2 = $jitterTrigger->getNextRunDate($now);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun2);
+        /** @var \DateTimeImmutable $jitterNextRun2 */
+        $expectedTimestamp2 = $innerNextRun->getTimestamp() + 10;
+        $this->assertSame($expectedTimestamp2, $jitterNextRun2->getTimestamp());
+    }
 }
