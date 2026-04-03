@@ -27,6 +27,10 @@ class StaticFilesMiddlewareTest extends TestCase
         if (file_exists($this->rootDirectory . '/test.txt')) {
             unlink($this->rootDirectory . '/test.txt');
         }
+        // Clean up the test directory
+        if (is_dir($this->rootDirectory)) {
+            rmdir($this->rootDirectory);
+        }
     }
 
     /**
@@ -56,6 +60,11 @@ class StaticFilesMiddlewareTest extends TestCase
             'classic path traversal' => ['../../../etc/passwd'],
             'pattern with dots and slashes' => ['....//etc/passwd'],
             'multiple dot combinations' => ['....//....//etc/passwd'],
+            // Note: URL-encoded payloads test defense-in-depth.
+            // Workerman\Request::path() returns the raw path without URL-decoding,
+            // so realpath() receives literal strings like '%2e%2e%2f...'.
+            // These tests ensure that even if URL-decoding happened elsewhere,
+            // the path traversal protection remains effective.
             'url encoded dots' => ['%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd'],
             'double url encoded' => ['%252e%252e%252f%252e%252e%252f%252e%252e%252fetc%252fpasswd'],
             'path traversal in middle' => ['test.txt/../../../etc/passwd'],

@@ -9,8 +9,17 @@ use Workerman\Protocols\Http\Response;
 
 class StaticFilesMiddleware implements MiddlewareInterface
 {
+    private readonly string $rootRealPath;
+
     public function __construct(private readonly string $rootDirectory)
     {
+        $resolved = realpath($rootDirectory);
+        if ($resolved === false) {
+            throw new \InvalidArgumentException(
+                sprintf('Root directory does not exist: %s', $rootDirectory)
+            );
+        }
+        $this->rootRealPath = $resolved;
     }
 
     public function __invoke(Request $request, callable $next): Response
@@ -26,13 +35,12 @@ class StaticFilesMiddleware implements MiddlewareInterface
     private function getPublicPathFile(Request $request): string|false
     {
         $resolved = realpath($this->rootDirectory . $request->path());
-        $rootRealPath = realpath($this->rootDirectory);
         
-        if ($resolved === false || $rootRealPath === false) {
+        if ($resolved === false) {
             return false;
         }
         
-        if (!str_starts_with($resolved, $rootRealPath . DIRECTORY_SEPARATOR)) {
+        if (!str_starts_with($resolved, $this->rootRealPath . DIRECTORY_SEPARATOR)) {
             return false;
         }
         
