@@ -15,7 +15,7 @@ use Workerman\Worker;
 
 final readonly class ServerWorker
 {
-    protected const PROCESS_TITLE = '[Server]';
+    private const PROCESS_TITLE = '[Server]';
 
     /**
      * @param mixed[] $serverConfig
