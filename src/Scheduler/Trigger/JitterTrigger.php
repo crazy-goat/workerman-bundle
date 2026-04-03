@@ -12,7 +12,7 @@ final readonly class JitterTrigger implements TriggerInterface
     public function __construct(
         private TriggerInterface $trigger,
         private int $maxSeconds,
-        private readonly \Random\Randomizer $randomizer = new \Random\Randomizer(),
+        private \Random\Randomizer $randomizer = new \Random\Randomizer(),
     ) {
     }
 

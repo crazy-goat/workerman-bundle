@@ -121,7 +121,7 @@ final class JitterTriggerTest extends TestCase
 
         // With seeded randomizer, we get deterministic results
         // First value from this seed is 0 seconds
-        $expectedTimestamp = $innerNextRun->getTimestamp() + 0;
+        $expectedTimestamp = $innerNextRun->getTimestamp();
         $this->assertSame($expectedTimestamp, $jitterNextRun->getTimestamp());
 
         // Second call should also be deterministic (next value from the sequence is 10)
