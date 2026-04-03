@@ -84,6 +84,8 @@ $ bin/console workerman:server connections # show active connections
 
 \* For better performance, Workerman recommends installing the _php-event_ extension.
 
+> **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The grpc extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details.
+
 ## Reload strategies
 Because of the asynchronous nature of the server, the workers reuse loaded resources on each request. This means that in some cases we need to restart workers.  
 For example, after an exception is thrown, to prevent services from being in an unrecoverable state. Or every time you change the code in the IDE.  

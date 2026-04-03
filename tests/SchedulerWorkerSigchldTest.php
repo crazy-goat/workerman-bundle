@@ -8,100 +8,142 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for SIGCHLD signal handling in SchedulerWorker.
- * 
+ *
  * Issue #41: Ignored SIGCHLD Prevents Crash Detection
- * 
- * Previously, SIGCHLD was set to SIG_IGN which prevented detecting
- * child process exit codes. This test verifies the fix is in place.
+ *
+ * Behavioral tests run in isolated PHP processes (via proc_open) to avoid
+ * inheriting PHPUnit's output buffers and shutdown functions, which interfere
+ * with pcntl_fork() + exit() behavior.
+ *
+ * The structural test verifies the SchedulerWorker source code uses the
+ * correct signal handling pattern as a regression safety net.
  */
 final class SchedulerWorkerSigchldTest extends TestCase
 {
+    private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/sigchld_test_runner.php';
+
     /**
-     * Test that the SIGCHLD handler code pattern exists in SchedulerWorker.
-     * This verifies the implementation of issue #41 fix.
+     * Test that the SIGCHLD handler detects a child exiting with non-zero code.
      */
-    public function testSigchldHandlerIsImplemented(): void
+    public function testSigchldHandlerDetectsNonZeroExitCode(): void
+    {
+        $this->runIsolatedTest('nonzero_exit');
+    }
+
+    /**
+     * Test that a child exiting with code 0 does NOT produce a warning log.
+     */
+    public function testSigchldHandlerIgnoresZeroExitCode(): void
+    {
+        $this->runIsolatedTest('zero_exit');
+    }
+
+    /**
+     * Test that a child killed by a signal is detected via pcntl_wifsignaled.
+     * This is the primary scenario Issue #41 aims to detect (SIGSEGV, SIGKILL, OOM).
+     */
+    public function testSigchldHandlerDetectsSignalKilledChild(): void
+    {
+        $this->runIsolatedTest('signal_kill');
+    }
+
+    /**
+     * Test that multiple simultaneous child terminations are all reaped.
+     */
+    public function testSigchldHandlerReapsMultipleChildren(): void
+    {
+        $this->runIsolatedTest('multiple_children');
+    }
+
+    /**
+     * Structural test: verify SchedulerWorker source uses correct signal pattern.
+     * This is a regression safety net — if someone reverts to SIG_IGN or removes
+     * pcntl_wifsignaled, this test catches it immediately.
+     */
+    public function testSchedulerWorkerUsesCorrectSignalPattern(): void
     {
         $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
-        $this->assertFileExists($sourceFile, 'SchedulerWorker.php should exist');
-        
+        $this->assertFileExists($sourceFile);
+
         $content = file_get_contents($sourceFile);
-        
-        // Verify that SIG_IGN is NOT used (this was the bug)
+        $this->assertNotFalse($content);
+
         $this->assertStringNotContainsString(
             'pcntl_signal(SIGCHLD, SIG_IGN)',
             $content,
-            'SIGCHLD should not be ignored (SIG_IGN) - this prevents crash detection'
+            'SIGCHLD must not be ignored — this was the original bug (Issue #41)',
         );
-        
-        // Verify that a proper callback handler is used instead
-        $this->assertMatchesRegularExpression(
-            '/pcntl_signal\s*\(\s*SIGCHLD\s*,\s*(?:function|fn|\\Closure)/',
-            $content,
-            'SIGCHLD should have a proper callback handler'
-        );
-        
-        // Verify that pcntl_waitpid is used (for reaping children)
+
         $this->assertStringContainsString(
-            'pcntl_waitpid',
+            'pcntl_wifsignaled',
             $content,
-            'pcntl_waitpid should be used to reap child processes'
+            'Handler must detect signal-killed child processes',
         );
-        
-        // Verify that WNOHANG flag is used (to prevent blocking)
+
         $this->assertStringContainsString(
-            'WNOHANG',
+            'pcntl_wifexited',
             $content,
-            'WNOHANG flag should be used to prevent blocking in signal handler'
-        );
-        
-        // Verify that exit codes are checked
-        $this->assertStringContainsString(
-            'pcntl_wexitstatus',
-            $content,
-            'pcntl_wexitstatus should be used to get exit codes'
-        );
-        
-        // Verify that non-zero exit codes are logged as warnings
-        $this->assertStringContainsString(
-            "'warning'",
-            $content,
-            'Non-zero exit codes should be logged with warning level'
-        );
-        
-        // Verify the log message format includes exit code
-        $this->assertStringContainsString(
-            'exited with code',
-            $content,
-            'Log message should include exit code information'
+            'Handler must check if child exited normally before reading exit code',
         );
     }
-    
+
     /**
-     * Test that the handler uses a while loop to reap all children.
-     * This is important when multiple children terminate simultaneously.
+     * Run a SIGCHLD test in an isolated PHP process to avoid PHPUnit
+     * state inheritance issues with pcntl_fork().
+     *
+     * Uses `php -n` (no php.ini) to prevent the grpc extension from loading.
+     * The grpc extension's shutdown handler deadlocks in forked child processes,
+     * making exit() hang indefinitely. Only the posix extension is loaded
+     * explicitly (pcntl is statically compiled).
      */
-    public function testHandlerReapsAllChildrenInLoop(): void
+    private function runIsolatedTest(string $testName): void
     {
-        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
-        $content = file_get_contents($sourceFile);
-        
-        // Extract the SIGCHLD handler function
-        preg_match(
-            '/pcntl_signal\s*\(\s*SIGCHLD\s*,\s*(?:function|fn)\s*\([^)]*\)(?:\s*:\s*void)?\s*\{([^}]+)\}/s',
-            $content,
-            $matches
+        $this->assertFileExists(self::RUNNER_SCRIPT, 'Test runner script must exist');
+
+        $descriptors = [
+            0 => ['pipe', 'r'],  // stdin
+            1 => ['pipe', 'w'],  // stdout
+            2 => ['pipe', 'w'],  // stderr
+        ];
+
+        $extensionDir = ini_get('extension_dir');
+
+        $process = proc_open(
+            [
+                PHP_BINARY,
+                '-n',
+                '-d', 'extension_dir=' . $extensionDir,
+                '-d', 'extension=posix',
+                self::RUNNER_SCRIPT,
+                $testName,
+            ],
+            $descriptors,
+            $pipes,
         );
-        
-        $this->assertNotEmpty($matches, 'Should find SIGCHLD handler function');
-        
-        $handlerBody = $matches[1];
-        
-        // Verify while loop is used (not just if)
-        $this->assertMatchesRegularExpression(
-            '/while\s*\(\s*\(\$pid\s*=\s*pcntl_waitpid/',
-            $handlerBody,
-            'Handler should use while loop to reap all terminated children'
+
+        $this->assertIsResource($process, 'Failed to start isolated test process');
+
+        fclose($pipes[0]);
+
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+
+        $this->assertSame(
+            0,
+            $exitCode,
+            sprintf(
+                "Isolated test '%s' failed (exit code %d):\nstdout: %s\nstderr: %s",
+                $testName,
+                $exitCode,
+                $stdout,
+                $stderr,
+            ),
         );
+
+        $this->assertStringContainsString('PASS', $stdout);
     }
 }
