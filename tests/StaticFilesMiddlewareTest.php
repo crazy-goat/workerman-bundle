@@ -86,7 +86,7 @@ class StaticFilesMiddlewareTest extends TestCase
             return new Response(404);
         };
 
-        $response = $middleware($request, $next);
+        $middleware($request, $next);
 
         // Next should NOT be called (file should be served)
         $this->assertFalse($called, "Next should not be called for valid file");
@@ -113,7 +113,6 @@ class StaticFilesMiddlewareTest extends TestCase
     {
         // Create a proper HTTP request buffer
         $buffer = "GET $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
-        $request = new Request($buffer);
-        return $request;
+        return new Request($buffer);
     }
 }
