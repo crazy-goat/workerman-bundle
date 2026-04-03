@@ -30,7 +30,21 @@ final class SchedulerWorker
         $this->worker->reloadable = true;
         $this->worker->onWorkerStart = function () use ($kernelFactory, $schedulerConfig): void {
             $this->worker->log($this->worker->name . 'started');
-            pcntl_signal(SIGCHLD, SIG_IGN);
+
+            // Set up SIGCHLD handler to detect child process crashes
+            // This prevents zombie processes while allowing us to log exit codes
+            pcntl_signal(SIGCHLD, function (): void {
+                while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
+                    $exitCode = pcntl_wexitstatus($status);
+                    if ($exitCode !== 0) {
+                        $this->worker->log(
+                            sprintf('%s Child process %d exited with code %d', $this->worker->name, $pid, $exitCode),
+                            'warning',
+                        );
+                    }
+                }
+            });
+
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $handler = $kernel->getContainer()->get('workerman.task_handler');
