@@ -35,6 +35,9 @@ final class ExceptionRebootStrategy implements RebootStrategyInterface
 
     public function shouldReboot(): bool
     {
-        return $this->exception instanceof \Throwable;
+        $shouldReboot = $this->exception instanceof \Throwable;
+        $this->exception = null;
+
+        return $shouldReboot;
     }
 }
