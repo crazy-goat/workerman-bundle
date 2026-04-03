@@ -165,19 +165,24 @@ final class ServerManager
 
     private function waitForProcessToStop(int $pid, int $stopTimeout, bool $graceful): bool
     {
-        $timeout = $stopTimeout + 3;
+        // Graceful stop gets longer timeout (3x + 3s buffer), ensuring it's always longer than regular
+        $timeout = $graceful ? $stopTimeout * 3 + 3 : $stopTimeout + 3;
         $startTime = time();
+        $sleepMs = 10;
 
         while (true) {
             if (!$this->isProcessAlive($pid)) {
                 return true;
             }
 
-            if (!$graceful && (time() - $startTime) >= $timeout) {
+            // Always check timeout, regardless of graceful mode
+            if ((time() - $startTime) >= $timeout) {
                 return false;
             }
 
-            usleep(10_000);
+            // Exponential backoff: start at 10ms, max 250ms
+            usleep($sleepMs * 1000);
+            $sleepMs = min($sleepMs * 2, 250);
         }
     }
 
