@@ -7,9 +7,9 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use Workerman\Worker;
 
-final class FileMonitorWorker
+final readonly class FileMonitorWorker
 {
-    public const PROCESS_TITLE = '[FileMonitor]';
+    private const PROCESS_TITLE = '[FileMonitor]';
 
     /**
      * @param string[] $sourceDir

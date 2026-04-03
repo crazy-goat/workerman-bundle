@@ -7,9 +7,9 @@ namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
 /**
  * @author Kevin Bond <kevinbond@gmail.com>
  */
-final class JitterTrigger implements TriggerInterface
+final readonly class JitterTrigger implements TriggerInterface
 {
-    public function __construct(private readonly TriggerInterface $trigger, private readonly int $maxSeconds)
+    public function __construct(private TriggerInterface $trigger, private int $maxSeconds)
     {
     }
 

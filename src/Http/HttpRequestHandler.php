@@ -46,9 +46,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
     public function __invoke(TcpConnection $connection, Request $request): void
     {
-        if (PHP_VERSION_ID >= 80200) {
-            \memory_reset_peak_usage();
-        }
+        \memory_reset_peak_usage();
         $shouldCloseConnection = $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
 
         $next = $this->controller;

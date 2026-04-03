@@ -8,9 +8,9 @@ use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-final class ProcessErrorListener implements EventSubscriberInterface
+final readonly class ProcessErrorListener implements EventSubscriberInterface
 {
-    public function __construct(private readonly LoggerInterface $logger)
+    public function __construct(private LoggerInterface $logger)
     {
     }
 

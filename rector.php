@@ -7,5 +7,5 @@ use Rector\Set\ValueObject\LevelSetList;
 
 return RectorConfig::configure()
     ->withPaths([__DIR__ . '/src', __DIR__ . '/tests',])
-    ->withSets([LevelSetList::UP_TO_PHP_81,])
+    ->withSets([LevelSetList::UP_TO_PHP_82,])
     ->withPreparedSets(deadCode: true, codeQuality: true, typeDeclarations: true, symfonyCodeQuality: true);

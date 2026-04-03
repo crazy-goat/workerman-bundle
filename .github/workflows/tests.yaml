@@ -33,9 +33,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - php-version: '8.1'
-            symfony-version: '6.4.*'
-
           - php-version: '8.2'
             symfony-version: '6.4.*'
           - php-version: '8.2'
@@ -87,7 +84,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php-versions }}
+          php-version: ${{ matrix.php-version }}
 
       - name: Create var directory
         run: mkdir -p var

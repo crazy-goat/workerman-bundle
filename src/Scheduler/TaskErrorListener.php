@@ -8,9 +8,9 @@ use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-final class TaskErrorListener implements EventSubscriberInterface
+final readonly class TaskErrorListener implements EventSubscriberInterface
 {
-    public function __construct(private readonly LoggerInterface $logger)
+    public function __construct(private LoggerInterface $logger)
     {
     }
 

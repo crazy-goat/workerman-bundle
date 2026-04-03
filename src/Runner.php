@@ -12,10 +12,10 @@ use Symfony\Component\Runtime\RunnerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Worker;
 
-final class Runner implements RunnerInterface
+final readonly class Runner implements RunnerInterface
 {
     public function __construct(
-        private readonly KernelFactory $kernelFactory,
+        private KernelFactory $kernelFactory,
     ) {
     }
 

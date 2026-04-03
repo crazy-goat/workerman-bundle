@@ -9,11 +9,11 @@ use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-final class TaskHandler
+final readonly class TaskHandler
 {
     public function __construct(
-        private readonly ContainerInterface $locator,
-        private readonly EventDispatcherInterface $eventDispatcher,
+        private ContainerInterface $locator,
+        private EventDispatcherInterface $eventDispatcher,
     ) {
     }
 

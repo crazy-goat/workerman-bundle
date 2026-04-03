@@ -13,9 +13,9 @@ use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Protocols\Http;
 use Workerman\Worker;
 
-final class ServerWorker
+final readonly class ServerWorker
 {
-    protected const PROCESS_TITLE = '[Server]';
+    private const PROCESS_TITLE = '[Server]';
 
     /**
      * @param mixed[] $serverConfig
