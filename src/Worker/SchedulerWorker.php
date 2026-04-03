@@ -29,8 +29,10 @@ final class SchedulerWorker
         $this->worker->count = 1;
         $this->worker->reloadable = true;
         $this->worker->onWorkerStart = function () use ($kernelFactory, $schedulerConfig): void {
-            $this->worker->log($this->worker->name . 'started');
-            pcntl_signal(SIGCHLD, SIG_IGN);
+            $this->worker->log($this->worker->name . ' started');
+
+            pcntl_signal(SIGCHLD, $this->handleSigchld(...));
+
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
             $handler = $kernel->getContainer()->get('workerman.task_handler');
@@ -60,6 +62,28 @@ final class SchedulerWorker
                 $this->scheduleCallback($trigger, $service, $taskName);
             }
         };
+    }
+
+    /**
+     * Reap terminated child processes and log non-zero exits or signal kills.
+     */
+    private function handleSigchld(): void
+    {
+        while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
+            if (pcntl_wifexited($status)) {
+                $exitCode = pcntl_wexitstatus($status);
+                if ($exitCode !== 0) {
+                    $this->worker->log(
+                        sprintf('%s [warning] Child process %d exited with code %d', $this->worker->name, $pid, $exitCode),
+                    );
+                }
+            } elseif (pcntl_wifsignaled($status)) {
+                $signal = pcntl_wtermsig($status);
+                $this->worker->log(
+                    sprintf('%s [warning] Child process %d was killed by signal %d', $this->worker->name, $pid, $signal),
+                );
+            }
+        }
     }
 
     private function scheduleCallback(TriggerInterface $trigger, string $service, string $taskName): void
@@ -125,14 +149,17 @@ final class SchedulerWorker
             fwrite($fp, strval(posix_getpid()));
             fflush($fp);
 
+            $childExitCode = 0;
             try {
                 ($this->handler)($service, $taskName);
+            } catch (\Throwable) {
+                $childExitCode = 1;
             } finally {
                 // Release lock, cleanup and exit
                 flock($fp, LOCK_UN);
                 fclose($fp);
                 $this->deleteTaskPid($service);
-                exit(0);
+                exit($childExitCode);
             }
         }
     }
