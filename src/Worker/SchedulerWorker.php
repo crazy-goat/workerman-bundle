@@ -8,7 +8,6 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
-use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Worker;
 
 final class SchedulerWorker
@@ -75,41 +74,72 @@ final class SchedulerWorker
 
     private function runCallback(TriggerInterface $trigger, string $service, string $taskName): void
     {
-        $taskPid = Utils::getPid($this->getTaskPidPath($service));
-        if ($taskPid !== 0) {
+        $pidFile = $this->getTaskPidPath($service);
+        $fp = fopen($pidFile, 'c');
+
+        if ($fp === false) {
+            $this->worker->log(sprintf('%s Task "%s" cannot open PID file: %s', $this->worker->name, $taskName, $pidFile));
+            $this->scheduleCallback($trigger, $service, $taskName);
+            return;
+        }
+
+        // Try to acquire exclusive lock (non-blocking)
+        if (!flock($fp, LOCK_EX | LOCK_NB)) {
+            // Another process holds the lock - task is already running
+            fclose($fp);
             $this->scheduleCallback($trigger, $service, $taskName);
             return;
         }
 
         $pid = \pcntl_fork();
         if ($pid === -1) {
+            flock($fp, LOCK_UN);
+            fclose($fp);
             $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
+            $this->scheduleCallback($trigger, $service, $taskName);
         } elseif ($pid > 0) {
+            // Parent process - release lock and close file
+            flock($fp, LOCK_UN);
+            fclose($fp);
             $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
             $this->scheduleCallback($trigger, $service, $taskName);
         } else {
-            // Child process start
+            // Child process: close inherited fd and reopen to get independent lock
+            fclose($fp);
+            $fp = fopen($pidFile, 'c');
+            if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
+                // Lost the race to another child, exit
+                if ($fp !== false) {
+                    fclose($fp);
+                }
+                exit(0);
+            }
+
             $this->worker::$globalEvent?->deleteAllTimer();
             $title = str_replace(self::PROCESS_TITLE, sprintf('%s %s', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
             cli_set_process_title($title);
-            $this->saveTaskPid($service);
-            ($this->handler)($service, $taskName);
-            $this->deleteTaskPid($service);
-            posix_kill(posix_getpid(), SIGKILL);
+
+            // Write PID to file while holding the lock
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, strval(posix_getpid()));
+            fflush($fp);
+
+            try {
+                ($this->handler)($service, $taskName);
+            } finally {
+                // Release lock, cleanup and exit
+                flock($fp, LOCK_UN);
+                fclose($fp);
+                $this->deleteTaskPid($service);
+                exit(0);
+            }
         }
     }
 
     private function getTaskPidPath(string $serviceId): string
     {
         return sprintf('%s/workerman.task.%s.pid', dirname(Worker::$pidFile), hash('xxh64', $serviceId));
-    }
-
-    private function saveTaskPid(string $service): void
-    {
-        $pidFile = $this->getTaskPidPath($service);
-        if (file_put_contents($pidFile, posix_getpid()) === false) {
-            $this->worker->log(sprintf('%s Can\'t save pid to %s', $this->worker->name, $pidFile));
-        }
     }
 
     private function deleteTaskPid(string $service): void

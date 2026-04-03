@@ -48,9 +48,4 @@ final class Utils
             }
         }
     }
-
-    public static function getPid(string $pidFile): int
-    {
-        return is_file($pidFile) ? (int) @file_get_contents($pidFile) : 0;
-    }
 }
