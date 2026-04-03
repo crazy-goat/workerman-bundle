@@ -8,15 +8,10 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\CronExpressionTrigger;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests for CronExpressionTrigger.
- *
  * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\CronExpressionTrigger
  */
 final class CronExpressionTriggerTest extends TestCase
 {
-    /**
-     * Test that valid cron expression creates trigger successfully.
-     */
     public function testValidCronExpression(): void
     {
         $trigger = new CronExpressionTrigger('* * * * *');
@@ -24,9 +19,6 @@ final class CronExpressionTriggerTest extends TestCase
         $this->assertInstanceOf(CronExpressionTrigger::class, $trigger);
     }
 
-    /**
-     * Test that invalid cron expression throws exception.
-     */
     public function testInvalidCronExpressionThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -36,8 +28,6 @@ final class CronExpressionTriggerTest extends TestCase
     }
 
     /**
-     * Test that special cron expressions work.
-     *
      * @dataProvider specialCronExpressionProvider
      */
     public function testSpecialCronExpressions(string $expression): void
@@ -63,12 +53,9 @@ final class CronExpressionTriggerTest extends TestCase
         ];
     }
 
-    /**
-     * Test getNextRunDate returns future date.
-     */
     public function testGetNextRunDateReturnsFutureDate(): void
     {
-        $trigger = new CronExpressionTrigger('0 0 * * *'); // Daily at midnight
+        $trigger = new CronExpressionTrigger('0 0 * * *');
         $now = new \DateTimeImmutable('2024-01-15 12:00:00');
 
         $nextRun = $trigger->getNextRunDate($now);
@@ -77,9 +64,6 @@ final class CronExpressionTriggerTest extends TestCase
         $this->assertGreaterThan($now, $nextRun);
     }
 
-    /**
-     * Test __toString returns the cron expression.
-     */
     public function testToStringReturnsExpression(): void
     {
         $trigger = new CronExpressionTrigger('0 0 * * *');
@@ -87,12 +71,9 @@ final class CronExpressionTriggerTest extends TestCase
         $this->assertSame('0 0 * * *', (string) $trigger);
     }
 
-    /**
-     * Test that next run date calculation is correct.
-     */
     public function testNextRunDateCalculation(): void
     {
-        $trigger = new CronExpressionTrigger('0 12 * * *'); // Daily at noon
+        $trigger = new CronExpressionTrigger('0 12 * * *');
         $now = new \DateTimeImmutable('2024-01-15 10:00:00');
 
         $nextRun = $trigger->getNextRunDate($now);
@@ -100,17 +81,13 @@ final class CronExpressionTriggerTest extends TestCase
         $this->assertSame('2024-01-15 12:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
-    /**
-     * Test next run date when current time is after scheduled time.
-     */
     public function testNextRunDateWhenAfterScheduledTime(): void
     {
-        $trigger = new CronExpressionTrigger('0 10 * * *'); // Daily at 10:00
+        $trigger = new CronExpressionTrigger('0 10 * * *');
         $now = new \DateTimeImmutable('2024-01-15 15:00:00');
 
         $nextRun = $trigger->getNextRunDate($now);
 
-        // Should be next day at 10:00
         $this->assertSame('2024-01-16 10:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 }

@@ -12,15 +12,10 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests for TriggerFactory.
- *
  * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory
  */
 final class TriggerFactoryTest extends TestCase
 {
-    /**
-     * Test creating trigger from integer (seconds).
-     */
     public function testCreateFromInteger(): void
     {
         $trigger = TriggerFactory::create(60);
@@ -28,19 +23,18 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from ISO8601 datetime string.
-     */
     public function testCreateFromIso8601DateTime(): void
     {
         $trigger = TriggerFactory::create('2024-12-25T10:00:00+00:00');
 
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
+
+        // Verify the trigger's date is correctly parsed
+        $now = new \DateTimeImmutable('2024-12-20 12:00:00');
+        $nextRun = $trigger->getNextRunDate($now);
+        $this->assertSame('2024-12-25 10:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
-    /**
-     * Test creating trigger from cron expression with 5 parts.
-     */
     public function testCreateFromCronExpressionFiveParts(): void
     {
         $trigger = TriggerFactory::create('* * * * *');
@@ -48,9 +42,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(CronExpressionTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from cron expression with @ prefix.
-     */
     public function testCreateFromCronExpressionWithAtPrefix(): void
     {
         $trigger = TriggerFactory::create('@daily');
@@ -58,9 +49,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(CronExpressionTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from ISO8601 duration string.
-     */
     public function testCreateFromIso8601Duration(): void
     {
         $trigger = TriggerFactory::create('PT1H');
@@ -68,9 +56,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from relative date string.
-     */
     public function testCreateFromRelativeDateString(): void
     {
         $trigger = TriggerFactory::create('+1 hour');
@@ -78,9 +63,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from DateInterval.
-     */
     public function testCreateFromDateInterval(): void
     {
         $interval = new \DateInterval('PT30M');
@@ -89,9 +71,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from DateTimeImmutable.
-     */
     public function testCreateFromDateTimeImmutable(): void
     {
         $dateTime = new \DateTimeImmutable('2024-12-25 10:00:00');
@@ -100,9 +79,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger with jitter.
-     */
     public function testCreateWithJitter(): void
     {
         $trigger = TriggerFactory::create(60, 5);
@@ -110,9 +86,6 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(JitterTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger without jitter returns base trigger.
-     */
     public function testCreateWithoutJitterReturnsBaseTrigger(): void
     {
         $trigger = TriggerFactory::create(60, 0);
@@ -122,8 +95,6 @@ final class TriggerFactoryTest extends TestCase
     }
 
     /**
-     * Test various cron expression formats are detected correctly.
-     *
      * @dataProvider cronExpressionProvider
      */
     public function testCronExpressionDetection(string $expression): void
@@ -157,34 +128,19 @@ final class TriggerFactoryTest extends TestCase
         ];
     }
 
-    /**
-     * Test that non-cron expressions with 5 space-separated parts are handled.
-     *
-     * This tests the heuristic mentioned in ticket #34.
-     * Currently "1 2 3 4 5" has 5 parts but no asterisks, so it's treated as PeriodicalTrigger.
-     * However, it will fail because it's not a valid interval format.
-     */
     public function testFivePartNonCronExpressionThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid interval');
 
-        // This is a tricky case - "1 2 3 4 5" has 5 parts but no asterisks
-        // Current implementation treats it as PeriodicalTrigger which then fails
         TriggerFactory::create('1 2 3 4 5');
     }
 
-    /**
-     * Test that expressions with asterisks but not 5 parts are handled.
-     *
-     * Currently "* * * *" has 4 parts with asterisks but fails as invalid interval.
-     */
     public function testExpressionWithAsterisksButNotFivePartsThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid interval');
 
-        // "* * * *" has 4 parts with asterisks but is not a valid interval
         TriggerFactory::create('* * * *');
     }
 }

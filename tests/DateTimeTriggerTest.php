@@ -8,15 +8,10 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests for DateTimeTrigger.
- *
  * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger
  */
 final class DateTimeTriggerTest extends TestCase
 {
-    /**
-     * Test creating trigger from ISO8601 string.
-     */
     public function testCreateFromIso8601String(): void
     {
         $trigger = new DateTimeTrigger('2024-12-25T10:00:00+00:00');
@@ -24,9 +19,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from DateTimeImmutable.
-     */
     public function testCreateFromDateTimeImmutable(): void
     {
         $date = new \DateTimeImmutable('2024-12-25 10:00:00');
@@ -35,9 +27,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
     }
 
-    /**
-     * Test creating trigger from relative date string.
-     */
     public function testCreateFromRelativeDateString(): void
     {
         $trigger = new DateTimeTrigger('+1 hour');
@@ -45,9 +34,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
     }
 
-    /**
-     * Test that invalid date string throws exception.
-     */
     public function testInvalidDateStringThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -56,9 +42,6 @@ final class DateTimeTriggerTest extends TestCase
         new DateTimeTrigger('not a valid date');
     }
 
-    /**
-     * Test getNextRunDate returns the date when it's in the future.
-     */
     public function testGetNextRunDateReturnsDateWhenInFuture(): void
     {
         $futureDate = new \DateTimeImmutable('+1 day');
@@ -71,9 +54,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertEquals($futureDate->format('Y-m-d H:i'), $nextRun->format('Y-m-d H:i'));
     }
 
-    /**
-     * Test getNextRunDate returns null when date is in the past.
-     */
     public function testGetNextRunDateReturnsNullWhenInPast(): void
     {
         $pastDate = new \DateTimeImmutable('-1 day');
@@ -85,9 +65,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertNull($nextRun);
     }
 
-    /**
-     * Test getNextRunDate returns null when date is exactly now.
-     */
     public function testGetNextRunDateReturnsNullWhenExactlyNow(): void
     {
         $now = new \DateTimeImmutable();
@@ -98,9 +75,6 @@ final class DateTimeTriggerTest extends TestCase
         $this->assertNull($nextRun);
     }
 
-    /**
-     * Test __toString returns formatted date.
-     */
     public function testToStringReturnsFormattedDate(): void
     {
         $date = new \DateTimeImmutable('2024-12-25 10:00:00', new \DateTimeZone('UTC'));
