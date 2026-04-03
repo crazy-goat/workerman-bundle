@@ -12,6 +12,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class RequestTest extends TestCase
 {
+    /**
+     * @param array<string, string> $headers
+     */
     private function createRequest(string $method = 'GET', string $path = '/', array $headers = []): Request
     {
         $headerLines = [];

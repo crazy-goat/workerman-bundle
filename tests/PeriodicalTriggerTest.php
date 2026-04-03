@@ -70,6 +70,7 @@ final class PeriodicalTriggerTest extends TestCase
 
         $nextRun = $trigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame('2024-01-15 12:01:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
@@ -80,6 +81,7 @@ final class PeriodicalTriggerTest extends TestCase
 
         $nextRun = $trigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame('2024-01-15 13:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
@@ -90,6 +92,7 @@ final class PeriodicalTriggerTest extends TestCase
 
         $nextRun = $trigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame('2024-01-16 12:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
@@ -100,6 +103,7 @@ final class PeriodicalTriggerTest extends TestCase
 
         $nextRun = $trigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame('2024-01-15 14:30:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
@@ -113,6 +117,7 @@ final class PeriodicalTriggerTest extends TestCase
 
         $nextRun = $trigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame($expectedNextRun, $nextRun->format('Y-m-d H:i:s'));
     }
 

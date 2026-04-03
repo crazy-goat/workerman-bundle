@@ -31,6 +31,8 @@ final class JitterTriggerTest extends TestCase
         $innerNextRun = $innerTrigger->getNextRunDate($now);
         $jitterNextRun = $jitterTrigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $innerNextRun);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun);
         $this->assertGreaterThanOrEqual($innerNextRun, $jitterNextRun);
         $this->assertLessThanOrEqual($innerNextRun->modify('+10 seconds'), $jitterNextRun);
     }
@@ -65,11 +67,13 @@ final class JitterTriggerTest extends TestCase
         $now = new \DateTimeImmutable('2024-01-15 12:00:00');
 
         $innerNextRun = $innerTrigger->getNextRunDate($now);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $innerNextRun);
 
         // Collect multiple jitter values
         $values = [];
         for ($i = 0; $i < 50; ++$i) {
             $jitterNextRun = $jitterTrigger->getNextRunDate($now);
+            $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun);
             $values[] = $jitterNextRun->getTimestamp() - $innerNextRun->getTimestamp();
         }
 
@@ -93,6 +97,8 @@ final class JitterTriggerTest extends TestCase
         $innerNextRun = $innerTrigger->getNextRunDate($now);
         $jitterNextRun = $jitterTrigger->getNextRunDate($now);
 
+        $this->assertInstanceOf(\DateTimeImmutable::class, $innerNextRun);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun);
         $this->assertEquals($innerNextRun->getTimestamp(), $jitterNextRun->getTimestamp());
     }
 }

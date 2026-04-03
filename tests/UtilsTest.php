@@ -22,7 +22,6 @@ final class UtilsTest extends TestCase
     {
         $cpuCount = Utils::cpuCount();
 
-        $this->assertIsInt($cpuCount);
         $this->assertGreaterThanOrEqual(1, $cpuCount);
     }
 
@@ -56,6 +55,9 @@ final class UtilsTest extends TestCase
     {
         $this->expectException(\Error::class);
         $this->expectExceptionMessageMatches('/(private|cannot be accessed)/');
+
+        // PHPStan doesn't understand expectException() - this line is expected to throw
+        /** @phpstan-ignore-next-line */
         new Utils();
     }
 

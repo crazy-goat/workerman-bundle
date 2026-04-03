@@ -32,6 +32,7 @@ final class TriggerFactoryTest extends TestCase
         // Verify the trigger's date is correctly parsed
         $now = new \DateTimeImmutable('2024-12-20 12:00:00');
         $nextRun = $trigger->getNextRunDate($now);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
         $this->assertSame('2024-12-25 10:00:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
@@ -91,7 +92,6 @@ final class TriggerFactoryTest extends TestCase
         $trigger = TriggerFactory::create(60, 0);
 
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
-        $this->assertNotInstanceOf(JitterTrigger::class, $trigger);
     }
 
     /**
