@@ -9,8 +9,11 @@ namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
  */
 final readonly class JitterTrigger implements TriggerInterface
 {
-    public function __construct(private TriggerInterface $trigger, private int $maxSeconds)
-    {
+    public function __construct(
+        private TriggerInterface $trigger,
+        private int $maxSeconds,
+        private \Random\Randomizer $randomizer = new \Random\Randomizer(),
+    ) {
     }
 
     public function __toString(): string
@@ -20,6 +23,7 @@ final readonly class JitterTrigger implements TriggerInterface
 
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
-        return $this->trigger->getNextRunDate($now)?->modify(sprintf('+%d seconds', random_int(0, $this->maxSeconds)));
+        $seconds = $this->randomizer->getInt(0, $this->maxSeconds);
+        return $this->trigger->getNextRunDate($now)?->modify(sprintf('+%d seconds', $seconds));
     }
 }
