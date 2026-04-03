@@ -63,7 +63,7 @@ final class UtilsTest extends TestCase
     {
         $this->markTestSkipped(
             'Utils::reboot() sends POSIX signals and requires a running Workerman process. ' .
-            'Cannot be tested in unit test context — requires integration test.'
+            'Cannot be tested in unit test context — requires integration test.',
         );
     }
 }

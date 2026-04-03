@@ -104,7 +104,7 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(
             CronExpressionTrigger::class,
             $trigger,
-            "Expression '{$expression}' should be detected as cron expression"
+            "Expression '{$expression}' should be detected as cron expression",
         );
     }
 
