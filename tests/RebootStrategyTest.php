@@ -107,6 +107,27 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($strategy->shouldReboot());
     }
 
+    public function testExceptionRebootStrategyReArmsAfterReset(): void
+    {
+        $strategy = new ExceptionRebootStrategy();
+        $kernel = $this->createMock(HttpKernelInterface::class);
+        $request = new Request();
+        $exception1 = new \RuntimeException('First exception');
+        $exception2 = new \RuntimeException('Second exception');
+
+        // First exception cycle
+        $event1 = new ExceptionEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception1);
+        $strategy->onException($event1);
+        $this->assertTrue($strategy->shouldReboot(), 'First exception should trigger reboot');
+        $this->assertFalse($strategy->shouldReboot(), 'State should be reset after first check');
+
+        // Second exception cycle - strategy should re-arm
+        $event2 = new ExceptionEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception2);
+        $strategy->onException($event2);
+        $this->assertTrue($strategy->shouldReboot(), 'Second exception should also trigger reboot');
+        $this->assertFalse($strategy->shouldReboot(), 'State should be reset after second check');
+    }
+
     public function testExceptionRebootStrategyIgnoresSubRequests(): void
     {
         $strategy = new ExceptionRebootStrategy();
