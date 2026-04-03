@@ -8,7 +8,6 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
-use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Worker;
 
 final class SchedulerWorker
@@ -92,16 +91,6 @@ final class SchedulerWorker
             return;
         }
 
-        // Additional check: verify if the existing process is still alive
-        $existingPid = Utils::getPid($pidFile);
-        if ($existingPid !== 0 && posix_kill($existingPid, 0)) {
-            // Process is still running, release lock and reschedule
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            $this->scheduleCallback($trigger, $service, $taskName);
-            return;
-        }
-
         $pid = \pcntl_fork();
         if ($pid === -1) {
             flock($fp, LOCK_UN);
@@ -115,7 +104,17 @@ final class SchedulerWorker
             $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
             $this->scheduleCallback($trigger, $service, $taskName);
         } else {
-            // Child process - keep lock held during execution
+            // Child process: close inherited fd and reopen to get independent lock
+            fclose($fp);
+            $fp = fopen($pidFile, 'c');
+            if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
+                // Lost the race to another child, exit
+                if ($fp !== false) {
+                    fclose($fp);
+                }
+                exit(0);
+            }
+
             $this->worker::$globalEvent?->deleteAllTimer();
             $title = str_replace(self::PROCESS_TITLE, sprintf('%s %s', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
             cli_set_process_title($title);
@@ -129,14 +128,12 @@ final class SchedulerWorker
             try {
                 ($this->handler)($service, $taskName);
             } finally {
-                // Release lock and cleanup
+                // Release lock, cleanup and exit
                 flock($fp, LOCK_UN);
                 fclose($fp);
-                if (is_file($pidFile)) {
-                    unlink($pidFile);
-                }
+                $this->deleteTaskPid($service);
+                posix_kill(posix_getpid(), SIGKILL);
             }
-            posix_kill(posix_getpid(), SIGKILL);
         }
     }
 
