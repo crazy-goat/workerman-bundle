@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\DTO;
 
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 class RequestConverter
@@ -14,6 +13,7 @@ class RequestConverter
         $cookies = $rawRequest->cookie();
         $query = $rawRequest->get();
         $post = $rawRequest->post();
+        $files = $rawRequest->file() ?? [];
 
         // Only populate POST bag for form-encoded content types
         // JSON and other content types should leave POST bag empty (like PHP-FPM)
@@ -25,7 +25,7 @@ class RequestConverter
             $isFormData && is_array($post) ? $post : [],
             [],
             is_array($cookies) ? $cookies : [],
-            [],
+            $files,
             [
                 'REQUEST_URI' => $rawRequest->uri(),
                 'REQUEST_METHOD' => $rawRequest->method(),
@@ -39,14 +39,6 @@ class RequestConverter
             foreach ($headers as $name => $value) {
                 $request->headers->set($name, $value);
             }
-        }
-
-        foreach ($rawRequest->file() ?? [] as $key => $value) {
-            $type = $value['type'] ?? 'application/octet-stream';
-            $request->files->set(
-                $key,
-                new UploadedFile($value['tmp_name'], $value['name'], $type === '' ? 'application/octet-stream' : $type),
-            );
         }
 
         return $request;
