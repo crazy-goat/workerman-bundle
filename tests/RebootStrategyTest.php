@@ -72,6 +72,26 @@ final class RebootStrategyTest extends TestCase
         $this->assertSame(6, $rebootAt, 'Should reboot after exactly 5 jobs with 0% dispersion');
     }
 
+    public function testMaxJobsRebootStrategyWithSeededRandomizer(): void
+    {
+        $engine = new \Random\Engine\Xoshiro256StarStar(12345);
+        $randomizer = new \Random\Randomizer($engine);
+        $strategy = new MaxJobsRebootStrategy(100, 10, $randomizer);
+
+        // With 10% dispersion on 100 jobs, range is 90-100
+        // With this specific seed, the randomizer produces 90
+        $rebootAt = null;
+        for ($i = 1; $i <= 100; ++$i) {
+            if ($strategy->shouldReboot()) {
+                $rebootAt = $i;
+                break;
+            }
+        }
+
+        // With seeded randomizer, we should reboot at exactly 91 (90 + 1st job)
+        $this->assertSame(91, $rebootAt, 'Should reboot at deterministic job count with seeded randomizer');
+    }
+
     public function testExceptionRebootStrategyReturnsFalseInitially(): void
     {
         $strategy = new ExceptionRebootStrategy();
