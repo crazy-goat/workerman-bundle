@@ -16,7 +16,7 @@ class StaticFilesMiddleware implements MiddlewareInterface
         $resolved = realpath($rootDirectory);
         if ($resolved === false) {
             throw new \InvalidArgumentException(
-                sprintf('Root directory does not exist: %s', $rootDirectory)
+                sprintf('Root directory does not exist: %s', $rootDirectory),
             );
         }
         $this->rootRealPath = $resolved;
@@ -35,15 +35,15 @@ class StaticFilesMiddleware implements MiddlewareInterface
     private function getPublicPathFile(Request $request): string|false
     {
         $resolved = realpath($this->rootDirectory . $request->path());
-        
+
         if ($resolved === false) {
             return false;
         }
-        
+
         if (!str_starts_with($resolved, $this->rootRealPath . DIRECTORY_SEPARATOR)) {
             return false;
         }
-        
+
         return $resolved;
     }
 }

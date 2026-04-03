@@ -39,21 +39,24 @@ class StaticFilesMiddlewareTest extends TestCase
     public function testPathTraversalBlocked(string $path): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
-        
+
         $request = $this->createRequest($path);
         $called = false;
         $next = function (Request $req) use (&$called): Response {
             $called = true;
             return new Response(200);
         };
-        
+
         $response = $middleware($request, $next);
-        
+
         // Next should be called (file not served)
         $this->assertTrue($called, "Next should be called for path: $path");
         $this->assertEquals(200, $response->getStatusCode());
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
     public static function pathTraversalProvider(): array
     {
         return [
@@ -75,16 +78,16 @@ class StaticFilesMiddlewareTest extends TestCase
     public function testValidFileServed(): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
-        
+
         $request = $this->createRequest('/test.txt');
         $called = false;
         $next = function (Request $req) use (&$called): Response {
             $called = true;
             return new Response(404);
         };
-        
+
         $response = $middleware($request, $next);
-        
+
         // Next should NOT be called (file should be served)
         $this->assertFalse($called, "Next should not be called for valid file");
     }
@@ -92,16 +95,16 @@ class StaticFilesMiddlewareTest extends TestCase
     public function testNonExistentFilePassesToNext(): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
-        
+
         $request = $this->createRequest('/nonexistent.txt');
         $called = false;
         $next = function (Request $req) use (&$called): Response {
             $called = true;
             return new Response(404);
         };
-        
+
         $response = $middleware($request, $next);
-        
+
         $this->assertTrue($called, "Next should be called for non-existent file");
         $this->assertEquals(404, $response->getStatusCode());
     }
