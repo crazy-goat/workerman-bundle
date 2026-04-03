@@ -132,7 +132,7 @@ final class SchedulerWorker
                 flock($fp, LOCK_UN);
                 fclose($fp);
                 $this->deleteTaskPid($service);
-                posix_kill(posix_getpid(), SIGKILL);
+                exit(0);
             }
         }
     }
