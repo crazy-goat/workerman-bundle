@@ -15,9 +15,14 @@ class RequestConverter
         $query = $rawRequest->get();
         $post = $rawRequest->post();
 
+        // Only populate POST bag for form-encoded content types
+        // JSON and other content types should leave POST bag empty (like PHP-FPM)
+        $contentType = $rawRequest->header('content-type', '');
+        $isFormData = preg_match('/^(application\/x-www-form-urlencoded|multipart\/form-data)\b/i', (string) $contentType);
+
         $request = new Request(
             is_array($query) ? $query : [],
-            is_array($post) ? $post : [],
+            $isFormData && is_array($post) ? $post : [],
             [],
             is_array($cookies) ? $cookies : [],
             [],

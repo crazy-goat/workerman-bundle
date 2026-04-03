@@ -103,6 +103,61 @@ final class RequestParametersTest extends KernelTestCase
         $this->assertSame('88lc5paair2xwnidlz9r6k0rpggkmbhb2oqr0go0cxc', $response['raw_request']);
     }
 
+    public function testJsonRequestPostBagIsEmpty(): void
+    {
+        $response = $this->createResponse('POST', [
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode(['test-key' => 'test-value']),
+        ]);
+
+        // POST bag should be empty for JSON requests (like PHP-FPM behavior)
+        $this->assertSame([], $response['post']);
+        // Raw body should contain the JSON
+        $this->assertSame('{"test-key":"test-value"}', $response['raw_request']);
+    }
+
+    public function testJsonRequestWithCharsetPostBagIsEmpty(): void
+    {
+        $response = $this->createResponse('POST', [
+            'headers' => [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ],
+            'body' => json_encode(['test-key' => 'test-value']),
+        ]);
+
+        // POST bag should be empty for JSON requests with charset (like PHP-FPM behavior)
+        $this->assertSame([], $response['post']);
+        // Raw body should contain the JSON
+        $this->assertSame('{"test-key":"test-value"}', $response['raw_request']);
+    }
+
+    public function testMissingContentTypePostBagIsEmpty(): void
+    {
+        $response = $this->createResponse('POST', [
+            'body' => 'test-body-content',
+        ]);
+
+        // POST bag should be empty when Content-Type is missing
+        $this->assertSame([], $response['post']);
+        // Raw body should be preserved
+        $this->assertSame('test-body-content', $response['raw_request']);
+    }
+
+    public function testMultipartFormDataPostBagIsPopulated(): void
+    {
+        $response = $this->createResponse('POST', [
+            'headers' => [
+                'Content-Type' => 'multipart/form-data; boundary=TestBoundary123',
+            ],
+            'body' => "--TestBoundary123\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--TestBoundary123--",
+        ]);
+
+        // POST bag should be populated for multipart/form-data
+        $this->assertSame('value1', $response['post']['field1'] ?? null);
+    }
+
     /**
      * @param mixed[] $options
      *
