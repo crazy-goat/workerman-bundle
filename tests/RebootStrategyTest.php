@@ -92,7 +92,7 @@ final class RebootStrategyTest extends TestCase
         $this->assertTrue($strategy->shouldReboot());
     }
 
-    public function testExceptionRebootStrategyStatePersists(): void
+    public function testExceptionRebootStrategyStateIsResetAfterShouldReboot(): void
     {
         $strategy = new ExceptionRebootStrategy();
         $kernel = $this->createMock(HttpKernelInterface::class);
@@ -103,8 +103,8 @@ final class RebootStrategyTest extends TestCase
         $strategy->onException($event);
 
         $this->assertTrue($strategy->shouldReboot());
-        $this->assertTrue($strategy->shouldReboot());
-        $this->assertTrue($strategy->shouldReboot());
+        $this->assertFalse($strategy->shouldReboot());
+        $this->assertFalse($strategy->shouldReboot());
     }
 
     public function testExceptionRebootStrategyIgnoresSubRequests(): void
