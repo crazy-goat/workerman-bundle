@@ -57,8 +57,29 @@ workerman:
 ```
 
 ### Start application
+
+Using the Symfony console command:
+```bash
+$ bin/console workerman:server start
+$ bin/console workerman:server start -d   # daemon mode
+```
+
+Or using the runtime directly:
 ```bash
 $ APP_RUNTIME=CrazyGoat\\WorkermanBundle\\Runtime php public/index.php start
+```
+
+### Manage the server
+
+```bash
+$ bin/console workerman:server stop        # stop the server
+$ bin/console workerman:server stop -g     # graceful stop
+$ bin/console workerman:server restart     # restart
+$ bin/console workerman:server restart -d  # restart in daemon mode
+$ bin/console workerman:server reload      # reload workers (hot reload)
+$ bin/console workerman:server reload -g   # graceful reload
+$ bin/console workerman:server status      # show server status
+$ bin/console workerman:server connections # show active connections
 ```
 
 \* For better performance, Workerman recommends installing the _php-event_ extension.

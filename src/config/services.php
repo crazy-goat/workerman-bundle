@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskErrorListener;
+use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessErrorListener;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -109,4 +111,15 @@ return static function (array $config, ContainerBuilder $container): void {
             ])
         ;
     }
+
+    $container
+        ->register(ServerManager::class)
+        ->setAutowired(true)
+    ;
+
+    $container
+        ->register(WorkermanCommand::class)
+        ->addTag('console.command')
+        ->setAutowired(true)
+    ;
 };

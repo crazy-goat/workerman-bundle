@@ -54,7 +54,7 @@ final class ServerWorker
         }
 
         $worker = new Worker($listen, $context);
-        $worker->name = sprintf('%s "%s"', self::PROCESS_TITLE, $serverConfig['name']);
+        $worker->name = sprintf('%s %s', self::PROCESS_TITLE, $serverConfig['name']);
         $worker->user = $user ?? '';
         $worker->group = $group ?? '';
         $worker->count = $serverConfig['processes'] ?? Utils::cpuCount() * 2;

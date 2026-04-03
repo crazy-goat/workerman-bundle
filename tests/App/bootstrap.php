@@ -9,14 +9,19 @@ include __DIR__ . '/../../vendor/autoload.php';
 
 function workerman_create_command(string $command): string
 {
-    return \sprintf('exec %s %s/index.php %s', PHP_BINARY, __DIR__, $command);
+    return \sprintf('%s %s/index.php %s', PHP_BINARY, __DIR__, $command);
+}
+
+function workerman_create_console_command(string $command): string
+{
+    return \sprintf('%s %s/console workerman:server %s', PHP_BINARY, __DIR__, $command);
 }
 
 function workerman_start(): void
 {
     $descriptor = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     \proc_open(\workerman_create_command('start -d'), $descriptor, $pipes);
-    \usleep(100000);
+    \usleep(500_000);
 }
 
 function workerman_stop(): void

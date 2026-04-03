@@ -11,8 +11,6 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 final class WorkermanBundle extends AbstractBundle
 {
-    protected string $extensionAlias = 'workerman';
-
     public function configure(DefinitionConfigurator $definition): void
     {
         $configurator = require __DIR__ . '/config/configuration.php';
