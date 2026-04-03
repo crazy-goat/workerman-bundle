@@ -9,11 +9,11 @@ use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-final class ProcessHandler
+final readonly class ProcessHandler
 {
     public function __construct(
-        private readonly ContainerInterface $locator,
-        private readonly EventDispatcherInterface $eventDispatcher,
+        private ContainerInterface $locator,
+        private EventDispatcherInterface $eventDispatcher,
     ) {
     }
 

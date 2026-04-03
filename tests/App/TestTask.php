@@ -8,11 +8,11 @@ use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 #[AsTask(name: 'Test task', schedule: '1 second')]
-final class TestTask
+final readonly class TestTask
 {
     public function __construct(
         #[Autowire(value: '%kernel.project_dir%/var/task_status.log')]
-        private readonly string $statusFile,
+        private string $statusFile,
     ) {
     }
 

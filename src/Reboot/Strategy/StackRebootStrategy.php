@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Reboot\Strategy;
 
-final class StackRebootStrategy implements RebootStrategyInterface
+final readonly class StackRebootStrategy implements RebootStrategyInterface
 {
     /**
      * @param iterable<RebootStrategyInterface> $strategies
      */
-    public function __construct(private readonly iterable $strategies)
+    public function __construct(private iterable $strategies)
     {
     }
 

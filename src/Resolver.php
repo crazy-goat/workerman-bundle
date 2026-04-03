@@ -6,12 +6,12 @@ namespace CrazyGoat\WorkermanBundle;
 
 use Symfony\Component\Runtime\ResolverInterface;
 
-final class Resolver implements ResolverInterface
+final readonly class Resolver implements ResolverInterface
 {
     /**
      * @param mixed[] $options
      */
-    public function __construct(private readonly ResolverInterface $resolver, private readonly array $options)
+    public function __construct(private ResolverInterface $resolver, private array $options)
     {
     }
 

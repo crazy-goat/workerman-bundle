@@ -8,7 +8,7 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
 use Workerman\Worker;
 
-final class SupervisorWorker
+final readonly class SupervisorWorker
 {
     private const PROCESS_TITLE = '[Process]';
 
