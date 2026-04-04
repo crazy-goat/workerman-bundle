@@ -22,8 +22,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     private readonly SymfonyController $controller;
     private ?int $terminateTimerId = null;
 
-    /**
-     */
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,

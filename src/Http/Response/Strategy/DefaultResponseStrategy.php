@@ -8,7 +8,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-class DefaultResponseStrategy implements ResponseConverterStrategyInterface
+final class DefaultResponseStrategy implements ResponseConverterStrategyInterface
 {
     public function supports(SymfonyResponse $response): bool
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Exception\NoResponseStrategyException;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +25,7 @@ final class ResponseConverterTest extends TestCase
 
     public function testConvertThrowsWhenNoStrategyFound(): void
     {
-        $this->expectException(\LogicException::class);
+        $this->expectException(NoResponseStrategyException::class);
         $this->expectExceptionMessage('No strategy found');
 
         // Empty strategies array

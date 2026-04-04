@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\config;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
@@ -21,6 +22,7 @@ return new class implements CompilerPassInterface {
         $tasks = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.task'));
         $processes = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.process'));
         $rebootStrategies = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.reboot_strategy'));
+        $responseConverterStrategies = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.response_converter.strategy'));
 
         $container
             ->getDefinition('workerman.config_loader')
@@ -40,6 +42,10 @@ return new class implements CompilerPassInterface {
         $container
             ->register('workerman.reboot_strategy', StackRebootStrategy::class)
             ->setArguments([$this->referenceMap($rebootStrategies)]);
+
+        $container
+            ->register('workerman.response_converter', ResponseConverter::class)
+            ->setArguments([$this->referenceMap($responseConverterStrategies)]);
 
         $container
             ->register('workerman.http_request_handler', HttpRequestHandler::class)

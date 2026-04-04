@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http\Response;
 
+use CrazyGoat\WorkermanBundle\Exception\NoResponseStrategyException;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-class ResponseConverter
+final class ResponseConverter
 {
     /** @var ResponseConverterStrategyInterface[] */
     private readonly array $strategies;
@@ -30,10 +31,7 @@ class ResponseConverter
             }
         }
 
-        throw new \LogicException(sprintf(
-            'No strategy found for response type: %s',
-            $response::class,
-        ));
+        throw new NoResponseStrategyException($response::class);
     }
 
     /**

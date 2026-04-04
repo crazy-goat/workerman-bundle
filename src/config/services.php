@@ -130,12 +130,4 @@ return static function (array $config, ContainerBuilder $container): void {
         ->register('workerman.default_response_strategy', DefaultResponseStrategy::class)
         ->addTag('workerman.response_converter.strategy', ['priority' => 0])
     ;
-
-    // ResponseConverter with injected strategies
-    $container
-        ->register('workerman.response_converter', ResponseConverter::class)
-        ->setArguments([
-            [new Reference('workerman.default_response_strategy')],
-        ])
-    ;
 };
