@@ -56,4 +56,17 @@ final class ResponseTest extends KernelTestCase
         self::assertTrue($response->hasHeader('Content-Type'));
         self::assertSame('application/json', $response->getHeaderLine('content-type'));
     }
+
+    public function testBinaryFileResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file');
+
+        // Workerman may return 206 for range requests or 200 for normal requests
+        $this->assertTrue(in_array($response->getStatusCode(), [200, 206], true));
+        $this->assertStringContainsString('Test file download content', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+        $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
+    }
 }
