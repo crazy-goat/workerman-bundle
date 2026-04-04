@@ -7,8 +7,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Exception\NoResponseStrategyException;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ResponseConverterTest extends TestCase
 {
@@ -78,5 +80,19 @@ final class ResponseConverterTest extends TestCase
         $response = $converter->convert(new Response('test'));
 
         $this->assertSame('test', $response->rawBody());
+    }
+
+    public function testConvertStreamedResponse(): void
+    {
+        $strategies = [new StreamedResponseStrategy(), new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'streamed content';
+        });
+
+        $workermanResponse = $converter->convert($streamedResponse);
+
+        $this->assertSame('streamed content', $workermanResponse->rawBody());
     }
 }
