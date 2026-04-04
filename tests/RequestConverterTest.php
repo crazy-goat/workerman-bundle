@@ -317,6 +317,11 @@ final class RequestConverterTest extends TestCase
             {
                 return $this->port;
             }
+
+            public function getLocalIp(): string
+            {
+                return '0.0.0.0';
+            }
         };
     }
 
