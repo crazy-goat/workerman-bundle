@@ -7,10 +7,10 @@ namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 final class PollingMonitorWatcher extends FileMonitorWatcher
 {
     private const POLLING_INTERVAL = 1;
-    private const TO_MANY_FILES_WARNING_LIMIT = 1000;
+    private const TOO_MANY_FILES_WARNING_LIMIT = 1000;
 
     private int $lastMTime;
-    private bool $toManyFiles = false;
+    private bool $tooManyFiles = false;
 
     public function start(): void
     {
@@ -21,7 +21,7 @@ final class PollingMonitorWatcher extends FileMonitorWatcher
 
     private function checkFileSystemChanges(): void
     {
-        $filesCout = 0;
+        $filesCount = 0;
 
         foreach ($this->sourceDir as $dir) {
             $dirIterator = new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS);
@@ -33,8 +33,8 @@ final class PollingMonitorWatcher extends FileMonitorWatcher
                     continue;
                 }
 
-                if (!$this->toManyFiles && ++$filesCout > self::TO_MANY_FILES_WARNING_LIMIT) {
-                    $this->toManyFiles = true;
+                if (!$this->tooManyFiles && ++$filesCount > self::TOO_MANY_FILES_WARNING_LIMIT) {
+                    $this->tooManyFiles = true;
                     $this->worker->log($this->worker->name . ' There are too many files. This makes file monitoring very slow. Install php-inotify extension to increase performance.');
                 }
 
