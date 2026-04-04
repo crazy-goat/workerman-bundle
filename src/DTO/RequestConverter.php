@@ -27,6 +27,8 @@ class RequestConverter
 
         // Build server bag with HTTP_* headers (CGI convention)
         $headers = $rawRequest->header() ?? [];
+        // Fallback to 127.0.0.1:0 for unit test scenarios where connection is null.
+        // In production, connection should always be present.
         $server = [
             'REQUEST_URI' => $rawRequest->uri(),
             'REQUEST_METHOD' => $rawRequest->method(),

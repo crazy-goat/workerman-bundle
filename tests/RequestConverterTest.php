@@ -223,7 +223,42 @@ final class RequestConverterTest extends TestCase
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
-        $this->assertNotNull($symfonyRequest->getClientIp());
+        $this->assertSame('127.0.0.1', $symfonyRequest->getClientIp());
+    }
+
+    public function testIsFromTrustedProxyWorksWhenConfigured(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 192.168.1.100\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $trustedHeaders = \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_FOR
+            | \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_PROTO
+            | \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_HOST
+            | \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_PORT;
+        \Symfony\Component\HttpFoundation\Request::setTrustedProxies(['127.0.0.1'], $trustedHeaders);
+        $this->assertTrue($symfonyRequest->isFromTrustedProxy());
+        \Symfony\Component\HttpFoundation\Request::setTrustedProxies([], $trustedHeaders);
+    }
+
+    public function testRemoteAddrWithMockConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
+            public function __construct()
+            {
+                $this->remoteAddress = '192.168.1.100:12345';
+            }
+        };
+        $rawRequest->connection = $mockConnection;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('192.168.1.100', $symfonyRequest->server->get('REMOTE_ADDR'));
+        $this->assertSame(12345, $symfonyRequest->server->get('REMOTE_PORT'));
     }
 
     /**
