@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Worker;
 
@@ -295,7 +299,7 @@ final class ServerManager
         $cacheDir = $this->kernel->getContainer()->getParameter('kernel.cache_dir');
 
         if (!\is_string($cacheDir)) {
-            throw new \RuntimeException('kernel.cache_dir parameter must be a string');
+            throw new InvalidCacheDirectoryException('kernel.cache_dir parameter must be a string');
         }
 
         $configLoader = new ConfigLoader(

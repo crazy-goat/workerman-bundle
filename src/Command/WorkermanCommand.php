@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Command;
 
-use CrazyGoat\WorkermanBundle\ServerAlreadyRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use CrazyGoat\WorkermanBundle\ServerManager;
-use CrazyGoat\WorkermanBundle\ServerNotRunningException;
-use CrazyGoat\WorkermanBundle\ServerStopFailedException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;

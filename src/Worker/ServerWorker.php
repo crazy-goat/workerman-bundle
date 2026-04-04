@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Worker;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
@@ -74,7 +75,7 @@ final readonly class ServerWorker
             $middlewares = array_map(function (string $middleware) use ($kernel): MiddlewareInterface {
                 $service = $kernel->getContainer()->get($middleware);
                 if (!$service instanceof MiddlewareInterface) {
-                    throw new \InvalidArgumentException(sprintf('Service "%s" must implement "%s"', $middleware, MiddlewareInterface::class));
+                    throw new InvalidMiddlewareException(sprintf('Service "%s" must implement "%s"', $middleware, MiddlewareInterface::class));
                 }
                 return $service;
             }, $serverConfig['middlewares'] ?? []);

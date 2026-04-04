@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidTriggerException;
+
 final class DateTimeTrigger implements TriggerInterface
 {
     private \DateTimeImmutable $date;
@@ -18,7 +20,7 @@ final class DateTimeTrigger implements TriggerInterface
             try {
                 $this->date = new \DateTimeImmutable($date);
             } catch (\Exception $e) {
-                throw new \InvalidArgumentException(sprintf('Invalid date string "%s": %s', $date, $e->getMessage()), 0, $e);
+                throw new InvalidTriggerException(sprintf('Invalid date string "%s": %s', $date, $e->getMessage()), 0, $e);
             }
         } else {
             $this->date = $date;

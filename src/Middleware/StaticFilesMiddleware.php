@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Middleware;
 
+use CrazyGoat\WorkermanBundle\Exception\StaticFileMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use Workerman\Protocols\Http\Response;
 
@@ -15,7 +16,7 @@ class StaticFilesMiddleware implements MiddlewareInterface
     {
         $resolved = realpath($rootDirectory);
         if ($resolved === false) {
-            throw new \InvalidArgumentException(
+            throw new StaticFileMiddlewareException(
                 sprintf('Root directory does not exist: %s', $rootDirectory),
             );
         }
