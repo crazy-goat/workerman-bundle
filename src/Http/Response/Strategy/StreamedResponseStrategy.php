@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedJsonResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
@@ -14,7 +15,7 @@ class StreamedResponseStrategy implements ResponseConverterStrategyInterface
 {
     public function supports(SymfonyResponse $response): bool
     {
-        return $response instanceof StreamedResponse
+        return ($response instanceof StreamedResponse || $response instanceof StreamedJsonResponse)
             && !$response instanceof BinaryFileResponse;
     }
 
