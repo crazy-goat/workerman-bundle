@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extracted `ResponseConverter` from `SymfonyController` using Strategy Pattern ([#72](https://github.com/crazy-goat/workerman-bundle/issues/72))
+  - New `ResponseConverterStrategyInterface` for pluggable response conversion strategies
+  - New `ResponseConverter` orchestrator that selects and executes appropriate strategy based on response type
+  - New `DefaultResponseStrategy` for handling standard Symfony responses
+  - New `NoResponseStrategyException` for when no matching strategy is found
+  - Priority-based strategy registration via DI container tags (`workerman.response_converter.strategy`)
+  - Foundation for implementing BinaryFileResponse, StreamedResponse, and EventStreamResponse support (#69, #70, #71)
+
 - Typed exception hierarchy for better error handling and monitoring ([#93](https://github.com/crazy-goat/workerman-bundle/issues/93))
   - New `WorkermanExceptionInterface` marker interface to catch all bundle exceptions
   - New `WorkermanException` abstract base class extending `\RuntimeException`
