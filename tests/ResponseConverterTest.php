@@ -7,7 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 final class ResponseConverterTest extends TestCase
@@ -19,8 +18,8 @@ final class ResponseConverterTest extends TestCase
 
         $regularResponse = new Response('regular');
         $workermanResponse = $converter->convert($regularResponse);
-        
-        $this->assertSame('regular', (string) $workermanResponse->rawBody());
+
+        $this->assertSame('regular', $workermanResponse->rawBody());
     }
 
     public function testConvertThrowsWhenNoStrategyFound(): void
@@ -38,16 +37,16 @@ final class ResponseConverterTest extends TestCase
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
-        $response = new Response('content', 200, [
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'Content-Type' => 'text/plain',
             'X-Custom' => 'custom-value',
         ]);
-        
+
         // Should not throw - headers are passed to strategy
         $workermanResponse = $converter->convert($response);
-        
+
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        $this->assertSame('content', (string) $workermanResponse->rawBody());
+        $this->assertSame('content', $workermanResponse->rawBody());
     }
 
     public function testConvertNormalizesHeaderNames(): void
@@ -56,14 +55,14 @@ final class ResponseConverterTest extends TestCase
         $converter = new ResponseConverter($strategies);
 
         // Symfony stores some headers in lowercase internally
-        $response = new Response('content', 200, [
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'content-type' => 'text/html',
             'content-disposition' => 'attachment',
         ]);
-        
+
         // Should not throw - headers are normalized and passed to strategy
         $workermanResponse = $converter->convert($response);
-        
+
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
 
@@ -77,6 +76,6 @@ final class ResponseConverterTest extends TestCase
         $converter = new ResponseConverter($generator());
         $response = $converter->convert(new Response('test'));
 
-        $this->assertSame('test', (string) $response->rawBody());
+        $this->assertSame('test', $response->rawBody());
     }
 }

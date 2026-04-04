@@ -20,7 +20,7 @@ class DefaultResponseStrategy implements ResponseConverterStrategyInterface
         return new WorkermanResponse(
             $response->getStatusCode(),
             $headers,
-            strval($response->getContent())
+            strval($response->getContent()),
         );
     }
 }

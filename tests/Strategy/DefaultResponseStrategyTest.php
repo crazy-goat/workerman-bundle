@@ -22,12 +22,12 @@ final class DefaultResponseStrategyTest extends TestCase
     public function testConvertReturnsWorkermanResponseWithContent(): void
     {
         $strategy = new DefaultResponseStrategy();
-        $symfonyResponse = new Response('Hello World', 200, ['Content-Type' => 'text/plain']);
+        $symfonyResponse = new Response('Hello World', \Symfony\Component\HttpFoundation\Response::HTTP_OK, ['Content-Type' => 'text/plain']);
 
         $workermanResponse = $strategy->convert($symfonyResponse, ['Content-Type' => ['text/plain']]);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        $this->assertSame('Hello World', (string) $workermanResponse->rawBody());
+        $this->assertSame('Hello World', $workermanResponse->rawBody());
     }
 
     public function testConvertHandlesEmptyContent(): void
@@ -38,6 +38,6 @@ final class DefaultResponseStrategyTest extends TestCase
         $workermanResponse = $strategy->convert($symfonyResponse, []);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        $this->assertSame('', (string) $workermanResponse->rawBody());
+        $this->assertSame('', $workermanResponse->rawBody());
     }
 }

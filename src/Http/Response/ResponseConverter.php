@@ -29,7 +29,7 @@ class ResponseConverter
 
         throw new \LogicException(sprintf(
             'No strategy found for response type: %s',
-            get_class($response)
+            $response::class,
         ));
     }
 
