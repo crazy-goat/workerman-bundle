@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Middleware;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -14,20 +15,13 @@ use Workerman\Protocols\Http\Response;
 
 class SymfonyController
 {
-    private const FIX_HEADERS = [
-        'content-type' => 'Content-Type',
-        'connection' => 'Connection',
-        'transfer-encoding' => 'Transfer-Encoding',
-        'server' => 'Server',
-        'content-disposition' => 'Content-Disposition',
-        'last-modified' => 'Last-Modified',
-    ];
-
     private ?SymfonyRequest $symfonyRequest = null;
     private ?SymfonyResponse $symfonyResponse = null;
 
-    public function __construct(private readonly KernelInterface $kernel)
-    {
+    public function __construct(
+        private readonly KernelInterface $kernel,
+        private readonly ResponseConverter $responseConverter,
+    ) {
     }
 
     /**
@@ -42,11 +36,7 @@ class SymfonyController
         $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
         $this->symfonyResponse->prepare($this->symfonyRequest);
 
-        return new Response(
-            $this->symfonyResponse->getStatusCode(),
-            $this->getHeaders($this->symfonyResponse),
-            strval($this->symfonyResponse->getContent()),
-        );
+        return $this->responseConverter->convert($this->symfonyResponse);
     }
 
     /**
@@ -74,20 +64,5 @@ class SymfonyController
                 $this->symfonyResponse = null;
             }
         }
-    }
-
-    /** @return array<string, list<string|null>> */
-    private function getHeaders(\Symfony\Component\HttpFoundation\Response $symfonyResponse): array
-    {
-        $headers = $symfonyResponse->headers->all();
-
-        foreach (self::FIX_HEADERS as $fixHeader => $header) {
-            if (isset($headers[$fixHeader])) {
-                $headers[$header] = $headers[$fixHeader];
-                unset($headers[$fixHeader]);
-            }
-        }
-
-        return $headers;
     }
 }
