@@ -11,4 +11,16 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException as BaseServerS
  */
 final class ServerStopFailedException extends BaseServerStopFailedException
 {
+    public function __construct()
+    {
+        trigger_deprecation(
+            'crazy-goat/workerman-bundle',
+            '2.1',
+            'The "%s" class is deprecated, use "%s" instead.',
+            self::class,
+            BaseServerStopFailedException::class,
+        );
+
+        BaseServerStopFailedException::__construct();
+    }
 }

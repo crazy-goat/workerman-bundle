@@ -11,4 +11,16 @@ use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException as BaseServerN
  */
 final class ServerNotRunningException extends BaseServerNotRunningException
 {
+    public function __construct()
+    {
+        trigger_deprecation(
+            'crazy-goat/workerman-bundle',
+            '2.1',
+            'The "%s" class is deprecated, use "%s" instead.',
+            self::class,
+            BaseServerNotRunningException::class,
+        );
+
+        BaseServerNotRunningException::__construct();
+    }
 }

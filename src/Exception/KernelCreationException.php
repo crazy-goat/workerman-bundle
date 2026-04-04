@@ -9,8 +9,8 @@ namespace CrazyGoat\WorkermanBundle\Exception;
  */
 final class KernelCreationException extends KernelException
 {
-    public function __construct(string $message = 'Error creating Kernel instance', int $code = 0, ?\Throwable $previous = null)
+    public function __construct()
     {
-        parent::__construct($message, $code, $previous);
+        parent::__construct('Error creating Kernel instance');
     }
 }
