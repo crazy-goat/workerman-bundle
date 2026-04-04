@@ -9,6 +9,10 @@ This bundle allows you to replace a traditional web application stack like php-f
 The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
 making your application faster with less (or no) code changes.
 
+## Contributing
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for information about branch protection rules and development workflow.
+
 ## What new in this fork
 * `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
 * `servers.serve_files` - set to `false` to disable serving file. Use this option for RestAPI projects. Default: `false`
