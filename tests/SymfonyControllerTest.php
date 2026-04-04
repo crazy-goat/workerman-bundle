@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -225,12 +227,18 @@ final class TestNonTerminableKernel implements KernelInterface
  */
 final class SymfonyControllerTest extends TestCase
 {
+    private function createResponseConverter(): ResponseConverter
+    {
+        return new ResponseConverter([new DefaultResponseStrategy()]);
+    }
+
     public function testTerminateIfNeededCallsKernelTerminate(): void
     {
         $symfonyResponse = new SymfonyResponse('test content');
         $kernel = new TestTerminableKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
 
-        $controller = new SymfonyController($kernel);
+        $controller = new SymfonyController($kernel, $responseConverter);
 
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
@@ -254,8 +262,9 @@ final class SymfonyControllerTest extends TestCase
     {
         $symfonyResponse = new SymfonyResponse();
         $kernel = new TestNonTerminableKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
 
-        $controller = new SymfonyController($kernel);
+        $controller = new SymfonyController($kernel, $responseConverter);
 
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
@@ -276,8 +285,9 @@ final class SymfonyControllerTest extends TestCase
     {
         $symfonyResponse = new SymfonyResponse();
         $kernel = new TestTerminableKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
 
-        $controller = new SymfonyController($kernel);
+        $controller = new SymfonyController($kernel, $responseConverter);
 
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
@@ -304,8 +314,9 @@ final class SymfonyControllerTest extends TestCase
             ],
         );
         $kernel = new TestNonTerminableKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
 
-        $controller = new SymfonyController($kernel);
+        $controller = new SymfonyController($kernel, $responseConverter);
 
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
@@ -327,8 +338,9 @@ final class SymfonyControllerTest extends TestCase
             status: \Symfony\Component\HttpFoundation\Response::HTTP_INTERNAL_SERVER_ERROR,
         );
         $kernel = new TestNonTerminableKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
 
-        $controller = new SymfonyController($kernel);
+        $controller = new SymfonyController($kernel, $responseConverter);
 
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
