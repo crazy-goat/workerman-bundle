@@ -81,4 +81,24 @@ final class StreamedResponseStrategyTest extends TestCase
 
         $this->assertSame('', $workermanResponse->rawBody());
     }
+
+    public function testConvertCallbackExceptionCleansOB(): void
+    {
+        $initialLevel = ob_get_level();
+
+        $streamedResponse = new StreamedResponse(function (): never {
+            echo 'partial';
+            throw new \RuntimeException('intentional error');
+        });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('intentional error');
+
+        $strategy->convert($streamedResponse, []);
+
+        // OB level should be restored after exception
+        $this->assertSame($initialLevel, ob_get_level(), 'OB level should be restored after exception');
+    }
 }
