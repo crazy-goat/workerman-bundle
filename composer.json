@@ -79,7 +79,7 @@
             "vendor/bin/rector process"
         ],
         "lint": [
-            "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v --dry-run",
+            "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run"
         ]
