@@ -164,15 +164,13 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('Delete me after send!', $workermanResponse->rawBody());
     }
 
-    public function testConvertHandlesReflectionFailureGracefully(): void
+    public function testConvertWorksForNormalBinaryFileResponse(): void
     {
         $strategy = new BinaryFileResponseStrategy();
 
-        // Create a mock BinaryFileResponse that will cause reflection to fail
-        // by using a subclass without the expected properties
+        // Test that normal BinaryFileResponse works correctly
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK);
 
-        // The strategy should still work even if reflection fails
         $workermanResponse = $strategy->convert($binaryResponse, []);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
@@ -198,5 +196,36 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         // Workerman detects missing file and returns 404
         $this->assertSame(404, $workermanResponse->getStatusCode());
+    }
+
+    public function testConvertHandlesDeleteFileAfterSendWithMissingFile(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        // Create a temp file
+        $tempFile = sys_get_temp_dir() . '/delete_missing_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Delete me!');
+
+        // Create response while file exists
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+
+        // Use reflection to set deleteFileAfterSend
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        // Delete file after construction but before conversion
+        unlink($tempFile);
+
+        // Conversion should handle gracefully with empty body
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Type' => ['text/plain'],
+        ]);
+
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+        // Should return empty body for missing file
+        $this->assertSame('', $workermanResponse->rawBody());
     }
 }

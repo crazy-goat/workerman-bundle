@@ -31,16 +31,14 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         );
 
         // Handle SplTempFileObject (in-memory files) - read directly to body
-        // SplTempFileObject stores data in memory by default (max 2MB), no temp file needed
+        // SplTempFileObject stores data in memory (default max 2MB, configurable via $max_memory)
+        // For larger data, use regular files on disk instead of SplTempFileObject
         $tempFileObject = $this->getTempFileObject($response);
         if ($tempFileObject instanceof \SplTempFileObject) {
             $tempFileObject->rewind();
             $content = '';
             while (!$tempFileObject->eof()) {
-                $chunk = $tempFileObject->fread(8192);
-                if ($chunk !== false) {
-                    $content .= $chunk;
-                }
+                $content .= $tempFileObject->fread(8192);
             }
             $workermanResponse->withBody($content);
 
