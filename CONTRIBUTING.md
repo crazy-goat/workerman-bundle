@@ -15,9 +15,12 @@ All pull requests must pass the following checks before merging:
 
 ### Pull Request Requirements
 
+**Required:**
 - At least **1 approving review** is required before merge
-- All conversations must be resolved
-- Branch must be up to date with `master` before merging
+
+**Recommended:**
+- All conversations should be resolved before merging
+- Branch should be up to date with `master` before merging
 
 ## Development Workflow
 
@@ -40,7 +43,7 @@ All pull requests must pass the following checks before merging:
 The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
 
 - **Lint job**: Validates `composer.json`, runs security audit, and checks code style
-- **Tests job**: Runs PHPUnit tests across the supported PHP and Symfony version matrix
+- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix
 
 ## Code Standards
 

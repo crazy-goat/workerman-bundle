@@ -11,7 +11,7 @@ making your application faster with less (or no) code changes.
 
 ## Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for information about branch protection rules and development workflow.
+Please see [CONTRIBUTING.md](https://github.com/crazy-goat/workerman-bundle/blob/master/CONTRIBUTING.md) for information about branch protection rules and development workflow.
 
 ## What new in this fork
 * `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
