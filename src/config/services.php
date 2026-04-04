@@ -7,6 +7,7 @@ use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
@@ -126,6 +127,11 @@ return static function (array $config, ContainerBuilder $container): void {
     ;
 
     // ResponseConverter strategies - priority determines order (higher = checked first)
+    $container
+        ->register('workerman.binary_file_response_strategy', BinaryFileResponseStrategy::class)
+        ->addTag('workerman.response_converter.strategy', ['priority' => 100])
+    ;
+
     $container
         ->register('workerman.default_response_strategy', DefaultResponseStrategy::class)
         ->addTag('workerman.response_converter.strategy', ['priority' => 0])

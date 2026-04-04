@@ -56,4 +56,58 @@ final class ResponseTest extends KernelTestCase
         self::assertTrue($response->hasHeader('Content-Type'));
         self::assertSame('application/json', $response->getHeaderLine('content-type'));
     }
+
+    public function testBinaryFileResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file');
+
+        // Workerman may return 206 for range requests or 200 for normal requests
+        $this->assertTrue(in_array($response->getStatusCode(), [200, 206], true));
+        $this->assertStringContainsString('Test file download content', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+        $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
+    }
+
+    public function testBinaryFileResponseWithRangeRequest(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        // Request only first 5 bytes
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
+            'headers' => [
+                'Range' => 'bytes=0-4',
+            ],
+        ]);
+
+        // Should return 206 Partial Content for range requests
+        $this->assertSame(206, $response->getStatusCode());
+        // Body should be exactly 5 bytes
+        $this->assertSame(5, strlen((string) $response->getBody()));
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+    }
+
+    public function testBinaryFileResponseWithDeleteAfterSend(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_delete');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('Delete me after download!', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+        // File should be deleted after download (handled by strategy)
+    }
+
+    public function testBinaryFileResponseWithTempFileObject(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('Temp file object content', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+    }
 }
