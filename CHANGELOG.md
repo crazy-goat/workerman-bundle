@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Priority-based strategy registration via DI container tags (`workerman.response_converter.strategy`)
   - Foundation for implementing BinaryFileResponse, StreamedResponse, and EventStreamResponse support (#69, #70, #71)
 
+- Added `BinaryFileResponseStrategy` for proper file download support ([#70](https://github.com/crazy-goat/workerman-bundle/issues/70))
+  - Handles `BinaryFileResponse` using Workerman's native `withFile()` for efficient streaming
+  - Supports `SplTempFileObject` (in-memory temp files) by reading content directly to body
+  - Supports `deleteFileAfterSend` by reading file into memory and deleting immediately
+  - Supports range requests (offset/maxlen) for partial content delivery
+  - Uses reflection with graceful fallback for accessing Symfony's private properties
+
 - Typed exception hierarchy for better error handling and monitoring ([#93](https://github.com/crazy-goat/workerman-bundle/issues/93))
   - New `WorkermanExceptionInterface` marker interface to catch all bundle exceptions
   - New `WorkermanException` abstract base class extending `\RuntimeException`
@@ -43,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `CrazyGoat\WorkermanBundle\ServerStopFailedException` → `CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException`
 
 ### Fixed
+
+- **Critical**: Fixed `BinaryFileResponse` returning empty body for file downloads ([#70](https://github.com/crazy-goat/workerman-bundle/issues/70))
+  - `BinaryFileResponse::getContent()` returns `false`, causing empty responses
+  - New `BinaryFileResponseStrategy` uses Workerman's `withFile()` for proper streaming
+  - File downloads via `$this->file()` or `BinaryFileResponse` now work correctly
 
 - **Critical**: Fixed RequestConverter bypassing ServerBag, breaking HTTP authentication and server bag reads ([#59](https://github.com/crazy-goat/workerman-bundle/issues/59))
   - HTTP headers are now converted to `HTTP_*` format in server bag (CGI convention)
