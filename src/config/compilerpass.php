@@ -22,7 +22,9 @@ return new class implements CompilerPassInterface {
         $tasks = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.task'));
         $processes = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.process'));
         $rebootStrategies = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.reboot_strategy'));
-        $responseConverterStrategies = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.response_converter.strategy'));
+        $responseConverterStrategiesTagged = $container->findTaggedServiceIds('workerman.response_converter.strategy');
+        uasort($responseConverterStrategiesTagged, fn(array $a, array $b): int => ($b[0]['priority'] ?? 0) <=> ($a[0]['priority'] ?? 0));
+        $responseConverterStrategies = array_map(fn(array $a) => $a[0], $responseConverterStrategiesTagged);
 
         $container
             ->getDefinition('workerman.config_loader')

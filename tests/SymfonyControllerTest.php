@@ -568,6 +568,7 @@ final class SymfonyControllerTest extends TestCase
 
     public function testStreamedResponseWithStatusCode(): void
     {
+        $initialObLevel = ob_get_level();
         $streamedResponse = new StreamedResponse(
             function (): void {
                 echo 'streamed content';
@@ -585,12 +586,14 @@ final class SymfonyControllerTest extends TestCase
 
         $response = $controller($request);
 
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(202, $response->getStatusCode());
         $this->assertSame('streamed content', $response->rawBody());
     }
 
     public function testStreamedResponseWithHeaders(): void
     {
+        $initialObLevel = ob_get_level();
         $streamedResponse = new StreamedResponse(
             function (): void {
                 echo 'streaming data';
@@ -609,15 +612,17 @@ final class SymfonyControllerTest extends TestCase
 
         $response = $controller($request);
 
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         // Content-Type may have charset added by Symfony
         $this->assertStringContainsString('text/event-stream', $response->getHeader('Content-Type')[0] ?? '');
-        // Headers may be lowercased by Symfony
-        $this->assertSame(['true'], $response->getHeader('x-stream') ?? $response->getHeader('X-Stream'));
+        // Headers are normalized to lowercase by Symfony/Workerman
+        $this->assertSame(['true'], $response->getHeader('x-stream'));
         $this->assertSame('streaming data', $response->rawBody());
     }
 
     public function testStreamedResponseEmptyContent(): void
     {
+        $initialObLevel = ob_get_level();
         $streamedResponse = new StreamedResponse(function (): void {
             // Echo nothing
         });
@@ -632,6 +637,7 @@ final class SymfonyControllerTest extends TestCase
 
         $response = $controller($request);
 
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame('', $response->rawBody());
     }
 }
