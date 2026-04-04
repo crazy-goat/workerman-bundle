@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
-final class ServerStopFailedException extends \RuntimeException
+use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException as BaseServerStopFailedException;
+
+/**
+ * @deprecated Use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException instead
+ */
+final class ServerStopFailedException extends BaseServerStopFailedException
 {
-    public function __construct()
-    {
-        parent::__construct('Workerman stop failed (timeout).');
-    }
 }

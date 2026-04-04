@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Validator;
 
-use InvalidArgumentException;
+use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
 
 /**
  * Validates the structure of uploaded files array.
@@ -27,7 +27,7 @@ final class FileUploadValidator
      *
      * @param array<string, mixed> $files
      *
-     * @throws InvalidArgumentException if file structure is malformed
+     * @throws FileUploadValidationException if file structure is malformed
      */
     public static function validate(array $files): void
     {
@@ -42,13 +42,13 @@ final class FileUploadValidator
      * @param string $fieldName The form field name
      * @param mixed  $fileData  The file data to validate
      *
-     * @throws InvalidArgumentException if file structure is malformed
+     * @throws FileUploadValidationException if file structure is malformed
      */
     private static function validateFileEntry(string $fieldName, mixed $fileData): void
     {
         // Non-array file data is invalid
         if (!is_array($fileData)) {
-            throw new InvalidArgumentException(
+            throw new FileUploadValidationException(
                 sprintf(
                     'Malformed file upload data for field "%s": expected array, got %s',
                     $fieldName,
@@ -61,7 +61,7 @@ final class FileUploadValidator
         if (array_is_list($fileData) && count($fileData) > 0 && is_array($fileData[0])) {
             foreach ($fileData as $index => $nestedFile) {
                 if (!is_array($nestedFile)) {
-                    throw new InvalidArgumentException(
+                    throw new FileUploadValidationException(
                         sprintf(
                             'Malformed file upload data for field "%s" at index %s: expected array, got %s',
                             $fieldName,
@@ -92,7 +92,7 @@ final class FileUploadValidator
                         if (is_array($nestedFile)) {
                             self::validateSingleFileArray($fieldName . '[' . $subFieldName . '][' . $index . ']', $nestedFile);
                         } else {
-                            throw new InvalidArgumentException(
+                            throw new FileUploadValidationException(
                                 sprintf(
                                     'Malformed file upload data for field "%s[%s][%s]": expected array, got %s',
                                     $fieldName,
@@ -108,7 +108,7 @@ final class FileUploadValidator
                     self::validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
                 } else {
                     // Unrecognized nested structure
-                    throw new InvalidArgumentException(
+                    throw new FileUploadValidationException(
                         sprintf(
                             'Malformed file upload data for field "%s[%s]": unrecognized structure. ' .
                             'Expected file keys (name, tmp_name) or array of files. Got keys: %s',
@@ -119,7 +119,7 @@ final class FileUploadValidator
                     );
                 }
             } else {
-                throw new InvalidArgumentException(
+                throw new FileUploadValidationException(
                     sprintf(
                         'Malformed file upload data for field "%s[%s]": expected array, got %s',
                         $fieldName,
@@ -137,13 +137,13 @@ final class FileUploadValidator
      * @param string               $fieldName The form field name
      * @param array<string, mixed> $file      The file array to validate
      *
-     * @throws InvalidArgumentException if required fields are missing
+     * @throws FileUploadValidationException if required fields are missing
      */
     private static function validateSingleFileArray(string $fieldName, array $file): void
     {
         foreach (self::REQUIRED_FIELDS as $field) {
             if (!array_key_exists($field, $file)) {
-                throw new InvalidArgumentException(
+                throw new FileUploadValidationException(
                     sprintf(
                         'Malformed file upload data for field "%s": missing required field "%s". ' .
                         'Expected keys: %s. Got: %s',

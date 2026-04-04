@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
-final class ServerNotRunningException extends \RuntimeException
+use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException as BaseServerNotRunningException;
+
+/**
+ * @deprecated Use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException instead
+ */
+final class ServerNotRunningException extends BaseServerNotRunningException
 {
-    public function __construct()
-    {
-        parent::__construct('Workerman is not running.');
-    }
 }

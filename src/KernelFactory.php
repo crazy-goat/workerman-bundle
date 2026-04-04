@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Exception\KernelCreationException;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 final class KernelFactory
@@ -24,7 +25,7 @@ final class KernelFactory
         }
 
         if (!$this->kernel instanceof KernelInterface) {
-            throw new \RuntimeException('Error creating Kernel instance');
+            throw new KernelCreationException();
         }
 
         return $this->kernel;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidTriggerException;
+
 final class PeriodicalTrigger implements TriggerInterface
 {
     private \DateInterval $interval;
@@ -31,7 +33,7 @@ final class PeriodicalTrigger implements TriggerInterface
                 $this->description = isset($a['from_string']) ? sprintf('every %s', $a['from_string']) : 'DateInterval';
             }
         } catch (\Throwable $e) {
-            throw new \InvalidArgumentException(sprintf('Invalid interval "%s": %s', $interval instanceof \DateInterval ? 'instance of \DateInterval' : $interval, $e->getMessage()), 0, $e);
+            throw new InvalidTriggerException(sprintf('Invalid interval "%s": %s', $interval instanceof \DateInterval ? 'instance of \DateInterval' : $interval, $e->getMessage()), 0, $e);
         }
     }
 

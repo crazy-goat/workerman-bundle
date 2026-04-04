@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
-final class ServerAlreadyRunningException extends \RuntimeException
+use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException as BaseServerAlreadyRunningException;
+
+/**
+ * @deprecated Use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException instead
+ */
+final class ServerAlreadyRunningException extends BaseServerAlreadyRunningException
 {
-    public function __construct()
-    {
-        parent::__construct('Workerman is already running.');
-    }
 }
