@@ -8,10 +8,10 @@ use CrazyGoat\WorkermanBundle\Exception\NoResponseStrategyException;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-final class ResponseConverter
+final readonly class ResponseConverter
 {
     /** @var ResponseConverterStrategyInterface[] */
-    private readonly array $strategies;
+    private array $strategies;
 
     /**
      * @param iterable<ResponseConverterStrategyInterface> $strategies
