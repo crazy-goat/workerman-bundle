@@ -1,0 +1,43 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CrazyGoat\WorkermanBundle\Test\Strategy;
+
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
+
+final class DefaultResponseStrategyTest extends TestCase
+{
+    public function testSupportsAlwaysReturnsTrue(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+
+        $this->assertTrue($strategy->supports(new Response()));
+        $this->assertTrue($strategy->supports(new JsonResponse(['test'])));
+    }
+
+    public function testConvertReturnsWorkermanResponseWithContent(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response('Hello World', 200, ['Content-Type' => 'text/plain']);
+
+        $workermanResponse = $strategy->convert($symfonyResponse, ['Content-Type' => ['text/plain']]);
+
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertSame('Hello World', (string) $workermanResponse->rawBody());
+    }
+
+    public function testConvertHandlesEmptyContent(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response();
+
+        $workermanResponse = $strategy->convert($symfonyResponse, []);
+
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertSame('', (string) $workermanResponse->rawBody());
+    }
+}
