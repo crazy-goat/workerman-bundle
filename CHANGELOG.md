@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Critical**: Fixed `RequestConverter` missing `REMOTE_ADDR`, breaking `getClientIp()` and trusted proxies ([#61](https://github.com/crazy-goat/workerman-bundle/issues/61))
+  - Reads client IP and port from Workerman's `TcpConnection` object
+  - `$request->getClientIp()` now returns actual client IP instead of null
+  - Trusted proxy mechanism (`isFromTrustedProxy()`, `X-Forwarded-*` headers) now works correctly
+  - Fallback values (`127.0.0.1:0`) provided for unit test scenarios
+
 - **Critical**: Fixed `BinaryFileResponse` returning empty body for file downloads ([#70](https://github.com/crazy-goat/workerman-bundle/issues/70))
   - `BinaryFileResponse::getContent()` returns `false`, causing empty responses
   - New `BinaryFileResponseStrategy` uses Workerman's `withFile()` for proper streaming
