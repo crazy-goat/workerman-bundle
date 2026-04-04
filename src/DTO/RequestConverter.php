@@ -36,6 +36,7 @@ class RequestConverter
             'REMOTE_ADDR' => $rawRequest->connection?->getRemoteIp() ?? '127.0.0.1',
             'REMOTE_PORT' => $rawRequest->connection?->getRemotePort() ?? 0,
             'SERVER_PORT' => $rawRequest->connection?->getLocalPort() ?? 80,
+            'SERVER_NAME' => $rawRequest->connection?->getLocalIp() ?? 'localhost',
         ];
 
         // Convert headers to HTTP_* format for ServerBag

@@ -265,19 +265,7 @@ final class RequestConverterTest extends TestCase
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = new Request($buffer);
-
-        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
-            public function __construct()
-            {
-                $this->remoteAddress = '192.168.1.100:12345';
-            }
-
-            public function getLocalPort(): int
-            {
-                return 8080;
-            }
-        };
-        $rawRequest->connection = $mockConnection;
+        $rawRequest->connection = $this->createMockConnection(8080);
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
@@ -299,19 +287,7 @@ final class RequestConverterTest extends TestCase
     {
         $buffer = "GET /test HTTP/1.1\r\n\r\n";
         $rawRequest = new Request($buffer);
-
-        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
-            public function __construct()
-            {
-                $this->remoteAddress = '192.168.1.1:12345';
-            }
-
-            public function getLocalPort(): int
-            {
-                return 8443;
-            }
-        };
-        $rawRequest->connection = $mockConnection;
+        $rawRequest->connection = $this->createMockConnection(8443);
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
@@ -322,23 +298,26 @@ final class RequestConverterTest extends TestCase
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost:8080\r\n\r\n";
         $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8080);
 
-        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
-            public function __construct()
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8080, $symfonyRequest->getPort());
+    }
+
+    private function createMockConnection(int $localPort): \Workerman\Connection\TcpConnection
+    {
+        return new class ($localPort) extends \Workerman\Connection\TcpConnection {
+            public function __construct(private readonly int $port)
             {
                 $this->remoteAddress = '192.168.1.1:12345';
             }
 
             public function getLocalPort(): int
             {
-                return 8080;
+                return $this->port;
             }
         };
-        $rawRequest->connection = $mockConnection;
-
-        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
-
-        $this->assertSame(8080, $symfonyRequest->getPort());
     }
 
     /**
