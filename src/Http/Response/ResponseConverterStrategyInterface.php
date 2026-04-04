@@ -7,7 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Http\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-interface ResponseConverterStrategy
+interface ResponseConverterStrategyInterface
 {
     /**
      * Check if this strategy can handle the given response.
