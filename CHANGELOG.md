@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added E2E tests for `StreamedResponse` in `SymfonyControllerTest` ([#69](https://github.com/crazy-goat/workerman-bundle/issues/69))
+  - `testStreamedResponseE2E` - verifies content is captured via output buffering
+  - `testStreamedResponseWithStatusCode` - verifies status code preservation
+  - `testStreamedResponseWithHeaders` - verifies headers pass through
+  - `testStreamedResponseEmptyContent` - verifies empty streams work
+  - `testStreamedJsonResponseE2E` - verifies JSON streaming (Symfony 7.1+)
+
+### Changed
+
+- **Critical**: Priority-based strategy ordering is now enforced in compiler pass
+  - Strategies are sorted by priority tag value (descending) before registration
+  - Makes strategy ordering resilient to service registration order changes
+
 ## [0.12.0] - 2026-04-04
 
 ### Added
