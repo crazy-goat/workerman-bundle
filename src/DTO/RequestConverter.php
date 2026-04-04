@@ -36,21 +36,17 @@ class RequestConverter
         // Convert headers to HTTP_* format for ServerBag
         foreach ($headers as $name => $value) {
             $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
-            $server[$key] = $value;
+            // Handle repeated headers (Workerman returns arrays for multiple values)
+            $server[$key] = is_array($value) ? implode(', ', $value) : $value;
         }
 
         // Content-Type, Content-Length, Content-MD5 use CGI convention (no HTTP_ prefix)
-        if (isset($server['HTTP_CONTENT_TYPE'])) {
-            $server['CONTENT_TYPE'] = $server['HTTP_CONTENT_TYPE'];
-            unset($server['HTTP_CONTENT_TYPE']);
-        }
-        if (isset($server['HTTP_CONTENT_LENGTH'])) {
-            $server['CONTENT_LENGTH'] = $server['HTTP_CONTENT_LENGTH'];
-            unset($server['HTTP_CONTENT_LENGTH']);
-        }
-        if (isset($server['HTTP_CONTENT_MD5'])) {
-            $server['CONTENT_MD5'] = $server['HTTP_CONTENT_MD5'];
-            unset($server['HTTP_CONTENT_MD5']);
+        foreach (['CONTENT_TYPE', 'CONTENT_LENGTH', 'CONTENT_MD5'] as $specialHeader) {
+            $httpKey = 'HTTP_' . $specialHeader;
+            if (isset($server[$httpKey])) {
+                $server[$specialHeader] = $server[$httpKey];
+                unset($server[$httpKey]);
+            }
         }
 
         return new Request(

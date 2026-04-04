@@ -166,9 +166,14 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
         $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
 
-        // Authorization should be parsed into PHP_AUTH_* (Symfony parses this from HTTP_AUTHORIZATION)
+        // Authorization should be parsed into PHP_AUTH_USER/PHP_AUTH_PW via ServerBag
+        // getUser()/getPassword() read these from headers, which are populated by ServerBag::getHeaders()
         $this->assertSame('user', $symfonyRequest->getUser());
         $this->assertSame('pass', $symfonyRequest->getPassword());
+
+        // Verify PHP_AUTH_* are in headers (populated by ServerBag from HTTP_AUTHORIZATION)
+        $this->assertSame('user', $symfonyRequest->headers->get('PHP_AUTH_USER'));
+        $this->assertSame('pass', $symfonyRequest->headers->get('PHP_AUTH_PW'));
 
         // Content-Type and Content-Length should NOT have HTTP_ prefix (CGI convention)
         $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
