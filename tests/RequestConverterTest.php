@@ -193,6 +193,39 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('HTTP/1.1', $symfonyRequest->server->get('SERVER_PROTOCOL'));
     }
 
+    public function testRemoteAddrDefaultsToLocalhostWhenNoConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        // Ensure no connection is attached (unit test scenario)
+        $rawRequest->connection = null;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('127.0.0.1', $symfonyRequest->server->get('REMOTE_ADDR'));
+    }
+
+    public function testRemotePortDefaultsToZeroWhenNoConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = null;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(0, $symfonyRequest->server->get('REMOTE_PORT'));
+    }
+
+    public function testGetClientIpReturnsRemoteAddr(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertNotNull($symfonyRequest->getClientIp());
+    }
+
     /**
      * @param array<int, array{name: string, filename: string, content: string}> $fields
      */
