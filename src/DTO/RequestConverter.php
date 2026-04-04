@@ -25,27 +25,38 @@ class RequestConverter
         $contentType = $rawRequest->header('content-type', '');
         $isFormData = preg_match('/^(application\/x-www-form-urlencoded|multipart\/form-data)\b/i', (string) $contentType);
 
-        $request = new Request(
+        // Build server bag with HTTP_* headers (CGI convention)
+        $headers = $rawRequest->header() ?? [];
+        $server = [
+            'REQUEST_URI' => $rawRequest->uri(),
+            'REQUEST_METHOD' => $rawRequest->method(),
+            'SERVER_PROTOCOL' => 'HTTP/' . $rawRequest->protocolVersion(),
+        ];
+
+        // Convert headers to HTTP_* format for ServerBag
+        foreach ($headers as $name => $value) {
+            $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+            // Handle repeated headers (Workerman returns arrays for multiple values)
+            $server[$key] = is_array($value) ? implode(', ', $value) : $value;
+        }
+
+        // Content-Type, Content-Length, Content-MD5 use CGI convention (no HTTP_ prefix)
+        foreach (['CONTENT_TYPE', 'CONTENT_LENGTH', 'CONTENT_MD5'] as $specialHeader) {
+            $httpKey = 'HTTP_' . $specialHeader;
+            if (isset($server[$httpKey])) {
+                $server[$specialHeader] = $server[$httpKey];
+                unset($server[$httpKey]);
+            }
+        }
+
+        return new Request(
             is_array($query) ? $query : [],
             $isFormData && is_array($post) ? $post : [],
             [],
             is_array($cookies) ? $cookies : [],
             $files,
-            [
-                'REQUEST_URI' => $rawRequest->uri(),
-                'REQUEST_METHOD' => $rawRequest->method(),
-                'SERVER_PROTOCOL' => $rawRequest->protocolVersion(),
-            ],
+            $server,
             $rawRequest->rawBody(),
         );
-
-        $headers = $rawRequest->header();
-        if (is_array($headers)) {
-            foreach ($headers as $name => $value) {
-                $request->headers->set($name, $value);
-            }
-        }
-
-        return $request;
     }
 }
