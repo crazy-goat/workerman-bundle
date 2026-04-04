@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `CrazyGoat\WorkermanBundle\ServerNotRunningException` → `CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException`
   - `CrazyGoat\WorkermanBundle\ServerStopFailedException` → `CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException`
 
+### Fixed
+
+- **Critical**: Fixed RequestConverter bypassing ServerBag, breaking HTTP authentication and server bag reads ([#59](https://github.com/crazy-goat/workerman-bundle/issues/59))
+  - HTTP headers are now converted to `HTTP_*` format in server bag (CGI convention)
+  - `Authorization` header is correctly parsed into `PHP_AUTH_USER`/`PHP_AUTH_PW` for Basic/Digest auth
+  - `Content-Type`, `Content-Length`, `Content-MD5` use CGI convention (no `HTTP_` prefix)
+  - `SERVER_PROTOCOL` now has correct `HTTP/1.1` format instead of `1.1`
+  - `$request->getUser()` and `$request->getPassword()` now work correctly
+  - `$request->server->get('HTTP_HOST')` and other server bag reads now return expected values
+
 ### Migration Guide
 
 #### For consumers catching specific exceptions
