@@ -712,4 +712,104 @@ final class SymfonyControllerTest extends TestCase
         $this->assertJson($response->rawBody());
         $this->assertSame('{"items":[1,2,3]}', $response->rawBody());
     }
+
+    public function testHttpsE2E(): void
+    {
+        // E2E test: Verify HTTPS detection works through full stack (#64)
+        $symfonyResponse = new SymfonyResponse('secure');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        // Create a mock connection with SSL port (443)
+        $buffer = "GET /secure HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+        $request->connection = new class (443) extends \Workerman\Connection\TcpConnection {
+            public function __construct(private readonly int $port)
+            {
+                $this->remoteAddress = '192.168.1.1:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return $this->port;
+            }
+
+            public function getLocalIp(): string
+            {
+                return '0.0.0.0';
+            }
+
+            public function getRemoteIp(): string
+            {
+                return '192.168.1.1';
+            }
+
+            public function getRemotePort(): int
+            {
+                return 12345;
+            }
+        };
+
+        $controller($request);
+
+        $this->assertNotNull($kernel->receivedRequest);
+        $symfonyRequest = $kernel->receivedRequest;
+
+        // HTTPS should be detected from port 443
+        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
+        $this->assertTrue($symfonyRequest->isSecure());
+        $this->assertSame('https', $symfonyRequest->getScheme());
+    }
+
+    public function testXForwardedProtoHttpsE2E(): void
+    {
+        // E2E test: Verify X-Forwarded-Proto header is detected (#64)
+        $symfonyResponse = new SymfonyResponse('proxied');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        // Create request with X-Forwarded-Proto header (connection port is regular 80)
+        $buffer = "GET /proxied HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-Proto: https\r\n\r\n";
+        $request = new Request($buffer);
+        $request->connection = new class (80) extends \Workerman\Connection\TcpConnection {
+            public function __construct(private readonly int $port)
+            {
+                $this->remoteAddress = '192.168.1.1:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return $this->port;
+            }
+
+            public function getLocalIp(): string
+            {
+                return '0.0.0.0';
+            }
+
+            public function getRemoteIp(): string
+            {
+                return '192.168.1.1';
+            }
+
+            public function getRemotePort(): int
+            {
+                return 12345;
+            }
+        };
+
+        $controller($request);
+
+        $this->assertNotNull($kernel->receivedRequest);
+        $symfonyRequest = $kernel->receivedRequest;
+
+        // HTTPS should be detected from X-Forwarded-Proto header
+        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
+        $this->assertTrue($symfonyRequest->isSecure());
+        $this->assertSame('https', $symfonyRequest->getScheme());
+    }
 }
