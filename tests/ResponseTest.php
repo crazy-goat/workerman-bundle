@@ -69,4 +69,22 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
         $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
     }
+
+    public function testBinaryFileResponseWithRangeRequest(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        // Request only first 5 bytes
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
+            'headers' => [
+                'Range' => 'bytes=0-4',
+            ],
+        ]);
+
+        // Should return 206 Partial Content for range requests
+        $this->assertSame(206, $response->getStatusCode());
+        // Body should be exactly 5 bytes
+        $this->assertSame(5, strlen((string) $response->getBody()));
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+    }
 }

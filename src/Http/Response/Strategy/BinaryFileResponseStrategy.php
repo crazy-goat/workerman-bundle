@@ -24,10 +24,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
 
     public function convert(SymfonyResponse $response, array $headers): WorkermanResponse
     {
-        if (!$response instanceof BinaryFileResponse) {
-            throw new \InvalidArgumentException('Expected BinaryFileResponse, got ' . $response::class);
-        }
-
+        /** @var BinaryFileResponse $response */
         $workermanResponse = new WorkermanResponse(
             $response->getStatusCode(),
             $headers,
@@ -50,6 +47,22 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         $file = $response->getFile();
         $offset = $this->getPrivateProperty($response, 'offset');
         $maxlen = $this->getPrivateProperty($response, 'maxlen');
+        $deleteFileAfterSend = $this->getPrivateProperty($response, 'deleteFileAfterSend');
+
+        // If file should be deleted after send, we must read it into memory
+        // because Workerman's withFile() doesn't support post-send callbacks
+        if ($deleteFileAfterSend === true) {
+            $filePath = $file->getPathname();
+            $content = $this->readFileContent($filePath, $offset ?? 0, $maxlen ?? 0);
+            $workermanResponse->withBody($content);
+
+            // Delete the file immediately after reading
+            if (is_file($filePath)) {
+                unlink($filePath);
+            }
+
+            return $workermanResponse;
+        }
 
         $workermanResponse->withFile(
             $file->getPathname(),
@@ -61,27 +74,54 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
     }
 
     /**
+     * Read file content with optional offset and length limit.
+     * If maxlen is 0, reads the entire file from offset.
+     */
+    private function readFileContent(string $filePath, int $offset, int $maxlen): string
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return '';
+        }
+
+        // If maxlen is 0 or negative, read entire file from offset
+        $length = $maxlen > 0 ? $maxlen : null;
+        $content = file_get_contents($filePath, false, null, $offset, $length);
+
+        return $content !== false ? $content : '';
+    }
+
+    /**
      * Get the temp file object from BinaryFileResponse if it exists.
-     * Uses reflection to access private property.
+     * Uses reflection to access private property with graceful fallback.
      */
     private function getTempFileObject(BinaryFileResponse $response): ?\SplTempFileObject
     {
-        $reflection = new \ReflectionClass($response);
-        $property = $reflection->getProperty('tempFileObject');
+        try {
+            $reflection = new \ReflectionClass($response);
+            $property = $reflection->getProperty('tempFileObject');
+            $value = $property->getValue($response);
 
-        $value = $property->getValue($response);
-
-        return $value instanceof \SplTempFileObject ? $value : null;
+            return $value instanceof \SplTempFileObject ? $value : null;
+        } catch (\ReflectionException) {
+            // Property doesn't exist in this Symfony version, assume no temp file
+            return null;
+        }
     }
 
     /**
      * Get a private property value from BinaryFileResponse.
+     * Uses reflection with graceful fallback if property doesn't exist.
      */
     private function getPrivateProperty(BinaryFileResponse $response, string $propertyName): mixed
     {
-        $reflection = new \ReflectionClass($response);
-        $property = $reflection->getProperty($propertyName);
+        try {
+            $reflection = new \ReflectionClass($response);
+            $property = $reflection->getProperty($propertyName);
 
-        return $property->getValue($response);
+            return $property->getValue($response);
+        } catch (\ReflectionException) {
+            // Property doesn't exist in this Symfony version, return null
+            return null;
+        }
     }
 }
