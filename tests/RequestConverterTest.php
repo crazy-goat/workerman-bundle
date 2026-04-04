@@ -261,6 +261,106 @@ final class RequestConverterTest extends TestCase
         $this->assertSame(12345, $symfonyRequest->server->get('REMOTE_PORT'));
     }
 
+    public function testServerPortFromConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8080);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8080, $symfonyRequest->server->get('SERVER_PORT'));
+    }
+
+    public function testServerPortDefaultsTo80WhenNoConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = null;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(80, $symfonyRequest->server->get('SERVER_PORT'));
+    }
+
+    public function testGetPortReturnsServerPortWhenNoHostHeader(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8443);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8443, $symfonyRequest->getPort());
+    }
+
+    public function testGetPortReturnsPortFromHostHeaderWhenPresent(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost:8080\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8080);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8080, $symfonyRequest->getPort());
+    }
+
+    public function testServerPortDefaultsTo443WhenNoConnectionButHttpsForwarded(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-Proto: https\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = null;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(443, $symfonyRequest->server->get('SERVER_PORT'));
+        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
+    }
+
+    public function testHttpsDetectedFromPort443(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(443);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(443, $symfonyRequest->server->get('SERVER_PORT'));
+        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
+        $this->assertSame('https', $symfonyRequest->getScheme());
+    }
+
+    public function testGetSchemeAndHttpHostOmitsPort443ForHttps(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(443);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('https://example.com', $symfonyRequest->getSchemeAndHttpHost());
+    }
+
+    private function createMockConnection(int $localPort): \Workerman\Connection\TcpConnection
+    {
+        return new class ($localPort) extends \Workerman\Connection\TcpConnection {
+            public function __construct(private readonly int $port)
+            {
+                $this->remoteAddress = '192.168.1.1:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return $this->port;
+            }
+
+            public function getLocalIp(): string
+            {
+                return '0.0.0.0';
+            }
+        };
+    }
+
     /**
      * @param array<int, array{name: string, filename: string, content: string}> $fields
      */
