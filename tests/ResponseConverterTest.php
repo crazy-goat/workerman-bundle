@@ -38,9 +38,32 @@ final class ResponseConverterTest extends TestCase
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
-        $response = new JsonResponse(['key' => 'value'], 200, ['X-Custom' => 'header']);
+        $response = new Response('content', 200, [
+            'Content-Type' => 'text/plain',
+            'X-Custom' => 'custom-value',
+        ]);
+        
+        // Should not throw - headers are passed to strategy
         $workermanResponse = $converter->convert($response);
+        
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertSame('content', (string) $workermanResponse->rawBody());
+    }
 
+    public function testConvertNormalizesHeaderNames(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        // Symfony stores some headers in lowercase internally
+        $response = new Response('content', 200, [
+            'content-type' => 'text/html',
+            'content-disposition' => 'attachment',
+        ]);
+        
+        // Should not throw - headers are normalized and passed to strategy
+        $workermanResponse = $converter->convert($response);
+        
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
 
