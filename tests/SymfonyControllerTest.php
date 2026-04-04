@@ -541,9 +541,9 @@ final class SymfonyControllerTest extends TestCase
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
+        // Test HTTP/1.1
         $buffer = "GET /protocol HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
-
         $controller($request);
 
         $this->assertNotNull($kernel->receivedRequest);
@@ -553,6 +553,27 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame('HTTP/1.1', $symfonyRequest->server->get('SERVER_PROTOCOL'));
         // getProtocolVersion() should also return correct value
         $this->assertSame('HTTP/1.1', $symfonyRequest->getProtocolVersion());
+    }
+
+    public function testServerProtocolHttp2Prefix(): void
+    {
+        // E2E test: Verify HTTP/2.0 protocol version is handled correctly
+        $symfonyResponse = new SymfonyResponse('OK');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        // Test HTTP/2.0
+        $buffer = "GET /protocol HTTP/2.0\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+        $controller($request);
+
+        $this->assertNotNull($kernel->receivedRequest);
+        $symfonyRequest = $kernel->receivedRequest;
+
+        // Verify prefix logic works for HTTP/2.0
+        $this->assertStringStartsWith('HTTP/', $symfonyRequest->server->get('SERVER_PROTOCOL'));
     }
 
     public function testStreamedResponseE2E(): void

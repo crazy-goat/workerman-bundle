@@ -9,17 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Fixed SERVER_PROTOCOL format to include HTTP/ prefix ([#60](https://github.com/crazy-goat/workerman-bundle/issues/60))
-  - Changed from `'1.1'` to `'HTTP/1.1'` to match PHP-FPM behavior
-  - Ensures `$request->getProtocolVersion()` returns correct value
-
 - Added E2E tests for `StreamedResponse` in `SymfonyControllerTest` ([#69](https://github.com/crazy-goat/workerman-bundle/issues/69))
-  - `testStreamedResponseE2E` - verifies content is captured via output buffering
-  - `testStreamedResponseWithStatusCode` - verifies status code preservation
-  - `testStreamedResponseWithHeaders` - verifies headers pass through
-  - `testStreamedResponseEmptyContent` - verifies empty streams work
-  - `testStreamedJsonResponseE2E` - verifies JSON streaming (Symfony 7.1+)
-  - `testConvertCallbackExceptionCleansOB` - verifies OB cleanup on exception
+
+### Fixed
+
+- Added E2E test verifying `SERVER_PROTOCOL` includes HTTP/ prefix ([#60](https://github.com/crazy-goat/workerman-bundle/issues/60))
+  - Test validates fix from PR #101: `'HTTP/' . $rawRequest->protocolVersion()`
 
 ### Changed
 
