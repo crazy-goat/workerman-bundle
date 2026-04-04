@@ -87,4 +87,27 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame(5, strlen((string) $response->getBody()));
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
+
+    public function testBinaryFileResponseWithDeleteAfterSend(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_delete');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('Delete me after download!', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+        // File should be deleted after download (handled by strategy)
+    }
+
+    public function testBinaryFileResponseWithTempFileObject(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('Temp file object content', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+    }
 }
