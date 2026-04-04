@@ -53,7 +53,7 @@ class RequestConverter
             unset($server['HTTP_CONTENT_MD5']);
         }
 
-        $request = new Request(
+        return new Request(
             is_array($query) ? $query : [],
             $isFormData && is_array($post) ? $post : [],
             [],
@@ -62,7 +62,5 @@ class RequestConverter
             $server,
             $rawRequest->rawBody(),
         );
-
-        return $request;
     }
 }
