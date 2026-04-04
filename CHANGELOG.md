@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enables `$request->getPort()` for non-standard ports (8080, 8443, etc.)
   - Required for Symfony's `getPort()` to return correct value when Host header has no port
   - Falls back to port 80 and localhost when connection is not available
+  - Detects HTTPS from port 443 or `X-Forwarded-Proto: https` header
+  - Sets `HTTPS=on` for HTTPS requests, enabling proper `getScheme()` behavior
 
 - Added E2E tests for `StreamedResponse` in `SymfonyControllerTest` ([#69](https://github.com/crazy-goat/workerman-bundle/issues/69))
 

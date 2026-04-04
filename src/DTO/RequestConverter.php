@@ -29,15 +29,25 @@ class RequestConverter
         $headers = $rawRequest->header() ?? [];
         // Fallback to 127.0.0.1:0 for unit test scenarios where connection is null.
         // In production, connection should always be present.
+
+        // Detect HTTPS from connection port or X-Forwarded-Proto header
+        $localPort = $rawRequest->connection?->getLocalPort();
+        $forwardedProto = strtolower((string) $rawRequest->header('x-forwarded-proto', ''));
+        $isHttps = $localPort === 443 || $forwardedProto === 'https';
+
         $server = [
             'REQUEST_URI' => $rawRequest->uri(),
             'REQUEST_METHOD' => $rawRequest->method(),
             'SERVER_PROTOCOL' => 'HTTP/' . $rawRequest->protocolVersion(),
             'REMOTE_ADDR' => $rawRequest->connection?->getRemoteIp() ?? '127.0.0.1',
             'REMOTE_PORT' => $rawRequest->connection?->getRemotePort() ?? 0,
-            'SERVER_PORT' => $rawRequest->connection?->getLocalPort() ?? 80,
+            'SERVER_PORT' => $localPort ?? ($isHttps ? 443 : 80),
             'SERVER_NAME' => $rawRequest->connection?->getLocalIp() ?? 'localhost',
         ];
+
+        if ($isHttps) {
+            $server['HTTPS'] = 'on';
+        }
 
         // Convert headers to HTTP_* format for ServerBag
         foreach ($headers as $name => $value) {
