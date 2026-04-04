@@ -178,4 +178,25 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
     }
+
+    public function testConvertHandlesFileDeletedAfterConstruction(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        // Create a temp file
+        $tempFile = sys_get_temp_dir() . '/vanishing_file_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'I will disappear!');
+
+        // Create response while file exists
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+
+        // Delete file after construction but before conversion (race condition)
+        unlink($tempFile);
+
+        // Conversion should handle gracefully - Workerman returns 404 for missing files
+        $workermanResponse = $strategy->convert($binaryResponse, []);
+
+        // Workerman detects missing file and returns 404
+        $this->assertSame(404, $workermanResponse->getStatusCode());
+    }
 }
