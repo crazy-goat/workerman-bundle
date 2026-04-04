@@ -8,8 +8,6 @@ use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
-use Workerman\Timer;
-use Workerman\Worker;
 
 /**
  * Strategy for converting Symfony BinaryFileResponse to Workerman Response.
@@ -32,41 +30,17 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $headers,
         );
 
-        // Handle SplTempFileObject (in-memory files) - write to temp file for streaming
+        // Handle SplTempFileObject (in-memory files) - read directly to body
+        // SplTempFileObject stores data in memory by default (max 2MB), no temp file needed
         $tempFileObject = $this->getTempFileObject($response);
         if ($tempFileObject instanceof \SplTempFileObject) {
-            $tempFilePath = $this->writeTempFileObjectToDisk($tempFileObject);
-
-            if ($tempFilePath !== null) {
-                // Use Workerman's efficient file streaming
-                $workermanResponse->withFile($tempFilePath, 0, 0);
-
-                // Schedule cleanup to delete temp file after response is sent
-                // Use Timer in Workerman environment, fallback to register_shutdown_function in tests
-                if (Worker::getAllWorkers() !== []) {
-                    // Timer::add(0) runs in next event loop tick, after response is sent
-                    Timer::add(0, static function () use ($tempFilePath): void {
-                        if (is_file($tempFilePath)) {
-                            unlink($tempFilePath);
-                        }
-                    }, persistent: false);
-                } else {
-                    // Fallback for non-Workerman environments (e.g., unit tests)
-                    register_shutdown_function(static function () use ($tempFilePath): void {
-                        if (is_file($tempFilePath)) {
-                            unlink($tempFilePath);
-                        }
-                    });
-                }
-
-                return $workermanResponse;
-            }
-
-            // Fallback: read into memory if temp file creation fails
             $tempFileObject->rewind();
             $content = '';
             while (!$tempFileObject->eof()) {
-                $content .= $tempFileObject->fread(8192);
+                $chunk = $tempFileObject->fread(8192);
+                if ($chunk !== false) {
+                    $content .= $chunk;
+                }
             }
             $workermanResponse->withBody($content);
 
@@ -118,38 +92,6 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         $content = file_get_contents($filePath, false, null, $offset, $length);
 
         return $content !== false ? $content : '';
-    }
-
-    /**
-     * Write SplTempFileObject content to a physical temp file for streaming.
-     * Returns the temp file path or null on failure.
-     */
-    private function writeTempFileObjectToDisk(\SplTempFileObject $tempFileObject): ?string
-    {
-        $tempFilePath = tempnam(sys_get_temp_dir(), 'workerman_bundle_');
-        if ($tempFilePath === false) {
-            return null;
-        }
-
-        $tempFileObject->rewind();
-        $destHandle = fopen($tempFilePath, 'wb');
-        if ($destHandle === false) {
-            unlink($tempFilePath);
-            return null;
-        }
-
-        while (!$tempFileObject->eof()) {
-            $chunk = $tempFileObject->fread(8192);
-            if ($chunk === false || fwrite($destHandle, $chunk) === false) {
-                fclose($destHandle);
-                unlink($tempFilePath);
-                return null;
-            }
-        }
-
-        fclose($destHandle);
-
-        return $tempFilePath;
     }
 
     /**

@@ -104,9 +104,8 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $workermanResponse = $strategy->convert($binaryResponse, []);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        // For temp files, content is written to a temp file and streamed
-        $this->assertNotNull($workermanResponse->file);
-        $this->assertSame('Temp file content', file_get_contents($workermanResponse->file['file']));
+        // For temp files, content is read directly into body (no temp file created)
+        $this->assertSame('Temp file content', $workermanResponse->rawBody());
     }
 
     public function testConvertHandlesRangeRequest(): void

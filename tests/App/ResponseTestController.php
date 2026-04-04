@@ -82,52 +82,6 @@ final class ResponseTestController extends AbstractController
         // Clean up dummy file
         unlink($dummyFile);
 
-        // Store temp file path in header for testing cleanup
-        // The strategy will create a temp file from SplTempFileObject
-        // We can't know the exact path, but we can verify cleanup works
-        // by checking that no workerman_bundle_* files accumulate
-
         return $response;
-    }
-
-    #[Route('/response_test_temp_file_with_path', name: 'app_response_test_temp_file_with_path')]
-    public function tempFileResponseWithPath(): Response
-    {
-        // Create a temp file that will be converted to physical file by strategy
-        $tempFile = new \SplTempFileObject();
-        $tempFile->fwrite('Temp file for cleanup test');
-
-        // Create a dummy file path for BinaryFileResponse constructor
-        $dummyFile = sys_get_temp_dir() . '/dummy_' . uniqid() . '.txt';
-        file_put_contents($dummyFile, 'dummy');
-
-        $binaryResponse = new BinaryFileResponse($dummyFile, Response::HTTP_OK, [
-            'Content-Type' => 'text/plain',
-            'Content-Disposition' => 'attachment; filename="temp_file.txt"',
-        ]);
-
-        // Use reflection to set tempFileObject
-        $reflection = new \ReflectionClass($binaryResponse);
-        $property = $reflection->getProperty('tempFileObject');
-        $property->setValue($binaryResponse, $tempFile);
-
-        // Clean up dummy file
-        unlink($dummyFile);
-
-        // Convert to get the temp file path
-        $strategy = new \CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy();
-        $workermanResponse = $strategy->convert($binaryResponse, []);
-
-        // Get the temp file path from the response
-        $tempFilePath = $workermanResponse->file['file'] ?? null;
-
-        // Return a regular response with the temp file path in header
-        return new Response(
-            content: 'Temp file created',
-            headers: [
-                'Content-Type' => 'text/plain',
-                'X-Temp-File-Path' => $tempFilePath ?? 'unknown',
-            ],
-        );
     }
 }
