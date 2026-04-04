@@ -7,7 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Exception;
 /**
  * Exception thrown when attempting to start a server that is already running.
  */
-class ServerAlreadyRunningException extends ServerException
+final class ServerAlreadyRunningException extends ServerException
 {
     public function __construct()
     {

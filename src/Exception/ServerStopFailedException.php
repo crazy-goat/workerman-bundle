@@ -7,7 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Exception;
 /**
  * Exception thrown when server stop operation fails (timeout).
  */
-class ServerStopFailedException extends ServerException
+final class ServerStopFailedException extends ServerException
 {
     public function __construct()
     {

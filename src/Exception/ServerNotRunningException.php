@@ -7,7 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Exception;
 /**
  * Exception thrown when attempting to interact with a server that is not running.
  */
-class ServerNotRunningException extends ServerException
+final class ServerNotRunningException extends ServerException
 {
     public function __construct()
     {

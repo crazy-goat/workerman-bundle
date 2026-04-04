@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
+use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Worker;
 
