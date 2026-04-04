@@ -2,4 +2,4 @@
 composer.lock
 vendor/
 var/
-.vscode/
+.vscode/.worktrees/
