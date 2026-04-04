@@ -13,8 +13,9 @@ class RequestConverter
     {
         $cookies = $rawRequest->cookie();
         $query = $rawRequest->get();
-        $post = $rawRequest->post();
+        // IMPORTANT: Get files BEFORE post() because parsePost() clears the files array
         $files = $rawRequest->file() ?? [];
+        $post = $rawRequest->post();
 
         // Validate file structure to provide clearer error messages
         self::validateFilesStructure($files);
@@ -74,8 +75,19 @@ class RequestConverter
      */
     private static function validateFileEntry(string $fieldName, mixed $fileData): void
     {
+        // Non-array file data is invalid
+        if (!is_array($fileData)) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Malformed file upload data for field "%s": expected array, got %s',
+                    $fieldName,
+                    gettype($fileData),
+                ),
+            );
+        }
+
         // Handle nested file arrays (e.g., files[field][])
-        if (is_array($fileData) && isset($fileData[0]) && is_array($fileData[0])) {
+        if (isset($fileData[0]) && is_array($fileData[0])) {
             foreach ($fileData as $index => $nestedFile) {
                 if (!is_array($nestedFile)) {
                     throw new InvalidArgumentException(
@@ -93,28 +105,57 @@ class RequestConverter
             return;
         }
 
-        // Handle single file or nested associative array (e.g., files[field][subfield])
-        if (is_array($fileData)) {
-            // Check if this is a file structure or nested file array
-            if (isset($fileData['tmp_name']) || isset($fileData['name'])) {
-                self::validateSingleFileArray($fieldName, $fileData);
-            } else {
-                // Nested associative array - validate each entry
-                foreach ($fileData as $subFieldName => $subFileData) {
-                    if (is_array($subFileData)) {
-                        if (isset($subFileData[0]) && is_array($subFileData[0])) {
-                            // Array of files in nested field
-                            foreach ($subFileData as $index => $nestedFile) {
-                                if (is_array($nestedFile)) {
-                                    self::validateSingleFileArray($fieldName . '[' . $subFieldName . '][' . $index . ']', $nestedFile);
-                                }
-                            }
-                        } elseif (isset($subFileData['tmp_name']) || isset($subFileData['name'])) {
-                            // Single file in nested field
-                            self::validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
+        // Check if this is a file structure or nested associative array (e.g., files[field][subfield])
+        if (isset($fileData['tmp_name']) || isset($fileData['name'])) {
+            self::validateSingleFileArray($fieldName, $fileData);
+
+            return;
+        }
+
+        // Nested associative array - validate each entry
+        foreach ($fileData as $subFieldName => $subFileData) {
+            if (is_array($subFileData)) {
+                if (isset($subFileData[0]) && is_array($subFileData[0])) {
+                    // Array of files in nested field
+                    foreach ($subFileData as $index => $nestedFile) {
+                        if (is_array($nestedFile)) {
+                            self::validateSingleFileArray($fieldName . '[' . $subFieldName . '][' . $index . ']', $nestedFile);
+                        } else {
+                            throw new InvalidArgumentException(
+                                sprintf(
+                                    'Malformed file upload data for field "%s[%s][%s]": expected array, got %s',
+                                    $fieldName,
+                                    $subFieldName,
+                                    $index,
+                                    gettype($nestedFile),
+                                ),
+                            );
                         }
                     }
+                } elseif (isset($subFileData['tmp_name']) || isset($subFileData['name'])) {
+                    // Single file in nested field
+                    self::validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
+                } else {
+                    // Unrecognized nested structure
+                    throw new InvalidArgumentException(
+                        sprintf(
+                            'Malformed file upload data for field "%s[%s]": unrecognized structure. ' .
+                            'Expected file keys (name, tmp_name) or array of files. Got keys: %s',
+                            $fieldName,
+                            $subFieldName,
+                            implode(', ', array_keys($subFileData)),
+                        ),
+                    );
                 }
+            } else {
+                throw new InvalidArgumentException(
+                    sprintf(
+                        'Malformed file upload data for field "%s[%s]": expected array, got %s',
+                        $fieldName,
+                        $subFieldName,
+                        gettype($subFileData),
+                    ),
+                );
             }
         }
     }

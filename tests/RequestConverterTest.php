@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -15,9 +16,6 @@ final class RequestConverterTest extends TestCase
 {
     public function testValidFileStructureIsAccepted(): void
     {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
-        file_put_contents($tmpFile, 'test content');
-
         $buffer = $this->createMultipartRequest(
             boundary: 'TestBoundary',
             fields: [
@@ -36,25 +34,125 @@ final class RequestConverterTest extends TestCase
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
         $this->assertTrue($symfonyRequest->files->has('test_file'));
-
-        unlink($tmpFile);
     }
 
     public function testMissingRequiredFieldThrowsException(): void
     {
-        // This test verifies that the validation method exists and has proper structure
-        // The actual validation is tested indirectly through integration tests
-        // We verify the class has the validation methods by checking method existence
-        $reflection = new \ReflectionClass(RequestConverter::class);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('missing required field');
 
-        // Check that private validation methods exist
-        $this->assertTrue($reflection->hasMethod('validateFilesStructure'));
-        $this->assertTrue($reflection->hasMethod('validateFileEntry'));
-        $this->assertTrue($reflection->hasMethod('validateSingleFileArray'));
+        // Create a temp file so Workerman doesn't clear our files array
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
 
-        // Verify the methods are private
-        $validateFilesStructure = $reflection->getMethod('validateFilesStructure');
-        $this->assertTrue($validateFilesStructure->isPrivate());
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        // Manually inject malformed file data (missing required fields) but with valid tmp_name
+        // so Workerman's file() method doesn't clear it
+        $reflection = new \ReflectionClass($rawRequest);
+        $dataProperty = $reflection->getProperty('data');
+        $dataProperty->setValue($rawRequest, [
+            'files' => [
+                'malformed_file' => [
+                    'name' => 'test.txt',
+                    'tmp_name' => $tmpFile,
+                    // Missing 'type', 'size', 'error' - should trigger validation error
+                ],
+            ],
+        ]);
+
+        try {
+            // This should throw InvalidArgumentException
+            RequestConverter::toSymfonyRequest($rawRequest);
+            // If we get here, delete the file
+            unlink($tmpFile);
+        } catch (InvalidArgumentException $e) {
+            // Exception thrown as expected, clean up
+            unlink($tmpFile);
+            throw $e;
+        }
+    }
+
+    public function testNonArrayFileDataThrowsException(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('expected array, got');
+
+        // Create a temp file so Workerman doesn't clear our files array
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        // Inject non-array file data but with a sibling that has valid tmp_name
+        // to prevent Workerman from clearing the entire files array
+        $reflection = new \ReflectionClass($rawRequest);
+        $dataProperty = $reflection->getProperty('data');
+        $dataProperty->setValue($rawRequest, [
+            'files' => [
+                'valid_file' => [
+                    'name' => 'valid.txt',
+                    'tmp_name' => $tmpFile,
+                    'type' => 'text/plain',
+                    'size' => 12,
+                    'error' => 0,
+                ],
+                'invalid_file' => 'not an array',
+            ],
+        ]);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            unlink($tmpFile);
+        } catch (InvalidArgumentException $e) {
+            unlink($tmpFile);
+            throw $e;
+        }
+    }
+
+    public function testUnrecognizedNestedStructureThrowsException(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('unrecognized structure');
+
+        // Create a temp file so Workerman doesn't clear our files array
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        // Inject nested file data with unrecognized structure but with valid tmp_name
+        // at the top level to prevent Workerman from clearing the files array
+        $reflection = new \ReflectionClass($rawRequest);
+        $dataProperty = $reflection->getProperty('data');
+        $dataProperty->setValue($rawRequest, [
+            'files' => [
+                'valid_file' => [
+                    'name' => 'valid.txt',
+                    'tmp_name' => $tmpFile,
+                    'type' => 'text/plain',
+                    'size' => 12,
+                    'error' => 0,
+                ],
+                'nested' => [
+                    'unrecognized' => [
+                        'foo' => 'bar',
+                        // Missing file keys (name, tmp_name)
+                    ],
+                ],
+            ],
+        ]);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            unlink($tmpFile);
+        } catch (InvalidArgumentException $e) {
+            unlink($tmpFile);
+            throw $e;
+        }
     }
 
     public function testNestedFileArrayValidation(): void
