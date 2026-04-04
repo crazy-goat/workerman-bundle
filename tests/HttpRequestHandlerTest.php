@@ -6,6 +6,8 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Test\App\TestMiddleware;
 use PHPUnit\Framework\TestCase;
@@ -179,7 +181,8 @@ final class HttpRequestHandlerTest extends TestCase
     {
         $this->kernel = new HttpHandlerTestKernel();
         $this->rebootStrategy = new TestRebootStrategy();
-        $this->handler = new HttpRequestHandler($this->kernel, $this->rebootStrategy);
+        $responseConverter = new ResponseConverter([new DefaultResponseStrategy()]);
+        $this->handler = new HttpRequestHandler($this->kernel, $this->rebootStrategy, $responseConverter);
     }
 
     public function testHandlerInitializesCorrectly(): void

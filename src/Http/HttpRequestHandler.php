@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http;
 
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
@@ -26,8 +27,9 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     public function __construct(
         private readonly KernelInterface         $kernel,
         private readonly RebootStrategyInterface $rebootStrategy,
+        private readonly ResponseConverter       $responseConverter,
     ) {
-        $this->controller = new SymfonyController($this->kernel);
+        $this->controller = new SymfonyController($this->kernel, $this->responseConverter);
     }
 
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self

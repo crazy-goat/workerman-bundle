@@ -47,6 +47,7 @@ return new class implements CompilerPassInterface {
             ->setArguments([
                 new Reference(KernelInterface::class),
                 new Reference('workerman.reboot_strategy'),
+                new Reference('workerman.response_converter'),
                 [],
             ]);
 

@@ -135,7 +135,7 @@ return static function (array $config, ContainerBuilder $container): void {
     $container
         ->register('workerman.response_converter', ResponseConverter::class)
         ->setArguments([
-            new Reference('workerman.default_response_strategy'),
+            [new Reference('workerman.default_response_strategy')],
         ])
     ;
 };
