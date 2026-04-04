@@ -149,6 +149,45 @@ final class RequestConverterTest extends TestCase
         }
     }
 
+    public function testHeadersAreAvailableInServerBag(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "Authorization: Basic " . base64_encode('user:pass') . "\r\n";
+        $buffer .= "Content-Type: application/json\r\n";
+        $buffer .= "Content-Length: 123\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        // Headers should be in server bag with HTTP_ prefix
+        $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
+        
+        // Authorization should be parsed into PHP_AUTH_* (Symfony parses this from HTTP_AUTHORIZATION)
+        $this->assertSame('user', $symfonyRequest->getUser());
+        $this->assertSame('pass', $symfonyRequest->getPassword());
+        
+        // Content-Type and Content-Length should NOT have HTTP_ prefix (CGI convention)
+        $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
+        $this->assertSame('123', $symfonyRequest->server->get('CONTENT_LENGTH'));
+        
+        // HTTP_CONTENT_TYPE should NOT exist (moved to CONTENT_TYPE)
+        $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
+        $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_LENGTH'));
+    }
+
+    public function testServerProtocolHasHttpPrefix(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('HTTP/1.1', $symfonyRequest->server->get('SERVER_PROTOCOL'));
+    }
+
     /**
      * @param array<int, array{name: string, filename: string, content: string}> $fields
      */
