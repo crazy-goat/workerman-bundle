@@ -110,4 +110,31 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('Temp file object content', (string) $response->getBody());
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
+
+    public function testTempFileObjectCleanupAfterResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        // Get the temp file path that will be created
+        $response1 = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file_with_path');
+
+        $this->assertSame(200, $response1->getStatusCode());
+        $tempFilePath = $response1->getHeaderLine('X-Temp-File-Path');
+
+        // Skip test if we couldn't get the temp file path
+        if ($tempFilePath === '' || $tempFilePath === 'unknown') {
+            $this->markTestSkipped('Could not determine temp file path');
+        }
+
+        // The temp file was created during request processing
+        // Timer::add(0) schedules cleanup for next event loop tick
+        // Wait for cleanup to execute
+        usleep(200_000); // 200ms - enough for next event loop tick
+
+        // Verify file was cleaned up after response was sent
+        $this->assertFileDoesNotExist(
+            $tempFilePath,
+            sprintf('Temp file %s should be deleted after response is sent', $tempFilePath),
+        );
+    }
 }
