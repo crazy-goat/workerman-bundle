@@ -261,6 +261,86 @@ final class RequestConverterTest extends TestCase
         $this->assertSame(12345, $symfonyRequest->server->get('REMOTE_PORT'));
     }
 
+    public function testServerPortFromConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
+            public function __construct()
+            {
+                $this->remoteAddress = '192.168.1.100:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return 8080;
+            }
+        };
+        $rawRequest->connection = $mockConnection;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8080, $symfonyRequest->server->get('SERVER_PORT'));
+    }
+
+    public function testServerPortDefaultsTo80WhenNoConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = null;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(80, $symfonyRequest->server->get('SERVER_PORT'));
+    }
+
+    public function testGetPortReturnsServerPortWhenNoHostHeader(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
+            public function __construct()
+            {
+                $this->remoteAddress = '192.168.1.1:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return 8443;
+            }
+        };
+        $rawRequest->connection = $mockConnection;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8443, $symfonyRequest->getPort());
+    }
+
+    public function testGetPortReturnsPortFromHostHeaderWhenPresent(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost:8080\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $mockConnection = new class extends \Workerman\Connection\TcpConnection {
+            public function __construct()
+            {
+                $this->remoteAddress = '192.168.1.1:12345';
+            }
+
+            public function getLocalPort(): int
+            {
+                return 8080;
+            }
+        };
+        $rawRequest->connection = $mockConnection;
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8080, $symfonyRequest->getPort());
+    }
+
     /**
      * @param array<int, array{name: string, filename: string, content: string}> $fields
      */

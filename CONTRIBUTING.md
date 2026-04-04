@@ -38,6 +38,12 @@ All pull requests must pass the following checks before merging:
 
 3. Ensure all checks pass before pushing
 
+4. Update CHANGELOG.md:
+   - Add entry under `[Unreleased]` section
+   - Follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
+   - Include issue number (e.g., `(#65)`)
+   - Use appropriate section: `Added`, `Changed`, `Fixed`, `Removed`, or `Deprecated`
+
 ### CI Configuration
 
 The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
