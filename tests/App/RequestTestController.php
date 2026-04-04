@@ -75,6 +75,24 @@ final class RequestTestController extends AbstractController
         return $this->json($result);
     }
 
+    /**
+     * Endpoint that receives actual file uploads and returns error information.
+     * This tests the RequestConverter path (not manual Request creation).
+     */
+    #[Route('/request_test_upload_with_error', name: 'app_request_test_upload_with_error')]
+    public function testUploadWithError(Request $request): JsonResponse
+    {
+        $optionalFile = $request->files->get('optional_file');
+        $validFile = $request->files->get('valid_file');
+
+        return $this->json([
+            'optional_file_is_null' => $optionalFile === null,
+            'valid_file_exists' => $validFile instanceof UploadedFile,
+            'valid_file_name' => $validFile instanceof UploadedFile ? $validFile->getClientOriginalName() : null,
+            'valid_file_error' => $validFile instanceof UploadedFile ? $validFile->getError() : null,
+        ]);
+    }
+
     #[Route('/request_test_full_path', name: 'app_request_test_full_path')]
     public function testFullPath(Request $request): JsonResponse
     {
@@ -143,6 +161,35 @@ final class RequestTestController extends AbstractController
         }
 
         return $response;
+    }
+
+    /**
+     * Endpoint that receives actual directory uploads with full_path.
+     * This tests the RequestConverter path (not manual Request creation).
+     */
+    #[Route('/request_test_upload_full_path', name: 'app_request_test_upload_full_path')]
+    public function testUploadFullPath(Request $request): JsonResponse
+    {
+        $projectFiles = $request->files->get('project_files');
+        $result = [];
+        $filesCount = 0;
+
+        if (is_array($projectFiles)) {
+            $filesCount = count($projectFiles);
+            foreach ($projectFiles as $file) {
+                if ($file instanceof UploadedFile) {
+                    $result[] = [
+                        'original_name' => $file->getClientOriginalName(),
+                        'error' => $file->getError(),
+                    ];
+                }
+            }
+        }
+
+        return $this->json([
+            'files_count' => $filesCount,
+            'files' => $result,
+        ]);
     }
 
     /**

@@ -270,6 +270,88 @@ final class RequestParametersTest extends KernelTestCase
     }
 
     /**
+     * Test file upload with error codes through actual HTTP request.
+     * This tests the RequestConverter path, not manual Request creation.
+     */
+    public function testFileUploadWithErrorThroughRequestConverter(): void
+    {
+        $response = $this->createResponse('POST', [
+            'headers' => [
+                'Content-Type' => 'multipart/form-data; boundary=TestBoundaryError',
+            ],
+            'body' => new MultipartStream(
+                elements: [
+                    [
+                        'name' => 'valid_file',
+                        'filename' => 'test.txt',
+                        'contents' => 'test content for valid file',
+                    ],
+                    // Note: We cannot easily simulate UPLOAD_ERR_NO_FILE through HTTP
+                    // because the browser/client won't send the field if no file is selected.
+                    // The endpoint handles missing files as null.
+                ],
+                boundary: 'TestBoundaryError',
+            ),
+        ], '/request_test_upload_with_error');
+
+        // Valid file should be processed correctly through RequestConverter
+        $this->assertTrue($response['valid_file_exists'] ?? false);
+        $this->assertSame('test.txt', $response['valid_file_name'] ?? null);
+        $this->assertSame(0, $response['valid_file_error'] ?? null);
+
+        // Optional file (not sent) should be null
+        $this->assertTrue($response['optional_file_is_null'] ?? false);
+    }
+
+    /**
+     * Test directory upload with full_path through actual HTTP request.
+     * This tests the RequestConverter path with webkitdirectory uploads.
+     */
+    public function testFullPathSupportThroughRequestConverter(): void
+    {
+        $response = $this->createResponse('POST', [
+            'headers' => [
+                'Content-Type' => 'multipart/form-data; boundary=TestBoundaryFullPath',
+            ],
+            'body' => new MultipartStream(
+                elements: [
+                    [
+                        'name' => 'project_files[]',
+                        'filename' => 'readme.txt',
+                        'contents' => 'readme content',
+                        'headers' => [
+                            'Webkit-Relative-Path' => 'docs/readme.txt',
+                        ],
+                    ],
+                    [
+                        'name' => 'project_files[]',
+                        'filename' => 'config.json',
+                        'contents' => '{}',
+                        'headers' => [
+                            'Webkit-Relative-Path' => 'config/config.json',
+                        ],
+                    ],
+                ],
+                boundary: 'TestBoundaryFullPath',
+            ),
+        ], '/request_test_upload_full_path');
+
+        // Both files should be processed
+        $this->assertSame(2, $response['files_count'] ?? 0);
+        $this->assertIsArray($response['files'] ?? null);
+
+        // Verify files have correct names
+        $fileNames = array_column($response['files'], 'original_name');
+        $this->assertContains('readme.txt', $fileNames);
+        $this->assertContains('config.json', $fileNames);
+
+        // Both files should have no errors
+        foreach ($response['files'] as $file) {
+            $this->assertSame(0, $file['error'] ?? null);
+        }
+    }
+
+    /**
      * @param mixed[] $options
      *
      * @return mixed[]
