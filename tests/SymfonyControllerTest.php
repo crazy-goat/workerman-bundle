@@ -640,4 +640,32 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame('', $response->rawBody());
     }
+
+    public function testStreamedJsonResponseE2E(): void
+    {
+        if (!class_exists(\Symfony\Component\HttpFoundation\StreamedJsonResponse::class)) {
+            $this->markTestSkipped('StreamedJsonResponse requires Symfony 7.1+');
+        }
+
+        $initialObLevel = ob_get_level();
+
+        $streamedJsonResponse = new \Symfony\Component\HttpFoundation\StreamedJsonResponse([
+            'items' => [1, 2, 3],
+        ]);
+
+        $kernel = new TestNonTerminableKernel($streamedJsonResponse);
+        $responseConverter = $this->createResponseConverter(true);
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /streamed-json HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertJson($response->rawBody());
+        $this->assertSame('{"items":[1,2,3]}', $response->rawBody());
+    }
 }
