@@ -12,6 +12,9 @@ class ResponseConverter
     /** @var ResponseConverterStrategyInterface[] */
     private readonly array $strategies;
 
+    /**
+     * @param iterable<ResponseConverterStrategyInterface> $strategies
+     */
     public function __construct(iterable $strategies)
     {
         $this->strategies = iterator_to_array($strategies, false);
