@@ -7,9 +7,11 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 
@@ -329,9 +331,17 @@ final class TestRequestTrackingKernel implements KernelInterface
  */
 final class SymfonyControllerTest extends TestCase
 {
-    private function createResponseConverter(): ResponseConverter
+    private function createResponseConverter(bool $withStreamedStrategy = false): ResponseConverter
     {
-        return new ResponseConverter([new DefaultResponseStrategy()]);
+        // IMPORTANT: StreamedResponseStrategy MUST come before DefaultResponseStrategy
+        // because DefaultResponseStrategy::supports() returns true for ALL responses.
+        $strategies = [];
+        if ($withStreamedStrategy) {
+            $strategies[] = new StreamedResponseStrategy();
+        }
+        $strategies[] = new DefaultResponseStrategy();
+
+        return new ResponseConverter($strategies);
     }
 
     public function testTerminateIfNeededCallsKernelTerminate(): void
@@ -520,5 +530,108 @@ final class SymfonyControllerTest extends TestCase
         // Headers should also be accessible via HeaderBag
         $this->assertSame('api.example.com', $symfonyRequest->headers->get('Host'));
         $this->assertSame('application/json', $symfonyRequest->headers->get('Accept'));
+    }
+
+    public function testStreamedResponseE2E(): void
+    {
+        // E2E test: Verify StreamedResponse content is properly captured
+        $initialObLevel = ob_get_level();
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk1';
+            echo 'chunk2';
+            echo 'chunk3';
+        });
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $responseConverter = $this->createResponseConverter(true);
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
+        $this->assertSame(200, $response->getStatusCode());
+
+        // Debug: check OB level didn't change
+        $this->assertSame(
+            $initialObLevel,
+            ob_get_level(),
+            'OB level should remain unchanged after test',
+        );
+
+        // StreamedResponse content should be captured via output buffering
+        $this->assertSame('chunk1chunk2chunk3', $response->rawBody());
+    }
+
+    public function testStreamedResponseWithStatusCode(): void
+    {
+        $streamedResponse = new StreamedResponse(
+            function (): void {
+                echo 'streamed content';
+            },
+            SymfonyResponse::HTTP_ACCEPTED,
+        );
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $responseConverter = $this->createResponseConverter(true);
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        $this->assertSame(202, $response->getStatusCode());
+        $this->assertSame('streamed content', $response->rawBody());
+    }
+
+    public function testStreamedResponseWithHeaders(): void
+    {
+        $streamedResponse = new StreamedResponse(
+            function (): void {
+                echo 'streaming data';
+            },
+            SymfonyResponse::HTTP_OK,
+            ['Content-Type' => 'text/event-stream', 'X-Stream' => 'true'],
+        );
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $responseConverter = $this->createResponseConverter(true);
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /sse HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        // Content-Type may have charset added by Symfony
+        $this->assertStringContainsString('text/event-stream', $response->getHeader('Content-Type')[0] ?? '');
+        // Headers may be lowercased by Symfony
+        $this->assertSame(['true'], $response->getHeader('x-stream') ?? $response->getHeader('X-Stream'));
+        $this->assertSame('streaming data', $response->rawBody());
+    }
+
+    public function testStreamedResponseEmptyContent(): void
+    {
+        $streamedResponse = new StreamedResponse(function (): void {
+            // Echo nothing
+        });
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $responseConverter = $this->createResponseConverter(true);
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /empty-stream HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        $this->assertSame('', $response->rawBody());
     }
 }
