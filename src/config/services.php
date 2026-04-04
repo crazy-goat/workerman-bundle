@@ -6,6 +6,8 @@ use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
@@ -121,5 +123,19 @@ return static function (array $config, ContainerBuilder $container): void {
         ->register(WorkermanCommand::class)
         ->addTag('console.command')
         ->setAutowired(true)
+    ;
+
+    // ResponseConverter strategies - priority determines order (higher = checked first)
+    $container
+        ->register('workerman.default_response_strategy', DefaultResponseStrategy::class)
+        ->addTag('workerman.response_converter.strategy', ['priority' => 0])
+    ;
+
+    // ResponseConverter with injected strategies
+    $container
+        ->register('workerman.response_converter', ResponseConverter::class)
+        ->setArguments([
+            new Reference('workerman.default_response_strategy'),
+        ])
     ;
 };
