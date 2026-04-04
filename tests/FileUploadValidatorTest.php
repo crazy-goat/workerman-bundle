@@ -13,23 +13,15 @@ use PHPUnit\Framework\TestCase;
  */
 final class FileUploadValidatorTest extends TestCase
 {
-    private FileUploadValidator $validator;
-
-    protected function setUp(): void
-    {
-        $this->validator = new FileUploadValidator();
-    }
-
     public function testEmptyFilesArrayIsAccepted(): void
     {
-        $this->expectNotToPerformAssertions();
-        // Should not throw - if we get here, validation passed
-        $this->validator->validate([]);
+        // Validation passes when no exception is thrown
+        FileUploadValidator::validate([]);
+        $this->addToAssertionCount(1); // No exception means validation passed
     }
 
     public function testValidSingleFileIsAccepted(): void
     {
-        $this->expectNotToPerformAssertions();
         $files = [
             'test_file' => [
                 'name' => 'test.txt',
@@ -40,13 +32,13 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Should not throw - if we get here, validation passed
-        $this->validator->validate($files);
+        // Validation passes when no exception is thrown
+        FileUploadValidator::validate($files);
+        $this->addToAssertionCount(1); // No exception means validation passed
     }
 
     public function testValidMultipleFilesArrayIsAccepted(): void
     {
-        $this->expectNotToPerformAssertions();
         $files = [
             'files' => [
                 [
@@ -66,13 +58,13 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Should not throw - if we get here, validation passed
-        $this->validator->validate($files);
+        // Validation passes when no exception is thrown
+        FileUploadValidator::validate($files);
+        $this->addToAssertionCount(1); // No exception means validation passed
     }
 
     public function testValidNestedAssociativeArrayIsAccepted(): void
     {
-        $this->expectNotToPerformAssertions();
         $files = [
             'user' => [
                 'avatar' => [
@@ -92,13 +84,13 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Should not throw - if we get here, validation passed
-        $this->validator->validate($files);
+        // Validation passes when no exception is thrown
+        FileUploadValidator::validate($files);
+        $this->addToAssertionCount(1); // No exception means validation passed
     }
 
     public function testValidNestedArrayOfFilesIsAccepted(): void
     {
-        $this->expectNotToPerformAssertions();
         $files = [
             'gallery' => [
                 'images' => [
@@ -120,8 +112,9 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Should not throw - if we get here, validation passed
-        $this->validator->validate($files);
+        // Validation passes when no exception is thrown
+        FileUploadValidator::validate($files);
+        $this->addToAssertionCount(1); // No exception means validation passed
     }
 
     public function testMissingRequiredFieldThrowsException(): void
@@ -137,7 +130,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testNonArrayFileDataThrowsException(): void
@@ -149,7 +142,7 @@ final class FileUploadValidatorTest extends TestCase
             'invalid_file' => 'not an array',
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testUnrecognizedNestedStructureThrowsException(): void
@@ -166,7 +159,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testNonArrayInNestedFieldThrowsException(): void
@@ -180,7 +173,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testNonArrayInIndexedNestedArrayThrowsException(): void
@@ -196,7 +189,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testNonArrayInFileArrayThrowsException(): void
@@ -210,7 +203,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testMissingNameFieldThrowsException(): void
@@ -227,7 +220,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testMissingTmpNameFieldThrowsException(): void
@@ -244,7 +237,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testMissingTypeFieldThrowsException(): void
@@ -261,7 +254,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testMissingSizeFieldThrowsException(): void
@@ -278,7 +271,7 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 
     public function testMissingErrorFieldThrowsException(): void
@@ -295,6 +288,6 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        $this->validator->validate($files);
+        FileUploadValidator::validate($files);
     }
 }

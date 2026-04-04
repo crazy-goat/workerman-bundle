@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -108,6 +109,44 @@ final class RequestConverterTest extends TestCase
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
         $this->assertCount(0, $symfonyRequest->files->all());
+    }
+
+    public function testMalformedFileDataThrowsException(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('missing required field');
+
+        // Create a temp file so Workerman doesn't clear our files array
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        // Manually inject malformed file data (missing required fields) but with valid tmp_name
+        // so Workerman's file() method doesn't clear it
+        $reflection = new \ReflectionClass($rawRequest);
+        $dataProperty = $reflection->getProperty('data');
+        $dataProperty->setValue($rawRequest, [
+            'files' => [
+                'malformed_file' => [
+                    'name' => 'test.txt',
+                    'tmp_name' => $tmpFile,
+                    // Missing 'type', 'size', 'error' - should trigger validation error
+                ],
+            ],
+        ]);
+
+        try {
+            // This should throw InvalidArgumentException
+            RequestConverter::toSymfonyRequest($rawRequest);
+            // If we get here, delete the file
+            unlink($tmpFile);
+        } catch (InvalidArgumentException $e) {
+            // Exception thrown as expected, clean up
+            unlink($tmpFile);
+            throw $e;
+        }
     }
 
     /**

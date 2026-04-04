@@ -12,9 +12,14 @@ use InvalidArgumentException;
  * This validator ensures that file upload data follows the expected structure
  * with required fields (name, tmp_name, type, size, error) and provides
  * clear error messages when validation fails.
+ *
+ * All methods are static as this validator has no state.
  */
 final class FileUploadValidator
 {
+    /** @var list<string> Required fields for a single file upload */
+    private const REQUIRED_FIELDS = ['name', 'tmp_name', 'type', 'size', 'error'];
+
     /**
      * Validate the structure of uploaded files array.
      * Workerman should always return properly structured file data, but this
@@ -24,10 +29,10 @@ final class FileUploadValidator
      *
      * @throws InvalidArgumentException if file structure is malformed
      */
-    public function validate(array $files): void
+    public static function validate(array $files): void
     {
         foreach ($files as $fieldName => $fileData) {
-            $this->validateFileEntry($fieldName, $fileData);
+            self::validateFileEntry($fieldName, $fileData);
         }
     }
 
@@ -39,7 +44,7 @@ final class FileUploadValidator
      *
      * @throws InvalidArgumentException if file structure is malformed
      */
-    private function validateFileEntry(string $fieldName, mixed $fileData): void
+    private static function validateFileEntry(string $fieldName, mixed $fileData): void
     {
         // Non-array file data is invalid
         if (!is_array($fileData)) {
@@ -53,7 +58,7 @@ final class FileUploadValidator
         }
 
         // Handle nested file arrays (e.g., files[field][])
-        if (isset($fileData[0]) && is_array($fileData[0])) {
+        if (array_is_list($fileData) && count($fileData) > 0 && is_array($fileData[0])) {
             foreach ($fileData as $index => $nestedFile) {
                 if (!is_array($nestedFile)) {
                     throw new InvalidArgumentException(
@@ -65,7 +70,7 @@ final class FileUploadValidator
                         ),
                     );
                 }
-                $this->validateSingleFileArray($fieldName . '[' . $index . ']', $nestedFile);
+                self::validateSingleFileArray($fieldName . '[' . $index . ']', $nestedFile);
             }
 
             return;
@@ -73,7 +78,7 @@ final class FileUploadValidator
 
         // Check if this is a file structure or nested associative array (e.g., files[field][subfield])
         if (isset($fileData['tmp_name']) || isset($fileData['name'])) {
-            $this->validateSingleFileArray($fieldName, $fileData);
+            self::validateSingleFileArray($fieldName, $fileData);
 
             return;
         }
@@ -81,11 +86,11 @@ final class FileUploadValidator
         // Nested associative array - validate each entry
         foreach ($fileData as $subFieldName => $subFileData) {
             if (is_array($subFileData)) {
-                if (isset($subFileData[0]) && is_array($subFileData[0])) {
+                if (array_is_list($subFileData) && count($subFileData) > 0 && is_array($subFileData[0])) {
                     // Array of files in nested field
                     foreach ($subFileData as $index => $nestedFile) {
                         if (is_array($nestedFile)) {
-                            $this->validateSingleFileArray($fieldName . '[' . $subFieldName . '][' . $index . ']', $nestedFile);
+                            self::validateSingleFileArray($fieldName . '[' . $subFieldName . '][' . $index . ']', $nestedFile);
                         } else {
                             throw new InvalidArgumentException(
                                 sprintf(
@@ -100,7 +105,7 @@ final class FileUploadValidator
                     }
                 } elseif (isset($subFileData['tmp_name']) || isset($subFileData['name'])) {
                     // Single file in nested field
-                    $this->validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
+                    self::validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
                 } else {
                     // Unrecognized nested structure
                     throw new InvalidArgumentException(
@@ -134,11 +139,9 @@ final class FileUploadValidator
      *
      * @throws InvalidArgumentException if required fields are missing
      */
-    private function validateSingleFileArray(string $fieldName, array $file): void
+    private static function validateSingleFileArray(string $fieldName, array $file): void
     {
-        $requiredFields = ['name', 'tmp_name', 'type', 'size', 'error'];
-
-        foreach ($requiredFields as $field) {
+        foreach (self::REQUIRED_FIELDS as $field) {
             if (!array_key_exists($field, $file)) {
                 throw new InvalidArgumentException(
                     sprintf(
@@ -146,7 +149,7 @@ final class FileUploadValidator
                         'Expected keys: %s. Got: %s',
                         $fieldName,
                         $field,
-                        implode(', ', $requiredFields),
+                        implode(', ', self::REQUIRED_FIELDS),
                         implode(', ', array_keys($file)),
                     ),
                 );

@@ -9,8 +9,6 @@ use Symfony\Component\HttpFoundation\Request;
 
 class RequestConverter
 {
-    private static ?FileUploadValidator $fileUploadValidator = null;
-
     public static function toSymfonyRequest(\Workerman\Protocols\Http\Request $rawRequest): Request
     {
         $cookies = $rawRequest->cookie();
@@ -20,7 +18,7 @@ class RequestConverter
         $post = $rawRequest->post();
 
         // Validate file structure to provide clearer error messages
-        self::getFileUploadValidator()->validate($files);
+        FileUploadValidator::validate($files);
 
         // Only populate POST bag for form-encoded content types
         // JSON and other content types should leave POST bag empty (like PHP-FPM)
@@ -49,14 +47,5 @@ class RequestConverter
         }
 
         return $request;
-    }
-
-    private static function getFileUploadValidator(): FileUploadValidator
-    {
-        if (!self::$fileUploadValidator instanceof FileUploadValidator) {
-            self::$fileUploadValidator = new FileUploadValidator();
-        }
-
-        return self::$fileUploadValidator;
     }
 }
