@@ -223,6 +223,108 @@ final class TestNonTerminableKernel implements KernelInterface
 }
 
 /**
+ * Test kernel that tracks the received request for E2E testing.
+ */
+final class TestRequestTrackingKernel implements KernelInterface
+{
+    public bool $bootCalled = false;
+    public ?\Symfony\Component\HttpFoundation\Request $receivedRequest = null;
+
+    public function __construct(private readonly ?SymfonyResponse $responseToReturn = null)
+    {
+    }
+
+    public function boot(): void
+    {
+        $this->bootCalled = true;
+    }
+
+    public function shutdown(): void
+    {
+    }
+
+    public function registerBundles(): iterable
+    {
+        return [];
+    }
+
+    public function registerContainerConfiguration(\Symfony\Component\Config\Loader\LoaderInterface $loader): void
+    {
+    }
+
+    public function handle(\Symfony\Component\HttpFoundation\Request $request, int $type = 1, bool $catch = true): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->receivedRequest = $request;
+        return $this->responseToReturn ?? new SymfonyResponse();
+    }
+
+    public function getBundles(): array
+    {
+        return [];
+    }
+
+    public function getBundle(string $name): \Symfony\Component\HttpKernel\Bundle\BundleInterface
+    {
+        throw new \RuntimeException('Not implemented');
+    }
+
+    public function locateResource(string $name): string
+    {
+        return '';
+    }
+
+    public function getEnvironment(): string
+    {
+        return 'test';
+    }
+
+    public function isDebug(): bool
+    {
+        return true;
+    }
+
+    public function getProjectDir(): string
+    {
+        return '/tmp';
+    }
+
+    public function getCacheDir(): string
+    {
+        return '/tmp/cache';
+    }
+
+    public function getBuildDir(): string
+    {
+        return '/tmp/build';
+    }
+
+    public function getShareDir(): ?string
+    {
+        return null;
+    }
+
+    public function getLogDir(): string
+    {
+        return '/tmp/log';
+    }
+
+    public function getCharset(): string
+    {
+        return 'UTF-8';
+    }
+
+    public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
+    {
+        throw new \RuntimeException('Not implemented');
+    }
+
+    public function getStartTime(): float
+    {
+        return 0.0;
+    }
+}
+
+/**
  * @covers \CrazyGoat\WorkermanBundle\Middleware\SymfonyController
  */
 final class SymfonyControllerTest extends TestCase
@@ -348,5 +450,75 @@ final class SymfonyControllerTest extends TestCase
         $response = $controller($request);
 
         $this->assertSame(500, $response->getStatusCode());
+    }
+
+    public function testBasicAuthHeadersAreParsedInServerBag(): void
+    {
+        // E2E test: Workerman Request → RequestConverter → SymfonyController → Symfony Request
+        $symfonyResponse = new SymfonyResponse('OK');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        // Create request with Basic Auth header
+        $buffer = "GET /admin HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Authorization: Basic " . base64_encode('admin:secret123') . "\r\n";
+        $buffer .= "\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request);
+
+        // Verify response is correct
+        $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
+        $this->assertSame(200, $response->getStatusCode());
+
+        // Verify kernel received request with parsed auth credentials
+        $this->assertNotNull($kernel->receivedRequest, 'Kernel should have received the request');
+        $symfonyRequest = $kernel->receivedRequest;
+
+        // These should work because HTTP_AUTHORIZATION is now in server bag
+        $this->assertSame('admin', $symfonyRequest->getUser(), 'Basic auth user should be parsed');
+        $this->assertSame('secret123', $symfonyRequest->getPassword(), 'Basic auth password should be parsed');
+
+        // Also verify server bag has the header
+        $this->assertSame('Basic ' . base64_encode('admin:secret123'), $symfonyRequest->server->get('HTTP_AUTHORIZATION'));
+    }
+
+    public function testHeadersAreAvailableInServerBagE2E(): void
+    {
+        // E2E test verifying headers are properly set in server bag for the whole stack
+        $symfonyResponse = new SymfonyResponse('OK');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /api/data HTTP/1.1\r\n";
+        $buffer .= "Host: api.example.com\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "X-Custom-Header: custom-value\r\n";
+        $buffer .= "Content-Type: application/json\r\n";  // Will be converted to CONTENT_TYPE
+        $buffer .= "\r\n";
+        $request = new Request($buffer);
+
+        $controller($request);
+
+        $this->assertNotNull($kernel->receivedRequest);
+        $symfonyRequest = $kernel->receivedRequest;
+
+        // Headers should be in server bag with HTTP_ prefix
+        $this->assertSame('api.example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
+        $this->assertSame('custom-value', $symfonyRequest->server->get('HTTP_X_CUSTOM_HEADER'));
+
+        // Content-Type should be in server bag without HTTP_ prefix (CGI convention)
+        $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
+        $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
+
+        // Headers should also be accessible via HeaderBag
+        $this->assertSame('api.example.com', $symfonyRequest->headers->get('Host'));
+        $this->assertSame('application/json', $symfonyRequest->headers->get('Accept'));
     }
 }
