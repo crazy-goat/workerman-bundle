@@ -8,6 +8,8 @@ use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
+use Workerman\Timer;
+use Workerman\Worker;
 
 /**
  * Strategy for converting Symfony BinaryFileResponse to Workerman Response.
@@ -39,12 +41,23 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
                 // Use Workerman's efficient file streaming
                 $workermanResponse->withFile($tempFilePath, 0, 0);
 
-                // Register cleanup to delete temp file after request
-                register_shutdown_function(static function () use ($tempFilePath): void {
-                    if (is_file($tempFilePath)) {
-                        unlink($tempFilePath);
-                    }
-                });
+                // Schedule cleanup to delete temp file after response is sent
+                // Use Timer in Workerman environment, fallback to register_shutdown_function in tests
+                if (Worker::getAllWorkers() !== []) {
+                    // Timer::add(0) runs in next event loop tick, after response is sent
+                    Timer::add(0, static function () use ($tempFilePath): void {
+                        if (is_file($tempFilePath)) {
+                            unlink($tempFilePath);
+                        }
+                    }, persistent: false);
+                } else {
+                    // Fallback for non-Workerman environments (e.g., unit tests)
+                    register_shutdown_function(static function () use ($tempFilePath): void {
+                        if (is_file($tempFilePath)) {
+                            unlink($tempFilePath);
+                        }
+                    });
+                }
 
                 return $workermanResponse;
             }
