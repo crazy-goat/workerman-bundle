@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
@@ -130,6 +131,11 @@ return static function (array $config, ContainerBuilder $container): void {
     $container
         ->register('workerman.binary_file_response_strategy', BinaryFileResponseStrategy::class)
         ->addTag('workerman.response_converter.strategy', ['priority' => 100])
+    ;
+
+    $container
+        ->register('workerman.streamed_response_strategy', StreamedResponseStrategy::class)
+        ->addTag('workerman.response_converter.strategy', ['priority' => 50])
     ;
 
     $container

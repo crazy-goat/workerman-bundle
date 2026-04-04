@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports range requests (offset/maxlen) for partial content delivery
   - Uses reflection with graceful fallback for accessing Symfony's private properties
 
+- Added `StreamedResponseStrategy` for `StreamedResponse` and `EventStreamResponse` (SSE) support ([#71](https://github.com/crazy-goat/workerman-bundle/issues/71))
+  - Uses output buffering to capture streamed content and convert to Workerman Response
+  - Registered with priority 50 (between BinaryFileResponse=100 and Default=0)
+  - Phase 1 implementation: finite streams only; infinite SSE streams (generators with yield) will block until completion
+
 - Typed exception hierarchy for better error handling and monitoring ([#93](https://github.com/crazy-goat/workerman-bundle/issues/93))
   - New `WorkermanExceptionInterface` marker interface to catch all bundle exceptions
   - New `WorkermanException` abstract base class extending `\RuntimeException`
