@@ -14,6 +14,19 @@ use PHPUnit\Framework\TestCase;
  */
 final class RequestConverterTest extends TestCase
 {
+    /** @var string[] */
+    private array $tempFiles = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->tempFiles as $file) {
+            @unlink($file);
+        }
+        $this->tempFiles = [];
+
+        parent::tearDown();
+    }
+
     public function testValidFileStructureIsAccepted(): void
     {
         $buffer = $this->createMultipartRequest(
@@ -116,37 +129,17 @@ final class RequestConverterTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('missing required field');
 
-        // Create a temp file so Workerman doesn't clear our files array
-        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
-        file_put_contents($tmpFile, 'test content');
+        $tmpFile = $this->createTempFile('test content');
 
         $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
-        $rawRequest = new Request($buffer);
-
-        // Manually inject malformed file data (missing required fields) but with valid tmp_name
-        // so Workerman's file() method doesn't clear it
-        $reflection = new \ReflectionClass($rawRequest);
-        $dataProperty = $reflection->getProperty('data');
-        $dataProperty->setValue($rawRequest, [
-            'files' => [
-                'malformed_file' => [
-                    'name' => 'test.txt',
-                    'tmp_name' => $tmpFile,
-                    // Missing 'type', 'size', 'error' - should trigger validation error
-                ],
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'malformed_file' => [
+                'name' => 'test.txt',
+                'tmp_name' => $tmpFile,
             ],
         ]);
 
-        try {
-            // This should throw InvalidArgumentException
-            RequestConverter::toSymfonyRequest($rawRequest);
-            // If we get here, delete the file
-            unlink($tmpFile);
-        } catch (InvalidArgumentException $e) {
-            // Exception thrown as expected, clean up
-            unlink($tmpFile);
-            throw $e;
-        }
+        RequestConverter::toSymfonyRequest($rawRequest);
     }
 
     public function testHeadersAreAvailableInServerBag(): void
@@ -424,5 +417,35 @@ final class RequestConverterTest extends TestCase
         $buffer .= "\r\n";
 
         return $buffer . $body;
+    }
+
+    private function createTempFile(string $content = 'test'): string
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        if ($tmpFile === false) {
+            throw new \RuntimeException('Failed to create temp file');
+        }
+        if (file_put_contents($tmpFile, $content) === false) {
+            throw new \RuntimeException('Failed to write to temp file');
+        }
+        $this->tempFiles[] = $tmpFile;
+
+        return $tmpFile;
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $files
+     */
+    private function createRequestWithFiles(string $buffer, array $files): Request
+    {
+        $rawRequest = new Request($buffer);
+
+        // Workerman's Request does not expose a public API for file injection.
+        // Reflection is required to simulate malformed file uploads for testing.
+        $reflection = new \ReflectionClass($rawRequest);
+        $dataProperty = $reflection->getProperty('data');
+        $dataProperty->setValue($rawRequest, ['files' => $files]);
+
+        return $rawRequest;
     }
 }
