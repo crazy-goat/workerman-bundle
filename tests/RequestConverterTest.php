@@ -26,6 +26,7 @@ final class RequestConverterTest extends TestCase
 
         parent::tearDown();
     }
+
     public function testValidFileStructureIsAccepted(): void
     {
         $buffer = $this->createMultipartRequest(
@@ -424,7 +425,9 @@ final class RequestConverterTest extends TestCase
         if ($tmpFile === false) {
             throw new \RuntimeException('Failed to create temp file');
         }
-        file_put_contents($tmpFile, $content);
+        if (file_put_contents($tmpFile, $content) === false) {
+            throw new \RuntimeException('Failed to write to temp file');
+        }
         $this->tempFiles[] = $tmpFile;
 
         return $tmpFile;
@@ -437,6 +440,8 @@ final class RequestConverterTest extends TestCase
     {
         $rawRequest = new Request($buffer);
 
+        // Workerman's Request does not expose a public API for file injection.
+        // Reflection is required to simulate malformed file uploads for testing.
         $reflection = new \ReflectionClass($rawRequest);
         $dataProperty = $reflection->getProperty('data');
         $dataProperty->setValue($rawRequest, ['files' => $files]);

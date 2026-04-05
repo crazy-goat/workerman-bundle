@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added test helper methods in `RequestConverterTest` for temp file cleanup and request creation ([#88](https://github.com/crazy-goat/workerman-bundle/issues/88))
-  - Added `setUp()`/`tearDown()` for automatic temp file cleanup
+  - Added `tearDown()` for automatic temp file cleanup
   - Added `createTempFile()` helper method
   - Added `createRequestWithFiles()` helper method
   - Reduces test boilerplate and improves readability
