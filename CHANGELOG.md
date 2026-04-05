@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enables `$request->server->get('QUERY_STRING')` to return query string
   - Enables Symfony's `getQueryString()` to work correctly
 
+- Added `REQUEST_TIME` and `REQUEST_TIME_FLOAT` to server bag in `RequestConverter` ([#67](https://github.com/crazy-goat/workerman-bundle/issues/67))
+  - Enables Symfony profiler and debug toolbar to show request duration
+  - Sets values using `time()` and `microtime(true)` at request conversion time
+
 - Added `SERVER_PORT` and `SERVER_NAME` to server bag in `RequestConverter` ([#65](https://github.com/crazy-goat/workerman-bundle/issues/65))
   - Enables `$request->getPort()` for non-standard ports (8080, 8443, etc.)
   - Required for Symfony's `getPort()` to return correct value when Host header has no port

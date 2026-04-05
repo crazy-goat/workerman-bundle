@@ -35,6 +35,7 @@ class RequestConverter
         $forwardedProto = strtolower((string) $rawRequest->header('x-forwarded-proto', ''));
         $isHttps = $localPort === 443 || $forwardedProto === 'https';
 
+        $requestTimeFloat = microtime(true);
         $server = [
             'REQUEST_URI' => $rawRequest->uri(),
             'REQUEST_METHOD' => $rawRequest->method(),
@@ -44,6 +45,8 @@ class RequestConverter
             'SERVER_PORT' => $localPort ?? ($isHttps ? 443 : 80),
             'SERVER_NAME' => $rawRequest->connection?->getLocalIp() ?? 'localhost',
             'QUERY_STRING' => $rawRequest->queryString(),
+            'REQUEST_TIME' => (int) $requestTimeFloat,
+            'REQUEST_TIME_FLOAT' => $requestTimeFloat,
         ];
 
         if ($isHttps) {
