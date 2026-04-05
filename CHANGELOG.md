@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `QUERY_STRING` to server bag in `RequestConverter` ([#66](https://github.com/crazy-goat/workerman-bundle/issues/66))
+  - Enables `$request->server->get('QUERY_STRING')` to return query string
+  - Enables Symfony's `getQueryString()` to work correctly
+
 - Added `SERVER_PORT` and `SERVER_NAME` to server bag in `RequestConverter` ([#65](https://github.com/crazy-goat/workerman-bundle/issues/65))
   - Enables `$request->getPort()` for non-standard ports (8080, 8443, etc.)
   - Required for Symfony's `getPort()` to return correct value when Host header has no port

@@ -283,6 +283,27 @@ final class RequestConverterTest extends TestCase
         $this->assertSame(80, $symfonyRequest->server->get('SERVER_PORT'));
     }
 
+    public function testQueryStringFromRequest(): void
+    {
+        $buffer = "GET /test?foo=bar&baz=qux HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('foo=bar&baz=qux', $symfonyRequest->server->get('QUERY_STRING'));
+        $this->assertSame('baz=qux&foo=bar', $symfonyRequest->getQueryString());
+    }
+
+    public function testQueryStringEmptyForNoQueryParams(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('', $symfonyRequest->server->get('QUERY_STRING'));
+    }
+
     public function testGetPortReturnsServerPortWhenNoHostHeader(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n\r\n";
