@@ -362,6 +362,18 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('https://example.com', $symfonyRequest->getSchemeAndHttpHost());
     }
 
+    public function testRequestTimeAndRequestTimeFloatAreSet(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertIsInt($symfonyRequest->server->get('REQUEST_TIME'));
+        $this->assertIsFloat($symfonyRequest->server->get('REQUEST_TIME_FLOAT'));
+        $this->assertEqualsWithDelta(microtime(true), $symfonyRequest->server->get('REQUEST_TIME_FLOAT'), 1.0);
+    }
+
     private function createMockConnection(int $localPort): \Workerman\Connection\TcpConnection
     {
         return new class ($localPort) extends \Workerman\Connection\TcpConnection {
