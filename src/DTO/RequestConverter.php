@@ -43,6 +43,7 @@ class RequestConverter
             'REMOTE_PORT' => $rawRequest->connection?->getRemotePort() ?? 0,
             'SERVER_PORT' => $localPort ?? ($isHttps ? 443 : 80),
             'SERVER_NAME' => $rawRequest->connection?->getLocalIp() ?? 'localhost',
+            'QUERY_STRING' => $rawRequest->queryString(),
         ];
 
         if ($isHttps) {
