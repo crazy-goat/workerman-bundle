@@ -17,7 +17,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(name: 'workerman:server', description: 'Manage the Workerman server')]
-class WorkermanCommand extends Command
+final class WorkermanCommand extends Command
 {
     private const ALLOWED_ACTIONS = ['start', 'stop', 'restart', 'reload', 'status', 'connections'];
 

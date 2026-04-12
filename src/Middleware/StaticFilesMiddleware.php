@@ -8,11 +8,11 @@ use CrazyGoat\WorkermanBundle\Exception\StaticFileMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use Workerman\Protocols\Http\Response;
 
-class StaticFilesMiddleware implements MiddlewareInterface
+final readonly class StaticFilesMiddleware implements MiddlewareInterface
 {
-    private readonly string $rootRealPath;
+    private string $rootRealPath;
 
-    public function __construct(private readonly string $rootDirectory)
+    public function __construct(private string $rootDirectory)
     {
         $resolved = realpath($rootDirectory);
         if ($resolved === false) {
