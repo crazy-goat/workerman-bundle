@@ -18,6 +18,9 @@ class Request extends \Workerman\Protocols\Http\Request
         return $this;
     }
 
+    /**
+     * @deprecated Use setHeader() instead. This method is kept for backward compatibility.
+     */
     public function withHeader(string $name, string $value): self
     {
         return $this->setHeader($name, $value);
