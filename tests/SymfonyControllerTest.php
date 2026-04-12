@@ -184,9 +184,6 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
                 return isset($this->services[$id]);
             }
 
-            /**
-             * @return array|bool|string|int|float|\UnitEnum|null
-             */
             public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
             {
                 throw new \RuntimeException('Not implemented');
