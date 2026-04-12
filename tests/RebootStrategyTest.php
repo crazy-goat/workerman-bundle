@@ -23,15 +23,6 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 final class RebootStrategyTest extends TestCase
 {
-    public function testAlwaysRebootStrategyAlwaysReturnsTrue(): void
-    {
-        $strategy = new AlwaysRebootStrategy();
-
-        $this->assertTrue($strategy->shouldReboot());
-        $this->assertTrue($strategy->shouldReboot());
-        $this->assertTrue($strategy->shouldReboot());
-    }
-
     public function testMaxJobsRebootStrategyReturnsFalseUntilLimit(): void
     {
         $strategy = new MaxJobsRebootStrategy(3, 0);

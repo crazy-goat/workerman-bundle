@@ -6,7 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Reboot\Strategy;
 
 final class AlwaysRebootStrategy implements RebootStrategyInterface
 {
-    public function shouldReboot(): bool
+    public function shouldReboot(): true
     {
         return true;
     }
