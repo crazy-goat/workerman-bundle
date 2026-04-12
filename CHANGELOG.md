@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Added missing space in `SchedulerWorker` log message for better readability (#29)
+
 ### Changed
 
 - `RequestConverter::toSymfonyRequest()` now returns empty content for multipart/form-data requests
