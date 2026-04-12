@@ -141,6 +141,9 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
     {
         $kernel = $this;
         $this->container = new class ($kernel) implements \Symfony\Component\DependencyInjection\ContainerInterface {
+            /**
+             * @var array<string, object>
+             */
             private array $services = [];
 
             public function __construct(private readonly TestKernelWithServicesResetter $kernelRef)
@@ -171,32 +174,44 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
 
             public function set(string $id, ?object $service): void
             {
-                $this->services[$id] = $service;
+                if ($service !== null) {
+                    $this->services[$id] = $service;
+                }
             }
+
             public function initialized(string $id): bool
             {
                 return isset($this->services[$id]);
             }
+
+            /**
+             * @return array|bool|string|int|float|\UnitEnum|null
+             */
             public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
             {
                 throw new \RuntimeException('Not implemented');
             }
+
             public function hasParameter(string $name): bool
             {
                 return false;
             }
+
             public function setParameter(string $name, mixed $value): void
             {
                 throw new \RuntimeException('Not implemented');
             }
+
             public function compile(): never
             {
                 throw new \RuntimeException('Not implemented');
             }
+
             public function isCompiled(): bool
             {
                 return true;
             }
+
             public function getParameterBag(): \Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface
             {
                 throw new \RuntimeException('Not implemented');
