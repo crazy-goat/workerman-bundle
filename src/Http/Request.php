@@ -6,7 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Http;
 
 class Request extends \Workerman\Protocols\Http\Request
 {
-    public function withHeader(string $name, string $value): self
+    public function setHeader(string $name, string $value): self
     {
         if (!isset($this->data['headers'])) {
             $this->parseHeaders();
@@ -16,5 +16,10 @@ class Request extends \Workerman\Protocols\Http\Request
         $this->data['headers'][$name] = $value;
 
         return $this;
+    }
+
+    public function withHeader(string $name, string $value): self
+    {
+        return $this->setHeader($name, $value);
     }
 }
