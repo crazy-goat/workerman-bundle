@@ -22,8 +22,10 @@ final class RequestConverter
 
         // Only populate POST bag for form-encoded content types
         // JSON and other content types should leave POST bag empty (like PHP-FPM)
-        $contentType = $rawRequest->header('content-type', '');
-        $isFormData = preg_match('/^(application\/x-www-form-urlencoded|multipart\/form-data)\b/i', (string) $contentType);
+        $contentType = strtolower((string) $rawRequest->header('content-type', ''));
+        $isFormUrlEncoded = str_starts_with($contentType, 'application/x-www-form-urlencoded');
+        $isMultipart = str_starts_with($contentType, 'multipart/form-data');
+        $isFormData = $isFormUrlEncoded || $isMultipart;
 
         // Build server bag with HTTP_* headers (CGI convention)
         $headers = $rawRequest->header() ?? [];
@@ -69,6 +71,10 @@ final class RequestConverter
             }
         }
 
+        // For multipart requests, pass empty content to match PHP-FPM behavior
+        // (php://input is not available for multipart - body is consumed during $_POST/$_FILES parsing)
+        $content = $isMultipart ? '' : $rawRequest->rawBody();
+
         return new Request(
             is_array($query) ? $query : [],
             $isFormData && is_array($post) ? $post : [],
@@ -76,7 +82,7 @@ final class RequestConverter
             is_array($cookies) ? $cookies : [],
             $files,
             $server,
-            $rawRequest->rawBody(),
+            $content,
         );
     }
 }

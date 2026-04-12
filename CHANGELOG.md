@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `RequestConverter::toSymfonyRequest()` now returns empty content for multipart/form-data requests
+  - Matches PHP-FPM behavior where `php://input` is not available for multipart
+  - Previously `getContent()` returned full raw body including file contents
+  - Files remain accessible via `$request->files` as before
+  - **Migration**: If your code relies on reading raw multipart body via `getContent()`, you'll need to adapt it
+
 ## [0.13.0] - 2026-04-05
 
 ### Added
