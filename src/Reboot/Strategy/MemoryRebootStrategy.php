@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Reboot\Strategy;
 
-final class MemoryRebootStrategy implements RebootStrategyInterface
+final readonly class MemoryRebootStrategy implements RebootStrategyInterface
 {
-    public function __construct(private readonly int $limit, private readonly ?int $gcLimit)
+    public function __construct(private int $limit, private ?int $gcLimit)
     {
     }
 
