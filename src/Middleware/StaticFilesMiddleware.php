@@ -8,7 +8,7 @@ use CrazyGoat\WorkermanBundle\Exception\StaticFileMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use Workerman\Protocols\Http\Response;
 
-class StaticFilesMiddleware implements MiddlewareInterface
+final class StaticFilesMiddleware implements MiddlewareInterface
 {
     private readonly string $rootRealPath;
 

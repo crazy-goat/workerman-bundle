@@ -7,7 +7,7 @@ namespace CrazyGoat\WorkermanBundle\DTO;
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use Symfony\Component\HttpFoundation\Request;
 
-class RequestConverter
+final class RequestConverter
 {
     public static function toSymfonyRequest(\Workerman\Protocols\Http\Request $rawRequest): Request
     {

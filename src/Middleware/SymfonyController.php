@@ -13,7 +13,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 use Workerman\Protocols\Http\Response;
 
-class SymfonyController
+final class SymfonyController
 {
     private ?SymfonyRequest $symfonyRequest = null;
     private ?SymfonyResponse $symfonyResponse = null;
