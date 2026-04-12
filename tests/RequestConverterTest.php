@@ -374,6 +374,56 @@ final class RequestConverterTest extends TestCase
         $this->assertSame($requestTime, (int) $requestTimeFloat);
     }
 
+    public function testMultipartRequestReturnsEmptyContent(): void
+    {
+        $buffer = $this->createMultipartRequest(
+            boundary: 'TestBoundary',
+            fields: [
+                [
+                    'name' => 'test_file',
+                    'filename' => 'test.txt',
+                    'content' => 'test content',
+                ],
+            ],
+        );
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('', $symfonyRequest->getContent());
+        $this->assertTrue($symfonyRequest->files->has('test_file'));
+    }
+
+    public function testJsonRequestPreservesContent(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Content-Type: application/json\r\n";
+        $buffer .= "Content-Length: 15\r\n";
+        $buffer .= "\r\n";
+        $buffer .= '{"key":"value"}';
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('{"key":"value"}', $symfonyRequest->getContent());
+    }
+
+    public function testFormUrlEncodedPreservesContent(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Content-Type: application/x-www-form-urlencoded\r\n";
+        $buffer .= "Content-Length: 9\r\n";
+        $buffer .= "\r\n";
+        $buffer .= 'key=value';
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('key=value', $symfonyRequest->getContent());
+    }
+
     private function createMockConnection(int $localPort): \Workerman\Connection\TcpConnection
     {
         return new class ($localPort) extends \Workerman\Connection\TcpConnection {
