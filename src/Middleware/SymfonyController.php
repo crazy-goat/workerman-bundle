@@ -59,10 +59,21 @@ final class SymfonyController
             try {
                 $this->kernel->terminate($this->symfonyRequest, $this->symfonyResponse);
             } finally {
-                // Always clear references to prevent memory leaks
+                $this->resetServices();
                 $this->symfonyRequest = null;
                 $this->symfonyResponse = null;
             }
+        }
+    }
+
+    private function resetServices(): void
+    {
+        try {
+            $container = $this->kernel->getContainer();
+            if ($container->has('services_resetter')) {
+                $container->get('services_resetter')->reset();
+            }
+        } catch (\Throwable) {
         }
     }
 }
