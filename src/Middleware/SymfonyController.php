@@ -11,6 +11,7 @@ use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
+use Symfony\Contracts\Service\ResetInterface;
 use Workerman\Protocols\Http\Response;
 
 final class SymfonyController
@@ -71,7 +72,10 @@ final class SymfonyController
         try {
             $container = $this->kernel->getContainer();
             if ($container->has('services_resetter')) {
-                $container->get('services_resetter')->reset();
+                $servicesResetter = $container->get('services_resetter');
+                if ($servicesResetter instanceof ResetInterface) {
+                    $servicesResetter->reset();
+                }
             }
         } catch (\Throwable) {
         }
