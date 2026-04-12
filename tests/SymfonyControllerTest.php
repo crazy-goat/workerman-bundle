@@ -25,7 +25,6 @@ final class TestTerminableKernel implements KernelInterface, TerminableInterface
     public bool $bootCalled = false;
     public bool $terminateCalled = false;
     public int $terminateCount = 0;
-    public bool $servicesResetCalled = false;
 
     public function __construct(private readonly ?SymfonyResponse $responseToReturn = null)
     {
@@ -170,6 +169,172 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
             public function has(string $id): bool
             {
                 return $id === 'services_resetter';
+            }
+
+            public function set(string $id, ?object $service): void
+            {
+                if ($service !== null) {
+                    $this->services[$id] = $service;
+                }
+            }
+
+            public function initialized(string $id): bool
+            {
+                return isset($this->services[$id]);
+            }
+
+            public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+
+            public function hasParameter(string $name): bool
+            {
+                return false;
+            }
+
+            public function setParameter(string $name, mixed $value): void
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+
+            public function compile(): never
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+
+            public function isCompiled(): bool
+            {
+                return true;
+            }
+
+            public function getParameterBag(): \Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+        };
+    }
+
+    public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
+    {
+        $this->terminateCalled = true;
+    }
+
+    public function boot(): void
+    {
+        $this->bootCalled = true;
+    }
+
+    public function shutdown(): void
+    {
+    }
+
+    public function registerBundles(): iterable
+    {
+        return [];
+    }
+
+    public function registerContainerConfiguration(\Symfony\Component\Config\Loader\LoaderInterface $loader): void
+    {
+    }
+
+    public function handle(\Symfony\Component\HttpFoundation\Request $request, int $type = 1, bool $catch = true): \Symfony\Component\HttpFoundation\Response
+    {
+        return $this->responseToReturn ?? new SymfonyResponse();
+    }
+
+    public function getBundles(): array
+    {
+        return [];
+    }
+
+    public function getBundle(string $name): \Symfony\Component\HttpKernel\Bundle\BundleInterface
+    {
+        throw new \RuntimeException('Not implemented');
+    }
+
+    public function locateResource(string $name): string
+    {
+        return '';
+    }
+
+    public function getEnvironment(): string
+    {
+        return 'test';
+    }
+
+    public function isDebug(): bool
+    {
+        return true;
+    }
+
+    public function getProjectDir(): string
+    {
+        return '/tmp';
+    }
+
+    public function getCacheDir(): string
+    {
+        return '/tmp/cache';
+    }
+
+    public function getBuildDir(): string
+    {
+        return '/tmp/build';
+    }
+
+    public function getShareDir(): ?string
+    {
+        return null;
+    }
+
+    public function getLogDir(): string
+    {
+        return '/tmp/log';
+    }
+
+    public function getCharset(): string
+    {
+        return 'UTF-8';
+    }
+
+    public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
+    {
+        return $this->container;
+    }
+
+    public function getStartTime(): float
+    {
+        return 0.0;
+    }
+}
+
+/**
+ * Test kernel with container that does NOT have services_resetter.
+ */
+final class TestKernelWithoutServicesResetter implements KernelInterface, TerminableInterface
+{
+    public bool $bootCalled = false;
+    public bool $terminateCalled = false;
+
+    private readonly \Symfony\Component\DependencyInjection\ContainerInterface $container;
+
+    public function __construct(private readonly ?SymfonyResponse $responseToReturn = null)
+    {
+        $this->container = new class implements \Symfony\Component\DependencyInjection\ContainerInterface {
+            /**
+             * @var array<string, object>
+             */
+            private array $services = [];
+
+            public function get(string $id, int $invalidBehavior = \Symfony\Component\DependencyInjection\ContainerInterface::EXCEPTION_ON_INVALID_REFERENCE): object
+            {
+                throw new \RuntimeException("Service $id not found");
+            }
+
+            public function has(string $id): bool
+            {
+                return false;
             }
 
             public function set(string $id, ?object $service): void
@@ -1057,10 +1222,10 @@ final class SymfonyControllerTest extends TestCase
         $this->assertTrue($kernel->servicesResetCalled, 'Services reset should be called after terminateIfNeeded');
     }
 
-    public function testTerminateIfNeededDoesNotCallServicesResetterWhenNotAvailable(): void
+    public function testTerminateIfNeededDoesNotFailWhenServicesResetterNotAvailable(): void
     {
         $symfonyResponse = new SymfonyResponse('test content');
-        $kernel = new TestTerminableKernel($symfonyResponse);
+        $kernel = new TestKernelWithoutServicesResetter($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);

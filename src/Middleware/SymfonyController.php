@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Middleware;
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -18,10 +19,13 @@ final class SymfonyController
 {
     private ?SymfonyRequest $symfonyRequest = null;
     private ?SymfonyResponse $symfonyResponse = null;
+    private ?ResetInterface $servicesResetter = null;
+    private bool $servicesResetterInitialized = false;
 
     public function __construct(
         private readonly KernelInterface $kernel,
         private readonly ResponseConverter $responseConverter,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -69,15 +73,31 @@ final class SymfonyController
 
     private function resetServices(): void
     {
-        try {
-            $container = $this->kernel->getContainer();
-            if ($container->has('services_resetter')) {
-                $servicesResetter = $container->get('services_resetter');
-                if ($servicesResetter instanceof ResetInterface) {
-                    $servicesResetter->reset();
+        if (!$this->servicesResetterInitialized) {
+            try {
+                $container = $this->kernel->getContainer();
+                if ($container->has('services_resetter')) {
+                    $resetter = $container->get('services_resetter');
+                    if ($resetter instanceof ResetInterface) {
+                        $this->servicesResetter = $resetter;
+                    }
                 }
+            } catch (\Throwable $e) {
+                $this->logger?->error(
+                    'Failed to resolve services_resetter',
+                    ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+                );
             }
-        } catch (\Throwable) {
+            $this->servicesResetterInitialized = true;
+        }
+
+        try {
+            $this->servicesResetter?->reset();
+        } catch (\Throwable $e) {
+            $this->logger?->error(
+                'Failed to reset services',
+                ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+            );
         }
     }
 }
