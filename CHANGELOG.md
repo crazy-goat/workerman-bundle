@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Files remain accessible via `$request->files` as before
   - **Migration**: If your code relies on reading raw multipart body via `getContent()`, you'll need to adapt it
 
+- `StreamedBinaryFileResponse::streamContent()` simplified chunking logic
+  - Removed redundant inner while loop that was effectively a no-op
+  - Fixed length calculation to use actual data length (`strlen($data)`) instead of requested bytes (`$read`)
+  - Fixes incorrect chunk count for files where fread() returns fewer bytes than requested
+  - Fixes (#27)
+
 ## [0.13.0] - 2026-04-05
 
 ### Added

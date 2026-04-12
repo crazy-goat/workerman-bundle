@@ -34,20 +34,17 @@ class StreamedBinaryFileResponse extends BinaryFileResponse implements StreamRes
 
             $length = $this->maxlen;
             while ($length && !$file->eof()) {
-                $read = $length > $this->chunkSize || 0 > $length ? $this->chunkSize : $length;
-
-                if (false === $data = $file->fread($read)) {
+                $read = ($length > $this->chunkSize || 0 > $length) ? $this->chunkSize : $length;
+                $data = $file->fread($read);
+                if ($data === false || $data === '') {
                     break;
                 }
-                while ('' !== $data) {
-                    yield $data;
-                    if (connection_aborted() !== 0) {
-                        break 2;
-                    }
-                    if (0 < $length) {
-                        $length -= $read;
-                    }
-                    $data = substr($data, $read);
+                yield $data;
+                if (connection_aborted() !== 0) {
+                    break;
+                }
+                if (0 < $length) {
+                    $length -= strlen($data);
                 }
             }
         } finally {
