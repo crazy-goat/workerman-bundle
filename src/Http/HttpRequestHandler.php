@@ -53,7 +53,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
         $next = $this->controller;
         foreach (array_reverse($this->middlewares) as $middleware) {
-            $next = fn(Request $input): Http\Response => $middleware($request, $next);
+            $next = fn(Request $input): Http\Response => $middleware($input, $next);
         }
 
         $response = $next($request);
