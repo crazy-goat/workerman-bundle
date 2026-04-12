@@ -6,19 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 final class DefaultResponseStrategyTest extends TestCase
 {
-    public function testSupportsAlwaysReturnsTrue(): void
-    {
-        $strategy = new DefaultResponseStrategy();
-
-        $this->assertTrue($strategy->supports(new Response()));
-        $this->assertTrue($strategy->supports(new JsonResponse(['test'])));
-    }
-
     public function testConvertReturnsWorkermanResponseWithContent(): void
     {
         $strategy = new DefaultResponseStrategy();

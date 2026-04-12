@@ -10,7 +10,7 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 final class DefaultResponseStrategy implements ResponseConverterStrategyInterface
 {
-    public function supports(SymfonyResponse $response): bool
+    public function supports(SymfonyResponse $response): true
     {
         return true;
     }
