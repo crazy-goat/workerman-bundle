@@ -40,25 +40,24 @@ final readonly class ResponseConverter
      */
     private function extractHeaders(SymfonyResponse $response): array
     {
-        $headers = $response->headers->all();
-
-        // Fix header names (lowercase to proper case)
-        $fixHeaders = [
-            'content-type' => 'Content-Type',
-            'connection' => 'Connection',
-            'transfer-encoding' => 'Transfer-Encoding',
-            'server' => 'Server',
-            'content-disposition' => 'Content-Disposition',
-            'last-modified' => 'Last-Modified',
-        ];
-
-        foreach ($fixHeaders as $lower => $proper) {
-            if (isset($headers[$lower])) {
-                $headers[$proper] = $headers[$lower];
-                unset($headers[$lower]);
-            }
+        $normalized = [];
+        foreach ($response->headers->all() as $name => $values) {
+            $normalized[$this->normalizeHeaderName($name)] = $values;
         }
 
-        return $headers;
+        return $normalized;
+    }
+
+    /**
+     * Normalizes a header name to proper case (e.g., "content-type" → "Content-Type").
+     *
+     * NOTE: ucfirst-based normalization has known limitations with acronyms:
+     * - "etag" → "Etag" (not "ETag"), "content-md5" → "Content-Md5" (not "Content-MD5")
+     * Per RFC 9110, HTTP header names are case-insensitive, so this is technically valid.
+     * This approach is still strictly better than the old hardcoded 6-header map.
+     */
+    private function normalizeHeaderName(string $name): string
+    {
+        return implode('-', array_map(ucfirst(...), explode('-', $name)));
     }
 }

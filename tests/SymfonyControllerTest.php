@@ -801,11 +801,9 @@ final class SymfonyControllerTest extends TestCase
         $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
-        // Symfony normalizes headers to lowercase, Workerman stores them as-is
-        // Content-Type is in FIX_HEADERS so it gets capitalized
+        // All headers are normalized to proper case (e.g., Content-Type, X-Custom-Header)
         $this->assertSame(['application/json'], $response->getHeader('Content-Type'));
-        // X-Custom-Header is normalized to lowercase by Symfony
-        $this->assertSame(['custom-value'], $response->getHeader('x-custom-header'));
+        $this->assertSame(['custom-value'], $response->getHeader('X-Custom-Header'));
     }
 
     public function testResponseStatusCodeIsPreserved(): void
@@ -1024,8 +1022,8 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         // Content-Type may have charset added by Symfony
         $this->assertStringContainsString('text/event-stream', $response->getHeader('Content-Type')[0] ?? '');
-        // Headers are normalized to lowercase by Symfony/Workerman
-        $this->assertSame(['true'], $response->getHeader('x-stream'));
+        // Headers are normalized to proper case
+        $this->assertSame(['true'], $response->getHeader('X-Stream'));
         $this->assertSame('streaming data', $response->rawBody());
     }
 
