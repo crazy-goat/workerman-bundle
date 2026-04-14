@@ -82,6 +82,12 @@
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run"
+        ],
+        "post-install-cmd": [
+            "php bin/install-git-hook.php"
+        ],
+        "post-update-cmd": [
+            "php bin/install-git-hook.php"
         ]
     }
 }
