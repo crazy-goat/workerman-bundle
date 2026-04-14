@@ -50,6 +50,30 @@ final class RunnerTest extends TestCase
             $content,
             'Must throw when child exits with non-zero code',
         );
+
+        $this->assertStringContainsString(
+            'SIGKILL',
+            $content,
+            'Must use SIGKILL for success signal',
+        );
+
+        $this->assertStringContainsString(
+            'SIGTERM',
+            $content,
+            'Must use SIGTERM for error signal',
+        );
+
+        $this->assertStringContainsString(
+            'Cache warmup timed out',
+            $content,
+            'Must have timeout error message',
+        );
+
+        $this->assertStringContainsString(
+            'CACHE_WARMUP_TIMEOUT',
+            $content,
+            'Must have CACHE_WARMUP_TIMEOUT constant',
+        );
     }
 
     /**
@@ -86,6 +110,33 @@ final class RunnerTest extends TestCase
     public function testSignalKilledChildIsDetected(): void
     {
         $this->runIsolatedTest('signal_killed_child');
+    }
+
+    /**
+     * Test: Child process uses posix_kill(getmypid(), SIGKILL) for success.
+     * Verifies parent recognizes SIGKILL as success (cache warmup completed).
+     */
+    public function testChildSuccessSigkillIsRecognizedAsSuccess(): void
+    {
+        $this->runIsolatedTest('child_success_sigkill');
+    }
+
+    /**
+     * Test: Child process uses posix_kill(getmypid(), SIGTERM) for error.
+     * Verifies parent recognizes SIGTERM as failure (cache warmup failed).
+     */
+    public function testChildErrorSigtermIsRecognizedAsError(): void
+    {
+        $this->runIsolatedTest('child_error_sigterm');
+    }
+
+    /**
+     * Test: Timeout kills child that doesn't finish in time.
+     * Verifies parent correctly waits with WNOHANG and kills child on timeout.
+     */
+    public function testTimeoutKillsChild(): void
+    {
+        $this->runIsolatedTest('timeout_kills_child');
     }
 
     /**

@@ -14,6 +14,8 @@ use Workerman\Worker;
 
 final readonly class Runner implements RunnerInterface
 {
+    private const CACHE_WARMUP_TIMEOUT = 30;
+
     public function __construct(
         private KernelFactory $kernelFactory,
     ) {
@@ -34,16 +36,58 @@ final readonly class Runner implements RunnerInterface
                 throw new \RuntimeException('Failed to fork process for cache warmup');
             }
             if ($pid === 0) {
+                $success = false;
                 try {
                     $this->kernelFactory->createKernel()->boot();
-                    exit(0);
+                    $success = true;
                 } catch (\Throwable $e) {
                     fwrite(STDERR, $e->getMessage() . PHP_EOL);
-                    exit(1);
                 }
+                // Use posix_kill with different signals to distinguish success/failure:
+                // - SIGKILL (9) for success
+                // - SIGTERM (15) for error
+                // This avoids deadlock with extensions that register shutdown handlers (e.g., grpc)
+                \posix_kill((int) \getmypid(), $success ? \SIGKILL : \SIGTERM);
             }
-            $waitResult = pcntl_wait($status);
-            if ($waitResult === -1 || !pcntl_wifexited($status) || pcntl_wexitstatus($status) !== 0) {
+
+            $timeout = self::CACHE_WARMUP_TIMEOUT;
+            $deadline = \time() + $timeout;
+            $status = 0;
+
+            while (true) {
+                $result = \pcntl_waitpid($pid, $status, WNOHANG);
+
+                if ($result === $pid) {
+                    break;
+                }
+
+                if ($result === -1) {
+                    throw new \RuntimeException('Failed to wait for cache warmup process');
+                }
+
+                if (\time() >= $deadline) {
+                    \posix_kill($pid, \SIGKILL);
+                    \pcntl_waitpid($pid, $status, 0);
+                    throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
+                }
+
+                \usleep(100_000);
+            }
+
+            if (!\pcntl_wifexited($status)) {
+                if (!\pcntl_wifsignaled($status)) {
+                    throw new \RuntimeException('Cache warmup failed in forked process');
+                }
+                $signal = \pcntl_wtermsig($status);
+                // SIGKILL (9) = success (child killed itself after successful boot)
+                // SIGTERM (15) = error (child killed itself after exception)
+                if ($signal === \SIGTERM) {
+                    throw new \RuntimeException('Cache warmup failed in forked process');
+                }
+                if ($signal !== \SIGKILL) {
+                    throw new \RuntimeException('Cache warmup failed in forked process');
+                }
+            } elseif (\pcntl_wexitstatus($status) !== 0) {
                 throw new \RuntimeException('Cache warmup failed in forked process');
             }
         }
