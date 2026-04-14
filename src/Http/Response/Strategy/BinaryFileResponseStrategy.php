@@ -56,24 +56,8 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         if ($deleteFileAfterSend === true) {
             $filePath = $file->getPathname();
 
-            if (!is_file($filePath)) {
-                $workermanResponse->withBody('');
-                $connection->onClose = static function () use ($filePath): void {
-                    if (is_file($filePath)) {
-                        @unlink($filePath);
-                    }
-                };
-
-                return $workermanResponse;
-            }
-
             $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
-            $connection->onClose = static function () use ($filePath): void {
-                // @phpstan-ignore-next-line is_file called in async callback context
-                if (is_file($filePath)) {
-                    @unlink($filePath);
-                }
-            };
+            $connection->onClose = $this->createCleanupCallback($filePath);
 
             return $workermanResponse;
         }
@@ -85,6 +69,15 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         );
 
         return $workermanResponse;
+    }
+
+    private function createCleanupCallback(string $filePath): \Closure
+    {
+        return static function () use ($filePath): void {
+            if (is_file($filePath)) {
+                @unlink($filePath);
+            }
+        };
     }
 
     /**

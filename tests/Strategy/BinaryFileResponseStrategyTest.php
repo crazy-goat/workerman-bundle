@@ -230,12 +230,11 @@ final class BinaryFileResponseStrategyTest extends TestCase
         // Delete file after construction but before conversion
         unlink($tempFile);
 
-        // Conversion should handle gracefully with empty body
+        // Conversion should handle gracefully - Workerman returns 404 for missing files
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
         ], $this->connection);
 
-        $this->assertSame(200, $workermanResponse->getStatusCode());
-        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(404, $workermanResponse->getStatusCode());
     }
 }
