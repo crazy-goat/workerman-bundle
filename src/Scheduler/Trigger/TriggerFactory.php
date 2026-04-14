@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Scheduler\Trigger;
 
+use Cron\CronExpression;
+
 final class TriggerFactory
 {
     /**
@@ -36,8 +38,7 @@ final class TriggerFactory
 
         $trigger = match (true) {
             $expression instanceof \DateTimeImmutable => new DateTimeTrigger($expression),
-            is_string($expression) && count(explode(' ', $expression)) === 5 && str_contains($expression, '*'),
-            is_string($expression) && str_starts_with($expression, '@') => new CronExpressionTrigger($expression),
+            is_string($expression) && class_exists(CronExpression::class) && CronExpression::isValidExpression($expression) => new CronExpressionTrigger($expression),
             default => new PeriodicalTrigger($expression),
         };
 
