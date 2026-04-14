@@ -7,20 +7,25 @@ namespace CrazyGoat\WorkermanBundle\Middleware;
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
+use Symfony\Contracts\Service\ResetInterface;
 use Workerman\Protocols\Http\Response;
 
 final class SymfonyController
 {
     private ?SymfonyRequest $symfonyRequest = null;
     private ?SymfonyResponse $symfonyResponse = null;
+    private ?ResetInterface $servicesResetter = null;
+    private bool $servicesResetterInitialized = false;
 
     public function __construct(
         private readonly KernelInterface $kernel,
         private readonly ResponseConverter $responseConverter,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -59,10 +64,42 @@ final class SymfonyController
             try {
                 $this->kernel->terminate($this->symfonyRequest, $this->symfonyResponse);
             } finally {
-                // Always clear references to prevent memory leaks
+                $this->resetServices();
                 $this->symfonyRequest = null;
                 $this->symfonyResponse = null;
             }
+        }
+    }
+
+    private function resetServices(): void
+    {
+        if (!$this->servicesResetterInitialized) {
+            try {
+                $container = $this->kernel->getContainer();
+                if ($container->has('services_resetter')) {
+                    $resetter = $container->get('services_resetter');
+                    if ($resetter instanceof ResetInterface) {
+                        $this->servicesResetter = $resetter;
+                    }
+                }
+                // We got a definitive answer: resetter exists or doesn't
+                $this->servicesResetterInitialized = true;
+            } catch (\Throwable $e) {
+                $this->logger?->error(
+                    'Failed to resolve services_resetter',
+                    ['exception' => $e],
+                );
+                // Do NOT set initialized → next request will retry
+            }
+        }
+
+        try {
+            $this->servicesResetter?->reset();
+        } catch (\Throwable $e) {
+            $this->logger?->error(
+                'Failed to reset services',
+                ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+            );
         }
     }
 }
