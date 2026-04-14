@@ -1,0 +1,48 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CrazyGoat\WorkermanBundle\Test\Command;
+
+use CrazyGoat\WorkermanBundle\Command\ServerAction;
+use PHPUnit\Framework\TestCase;
+
+final class ServerActionTest extends TestCase
+{
+    public function testEnumCases(): void
+    {
+        self::assertEquals('start', ServerAction::Start->value);
+        self::assertEquals('stop', ServerAction::Stop->value);
+        self::assertEquals('restart', ServerAction::Restart->value);
+        self::assertEquals('reload', ServerAction::Reload->value);
+        self::assertEquals('status', ServerAction::Status->value);
+        self::assertEquals('connections', ServerAction::Connections->value);
+    }
+
+    public function testValues(): void
+    {
+        $values = ServerAction::values();
+
+        self::assertCount(6, $values);
+        self::assertContains('start', $values);
+        self::assertContains('stop', $values);
+        self::assertContains('restart', $values);
+        self::assertContains('reload', $values);
+        self::assertContains('status', $values);
+        self::assertContains('connections', $values);
+    }
+
+    public function testTryFromValidValue(): void
+    {
+        $action = ServerAction::tryFrom('start');
+
+        self::assertSame(ServerAction::Start, $action);
+    }
+
+    public function testTryFromInvalidValue(): void
+    {
+        $action = ServerAction::tryFrom('invalid');
+
+        self::assertNull($action);
+    }
+}
