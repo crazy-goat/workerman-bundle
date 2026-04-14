@@ -141,7 +141,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
     {
         $strategy = new BinaryFileResponseStrategy();
 
-        // Create a temp file that should be deleted
+        // Create a temp file that should be deleted after connection closes
         $tempFile = sys_get_temp_dir() . '/delete_me_' . uniqid() . '.txt';
         file_put_contents($tempFile, 'Delete me after send!');
 
@@ -161,10 +161,18 @@ final class BinaryFileResponseStrategyTest extends TestCase
         ], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        // File should be deleted after conversion (content read into body)
+        // File should NOT be deleted yet (only after connection closes)
+        $this->assertFileExists($tempFile);
+        // File should be streamed via withFile()
+        $this->assertNotNull($workermanResponse->file);
+
+        // Simulate connection close
+        $onCloseCallback = $this->connection->onClose;
+        $this->assertNotNull($onCloseCallback, 'onClose callback should be registered');
+        $onCloseCallback();
+
+        // Now file should be deleted
         $this->assertFileDoesNotExist($tempFile);
-        // Content should be in body
-        $this->assertSame('Delete me after send!', $workermanResponse->rawBody());
     }
 
     public function testConvertWorksForNormalBinaryFileResponse(): void

@@ -52,17 +52,28 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         $maxlen = $this->getPrivateProperty($response, 'maxlen');
         $deleteFileAfterSend = $this->getPrivateProperty($response, 'deleteFileAfterSend');
 
-        // If file should be deleted after send, we must read it into memory
-        // because Workerman's withFile() doesn't support post-send callbacks
+        // If file should be deleted after send, stream it and register cleanup on connection close
         if ($deleteFileAfterSend === true) {
             $filePath = $file->getPathname();
-            $content = $this->readFileContent($filePath, $offset ?? 0, $maxlen ?? 0);
-            $workermanResponse->withBody($content);
 
-            // Delete the file immediately after reading
-            if (is_file($filePath)) {
-                unlink($filePath);
+            if (!is_file($filePath)) {
+                $workermanResponse->withBody('');
+                $connection->onClose = static function () use ($filePath): void {
+                    if (is_file($filePath)) {
+                        @unlink($filePath);
+                    }
+                };
+
+                return $workermanResponse;
             }
+
+            $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
+            $connection->onClose = static function () use ($filePath): void {
+                // @phpstan-ignore-next-line is_file called in async callback context
+                if (is_file($filePath)) {
+                    @unlink($filePath);
+                }
+            };
 
             return $workermanResponse;
         }
@@ -74,23 +85,6 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         );
 
         return $workermanResponse;
-    }
-
-    /**
-     * Read file content with optional offset and length limit.
-     * If maxlen is 0, reads the entire file from offset.
-     */
-    private function readFileContent(string $filePath, int $offset, int $maxlen): string
-    {
-        if (!is_file($filePath) || !is_readable($filePath)) {
-            return '';
-        }
-
-        // If maxlen is 0 or negative, read entire file from offset
-        $length = $maxlen > 0 ? $maxlen : null;
-        $content = file_get_contents($filePath, false, null, $offset, $length);
-
-        return $content !== false ? $content : '';
     }
 
     /**
