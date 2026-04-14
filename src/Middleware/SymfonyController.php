@@ -73,6 +73,7 @@ final class SymfonyController
 
     private function resetServices(): void
     {
+        // Only attempt to reset if we haven't successfully resolved the resetter yet
         if (!$this->servicesResetterInitialized) {
             try {
                 $container = $this->kernel->getContainer();
@@ -82,22 +83,28 @@ final class SymfonyController
                         $this->servicesResetter = $resetter;
                     }
                 }
+                // Mark as initialized regardless of success/failure to avoid repeated attempts
+                $this->servicesResetterInitialized = true;
             } catch (\Throwable $e) {
                 $this->logger?->error(
                     'Failed to resolve services_resetter',
                     ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
                 );
+                // Only mark as initialized if we got an exception - we don't want to retry on every request
+                $this->servicesResetterInitialized = true;
             }
-            $this->servicesResetterInitialized = true;
         }
 
-        try {
-            $this->servicesResetter?->reset();
-        } catch (\Throwable $e) {
-            $this->logger?->error(
-                'Failed to reset services',
-                ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
-            );
+        // Only attempt reset if we have a valid resetter
+        if ($this->servicesResetter !== null) {
+            try {
+                $this->servicesResetter->reset();
+            } catch (\Throwable $e) {
+                $this->logger?->error(
+                    'Failed to reset services',
+                    ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+                );
+            }
         }
     }
 }

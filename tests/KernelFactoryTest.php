@@ -14,9 +14,7 @@ final class KernelFactoryTest extends TestCase
     public function testKernelIsCached(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $app = function () use ($kernel) {
-            return $kernel;
-        };
+        $app = (fn() => $kernel);
 
         $factory = new KernelFactory($app, []);
         $this->assertSame($kernel, $factory->createKernel());
@@ -41,15 +39,12 @@ final class KernelFactoryTest extends TestCase
         $kernel->method('getContainer')
             ->willReturn($container);
 
-        $app = function () use ($kernel) {
-            return $kernel;
-        };
+        $app = (fn() => $kernel);
 
         $factory = new KernelFactory($app, []);
         // Use reflection to set the private kernel property
         $reflection = new \ReflectionClass($factory);
         $property = $reflection->getProperty('kernel');
-        $property->setAccessible(true);
         $property->setValue($factory, $kernel);
 
         $factory->resetServices();
@@ -66,14 +61,11 @@ final class KernelFactoryTest extends TestCase
         $kernel->method('getContainer')
             ->willReturn($container);
 
-        $app = function () use ($kernel) {
-            return $kernel;
-        };
+        $app = (fn() => $kernel);
 
         $factory = new KernelFactory($app, []);
         $reflection = new \ReflectionClass($factory);
         $property = $reflection->getProperty('kernel');
-        $property->setAccessible(true);
         $property->setValue($factory, $kernel);
 
         // Should not throw

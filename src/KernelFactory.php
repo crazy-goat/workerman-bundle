@@ -77,7 +77,7 @@ final class KernelFactory
                 if ($logger instanceof \Psr\Log\LoggerInterface) {
                     $logger->error(
                         'Failed to reset services',
-                        ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]
+                        ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
                     );
                 }
             }
