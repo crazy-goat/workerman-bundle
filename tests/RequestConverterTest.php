@@ -78,6 +78,134 @@ final class RequestConverterTest extends TestCase
         $files = $symfonyRequest->files->get('files');
         $this->assertIsArray($files);
         $this->assertCount(2, $files);
+
+        // Each file should be an UploadedFile instance
+        foreach ($files as $file) {
+            $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $file);
+        }
+    }
+
+    public function testNestedFileArrayWithMultipleFiles(): void
+    {
+        $tmpFile1 = $this->createTempFile('content 1');
+        $tmpFile2 = $this->createTempFile('content 2');
+        $tmpFile3 = $this->createTempFile('content 3');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'documents' => [
+                [
+                    'name' => 'doc1.pdf',
+                    'tmp_name' => $tmpFile1,
+                    'type' => 'application/pdf',
+                    'size' => 9,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                [
+                    'name' => 'doc2.pdf',
+                    'tmp_name' => $tmpFile2,
+                    'type' => 'application/pdf',
+                    'size' => 9,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                [
+                    'name' => 'doc3.pdf',
+                    'tmp_name' => $tmpFile3,
+                    'type' => 'application/pdf',
+                    'size' => 9,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+            ],
+        ]);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertTrue($symfonyRequest->files->has('documents'));
+        $documents = $symfonyRequest->files->get('documents');
+        $this->assertIsArray($documents);
+        $this->assertCount(3, $documents);
+
+        foreach ($documents as $index => $file) {
+            $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $file);
+            $this->assertSame('doc' . ($index + 1) . '.pdf', $file->getClientOriginalName());
+        }
+    }
+
+    public function testDeeplyNestedAssociativeFileArray(): void
+    {
+        $tmpFile1 = $this->createTempFile('avatar content');
+        $tmpFile2 = $this->createTempFile('resume content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'user' => [
+                'avatar' => [
+                    'name' => 'avatar.png',
+                    'tmp_name' => $tmpFile1,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                'resume' => [
+                    'name' => 'resume.pdf',
+                    'tmp_name' => $tmpFile2,
+                    'type' => 'application/pdf',
+                    'size' => 16,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+            ],
+        ]);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertTrue($symfonyRequest->files->has('user'));
+        $userFiles = $symfonyRequest->files->get('user');
+        $this->assertIsArray($userFiles);
+        $this->assertArrayHasKey('avatar', $userFiles);
+        $this->assertArrayHasKey('resume', $userFiles);
+
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $userFiles['avatar']);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $userFiles['resume']);
+        $this->assertSame('avatar.png', $userFiles['avatar']->getClientOriginalName());
+        $this->assertSame('resume.pdf', $userFiles['resume']->getClientOriginalName());
+    }
+
+    public function testMultipleFileInputsWithNumericKeys(): void
+    {
+        $tmpFile1 = $this->createTempFile('file 0 content');
+        $tmpFile2 = $this->createTempFile('file 1 content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'files' => [
+                0 => [
+                    'name' => 'image0.png',
+                    'tmp_name' => $tmpFile1,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                1 => [
+                    'name' => 'image1.png',
+                    'tmp_name' => $tmpFile2,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+            ],
+        ]);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertTrue($symfonyRequest->files->has('files'));
+        $files = $symfonyRequest->files->get('files');
+        $this->assertIsArray($files);
+        $this->assertCount(2, $files);
+
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $files[0]);
+        $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $files[1]);
+        $this->assertSame('image0.png', $files[0]->getClientOriginalName());
+        $this->assertSame('image1.png', $files[1]->getClientOriginalName());
     }
 
     public function testNestedAssociativeFileArrayValidation(): void
@@ -484,7 +612,7 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * @param array<string, array<string, mixed>> $files
+     * @param array<string, array<string, mixed>|array<int, array<string, mixed>>> $files
      */
     private function createRequestWithFiles(string $buffer, array $files): Request
     {

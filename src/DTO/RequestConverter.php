@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\DTO;
 
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 final class RequestConverter
@@ -19,6 +20,9 @@ final class RequestConverter
 
         // Validate file structure to provide clearer error messages
         FileUploadValidator::validate($files);
+
+        // Convert Workerman's $_FILES-style arrays to UploadedFile objects
+        $files = self::processFiles($files);
 
         // Only populate POST bag for form-encoded content types
         // JSON and other content types should leave POST bag empty (like PHP-FPM)
@@ -84,5 +88,42 @@ final class RequestConverter
             $server,
             $content,
         );
+    }
+
+    /**
+     * Recursively convert Workerman's $_FILES-style arrays to UploadedFile objects.
+     *
+     * Workerman returns nested arrays for multiple file uploads (e.g., files[] or documents[0]),
+     * but Symfony's Request expects UploadedFile objects in the files ParameterBag.
+     *
+     * @param array<string, mixed> $files
+     *
+     * @return array<string, mixed>
+     */
+    private static function processFiles(array $files): array
+    {
+        $result = [];
+        foreach ($files as $key => $value) {
+            if (is_array($value)) {
+                // Check if this is a single file structure (has 'tmp_name' key)
+                if (array_key_exists('tmp_name', $value)) {
+                    $type = $value['type'] ?? 'application/octet-stream';
+                    $error = $value['error'] ?? \UPLOAD_ERR_OK;
+
+                    $result[$key] = new UploadedFile(
+                        $value['tmp_name'],
+                        $value['name'] ?? '',
+                        $type === '' ? 'application/octet-stream' : $type,
+                        $error,
+                        true, // test mode: files are already moved to temp dir by Workerman
+                    );
+                } else {
+                    // Nested array - recurse
+                    $result[$key] = self::processFiles($value);
+                }
+            }
+        }
+
+        return $result;
     }
 }
