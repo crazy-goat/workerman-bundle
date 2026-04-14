@@ -29,6 +29,26 @@ final class ConfigLoader implements CacheWarmerInterface
 
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
+        if (!isset($this->config[0], $this->config[1], $this->config[2])) {
+            $missingSections = [];
+            if (!isset($this->config[0])) {
+                $missingSections[] = 'workerman';
+            }
+            if (!isset($this->config[1])) {
+                $missingSections[] = 'process';
+            }
+            if (!isset($this->config[2])) {
+                $missingSections[] = 'scheduler';
+            }
+
+            throw new \LogicException(
+                sprintf(
+                    'All config sections must be set before warming up. Missing: %s',
+                    implode(', ', $missingSections),
+                ),
+            );
+        }
+
         $resources = is_file($this->yamlConfigFilePath) ? [new FileResource($this->yamlConfigFilePath)] : [];
         $this->cache->write(sprintf('<?php return %s;', var_export($this->config, true)), $resources);
 
