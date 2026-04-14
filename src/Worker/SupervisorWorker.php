@@ -40,8 +40,8 @@ final readonly class SupervisorWorker
                 $handler = $kernel->getContainer()->get('workerman.process_handler');
                 $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
                 $handler("$serviceId::$method", $taskName);
-                sleep(1);
-                exit;
+                $worker->log("Process $taskName finished unexpectedly");
+                exit(1);
             };
         }
     }
