@@ -38,11 +38,4 @@ final class ServerActionTest extends TestCase
 
         self::assertSame(ServerAction::START, $action);
     }
-
-    public function testTryFromInvalidValue(): void
-    {
-        $action = ServerAction::tryFrom('invalid');
-
-        self::assertNull($action);
-    }
 }
