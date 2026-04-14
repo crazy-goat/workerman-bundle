@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 2026-04-14
 
+### Added
+
+- Added `setHeader()` method to `Request` class ([#38](https://github.com/crazy-goat/workerman-bundle/issues/38))
+  - `withHeader()` is now deprecated (kept as alias for backward compatibility)
+  - Aligns with PSR-7 naming conventions where `with*` implies immutability
+
+- Added `ServerWorker` SSL certificate validation for HTTPS/WSS servers ([#18](https://github.com/crazy-goat/workerman-bundle/issues/18))
+  - Validates that `local_cert` and `local_pk` are provided for SSL transport
+  - Checks that certificate and key files are readable
+  - Throws clear `\InvalidArgumentException` messages instead of cryptic SSL errors
+
+### Fixed
+
+- **Critical**: Fixed `Middleware Pipeline` — closure capturing wrong request in middleware chain ([#21](https://github.com/crazy-goat/workerman-bundle/issues/21))
+  - Changed closure to use `$input` parameter instead of outer scope `$request`
+  - Request-modifying middleware now correctly affects subsequent middleware in the chain
+
+- Fixed `KernelFactory` — singleton kernel state reset between requests ([#22](https://github.com/crazy-goat/workerman-bundle/issues/22))
+  - Kernel now properly resets services between requests to prevent memory leaks
+  - Uses Symfony's `services_resetter` to reset services tagged with `kernel.reset`
+
+- Fixed `RequestConverter` — missing nested file handling ([#26](https://github.com/crazy-goat/workerman-bundle/issues/26))
+  - Forms with `files[0]`, `files[avatar]`, or `<input name="documents[]" multiple>` now work correctly
+  - Added recursive file processing for nested file arrays
+
+- Fixed `ResponseConverter` — generic HTTP header normalization ([#25](https://github.com/crazy-goat/workerman-bundle/issues/25))
+  - All headers are now properly normalized from lowercase to PascalCase
+  - Previously only 6 headers were normalized; now uses generic transformation
+
+- Fixed `Runner` — proper error handling for fork and cache warmup ([#23](https://github.com/crazy-goat/workerman-bundle/issues/23))
+  - `pcntl_fork()` error (`-1`) now throws exception instead of falling into indefinite wait
+  - Child process exit code properly reflects boot success/failure
+  - Parent process now detects cache warmup failures in forked child
+
 ### Changed
 
 - **Breaking**: `ResponseConverterStrategyInterface::convert()` now requires a `TcpConnection` parameter
