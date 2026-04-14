@@ -35,23 +35,13 @@ final readonly class ServerWorker
         if (str_starts_with($listen, 'https://')) {
             $listen = str_replace('https://', 'http://', $listen);
             $transport = 'ssl';
-            $context = [
-                'ssl' => [
-                    'local_cert' => $serverConfig['local_cert'] ?? '',
-                    'local_pk' => $serverConfig['local_pk'] ?? '',
-                ],
-            ];
+            $context = $this->createSslContext($serverConfig);
         } elseif (str_starts_with($listen, 'ws://')) {
             $listen = str_replace('ws://', 'websocket://', $listen);
         } elseif (str_starts_with($listen, 'wss://')) {
             $listen = str_replace('wss://', 'websocket://', $listen);
             $transport = 'ssl';
-            $context = [
-                'ssl' => [
-                    'local_cert' => $serverConfig['local_cert'] ?? '',
-                    'local_pk' => $serverConfig['local_pk'] ?? '',
-                ],
-            ];
+            $context = $this->createSslContext($serverConfig);
         }
 
         $worker = new Worker($listen, $context);
@@ -88,5 +78,46 @@ final readonly class ServerWorker
             }
             $worker->onMessage = $callable;
         };
+    }
+
+    /**
+     * @param mixed[] $serverConfig
+     * @return array{ssl: array{local_cert: string, local_pk: string}}
+     */
+    private function createSslContext(array $serverConfig): array
+    {
+        $cert = $serverConfig['local_cert'] ?? null;
+        $key = $serverConfig['local_pk'] ?? null;
+
+        if (!is_string($cert) || $cert === '') {
+            throw new \InvalidArgumentException(
+                'SSL configuration requires "local_cert" option for HTTPS/WSS server.'
+            );
+        }
+
+        if (!is_string($key) || $key === '') {
+            throw new \InvalidArgumentException(
+                'SSL configuration requires "local_pk" option for HTTPS/WSS server.'
+            );
+        }
+
+        if (!is_readable($cert)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate file is not readable: %s', $cert)
+            );
+        }
+
+        if (!is_readable($key)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL private key file is not readable: %s', $key)
+            );
+        }
+
+        return [
+            'ssl' => [
+                'local_cert' => $cert,
+                'local_pk' => $key,
+            ],
+        ];
     }
 }
