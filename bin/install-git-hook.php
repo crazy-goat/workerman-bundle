@@ -1,11 +1,9 @@
-#!/usr/bin/env php
 <?php
 
 $hookContent = <<<'HOOK'
 #!/bin/bash
 echo "Running pre-push lint checks..."
 composer lint
-exit $?
 HOOK;
 
 $gitHookDir = __DIR__ . '/../.git/hooks';

@@ -24,6 +24,25 @@ All pull requests must pass the following checks before merging:
 
 ## Development Workflow
 
+### Pre-Push Hook
+
+A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` before each push to catch issues early.
+
+**To skip the hook** (for emergency pushes):
+```bash
+git push --no-verify
+```
+
+**To manually reinstall the hook**:
+```bash
+php bin/install-git-hook.php
+```
+
+**To remove the hook**:
+```bash
+rm .git/hooks/pre-push
+```
+
 ### Before Submitting a PR
 
 1. Run linting locally:
