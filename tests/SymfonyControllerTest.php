@@ -183,6 +183,9 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
                 return isset($this->services[$id]);
             }
 
+            /**
+             * @return array<string, mixed>|bool|float|int|string|\UnitEnum|null
+             */
             public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
             {
                 throw new \RuntimeException('Not implemented');
@@ -349,6 +352,9 @@ final class TestKernelWithoutServicesResetter implements KernelInterface, Termin
                 return isset($this->services[$id]);
             }
 
+            /**
+             * @return array<string, mixed>|bool|float|int|string|\UnitEnum|null
+             */
             public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
             {
                 throw new \RuntimeException('Not implemented');

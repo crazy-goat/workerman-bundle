@@ -5,5 +5,3 @@ parameters:
 		- tests
 	excludePaths:
 	    - src/config/configuration.php
-	ignoreErrors:
-		- '#Method Symfony\\Component\\DependencyInjection\\ContainerInterface@anonymous.*getParameter\(\) return type has no value type specified in iterable type array#'
