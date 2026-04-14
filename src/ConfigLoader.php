@@ -29,6 +29,22 @@ final class ConfigLoader implements CacheWarmerInterface
 
     public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
+        $missingSections = [];
+        foreach (ConfigSection::cases() as $section) {
+            if (!isset($this->config[$section->value])) {
+                $missingSections[] = $section->value;
+            }
+        }
+
+        if ($missingSections !== []) {
+            throw new \LogicException(
+                sprintf(
+                    'All config sections must be set before warming up. Missing: %s',
+                    implode(', ', $missingSections),
+                ),
+            );
+        }
+
         $resources = is_file($this->yamlConfigFilePath) ? [new FileResource($this->yamlConfigFilePath)] : [];
         $this->cache->write(sprintf('<?php return %s;', var_export($this->config, true)), $resources);
 
@@ -40,7 +56,7 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->cache->isFresh();
     }
 
-    /** @return array<int, mixed[]> */
+    /** @return array<string, mixed[]> */
     private function getConfig(): array
     {
         return $this->config ??= require $this->cache->getPath();
@@ -49,36 +65,36 @@ final class ConfigLoader implements CacheWarmerInterface
     /** @param mixed[] $config */
     public function setWorkermanConfig(array $config): void
     {
-        $this->config[0] = $config;
+        $this->config[ConfigSection::WORKERMAN->value] = $config;
     }
 
     /** @param mixed[] $config */
     public function setProcessConfig(array $config): void
     {
-        $this->config[1] = $config;
+        $this->config[ConfigSection::PROCESS->value] = $config;
     }
 
     /** @param mixed[] $config */
     public function setSchedulerConfig(array $config): void
     {
-        $this->config[2] = $config;
+        $this->config[ConfigSection::SCHEDULER->value] = $config;
     }
 
     /** @return mixed[] */
     public function getWorkermanConfig(): array
     {
-        return $this->getConfig()[0];
+        return $this->getConfig()[ConfigSection::WORKERMAN->value];
     }
 
     /** @return mixed[] */
     public function getProcessConfig(): array
     {
-        return $this->getConfig()[1];
+        return $this->getConfig()[ConfigSection::PROCESS->value];
     }
 
     /** @return mixed[] */
     public function getSchedulerConfig(): array
     {
-        return $this->getConfig()[2];
+        return $this->getConfig()[ConfigSection::SCHEDULER->value];
     }
 }
