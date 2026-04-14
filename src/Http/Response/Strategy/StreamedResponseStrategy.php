@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 /**
@@ -24,7 +25,7 @@ final class StreamedResponseStrategy implements ResponseConverterStrategyInterfa
         return $response instanceof StreamedResponse;
     }
 
-    public function convert(SymfonyResponse $response, array $headers): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse
     {
         /** @var StreamedResponse $response */
         $initialLevel = ob_get_level();

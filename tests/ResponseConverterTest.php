@@ -11,16 +11,25 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Workerman\Connection\TcpConnection;
 
 final class ResponseConverterTest extends TestCase
 {
+    private TcpConnection&\PHPUnit\Framework\MockObject\MockObject $connection;
+
+    protected function setUp(): void
+    {
+        // Create a mock TcpConnection - we only need it passed through, not actually used
+        $this->connection = $this->createMock(TcpConnection::class);
+    }
+
     public function testConvertUsesCorrectStrategy(): void
     {
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
         $regularResponse = new Response('regular');
-        $workermanResponse = $converter->convert($regularResponse);
+        $workermanResponse = $converter->convert($regularResponse, $this->connection);
 
         $this->assertSame('regular', $workermanResponse->rawBody());
     }
@@ -32,7 +41,7 @@ final class ResponseConverterTest extends TestCase
 
         // Empty strategies array
         $converter = new ResponseConverter([]);
-        $converter->convert(new Response());
+        $converter->convert(new Response(), $this->connection);
     }
 
     public function testConvertPreservesHeaders(): void
@@ -46,7 +55,7 @@ final class ResponseConverterTest extends TestCase
         ]);
 
         // Should not throw - headers are passed to strategy
-        $workermanResponse = $converter->convert($response);
+        $workermanResponse = $converter->convert($response, $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('content', $workermanResponse->rawBody());
@@ -64,7 +73,7 @@ final class ResponseConverterTest extends TestCase
         ]);
 
         // Should not throw - headers are normalized and passed to strategy
-        $workermanResponse = $converter->convert($response);
+        $workermanResponse = $converter->convert($response, $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
@@ -77,7 +86,7 @@ final class ResponseConverterTest extends TestCase
         };
 
         $converter = new ResponseConverter($generator());
-        $response = $converter->convert(new Response('test'));
+        $response = $converter->convert(new Response('test'), $this->connection);
 
         $this->assertSame('test', $response->rawBody());
     }
@@ -91,7 +100,7 @@ final class ResponseConverterTest extends TestCase
             echo 'streamed content';
         });
 
-        $workermanResponse = $converter->convert($streamedResponse);
+        $workermanResponse = $converter->convert($streamedResponse, $this->connection);
 
         $this->assertSame('streamed content', $workermanResponse->rawBody());
     }

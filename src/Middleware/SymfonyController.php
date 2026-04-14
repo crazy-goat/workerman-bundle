@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Contracts\Service\ResetInterface;
+use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Response;
 
 final class SymfonyController
@@ -33,7 +34,7 @@ final class SymfonyController
      * Process the request through Symfony kernel and return Workerman response.
      * Note: kernel->terminate() is NOT called here - use terminateIfNeeded() after sending response.
      */
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request, TcpConnection $connection): Response
     {
         $this->symfonyRequest = RequestConverter::toSymfonyRequest($request);
         $this->kernel->boot();
@@ -41,7 +42,7 @@ final class SymfonyController
         $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
         $this->symfonyResponse->prepare($this->symfonyRequest);
 
-        return $this->responseConverter->convert($this->symfonyResponse);
+        return $this->responseConverter->convert($this->symfonyResponse, $connection);
     }
 
     /**
