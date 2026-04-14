@@ -91,25 +91,25 @@ final readonly class ServerWorker
 
         if (!is_string($cert) || $cert === '') {
             throw new \InvalidArgumentException(
-                'SSL configuration requires "local_cert" option for HTTPS/WSS server.'
+                'SSL configuration requires "local_cert" option for HTTPS/WSS server.',
             );
         }
 
         if (!is_string($key) || $key === '') {
             throw new \InvalidArgumentException(
-                'SSL configuration requires "local_pk" option for HTTPS/WSS server.'
+                'SSL configuration requires "local_pk" option for HTTPS/WSS server.',
             );
         }
 
         if (!is_readable($cert)) {
             throw new \InvalidArgumentException(
-                sprintf('SSL certificate file is not readable: %s', $cert)
+                sprintf('SSL certificate file is not readable: %s', $cert),
             );
         }
 
         if (!is_readable($key)) {
             throw new \InvalidArgumentException(
-                sprintf('SSL private key file is not readable: %s', $key)
+                sprintf('SSL private key file is not readable: %s', $key),
             );
         }
 
