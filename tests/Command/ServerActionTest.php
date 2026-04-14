@@ -38,4 +38,10 @@ final class ServerActionTest extends TestCase
 
         self::assertSame(ServerAction::START, $action);
     }
+
+    public function testTryFromInvalidValueReturnsNull(): void
+    {
+        /** @phpstan-ignore staticMethod.alreadyNarrowedType */
+        self::assertNull(ServerAction::tryFrom('invalid'));
+    }
 }
