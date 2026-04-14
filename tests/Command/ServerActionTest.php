@@ -11,12 +11,12 @@ final class ServerActionTest extends TestCase
 {
     public function testEnumCases(): void
     {
-        self::assertEquals('start', ServerAction::Start->value);
-        self::assertEquals('stop', ServerAction::Stop->value);
-        self::assertEquals('restart', ServerAction::Restart->value);
-        self::assertEquals('reload', ServerAction::Reload->value);
-        self::assertEquals('status', ServerAction::Status->value);
-        self::assertEquals('connections', ServerAction::Connections->value);
+        self::assertEquals('start', ServerAction::START->value);
+        self::assertEquals('stop', ServerAction::STOP->value);
+        self::assertEquals('restart', ServerAction::RESTART->value);
+        self::assertEquals('reload', ServerAction::RELOAD->value);
+        self::assertEquals('status', ServerAction::STATUS->value);
+        self::assertEquals('connections', ServerAction::CONNECTIONS->value);
     }
 
     public function testValues(): void
@@ -36,7 +36,7 @@ final class ServerActionTest extends TestCase
     {
         $action = ServerAction::tryFrom('start');
 
-        self::assertSame(ServerAction::Start, $action);
+        self::assertSame(ServerAction::START, $action);
     }
 
     public function testTryFromInvalidValue(): void

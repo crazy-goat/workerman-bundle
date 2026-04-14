@@ -6,12 +6,12 @@ namespace CrazyGoat\WorkermanBundle\Command;
 
 enum ServerAction: string
 {
-    case Start = 'start';
-    case Stop = 'stop';
-    case Restart = 'restart';
-    case Reload = 'reload';
-    case Status = 'status';
-    case Connections = 'connections';
+    case START = 'start';
+    case STOP = 'stop';
+    case RESTART = 'restart';
+    case RELOAD = 'reload';
+    case STATUS = 'status';
+    case CONNECTIONS = 'connections';
 
     /**
      * @return array<string>

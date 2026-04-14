@@ -25,7 +25,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testStatusShowsRunningServer(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => ServerAction::Status->value]);
+        $tester->execute(['action' => ServerAction::STATUS->value]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('Worker', $tester->getDisplay());
@@ -34,7 +34,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testConnectionsShowsOutput(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => ServerAction::Connections->value]);
+        $tester->execute(['action' => ServerAction::CONNECTIONS->value]);
 
         $tester->assertCommandIsSuccessful();
     }
@@ -72,7 +72,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testReloadDoesNotBreakServer(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => ServerAction::Reload->value]);
+        $tester->execute(['action' => ServerAction::RELOAD->value]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());

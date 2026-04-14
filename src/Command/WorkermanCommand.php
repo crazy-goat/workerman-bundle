@@ -64,12 +64,12 @@ final class WorkermanCommand extends Command
 
         try {
             return match ($serverAction) {
-                ServerAction::Start => $this->handleStart($io, $daemon, $graceful),
-                ServerAction::Stop => $this->handleStop($io, $graceful),
-                ServerAction::Restart => $this->handleRestart($io, $daemon, $graceful),
-                ServerAction::Reload => $this->handleReload($io, $graceful),
-                ServerAction::Status => $this->handleOutput($io, $this->serverManager->getStatus(), 'No status data available.'),
-                ServerAction::Connections => $this->handleOutput($io, $this->serverManager->getConnections(), 'No connection data available.'),
+                ServerAction::START => $this->handleStart($io, $daemon, $graceful),
+                ServerAction::STOP => $this->handleStop($io, $graceful),
+                ServerAction::RESTART => $this->handleRestart($io, $daemon, $graceful),
+                ServerAction::RELOAD => $this->handleReload($io, $graceful),
+                ServerAction::STATUS => $this->handleOutput($io, $this->serverManager->getStatus(), 'No status data available.'),
+                ServerAction::CONNECTIONS => $this->handleOutput($io, $this->serverManager->getConnections(), 'No connection data available.'),
             };
         } catch (ServerNotRunningException | ServerAlreadyRunningException | ServerStopFailedException $e) {
             $io->error($e->getMessage());

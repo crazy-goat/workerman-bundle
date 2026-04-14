@@ -31,7 +31,7 @@ final class ServerManager
             throw new ServerAlreadyRunningException();
         }
 
-        $this->prepareWorkerStart(ServerAction::Start, $daemon, $graceful);
+        $this->prepareWorkerStart(ServerAction::START, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory()))->run();
     }
@@ -71,7 +71,7 @@ final class ServerManager
             }
         }
 
-        $this->prepareWorkerStart(ServerAction::Restart, $daemon, $graceful);
+        $this->prepareWorkerStart(ServerAction::RESTART, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory()))->run();
     }
