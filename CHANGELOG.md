@@ -7,11 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0] - 2026-04-14
 
-### Added
+### Deprecated
 
-- Added `setHeader()` method to `Request` class ([#38](https://github.com/crazy-goat/workerman-bundle/issues/38))
-  - `withHeader()` is now deprecated (kept as alias for backward compatibility)
-  - Aligns with PSR-7 naming conventions where `with*` implies immutability
+- `Request::withHeader()` is deprecated ([#38](https://github.com/crazy-goat/workerman-bundle/issues/38))
+  - Use `setHeader()` instead
+  - `withHeader()` is kept as alias for backward compatibility
+
+### Added
 
 - Added `ServerWorker` SSL certificate validation for HTTPS/WSS servers ([#18](https://github.com/crazy-goat/workerman-bundle/issues/18))
   - Validates that `local_cert` and `local_pk` are provided for SSL transport
