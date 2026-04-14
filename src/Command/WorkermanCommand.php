@@ -19,8 +19,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'workerman:server', description: 'Manage the Workerman server')]
 final class WorkermanCommand extends Command
 {
-    private const ALLOWED_ACTIONS = ['start', 'stop', 'restart', 'reload', 'status', 'connections'];
-
     public function __construct(
         private readonly ServerManager $serverManager,
     ) {
@@ -32,9 +30,9 @@ final class WorkermanCommand extends Command
         $this->addArgument(
             'action',
             InputArgument::REQUIRED,
-            'Action: ' . implode('|', self::ALLOWED_ACTIONS),
+            'Action: ' . implode('|', ServerAction::values()),
             null,
-            self::ALLOWED_ACTIONS,
+            ServerAction::values(),
         )
             ->addOption('daemon', 'd', InputOption::VALUE_NONE, 'Run in daemon mode')
             ->addOption('grace', 'g', InputOption::VALUE_NONE, 'Gracefully operate')
@@ -45,9 +43,18 @@ final class WorkermanCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $action = $input->getArgument('action');
+        $allowedActions = 'Invalid action. Allowed: ' . implode(', ', ServerAction::values());
 
-        if (!\is_string($action) || !\in_array($action, self::ALLOWED_ACTIONS, true)) {
-            $io->error(\sprintf('Invalid action. Allowed: %s', implode(', ', self::ALLOWED_ACTIONS)));
+        if (!\is_string($action)) {
+            $io->error($allowedActions);
+
+            return Command::FAILURE;
+        }
+
+        $serverAction = ServerAction::tryFrom($action);
+
+        if ($serverAction === null) {
+            $io->error($allowedActions);
 
             return Command::FAILURE;
         }
@@ -56,13 +63,13 @@ final class WorkermanCommand extends Command
         $graceful = (bool) $input->getOption('grace');
 
         try {
-            return match ($action) {
-                'start' => $this->handleStart($io, $daemon, $graceful),
-                'stop' => $this->handleStop($io, $graceful),
-                'restart' => $this->handleRestart($io, $daemon, $graceful),
-                'reload' => $this->handleReload($io, $graceful),
-                'status' => $this->handleOutput($io, $this->serverManager->getStatus(), 'No status data available.'),
-                default => $this->handleOutput($io, $this->serverManager->getConnections(), 'No connection data available.'),
+            return match ($serverAction) {
+                ServerAction::START => $this->handleStart($io, $daemon, $graceful),
+                ServerAction::STOP => $this->handleStop($io, $graceful),
+                ServerAction::RESTART => $this->handleRestart($io, $daemon, $graceful),
+                ServerAction::RELOAD => $this->handleReload($io, $graceful),
+                ServerAction::STATUS => $this->handleOutput($io, $this->serverManager->getStatus(), 'No status data available.'),
+                ServerAction::CONNECTIONS => $this->handleOutput($io, $this->serverManager->getConnections(), 'No connection data available.'),
             };
         } catch (ServerNotRunningException | ServerAlreadyRunningException | ServerStopFailedException $e) {
             $io->error($e->getMessage());

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -24,7 +25,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testStatusShowsRunningServer(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => 'status']);
+        $tester->execute(['action' => ServerAction::STATUS->value]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('Worker', $tester->getDisplay());
@@ -33,7 +34,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testConnectionsShowsOutput(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => 'connections']);
+        $tester->execute(['action' => ServerAction::CONNECTIONS->value]);
 
         $tester->assertCommandIsSuccessful();
     }
@@ -71,7 +72,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testReloadDoesNotBreakServer(): void
     {
         $tester = $this->createCommandTester();
-        $tester->execute(['action' => 'reload']);
+        $tester->execute(['action' => ServerAction::RELOAD->value]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
