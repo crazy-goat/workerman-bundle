@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Http\Response;
 
 use CrazyGoat\WorkermanBundle\Exception\NoResponseStrategyException;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 final readonly class ResponseConverter
@@ -21,13 +22,13 @@ final readonly class ResponseConverter
         $this->strategies = iterator_to_array($strategies, false);
     }
 
-    public function convert(SymfonyResponse $response): WorkermanResponse
+    public function convert(SymfonyResponse $response, TcpConnection $connection): WorkermanResponse
     {
         $headers = $this->extractHeaders($response);
 
         foreach ($this->strategies as $strategy) {
             if ($strategy->supports($response)) {
-                return $strategy->convert($response, $headers);
+                return $strategy->convert($response, $headers, $connection);
             }
         }
 

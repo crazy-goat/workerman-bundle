@@ -51,7 +51,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         \memory_reset_peak_usage();
         $shouldCloseConnection = $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
 
-        $next = $this->controller;
+        $next = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
         foreach (array_reverse($this->middlewares) as $middleware) {
             $next = fn(Request $input): Http\Response => $middleware($input, $next);
         }

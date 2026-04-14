@@ -7,9 +7,17 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Workerman\Connection\TcpConnection;
 
 final class StreamedResponseStrategyTest extends TestCase
 {
+    private TcpConnection&\PHPUnit\Framework\MockObject\MockObject $connection;
+
+    protected function setUp(): void
+    {
+        $this->connection = $this->createMock(TcpConnection::class);
+    }
+
     public function testSupportsReturnsTrueForStreamedResponse(): void
     {
         $strategy = new StreamedResponseStrategy();
@@ -34,7 +42,7 @@ final class StreamedResponseStrategyTest extends TestCase
             echo 'chunk3';
         });
 
-        $workermanResponse = $strategy->convert($streamedResponse, []);
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection);
 
         $this->assertSame('chunk1chunk2chunk3', $workermanResponse->rawBody());
     }
@@ -47,7 +55,7 @@ final class StreamedResponseStrategyTest extends TestCase
             echo 'content';
         }, \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
 
-        $workermanResponse = $strategy->convert($streamedResponse, []);
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection);
 
         $this->assertSame(201, $workermanResponse->getStatusCode());
     }
@@ -62,7 +70,7 @@ final class StreamedResponseStrategyTest extends TestCase
             echo 'content';
         }, \Symfony\Component\HttpFoundation\Response::HTTP_OK, $headers);
 
-        $workermanResponse = $strategy->convert($streamedResponse, $headers);
+        $workermanResponse = $strategy->convert($streamedResponse, $headers, $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame(['text/plain'], $workermanResponse->getHeader('Content-Type'));
@@ -77,7 +85,7 @@ final class StreamedResponseStrategyTest extends TestCase
             // Echo nothing
         });
 
-        $workermanResponse = $strategy->convert($streamedResponse, []);
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection);
 
         $this->assertSame('', $workermanResponse->rawBody());
     }
@@ -96,7 +104,7 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('intentional error');
 
-        $strategy->convert($streamedResponse, []);
+        $strategy->convert($streamedResponse, [], $this->connection);
 
         // OB level should be restored after exception
         $this->assertSame($initialLevel, ob_get_level(), 'OB level should be restored after exception');

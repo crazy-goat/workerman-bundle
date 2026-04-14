@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Http\Response;
 
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 interface ResponseConverterStrategyInterface
@@ -19,5 +20,5 @@ interface ResponseConverterStrategyInterface
      *
      * @param array<string, list<string|null>> $headers Pre-extracted headers
      */
-    public function convert(SymfonyResponse $response, array $headers): WorkermanResponse;
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse;
 }

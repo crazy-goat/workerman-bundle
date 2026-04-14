@@ -15,6 +15,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Contracts\Service\ResetInterface;
+use Workerman\Connection\TcpConnection;
 
 /**
  * Test kernel that implements both KernelInterface and TerminableInterface
@@ -688,6 +689,13 @@ final class TestRequestTrackingKernel implements KernelInterface
  */
 final class SymfonyControllerTest extends TestCase
 {
+    private TcpConnection&\PHPUnit\Framework\MockObject\MockObject $connection;
+
+    protected function setUp(): void
+    {
+        $this->connection = $this->createMock(TcpConnection::class);
+    }
+
     private function createResponseConverter(bool $withStreamedStrategy = false): ResponseConverter
     {
         // IMPORTANT: StreamedResponseStrategy MUST come before DefaultResponseStrategy
@@ -713,7 +721,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
 
         // Invoke controller - this should NOT call terminate
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertSame(200, $response->getStatusCode());
@@ -739,7 +747,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
 
         // Invoke controller
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
 
@@ -762,7 +770,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
 
         // Invoke controller
-        $controller($request);
+        $controller($request, $this->connection);
 
         // First call to terminateIfNeeded - should trigger terminate
         $controller->terminateIfNeeded();
@@ -790,7 +798,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         // Symfony normalizes headers to lowercase, Workerman stores them as-is
@@ -814,7 +822,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertSame(500, $response->getStatusCode());
     }
@@ -835,7 +843,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer .= "\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         // Verify response is correct
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
@@ -870,7 +878,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer .= "\r\n";
         $request = new Request($buffer);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -901,7 +909,7 @@ final class SymfonyControllerTest extends TestCase
         // Test HTTP/1.1
         $buffer = "GET /protocol HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -924,7 +932,7 @@ final class SymfonyControllerTest extends TestCase
         // Test HTTP/2.0
         $buffer = "GET /protocol HTTP/2.0\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -951,7 +959,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertSame(200, $response->getStatusCode());
@@ -985,7 +993,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(202, $response->getStatusCode());
@@ -1011,7 +1019,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /sse HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         // Content-Type may have charset added by Symfony
@@ -1036,7 +1044,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /empty-stream HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame('', $response->rawBody());
@@ -1062,7 +1070,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /streamed-json HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(200, $response->getStatusCode());
@@ -1084,7 +1092,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(443);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -1110,7 +1118,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(80);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -1137,7 +1145,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(80);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -1163,7 +1171,7 @@ final class SymfonyControllerTest extends TestCase
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(80);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
@@ -1215,7 +1223,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $response = $controller($request);
+        $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertTrue($kernel->bootCalled, 'Kernel boot should be called');
@@ -1239,7 +1247,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        $controller($request);
+        $controller($request, $this->connection);
 
         $controller->terminateIfNeeded();
 

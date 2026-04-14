@@ -8,15 +8,18 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Workerman\Connection\TcpConnection;
 
 final class BinaryFileResponseStrategyTest extends TestCase
 {
     private string $testFile;
+    private TcpConnection&\PHPUnit\Framework\MockObject\MockObject $connection;
 
     protected function setUp(): void
     {
         $this->testFile = sys_get_temp_dir() . '/test_binary_file_' . uniqid() . '.txt';
         file_put_contents($this->testFile, 'Hello World from binary file!');
+        $this->connection = $this->createMock(TcpConnection::class);
     }
 
     protected function tearDown(): void
@@ -51,7 +54,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ]);
+        ], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         // Workerman Response with file has file property set
@@ -69,7 +72,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['application/pdf'],
             'Content-Disposition' => ['attachment; filename="report.pdf"'],
-        ]);
+        ], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -80,7 +83,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $strategy = new BinaryFileResponseStrategy();
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NOT_FOUND);
 
-        $workermanResponse = $strategy->convert($binaryResponse, []);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
     }
@@ -101,7 +104,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('tempFileObject');
         $property->setValue($binaryResponse, $tempFile);
 
-        $workermanResponse = $strategy->convert($binaryResponse, []);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         // For temp files, content is read directly into body (no temp file created)
@@ -128,7 +131,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Range' => ['bytes 0-4/29'],
-        ]);
+        ], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -138,7 +141,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
     {
         $strategy = new BinaryFileResponseStrategy();
 
-        // Create a temp file that should be deleted
+        // Create a temp file that should be deleted after connection closes
         $tempFile = sys_get_temp_dir() . '/delete_me_' . uniqid() . '.txt';
         file_put_contents($tempFile, 'Delete me after send!');
 
@@ -155,13 +158,21 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ]);
+        ], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        // File should be deleted after conversion (content read into body)
+        // File should NOT be deleted yet (only after connection closes)
+        $this->assertFileExists($tempFile);
+        // File should be streamed via withFile()
+        $this->assertNotNull($workermanResponse->file);
+
+        // Simulate connection close
+        $onCloseCallback = $this->connection->onClose;
+        $this->assertNotNull($onCloseCallback, 'onClose callback should be registered');
+        $onCloseCallback();
+
+        // Now file should be deleted
         $this->assertFileDoesNotExist($tempFile);
-        // Content should be in body
-        $this->assertSame('Delete me after send!', $workermanResponse->rawBody());
     }
 
     public function testConvertWorksForNormalBinaryFileResponse(): void
@@ -171,7 +182,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         // Test that normal BinaryFileResponse works correctly
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK);
 
-        $workermanResponse = $strategy->convert($binaryResponse, []);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -192,7 +203,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         unlink($tempFile);
 
         // Conversion should handle gracefully - Workerman returns 404 for missing files
-        $workermanResponse = $strategy->convert($binaryResponse, []);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
 
         // Workerman detects missing file and returns 404
         $this->assertSame(404, $workermanResponse->getStatusCode());
@@ -219,13 +230,11 @@ final class BinaryFileResponseStrategyTest extends TestCase
         // Delete file after construction but before conversion
         unlink($tempFile);
 
-        // Conversion should handle gracefully with empty body
+        // Conversion should handle gracefully - Workerman returns 404 for missing files
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ]);
+        ], $this->connection);
 
-        $this->assertSame(200, $workermanResponse->getStatusCode());
-        // Should return empty body for missing file
-        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(404, $workermanResponse->getStatusCode());
     }
 }

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking**: `ResponseConverterStrategyInterface::convert()` now requires a `TcpConnection` parameter
+  - All strategy implementations must be updated to accept the new parameter
+  - Enables connection-aware features like immediate temp file cleanup on connection close
+  - **Migration**: Add `TcpConnection $connection` parameter to your custom strategy's `convert()` method
+
+- `BinaryFileResponseStrategy` now deletes temp files immediately after connection closes
+  - Uses Workerman's `onClose` callback instead of loading file into memory
+  - Works correctly for both small and large files (no timing issues with `Timer::add`)
+  - Cleaner lifecycle management — cleanup tied to actual connection state
+  - More memory efficient: files are streamed directly from disk instead of being loaded into memory
+
 - `RequestConverter::toSymfonyRequest()` now returns empty content for multipart/form-data requests
   - Matches PHP-FPM behavior where `php://input` is not available for multipart
   - Previously `getContent()` returned full raw body including file contents
