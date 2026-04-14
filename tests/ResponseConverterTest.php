@@ -76,6 +76,8 @@ final class ResponseConverterTest extends TestCase
         $workermanResponse = $converter->convert($response, $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertSame(['text/html'], $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame(['attachment'], $workermanResponse->getHeader('Content-Disposition'));
     }
 
     public function testConvertHandlesIterableStrategies(): void
