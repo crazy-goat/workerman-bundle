@@ -29,12 +29,22 @@ final readonly class Runner implements RunnerInterface
 
         // Warm up cache if no workerman fresh config found (do it in a forked process as the main process should not boot kernel)
         if (!$configLoader->isFresh()) {
-            if (\pcntl_fork() === 0) {
-                $this->kernelFactory->createKernel()->boot();
-                exit;
-            } else {
-                pcntl_wait($status);
-                unset($status);
+            $pid = \pcntl_fork();
+            if ($pid === -1) {
+                throw new \RuntimeException('Failed to fork process for cache warmup');
+            }
+            if ($pid === 0) {
+                try {
+                    $this->kernelFactory->createKernel()->boot();
+                    exit(0);
+                } catch (\Throwable $e) {
+                    fwrite(STDERR, $e->getMessage() . PHP_EOL);
+                    exit(1);
+                }
+            }
+            $waitResult = pcntl_wait($status);
+            if ($waitResult === -1 || !pcntl_wifexited($status) || pcntl_wexitstatus($status) !== 0) {
+                throw new \RuntimeException('Cache warmup failed in forked process');
             }
         }
 
