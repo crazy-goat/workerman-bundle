@@ -82,13 +82,15 @@ final class SymfonyController
                         $this->servicesResetter = $resetter;
                     }
                 }
+                // We got a definitive answer: resetter exists or doesn't
+                $this->servicesResetterInitialized = true;
             } catch (\Throwable $e) {
                 $this->logger?->error(
                     'Failed to resolve services_resetter',
-                    ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+                    ['exception' => $e],
                 );
+                // Do NOT set initialized → next request will retry
             }
-            $this->servicesResetterInitialized = true;
         }
 
         try {
