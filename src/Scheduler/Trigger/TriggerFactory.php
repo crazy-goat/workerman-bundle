@@ -38,7 +38,7 @@ final class TriggerFactory
 
         $trigger = match (true) {
             $expression instanceof \DateTimeImmutable => new DateTimeTrigger($expression),
-            is_string($expression) && CronExpression::isValidExpression($expression) => new CronExpressionTrigger($expression),
+            is_string($expression) && class_exists(CronExpression::class) && CronExpression::isValidExpression($expression) => new CronExpressionTrigger($expression),
             default => new PeriodicalTrigger($expression),
         };
 
