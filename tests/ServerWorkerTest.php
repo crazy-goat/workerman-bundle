@@ -34,8 +34,8 @@ final class ServerWorkerTest extends TestCase
     {
         $kernel = $this->createMock(KernelInterface::class);
         return new KernelFactory(
-            fn() => $kernel,
-            []
+            fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel,
+            [],
         );
     }
 
@@ -52,7 +52,7 @@ final class ServerWorkerTest extends TestCase
                 'name' => 'test-server',
                 'listen' => 'https://0.0.0.0:8443',
                 'local_pk' => $this->tempDir . '/key.pem',
-            ]
+            ],
         );
     }
 
@@ -69,7 +69,7 @@ final class ServerWorkerTest extends TestCase
                 'name' => 'test-server',
                 'listen' => 'https://0.0.0.0:8443',
                 'local_cert' => $this->tempDir . '/cert.pem',
-            ]
+            ],
         );
     }
 
@@ -87,7 +87,7 @@ final class ServerWorkerTest extends TestCase
                 'listen' => 'https://0.0.0.0:8443',
                 'local_cert' => '/nonexistent/cert.pem',
                 'local_pk' => $this->tempDir . '/key.pem',
-            ]
+            ],
         );
     }
 
@@ -105,7 +105,7 @@ final class ServerWorkerTest extends TestCase
                 'listen' => 'https://0.0.0.0:8443',
                 'local_cert' => $this->tempDir . '/cert.pem',
                 'local_pk' => '/nonexistent/key.pem',
-            ]
+            ],
         );
     }
 
@@ -125,7 +125,7 @@ final class ServerWorkerTest extends TestCase
                 'listen' => 'https://0.0.0.0:8443',
                 'local_cert' => $certFile,
                 'local_pk' => $keyFile,
-            ]
+            ],
         );
 
         $this->assertInstanceOf(ServerWorker::class, $serverWorker);
@@ -147,7 +147,7 @@ final class ServerWorkerTest extends TestCase
                 'listen' => 'wss://0.0.0.0:8443',
                 'local_cert' => $certFile,
                 'local_pk' => $keyFile,
-            ]
+            ],
         );
 
         $this->assertInstanceOf(ServerWorker::class, $serverWorker);
@@ -161,12 +161,12 @@ final class ServerWorkerTest extends TestCase
         if ($privkey === false) {
             throw new \RuntimeException('Failed to generate private key');
         }
-        
+
         $cert = \openssl_csr_new($dn, $privkey, ['digest_alg' => 'sha256']);
         if ($cert === false || $cert === true) {
             throw new \RuntimeException('Failed to generate CSR');
         }
-        
+
         $x509 = \openssl_csr_sign($cert, null, $privkey, 365);
         if ($x509 === false) {
             throw new \RuntimeException('Failed to sign certificate');
@@ -175,7 +175,7 @@ final class ServerWorkerTest extends TestCase
         if (!\openssl_pkey_export_to_file($privkey, $keyFile)) {
             throw new \RuntimeException('Failed to export private key');
         }
-        
+
         if (!\openssl_x509_export_to_file($x509, $certFile)) {
             throw new \RuntimeException('Failed to export certificate');
         }
