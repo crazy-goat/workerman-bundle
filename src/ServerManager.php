@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
@@ -30,7 +31,7 @@ final class ServerManager
             throw new ServerAlreadyRunningException();
         }
 
-        $this->prepareWorkerStart('start', $daemon, $graceful);
+        $this->prepareWorkerStart(ServerAction::Start, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory()))->run();
     }
@@ -70,7 +71,7 @@ final class ServerManager
             }
         }
 
-        $this->prepareWorkerStart('restart', $daemon, $graceful);
+        $this->prepareWorkerStart(ServerAction::Restart, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory()))->run();
     }
@@ -135,9 +136,9 @@ final class ServerManager
         return $this->isMasterRunning($this->getMasterPid());
     }
 
-    private function prepareWorkerStart(string $action, bool $daemon, bool $graceful): void
+    private function prepareWorkerStart(ServerAction $action, bool $daemon, bool $graceful): void
     {
-        $command = $action;
+        $command = $action->value;
         if ($daemon) {
             $command .= ' -d';
         }

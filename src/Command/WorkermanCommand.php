@@ -43,9 +43,10 @@ final class WorkermanCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $action = $input->getArgument('action');
+        $allowedActions = 'Invalid action. Allowed: ' . implode(', ', ServerAction::values());
 
         if (!\is_string($action)) {
-            $io->error('Invalid action. Allowed: ' . implode(', ', ServerAction::values()));
+            $io->error($allowedActions);
 
             return Command::FAILURE;
         }
@@ -53,7 +54,7 @@ final class WorkermanCommand extends Command
         $serverAction = ServerAction::tryFrom($action);
 
         if ($serverAction === null) {
-            $io->error('Invalid action. Allowed: ' . implode(', ', ServerAction::values()));
+            $io->error($allowedActions);
 
             return Command::FAILURE;
         }
