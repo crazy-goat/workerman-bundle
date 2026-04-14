@@ -99,3 +99,14 @@ jobs:
 
       - name: Run tests
         run: composer test
+
+  ci:
+    name: CI
+    needs: [lint, tests]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
+          if [ "${{ needs.tests.result }}" != "success" ]; then exit 1; fi
