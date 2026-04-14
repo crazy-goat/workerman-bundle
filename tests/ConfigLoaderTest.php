@@ -130,12 +130,12 @@ final class ConfigLoaderTest extends TestCase
 
         // Verify config can be loaded back
         $loadedConfig = require $this->tempDir . '/cache/workerman/config.cache.php';
-        $this->assertArrayHasKey(0, $loadedConfig);
-        $this->assertArrayHasKey(1, $loadedConfig);
-        $this->assertArrayHasKey(2, $loadedConfig);
-        $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:8080']], $loadedConfig[0]);
-        $this->assertSame(['processes' => []], $loadedConfig[1]);
-        $this->assertSame(['schedules' => []], $loadedConfig[2]);
+        $this->assertArrayHasKey('workerman', $loadedConfig);
+        $this->assertArrayHasKey('process', $loadedConfig);
+        $this->assertArrayHasKey('scheduler', $loadedConfig);
+        $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:8080']], $loadedConfig['workerman']);
+        $this->assertSame(['processes' => []], $loadedConfig['process']);
+        $this->assertSame(['schedules' => []], $loadedConfig['scheduler']);
     }
 
     public function testGetWorkermanConfigReturnsCorrectSection(): void
@@ -146,7 +146,6 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig($workermanConfig);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig(['schedules' => []]);
-        $loader->warmUp($this->tempDir . '/cache');
 
         $this->assertSame($workermanConfig, $loader->getWorkermanConfig());
     }
@@ -159,7 +158,6 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig(['server' => []]);
         $loader->setProcessConfig($processConfig);
         $loader->setSchedulerConfig(['schedules' => []]);
-        $loader->warmUp($this->tempDir . '/cache');
 
         $this->assertSame($processConfig, $loader->getProcessConfig());
     }
@@ -172,7 +170,6 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig(['server' => []]);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig($schedulerConfig);
-        $loader->warmUp($this->tempDir . '/cache');
 
         $this->assertSame($schedulerConfig, $loader->getSchedulerConfig());
     }

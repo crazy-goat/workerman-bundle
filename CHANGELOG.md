@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Require conversation resolution before merging
   - No approval count required (solo dev project)
 
+### Added
+
+- Added validation in `ConfigLoader::warmUp()` to ensure all config sections are set before caching ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
+  - New `ConfigSection` enum with cases: WORKERMAN, PROCESS, SCHEDULER
+  - Throws `LogicException` with descriptive message when any section is missing
+  - Prevents incomplete configuration from being cached
+
+### Changed
+
+- **Breaking**: Config cache format changed from numeric indices to string keys ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
+  - **Old format:** `[0 => ..., 1 => ..., 2 => ...]`
+  - **New format:** `['workerman' => ..., 'process' => ..., 'scheduler' => ...]`
+  - Uses `ConfigSection` enum values as keys for clarity and type safety
+  - **Migration**: Clear cache after upgrade: `rm -rf var/cache/*`
+
 ## [0.14.0] - 2026-04-14
 
 ### Deprecated
