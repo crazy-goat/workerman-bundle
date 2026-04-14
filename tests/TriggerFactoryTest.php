@@ -125,6 +125,7 @@ final class TriggerFactoryTest extends TestCase
             'with @weekly' => ['@weekly'],
             'with @daily' => ['@daily'],
             'with @hourly' => ['@hourly'],
+            'daily at midnight on Monday (no asterisks)' => ['0 0 1 1 1'],
         ];
     }
 
@@ -133,7 +134,7 @@ final class TriggerFactoryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid interval');
 
-        TriggerFactory::create('1 2 3 4 5');
+        TriggerFactory::create('1 2 3 4 5 6');
     }
 
     public function testExpressionWithAsterisksButNotFivePartsThrowsException(): void
