@@ -34,7 +34,7 @@ final class ServerWorkerTest extends TestCase
     {
         $kernel = $this->createMock(KernelInterface::class);
         return new KernelFactory(
-            fn() => $kernel,
+            fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel,
             [],
         );
     }
