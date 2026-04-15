@@ -78,9 +78,11 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @param string[] $taggedServices
+     * Creates a Reference map from tagged services for ServiceLocator registration.
      *
-     * @return Reference[]
+     * @param array<string, array<string, mixed>> $taggedServices Output from findTaggedServiceIds()
+     *
+     * @return array<string, Reference> Service id => Reference mapping
      */
     private function referenceMap(array $taggedServices): array
     {
