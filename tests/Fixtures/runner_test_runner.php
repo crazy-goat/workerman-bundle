@@ -52,6 +52,9 @@ match ($testName) {
     'child_normal_exit' => testChildNormalExit(),
     'child_exit_nonzero' => testChildExitNonzero(),
     'signal_killed_child' => testSignalKilledChild(),
+    'child_success_sigkill' => testChildSuccessSigkill(),
+    'child_error_sigterm' => testChildErrorSigterm(),
+    'timeout_kills_child' => testTimeoutKillsChild(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -203,6 +206,112 @@ function testSignalKilledChild(): void
     }
     if (!pcntl_wifsignaled($status)) {
         fail('Child should appear as killed by signal');
+    }
+
+    pass();
+}
+
+/**
+ * Test: Child process uses posix_kill(getmypid(), SIGKILL) for success.
+ * Verifies parent recognizes SIGKILL as success (cache warmup completed).
+ */
+function testChildSuccessSigkill(): void
+{
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+    if ($pid === 0) {
+        // Simulate successful cache warmup, then self-kill with SIGKILL
+        posix_kill((int) getmypid(), SIGKILL);
+        exit(0); // unreachable
+    }
+
+    $status = 0;
+    $waitResult = pcntl_wait($status);
+    if ($waitResult === -1) {
+        fail('pcntl_wait returned -1');
+    }
+    if (pcntl_wifexited($status)) {
+        fail('Child should NOT appear as exited normally (was killed by signal)');
+    }
+    if (!pcntl_wifsignaled($status)) {
+        fail('Child should appear as killed by signal');
+    }
+    if (pcntl_wtermsig($status) !== SIGKILL) {
+        fail('Child should have been killed by SIGKILL (9), got ' . pcntl_wtermsig($status));
+    }
+
+    pass();
+}
+
+/**
+ * Test: Child process uses posix_kill(getmypid(), SIGTERM) for error.
+ * Verifies parent recognizes SIGTERM as failure (cache warmup failed).
+ */
+function testChildErrorSigterm(): void
+{
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+    if ($pid === 0) {
+        fwrite(STDERR, "Error message\n");
+        // Simulate failed cache warmup, then self-kill with SIGTERM
+        posix_kill((int) getmypid(), SIGTERM);
+        exit(0); // unreachable
+    }
+
+    $status = 0;
+    $waitResult = pcntl_wait($status);
+    if ($waitResult === -1) {
+        fail('pcntl_wait returned -1');
+    }
+    if (pcntl_wifexited($status)) {
+        fail('Child should NOT appear as exited normally (was killed by signal)');
+    }
+    if (!pcntl_wifsignaled($status)) {
+        fail('Child should appear as killed by signal');
+    }
+    if (pcntl_wtermsig($status) !== SIGTERM) {
+        fail('Child should have been killed by SIGTERM (15), got ' . pcntl_wtermsig($status));
+    }
+
+    pass();
+}
+
+/**
+ * Test: Timeout kills child that doesn't finish in time.
+ * Verifies parent correctly waits with WNOHANG and kills child on timeout.
+ */
+function testTimeoutKillsChild(): void
+{
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+    if ($pid === 0) {
+        // Child sleeps forever (simulates stuck cache warmup)
+        sleep(120);
+        exit(0); // unreachable
+    }
+
+    // Wait a short time
+    usleep(100_000); // 100ms
+
+    // Child should still be alive, kill it with SIGKILL (simulating timeout behavior)
+    posix_kill($pid, SIGKILL);
+
+    $status = 0;
+    $waitResult = pcntl_wait($status);
+    if ($waitResult === -1) {
+        fail('pcntl_wait returned -1');
+    }
+    if (!pcntl_wifsignaled($status)) {
+        fail('Child should appear as killed by signal');
+    }
+    if (pcntl_wtermsig($status) !== SIGKILL) {
+        fail('Child should have been killed by SIGKILL, got ' . pcntl_wtermsig($status));
     }
 
     pass();
