@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\config;
+namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
@@ -16,7 +16,8 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-return new class implements CompilerPassInterface {
+final class WorkermanCompilerPass implements CompilerPassInterface
+{
     public function process(ContainerBuilder $container): void
     {
         $tasks = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.task'));
@@ -89,4 +90,4 @@ return new class implements CompilerPassInterface {
         }
         return $result;
     }
-};
+}
