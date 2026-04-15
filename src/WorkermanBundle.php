@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -19,7 +20,7 @@ final class WorkermanBundle extends AbstractBundle
 
     public function build(ContainerBuilder $container): void
     {
-        $container->addCompilerPass(require __DIR__ . '/config/compilerpass.php');
+        $container->addCompilerPass(new WorkermanCompilerPass());
     }
 
     /**
