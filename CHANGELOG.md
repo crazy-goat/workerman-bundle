@@ -17,10 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `ServerAction` enum for type-safe command actions ([#135](https://github.com/crazy-goat/workerman-bundle/issues/135))
+  - Replaces string-based action constants with strongly-typed enum
+  - Cases: START, STOP, RESTART, RELOAD, STATUS
+  - Used by `WorkermanCommand` and `ServerManager` for improved type safety
+
 - Added validation in `ConfigLoader::warmUp()` to ensure all config sections are set before caching ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
   - New `ConfigSection` enum with cases: WORKERMAN, PROCESS, SCHEDULER
   - Throws `LogicException` with descriptive message when any section is missing
   - Prevents incomplete configuration from being cached
+
+- Added pre-push git hook to run `composer lint` before pushing ([#137](https://github.com/crazy-goat/workerman-bundle/issues/137))
+  - Hook runs static analysis and code style checks before push
+  - Prevents pushing code that doesn't pass linting
+
+### Fixed
+
+- Fixed `TriggerFactory` fragile cron expression detection heuristic ([#34](https://github.com/crazy-goat/workerman-bundle/issues/34), [#138](https://github.com/crazy-goat/workerman-bundle/issues/138))
+  - Uses `CronExpression::isValidExpression()` for robust detection instead of exception-based heuristic
+  - Added `class_exists` check for graceful handling when package is not installed
+
+- Fixed `SupervisorWorker` — removed `sleep(1)` hack and added proper logging ([#36](https://github.com/crazy-goat/workerman-bundle/issues/36), [#143](https://github.com/crazy-goat/workerman-bundle/issues/143))
+  - Removed arbitrary 1-second sleep that was causing race conditions
+  - Added proper logging for state transitions and errors
+  - Improved reliability of worker supervision
+
+- Fixed `WorkermanCompilerPass` — replaced anonymous class with proper named class ([#37](https://github.com/crazy-goat/workerman-bundle/issues/37), [#144](https://github.com/crazy-goat/workerman-bundle/issues/144))
+  - Extracted anonymous class from `config/compilerpass.php` to `src/DependencyInjection/WorkermanCompilerPass.php`
+  - Added comprehensive unit tests for compiler pass functionality
 
 ### Changed
 
