@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `Runner::run()` — `mkdir()` return value now checked to prevent silent failures ([#151](https://github.com/crazy-goat/workerman-bundle/issues/151))
+  - Throws `\RuntimeException` with clear message when directory creation fails
+  - Double `is_dir()` check handles race condition between check and `mkdir()` call
+
 ## [0.14.0] - 2026-04-14
 
 ### Deprecated
