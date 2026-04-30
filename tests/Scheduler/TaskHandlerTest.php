@@ -69,7 +69,7 @@ final class TaskHandlerTest extends TestCase
     public function testInvokeDispatchesErrorEventWhenServiceMethodThrowsException(): void
     {
         $service = new class {
-            public function execute(): void
+            public function execute(): never
             {
                 throw new \RuntimeException('Task failed');
             }

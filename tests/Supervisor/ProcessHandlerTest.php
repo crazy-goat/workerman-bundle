@@ -69,7 +69,7 @@ final class ProcessHandlerTest extends TestCase
     public function testInvokeDispatchesErrorEventWhenServiceMethodThrowsException(): void
     {
         $service = new class {
-            public function run(): void
+            public function run(): never
             {
                 throw new \RuntimeException('Something went wrong');
             }
