@@ -108,7 +108,7 @@ final readonly class Runner implements RunnerInterface
         assert(is_int($maxPackageSize));
 
         if (!is_dir($varRunDir = dirname($pidFile)) && !mkdir(directory: $varRunDir, recursive: true) && !is_dir($varRunDir)) {
-            throw new \RuntimeException(sprintf('Unable to create directory "%s".', $varRunDir));
+            throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $varRunDir));
         }
 
         TcpConnection::$defaultMaxPackageSize = $maxPackageSize;

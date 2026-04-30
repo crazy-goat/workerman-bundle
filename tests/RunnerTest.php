@@ -74,6 +74,12 @@ final class RunnerTest extends TestCase
             $content,
             'Must have CACHE_WARMUP_TIMEOUT constant',
         );
+
+        $this->assertStringContainsString(
+            'Unable to create directory',
+            $content,
+            'Must throw when mkdir() fails to create var/run directory',
+        );
     }
 
     /**
