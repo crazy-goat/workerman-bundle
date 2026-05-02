@@ -154,12 +154,14 @@ final class SchedulerWorker
                 ($this->handler)($service, $taskName);
             } catch (\Throwable $e) {
                 $this->worker->log(sprintf(
-                    '%s Task "%s" failed: %s in %s:%d',
+                    '%s Task "%s" failed: [%s] %s in %s:%d\nStack trace:\n%s',
                     $this->worker->name,
                     $taskName,
+                    $e::class,
                     $e->getMessage(),
                     $e->getFile(),
                     $e->getLine(),
+                    $e->getTraceAsString(),
                 ));
                 $childExitCode = 1;
             } finally {

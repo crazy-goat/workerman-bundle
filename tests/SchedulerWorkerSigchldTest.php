@@ -88,6 +88,49 @@ final class SchedulerWorkerSigchldTest extends TestCase
     }
 
     /**
+     * Structural test: verify SchedulerWorker logs exceptions in child process.
+     * This is a regression safety net for Issue #157 — if someone removes the
+     * exception logging or reverts to silently swallowing exceptions, this test
+     * catches it immediately.
+     */
+    public function testSchedulerWorkerLogsExceptionsInChildProcess(): void
+    {
+        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
+        $this->assertFileExists($sourceFile);
+
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        // Verify the catch block captures the exception variable
+        $this->assertStringContainsString(
+            'catch (\Throwable $e)',
+            $content,
+            'Catch block must capture exception variable for logging (Issue #157)',
+        );
+
+        // Verify the exception is logged via Worker::log()
+        $this->assertStringContainsString(
+            '$this->worker->log(sprintf(',
+            $content,
+            'Exception must be logged via Worker::log() in child process (Issue #157)',
+        );
+
+        // Verify the log message includes exception type
+        $this->assertStringContainsString(
+            '$e::class',
+            $content,
+            'Log message must include exception type for quick identification (Issue #157)',
+        );
+
+        // Verify the log message includes stack trace
+        $this->assertStringContainsString(
+            '$e->getTraceAsString()',
+            $content,
+            'Log message must include stack trace for full diagnostic information (Issue #157)',
+        );
+    }
+
+    /**
      * Run a SIGCHLD test in an isolated PHP process to avoid PHPUnit
      * state inheritance issues with pcntl_fork().
      *
