@@ -90,9 +90,12 @@ final class ServerManager
     public function getStatus(): ?string
     {
         posix_kill($this->getRunningMasterPid(), \SIGIOT);
-        sleep(1);
 
         $statusFile = $this->getStatusFilePath();
+
+        if (!$this->waitForFile($statusFile, $this->getStatusTimeout())) {
+            return null;
+        }
 
         if (!is_readable($statusFile)) {
             return null;
@@ -275,6 +278,34 @@ final class ServerManager
         $timeout = $this->getConfig()['stop_timeout'] ?? 2;
 
         return \is_int($timeout) ? $timeout : 2;
+    }
+
+    private function getStatusTimeout(): int
+    {
+        $timeout = $this->getConfig()['status_timeout'] ?? 5;
+
+        return \is_int($timeout) ? $timeout : 5;
+    }
+
+    /**
+     * Poll for a file to exist, with a configurable timeout.
+     *
+     * Checks every 50ms whether the file exists, up to $timeout seconds.
+     *
+     * @return bool true if file exists within timeout, false otherwise
+     */
+    private function waitForFile(string $filePath, int $timeout): bool
+    {
+        $interval = 50_000; // 50ms in microseconds
+        $elapsed = 0;
+        $timeoutMicro = $timeout * 1_000_000;
+
+        while (!file_exists($filePath) && $elapsed < $timeoutMicro) {
+            usleep($interval);
+            $elapsed += $interval;
+        }
+
+        return file_exists($filePath);
     }
 
     private function getStatusFilePath(): string
