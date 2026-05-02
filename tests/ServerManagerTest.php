@@ -13,7 +13,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  * Tests for ServerManager timeout behavior.
  *
  * These tests verify that waitForProcessToStop() correctly implements
- * timeout logic for both graceful and regular stop modes.
+ * timeout logic for both graceful and regular stop modes,
+ * and that getStatus() uses polling instead of hardcoded sleep.
  */
 final class ServerManagerTest extends TestCase
 {
@@ -117,5 +118,133 @@ final class ServerManagerTest extends TestCase
                 "Graceful timeout ({$gracefulTimeout}s) must be longer than regular ({$regularTimeout}s) for stopTimeout={$stopTimeout}",
             );
         }
+    }
+
+    // ----- waitForFile tests -----
+
+    /**
+     * Invoke the private waitForFile method via reflection.
+     */
+    private function invokeWaitForFile(ServerManager $manager, string $filePath, int $timeout): bool
+    {
+        $reflection = new ReflectionClass($manager);
+        $method = $reflection->getMethod('waitForFile');
+
+        return $method->invoke($manager, $filePath, $timeout);
+    }
+
+    /**
+     * Invoke the private getStatusTimeout method via reflection.
+     */
+    private function invokeGetStatusTimeout(ServerManager $manager): int
+    {
+        $reflection = new ReflectionClass($manager);
+        $method = $reflection->getMethod('getStatusTimeout');
+
+        return $method->invoke($manager);
+    }
+
+    public function testWaitForFileReturnsTrueWhenFileExists(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $manager = new ServerManager($kernel);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'workerman_test_');
+        register_shutdown_function(static function () use ($tempFile): void {
+            @unlink($tempFile);
+        });
+
+        $startTime = microtime(true);
+        $result = $this->invokeWaitForFile($manager, $tempFile, 5);
+        $elapsed = microtime(true) - $startTime;
+
+        $this->assertTrue($result, 'waitForFile should return true when file already exists');
+        $this->assertLessThan(1, $elapsed, 'Should return nearly instantly for existing file');
+    }
+
+    public function testWaitForFileReturnsFalseOnTimeout(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $manager = new ServerManager($kernel);
+
+        $nonExistentFile = sys_get_temp_dir() . '/workerman_test_nonexistent_' . uniqid();
+
+        $startTime = microtime(true);
+        $result = $this->invokeWaitForFile($manager, $nonExistentFile, 0);
+        $elapsed = microtime(true) - $startTime;
+
+        $this->assertFalse($result, 'waitForFile should return false when file never appears');
+        $this->assertLessThan(1, $elapsed, 'Should time out quickly with timeout=0');
+    }
+
+    /**
+     * @requires extension pcntl
+     */
+    public function testWaitForFileReturnsTrueWhenFileAppearsDuringPolling(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $manager = new ServerManager($kernel);
+
+        $tempFile = sys_get_temp_dir() . '/workerman_test_appears_' . uniqid();
+        register_shutdown_function(static function () use ($tempFile): void {
+            @unlink($tempFile);
+        });
+
+        // Create the file after 100ms delay via a background process
+        $pid = pcntl_fork();
+        if ($pid === 0) {
+            // Child: sleep 100ms, create file, then die immediately
+            usleep(100_000);
+            file_put_contents($tempFile, 'status data');
+            // Kill self immediately — avoids triggering inherited shutdown functions
+            // (e.g. workerman_stop from bootstrap.php) that would kill the shared test server
+            posix_kill(posix_getpid(), SIGKILL);
+        }
+
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        // Parent: wait for file with polling
+        $startTime = microtime(true);
+        $result = $this->invokeWaitForFile($manager, $tempFile, 5);
+        $elapsed = microtime(true) - $startTime;
+
+        // Clean up child process
+        pcntl_waitpid($pid, $status);
+
+        $this->assertTrue($result, 'waitForFile should return true when file appears during polling');
+        $this->assertGreaterThan(0.05, $elapsed, 'Should take at least 50ms (file created at 100ms)');
+        $this->assertLessThan(3, $elapsed, 'Should complete well within 5s timeout');
+    }
+
+    public function testGetStatusTimeoutDefault(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $manager = new ServerManager($kernel);
+
+        // Inject config via reflection to avoid requiring a booted kernel
+        $reflection = new ReflectionClass($manager);
+        $configProp = $reflection->getProperty('config');
+        $configProp->setValue($manager, ['stop_timeout' => 2]);
+
+        $timeout = $this->invokeGetStatusTimeout($manager);
+
+        $this->assertSame(5, $timeout, 'Default status timeout should be 5 seconds when not configured');
+    }
+
+    public function testGetStatusTimeoutFromConfig(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $manager = new ServerManager($kernel);
+
+        // Inject config with custom status_timeout
+        $reflection = new ReflectionClass($manager);
+        $configProp = $reflection->getProperty('config');
+        $configProp->setValue($manager, ['status_timeout' => 10, 'stop_timeout' => 2]);
+
+        $timeout = $this->invokeGetStatusTimeout($manager);
+
+        $this->assertSame(10, $timeout, 'Should read status_timeout from config');
     }
 }
