@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Throws `\RuntimeException` with clear message when directory creation fails
   - Double `is_dir()` check handles race condition between check and `mkdir()` call
 
+- Security: RequestConverter no longer trusts X-Forwarded-Proto header
+  unconditionally. HTTPS is now detected only from the actual SSL transport
+  layer. Users behind reverse proxies must configure Symfony's trusted
+  proxies. ([#152](https://github.com/crazy-goat/workerman-bundle/issues/152))
+
 ## [0.14.0] - 2026-04-14
 
 ### Deprecated
