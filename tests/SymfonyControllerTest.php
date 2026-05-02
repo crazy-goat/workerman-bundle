@@ -1078,28 +1078,28 @@ final class SymfonyControllerTest extends TestCase
 
     public function testHttpsE2E(): void
     {
-        // E2E test: Verify HTTPS detection works through full stack (#64)
-        $symfonyResponse = new SymfonyResponse('secure');
+        // E2E test: Verify port 443 without SSL transport is HTTP (#64)
+        $symfonyResponse = new SymfonyResponse('plain');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Create a mock connection with SSL port (443)
-        $buffer = "GET /secure HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        // Port 443 alone should NOT imply HTTPS — must use SSL transport
+        $buffer = "GET /plain HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
-        $request->connection = $this->createMockConnection(443, 'ssl');
+        $request->connection = $this->createMockConnection(443);
 
         $controller($request, $this->connection);
 
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // HTTPS should be detected from SSL transport
-        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
-        $this->assertTrue($symfonyRequest->isSecure());
-        $this->assertSame('https', $symfonyRequest->getScheme());
-        $this->assertSame(443, $symfonyRequest->getPort());
+        // Port 443 without SSL transport = HTTP (Symfony defaults to 80 for HTTP scheme)
+        $this->assertNull($symfonyRequest->server->get('HTTPS'));
+        $this->assertFalse($symfonyRequest->isSecure());
+        $this->assertSame('http', $symfonyRequest->getScheme());
+        $this->assertSame(80, $symfonyRequest->getPort());
     }
 
     public function testHttpE2E(): void
