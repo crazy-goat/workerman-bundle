@@ -447,23 +447,11 @@ final class RequestConverterTest extends TestCase
         $this->assertSame(8080, $symfonyRequest->getPort());
     }
 
-    public function testServerPortDefaultsTo443WhenNoConnectionButHttpsForwarded(): void
-    {
-        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-Proto: https\r\n\r\n";
-        $rawRequest = new Request($buffer);
-        $rawRequest->connection = null;
-
-        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
-
-        $this->assertSame(443, $symfonyRequest->server->get('SERVER_PORT'));
-        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
-    }
-
-    public function testHttpsDetectedFromPort443(): void
+    public function testHttpsDetectedFromSslTransport(): void
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
         $rawRequest = new Request($buffer);
-        $rawRequest->connection = $this->createMockConnection(443);
+        $rawRequest->connection = $this->createMockConnection(443, 'ssl');
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
@@ -472,15 +460,54 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('https', $symfonyRequest->getScheme());
     }
 
+    public function testHttpDetectedFromTcpTransport(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(80, 'tcp');
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(80, $symfonyRequest->server->get('SERVER_PORT'));
+        $this->assertNull($symfonyRequest->server->get('HTTPS'));
+        $this->assertSame('http', $symfonyRequest->getScheme());
+    }
+
+    public function testHttpsDetectedFromSslTransportOnAnyPort(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8443, 'ssl');
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame(8443, $symfonyRequest->server->get('SERVER_PORT'));
+        $this->assertSame('on', $symfonyRequest->server->get('HTTPS'));
+        $this->assertSame('https', $symfonyRequest->getScheme());
+    }
+
     public function testGetSchemeAndHttpHostOmitsPort443ForHttps(): void
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
         $rawRequest = new Request($buffer);
-        $rawRequest->connection = $this->createMockConnection(443);
+        $rawRequest->connection = $this->createMockConnection(443, 'ssl');
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
         $this->assertSame('https://example.com', $symfonyRequest->getSchemeAndHttpHost());
+    }
+
+    public function testXForwardedProtoIgnoredOnTcpTransport(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-Proto: https\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(80, 'tcp');
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertNull($symfonyRequest->server->get('HTTPS'));
+        $this->assertFalse($symfonyRequest->isSecure());
+        $this->assertSame('http', $symfonyRequest->getScheme());
     }
 
     public function testRequestTimeAndRequestTimeFloatAreSet(): void
@@ -552,12 +579,13 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('key=value', $symfonyRequest->getContent());
     }
 
-    private function createMockConnection(int $localPort): \Workerman\Connection\TcpConnection
+    private function createMockConnection(int $localPort, string $transport = 'tcp'): \Workerman\Connection\TcpConnection
     {
-        return new class ($localPort) extends \Workerman\Connection\TcpConnection {
-            public function __construct(private readonly int $port)
+        return new class ($localPort, $transport) extends \Workerman\Connection\TcpConnection {
+            public function __construct(private readonly int $port, string $transport)
             {
                 $this->remoteAddress = '192.168.1.1:12345';
+                $this->transport = $transport;
             }
 
             public function getLocalPort(): int
