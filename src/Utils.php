@@ -24,10 +24,20 @@ final class Utils
             return 1;
         }
 
-        return \strtolower(\PHP_OS) === 'darwin'
-            ? (int) shell_exec('sysctl -n machdep.cpu.core_count')
-            : (int) shell_exec('nproc')
-        ;
+        $command = \strtolower(\PHP_OS) === 'darwin'
+            ? 'sysctl -n machdep.cpu.core_count'
+            : 'nproc';
+
+        $result = shell_exec($command);
+
+        // shell_exec returns null (no output) or false (command failed)
+        if (!\is_string($result)) {
+            return 1;
+        }
+
+        $count = (int) \trim($result);
+
+        return $count > 0 ? $count : 1;
     }
 
     public static function isWindows(): bool

@@ -25,6 +25,15 @@ final class UtilsTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $cpuCount);
     }
 
+    public function testCpuCountNeverReturnsZero(): void
+    {
+        // Regression test for #150: Utils::cpuCount() must NEVER return 0,
+        // even when shell_exec('nproc') returns null (command not available)
+        // or produces empty/unexpected output. Returning 0 would cause
+        // downstream issues: zero workers spawned in ServerWorker.
+        $this->assertNotSame(0, Utils::cpuCount());
+    }
+
     /**
      * @requires OS Windows
      */
