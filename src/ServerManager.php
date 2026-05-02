@@ -120,9 +120,12 @@ final class ServerManager
     public function getConnections(): ?string
     {
         posix_kill($this->getRunningMasterPid(), \SIGIO);
-        usleep(500_000);
 
         $connectionsFile = $this->getStatusFilePath() . '.connection';
+
+        if (!$this->waitForFile($connectionsFile, $this->getStatusTimeout())) {
+            return null;
+        }
 
         if (!is_readable($connectionsFile)) {
             return null;
