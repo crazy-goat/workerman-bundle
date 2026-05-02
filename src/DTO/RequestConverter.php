@@ -33,8 +33,6 @@ final class RequestConverter
 
         // Build server bag with HTTP_* headers (CGI convention)
         $headers = $rawRequest->header() ?? [];
-        // Fallback to 127.0.0.1:0 for unit test scenarios where connection is null.
-        // In production, connection should always be present.
 
         // Detect HTTPS from Workerman's SSL transport (configured via https:// listen address)
         $isHttps = ($rawRequest->connection?->transport ?? 'tcp') === 'ssl';
