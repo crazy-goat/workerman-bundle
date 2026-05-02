@@ -152,7 +152,15 @@ final class SchedulerWorker
             $childExitCode = 0;
             try {
                 ($this->handler)($service, $taskName);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                $this->worker->log(sprintf(
+                    '%s Task "%s" failed: %s in %s:%d',
+                    $this->worker->name,
+                    $taskName,
+                    $e->getMessage(),
+                    $e->getFile(),
+                    $e->getLine(),
+                ));
                 $childExitCode = 1;
             } finally {
                 // Release lock, cleanup and exit
