@@ -36,10 +36,8 @@ final class RequestConverter
         // Fallback to 127.0.0.1:0 for unit test scenarios where connection is null.
         // In production, connection should always be present.
 
-        // Detect HTTPS from connection port or X-Forwarded-Proto header
-        $localPort = $rawRequest->connection?->getLocalPort();
-        $forwardedProto = strtolower((string) $rawRequest->header('x-forwarded-proto', ''));
-        $isHttps = $localPort === 443 || $forwardedProto === 'https';
+        // Detect HTTPS from Workerman's SSL transport (configured via https:// listen address)
+        $isHttps = ($rawRequest->connection?->transport ?? 'tcp') === 'ssl';
 
         $requestTimeFloat = microtime(true);
         $server = [
@@ -48,7 +46,7 @@ final class RequestConverter
             'SERVER_PROTOCOL' => 'HTTP/' . $rawRequest->protocolVersion(),
             'REMOTE_ADDR' => $rawRequest->connection?->getRemoteIp() ?? '127.0.0.1',
             'REMOTE_PORT' => $rawRequest->connection?->getRemotePort() ?? 0,
-            'SERVER_PORT' => $localPort ?? ($isHttps ? 443 : 80),
+            'SERVER_PORT' => $rawRequest->connection?->getLocalPort() ?? ($isHttps ? 443 : 80),
             'SERVER_NAME' => $rawRequest->connection?->getLocalIp() ?? 'localhost',
             'QUERY_STRING' => $rawRequest->queryString(),
             'REQUEST_TIME' => (int) $requestTimeFloat,
