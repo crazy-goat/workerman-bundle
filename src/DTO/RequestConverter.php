@@ -35,7 +35,7 @@ final class RequestConverter
         $headers = $rawRequest->header() ?? [];
 
         // Detect HTTPS from Workerman's SSL transport (configured via https:// listen address)
-        $isHttps = ($rawRequest->connection?->transport ?? 'tcp') === 'ssl';
+        $isHttps = isset($rawRequest->connection) && $rawRequest->connection->transport === 'ssl';
 
         $requestTimeFloat = microtime(true);
         $server = [
