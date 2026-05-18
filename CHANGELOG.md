@@ -54,7 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Uses `ConfigSection` enum values as keys for clarity and type safety
   - **Migration**: Clear cache after upgrade: `rm -rf var/cache/*`
 
-## [Unreleased]
+## [0.16.0] - 2026-05-18
+
+### Added
+
+- Added configurable cache warmup timeout ([#142](https://github.com/crazy-goat/workerman-bundle/issues/142), [#180](https://github.com/crazy-goat/workerman-bundle/pull/180))
+  - New `cache_warmup_timeout` configuration node with `min(1)` validation
+  - New `WORKERMAN_CACHE_WARMUP_TIMEOUT` environment variable support
+  - Removed hardcoded `CACHE_WARMUP_TIMEOUT` from Runner
+
+### Security
+
+- RequestConverter no longer trusts `X-Forwarded-Proto` header
+  unconditionally. HTTPS is now detected only from the actual SSL transport
+  layer. Users behind reverse proxies must configure Symfony's trusted
+  proxies. ([#152](https://github.com/crazy-goat/workerman-bundle/issues/152))
 
 ### Fixed
 
@@ -62,10 +76,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Throws `\RuntimeException` with clear message when directory creation fails
   - Double `is_dir()` check handles race condition between check and `mkdir()` call
 
-- Security: RequestConverter no longer trusts X-Forwarded-Proto header
-  unconditionally. HTTPS is now detected only from the actual SSL transport
-  layer. Users behind reverse proxies must configure Symfony's trusted
-  proxies. ([#152](https://github.com/crazy-goat/workerman-bundle/issues/152))
+- Fixed `Runner::run()` — added timeout for cache warmup, use `posix_kill` instead of `exit` ([#141](https://github.com/crazy-goat/workerman-bundle/issues/141))
+  - Added `CACHE_WARMUP_TIMEOUT` constant (30 seconds)
+  - Use `posix_kill()` to avoid deadlock with extensions that register shutdown handlers
+  - Handle SIGKILL as success, SIGTERM as error
+
+- Fixed `ProcessHandler` and `TaskHandler` — validate dynamic method calls to prevent worker crashes ([#153](https://github.com/crazy-goat/workerman-bundle/issues/153), [#174](https://github.com/crazy-goat/workerman-bundle/pull/174))
+  - Extracted shared validation into `ServiceMethodHelper`
+  - Moved method existence check inside try-catch for graceful error handling
+
+- Fixed `Utils::cpuCount()` — handle null from `shell_exec('nproc')` ([#150](https://github.com/crazy-goat/workerman-bundle/issues/150))
+  - Added `is_string()` check for nproc output
+  - Return 1 as safe fallback when nproc is unavailable (e.g., minimal containers)
+
+- Fixed `PeriodicalTrigger` — removed useless `assert()` ([#178](https://github.com/crazy-goat/workerman-bundle/issues/178))
+
+- Fixed `SchedulerWorker` — log exceptions in child process instead of swallowing ([#178](https://github.com/crazy-goat/workerman-bundle/issues/178))
+  - When a scheduled task throws an exception in a forked child process,
+    the exception is now logged with diagnostic information
+
+- Fixed `ServerManager` — replaced hardcoded `sleep(1)` with polling loop ([#155](https://github.com/crazy-goat/workerman-bundle/issues/155), [#179](https://github.com/crazy-goat/workerman-bundle/pull/179))
+  - Applied polling pattern to `getServerStatus()` and `getConnections()`
+
+- Fixed `WorkermanCompilerPass::referenceMap()` — improved PHPDoc ([#171](https://github.com/crazy-goat/workerman-bundle/issues/171))
+  - Described what the method does
+  - Tightened `@param` type to match `findTaggedServiceIds()` return shape
+
+- Fixed CI: upgraded `actions/checkout` from v2 to v6.0.2 with SHA pinning ([#172](https://github.com/crazy-goat/workerman-bundle/pull/172))
+- Fixed CI: pinned `shivammathur/setup-php` to commit SHA in tests workflow ([#149](https://github.com/crazy-goat/workerman-bundle/issues/149), [#175](https://github.com/crazy-goat/workerman-bundle/pull/175))
+
+## [Unreleased]
 
 ## [0.14.0] - 2026-04-14
 
