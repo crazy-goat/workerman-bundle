@@ -46,8 +46,8 @@ abstract class FileMonitorWatcher
         return false;
     }
 
-    final protected function reboot(): void
+    final protected function reload(): void
     {
-        Utils::reboot(rebootAllWorkers: true);
+        Utils::reload(reloadAllWorkers: true);
     }
 }

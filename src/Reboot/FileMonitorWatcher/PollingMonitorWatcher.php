@@ -44,7 +44,7 @@ final class PollingMonitorWatcher extends FileMonitorWatcher
 
                 if ($file->getFileInfo()->getMTime() > $this->lastMTime) {
                     $this->lastMTime = $file->getFileInfo()->getMTime();
-                    $this->reboot();
+                    $this->reload();
                     return;
                 }
             }

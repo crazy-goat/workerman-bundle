@@ -80,22 +80,22 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             $connection->close();
         }
 
-        // Ensure terminate completes before reboot to avoid race conditions
+        // Ensure terminate completes before reload to avoid race conditions
         if ($this->rebootStrategy->shouldReboot()) {
             Timer::del($timerId);
             $this->terminateTimerId = null;
-            // Call terminate synchronously before reboot
+            // Call terminate synchronously before reload
             try {
                 $this->controller->terminateIfNeeded();
             } catch (\Throwable $e) {
                 error_log(sprintf(
-                    'Kernel termination failed during reboot: %s in %s:%d',
+                    'Kernel termination failed during reload: %s in %s:%d',
                     $e->getMessage(),
                     $e->getFile(),
                     $e->getLine(),
                 ));
             }
-            Utils::reboot();
+            Utils::reload();
         }
     }
 }

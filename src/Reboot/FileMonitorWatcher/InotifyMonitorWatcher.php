@@ -9,12 +9,12 @@ use Workerman\Worker;
 
 final class InotifyMonitorWatcher extends FileMonitorWatcher
 {
-    private const REBOOT_DELAY = 0.33;
+    private const RELOAD_DELAY = 0.33;
     /** @var resource */
     private $fd;
     /** @var string[] */
     private array $pathByWd = [];
-    private \Closure|null $rebootCallback = null;
+    private \Closure|null $reloadCallback = null;
 
     public function start(): void
     {
@@ -48,7 +48,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
         if (function_exists('inotify_read')) {
             $events = \inotify_read($inotifyFd) ?: [];
 
-            if ($this->rebootCallback instanceof \Closure) {
+            if ($this->reloadCallback instanceof \Closure) {
                 return;
             }
 
@@ -67,12 +67,12 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                     continue;
                 }
 
-                $this->rebootCallback = function (): void {
-                    $this->rebootCallback = null;
-                    $this->reboot();
+                $this->reloadCallback = function (): void {
+                    $this->reloadCallback = null;
+                    $this->reload();
                 };
 
-                $this->worker::$globalEvent?->delay(self::REBOOT_DELAY, $this->rebootCallback);
+                $this->worker::$globalEvent?->delay(self::RELOAD_DELAY, $this->reloadCallback);
 
                 return;
             }
