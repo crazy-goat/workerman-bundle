@@ -22,7 +22,7 @@ readonly class SupervisorWorker
                 continue;
             }
 
-            if ($serviceConfig['processes'] !== null && $serviceConfig['processes'] <= 0) {
+            if (isset($serviceConfig['processes']) && $serviceConfig['processes'] <= 0) {
                 continue;
             }
 
