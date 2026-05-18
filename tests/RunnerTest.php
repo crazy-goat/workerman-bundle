@@ -70,15 +70,63 @@ final class RunnerTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'CACHE_WARMUP_TIMEOUT',
+            'getCacheWarmupTimeout',
             $content,
-            'Must have CACHE_WARMUP_TIMEOUT constant',
+            'Must have getCacheWarmupTimeout method',
+        );
+
+        $this->assertStringContainsString(
+            'WORKERMAN_CACHE_WARMUP_TIMEOUT',
+            $content,
+            'Must support WORKERMAN_CACHE_WARMUP_TIMEOUT env var override',
+        );
+
+        $this->assertStringContainsString(
+            'return 30;',
+            $content,
+            'Must have 30 second default timeout in getCacheWarmupTimeout',
         );
 
         $this->assertStringContainsString(
             'Unable to create directory',
             $content,
             'Must throw when mkdir() fails to create var/run directory',
+        );
+    }
+
+    /**
+     * Structural test: verify getCacheWarmupTimeout defaults to 30 seconds.
+     */
+    public function testCacheWarmupTimeoutDefaultsTo30(): void
+    {
+        $sourceFile = dirname(__DIR__) . '/src/Runner.php';
+        $this->assertFileExists($sourceFile);
+
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        $this->assertStringContainsString(
+            'private function getCacheWarmupTimeout(): int',
+            $content,
+            'Must have getCacheWarmupTimeout method',
+        );
+
+        $this->assertStringContainsString(
+            'return 30;',
+            $content,
+            'Default cache warmup timeout must be 30 seconds',
+        );
+
+        $this->assertStringContainsString(
+            "\$_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']",
+            $content,
+            'Must check WORKERMAN_CACHE_WARMUP_TIMEOUT env var',
+        );
+
+        $this->assertStringContainsString(
+            "throw new \InvalidArgumentException('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer')",
+            $content,
+            'Must throw InvalidArgumentException for non-positive timeout',
         );
     }
 

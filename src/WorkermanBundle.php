@@ -30,5 +30,7 @@ final class WorkermanBundle extends AbstractBundle
     {
         $configurator = require __DIR__ . '/config/services.php';
         $configurator($config, $builder);
+
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = (string) $config['cache_warmup_timeout'];
     }
 }
