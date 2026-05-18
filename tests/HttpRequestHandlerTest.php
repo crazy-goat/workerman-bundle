@@ -168,9 +168,6 @@ final class TestRebootStrategy implements RebootStrategyInterface
 
 /**
  * Tests for HttpRequestHandler initialization and configuration
- *
- * Note: Full request handling tests require Workerman running environment
- * due to Timer::add() usage. Those are covered by integration tests.
  */
 final class HttpRequestHandlerTest extends TestCase
 {
@@ -269,108 +266,4 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertTrue($this->rebootStrategy->shouldReboot);
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testRequestProcessingSendsResponse(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running. ' .
-            'Run integration tests instead.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testHttp10ConnectionIsClosed(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testConnectionCloseHeaderClosesConnection(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testKeepAliveConnectionNotClosed(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testRebootTriggersSynchronousTerminate(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testKernelBootIsCalled(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testResponseContainsCorrectStatus(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
-
-    /**
-     * @requires extension pcntl
-     * @requires function pcntl_fork
-     * This test requires Workerman running environment
-     */
-    public function testResponseContainsBodyContent(): void
-    {
-        $this->markTestSkipped(
-            'This test requires Workerman running environment. ' .
-            'Timer::add() can only be used when Workerman is running.',
-        );
-    }
 }
