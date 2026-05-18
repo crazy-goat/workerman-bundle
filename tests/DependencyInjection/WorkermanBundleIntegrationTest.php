@@ -21,6 +21,7 @@ final class WorkermanBundleIntegrationTest extends TestCase
         $this->container = new ContainerBuilder(new ParameterBag([
             'kernel.project_dir' => sys_get_temp_dir(),
             'kernel.cache_dir' => sys_get_temp_dir() . '/cache',
+            'kernel.build_dir' => sys_get_temp_dir() . '/cache',
             'kernel.debug' => false,
             'kernel.environment' => 'test',
             'kernel.bundles' => ['WorkermanBundle' => WorkermanBundle::class],
