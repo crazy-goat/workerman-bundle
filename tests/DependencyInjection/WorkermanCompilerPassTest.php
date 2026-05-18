@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class WorkermanCompilerPassTest extends TestCase
 {
@@ -114,6 +115,31 @@ final class WorkermanCompilerPassTest extends TestCase
 
         $httpRequestHandler = $this->container->getDefinition('workerman.http_request_handler');
         $this->assertTrue($httpRequestHandler->isPublic());
+    }
+
+    public function testRegistersSymfonyControllerService(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertTrue($this->container->has('workerman.symfony_controller'));
+    }
+
+    public function testSymfonyControllerReceivesCorrectDependencies(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->compilerPass->process($this->container);
+
+        $definition = $this->container->getDefinition('workerman.symfony_controller');
+        $args = $definition->getArguments();
+
+        $this->assertCount(2, $args);
+        $this->assertInstanceOf(Reference::class, $args[0]);
+        $this->assertSame(KernelInterface::class, (string) $args[0]);
+        $this->assertInstanceOf(Reference::class, $args[1]);
+        $this->assertSame('workerman.response_converter', (string) $args[1]);
     }
 
     public function testTaskAndProcessHandlersArePublic(): void

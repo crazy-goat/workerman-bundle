@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
@@ -51,13 +52,20 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->setArguments([$this->referenceMap($responseConverterStrategies)]);
 
         $container
+            ->register('workerman.symfony_controller', SymfonyController::class)
+            ->setArguments([
+                new Reference(KernelInterface::class),
+                new Reference('workerman.response_converter'),
+            ]);
+
+        $container->setAlias(SymfonyController::class, 'workerman.symfony_controller');
+
+        $container
             ->register('workerman.http_request_handler', HttpRequestHandler::class)
             ->setPublic(true)
             ->setArguments([
-                new Reference(KernelInterface::class),
+                new Reference('workerman.symfony_controller'),
                 new Reference('workerman.reboot_strategy'),
-                new Reference('workerman.response_converter'),
-                [],
             ]);
 
         $container
