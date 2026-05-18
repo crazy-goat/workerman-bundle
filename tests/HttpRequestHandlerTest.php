@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Test\App\TestMiddleware;
 use PHPUnit\Framework\TestCase;
@@ -181,8 +182,8 @@ final class HttpRequestHandlerTest extends TestCase
     {
         $this->kernel = new HttpHandlerTestKernel();
         $this->rebootStrategy = new TestRebootStrategy();
-        $responseConverter = new ResponseConverter([new DefaultResponseStrategy()]);
-        $this->handler = new HttpRequestHandler($this->kernel, $this->rebootStrategy, $responseConverter);
+        $controller = new SymfonyController($this->kernel, new ResponseConverter([new DefaultResponseStrategy()]));
+        $this->handler = new HttpRequestHandler($controller, $this->rebootStrategy);
     }
 
     public function testHandlerInitializesCorrectly(): void
@@ -245,9 +246,19 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertSame($this->handler, $result);
     }
 
-    public function testKernelIsSetCorrectly(): void
+    public function testKernelIsNotBootedBeforeRequest(): void
     {
         $this->assertFalse($this->kernel->bootCalled);
+    }
+
+    public function testSymfonyControllerIsInjectedViaConstructor(): void
+    {
+        $controller = new SymfonyController($this->kernel, new ResponseConverter([new DefaultResponseStrategy()]));
+        $handler = new HttpRequestHandler($controller, $this->rebootStrategy);
+
+        $reflection = new \ReflectionClass($handler);
+        $controllerProperty = $reflection->getProperty('controller');
+        $this->assertSame($controller, $controllerProperty->getValue($handler));
     }
 
     public function testRebootStrategyIsSetCorrectly(): void

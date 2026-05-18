@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http;
 
-use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
-use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 use Workerman\Timer;
@@ -19,15 +17,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 {
     /** @var MiddlewareInterface[] */
     private array $middlewares = [];
-    private readonly SymfonyController $controller;
     private ?int $terminateTimerId = null;
 
     public function __construct(
-        private readonly KernelInterface         $kernel,
-        private readonly RebootStrategyInterface $rebootStrategy,
-        private readonly ResponseConverter       $responseConverter,
+        private readonly SymfonyController         $controller,
+        private readonly RebootStrategyInterface   $rebootStrategy,
     ) {
-        $this->controller = new SymfonyController($this->kernel, $this->responseConverter);
     }
 
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self
