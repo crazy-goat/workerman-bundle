@@ -21,12 +21,14 @@ final class WorkermanCompilerPass implements CompilerPassInterface
 {
     public function process(ContainerBuilder $container): void
     {
-        $tasks = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.task'));
-        $processes = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.process'));
-        $rebootStrategies = array_map(fn(array $a) => $a[0], $container->findTaggedServiceIds('workerman.reboot_strategy'));
-        $responseConverterStrategiesTagged = $container->findTaggedServiceIds('workerman.response_converter.strategy');
-        uasort($responseConverterStrategiesTagged, fn(array $a, array $b): int => ($b[0]['priority'] ?? 0) <=> ($a[0]['priority'] ?? 0));
-        $responseConverterStrategies = array_map(fn(array $a) => $a[0], $responseConverterStrategiesTagged);
+        $tasksTagged = $container->findTaggedServiceIds('workerman.task');
+        $processesTagged = $container->findTaggedServiceIds('workerman.process');
+        $rebootStrategies = $container->findTaggedServiceIds('workerman.reboot_strategy');
+        $responseConverterStrategies = $container->findTaggedServiceIds('workerman.response_converter.strategy');
+        uasort($responseConverterStrategies, fn(array $a, array $b): int => ($b[0]['priority'] ?? 0) <=> ($a[0]['priority'] ?? 0));
+
+        $tasks = array_map(fn(array $a): array => $a[0], $tasksTagged);
+        $processes = array_map(fn(array $a): array => $a[0], $processesTagged);
 
         $container
             ->getDefinition('workerman.config_loader')
@@ -88,7 +90,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     /**
      * Creates a Reference map from tagged services for ServiceLocator registration.
      *
-     * @param array<string, array<string, mixed>> $taggedServices Output from findTaggedServiceIds()
+     * @param array<string, mixed> $taggedServices Associative array keyed by service IDs (values ignored, only keys used)
      *
      * @return array<string, Reference> Service id => Reference mapping
      */

@@ -180,4 +180,46 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertSame('service.a', (string) $references['service.a']);
         $this->assertSame('service.b', (string) $references['service.b']);
     }
+
+    public function testReferenceMapUsesOnlyServiceIdsNotTagAttributes(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->container->register('service.one', \stdClass::class)
+            ->addTag('workerman.task', ['priority' => 10, 'env' => 'prod']);
+        $this->container->register('service.two', \stdClass::class)
+            ->addTag('workerman.task', ['priority' => 20, 'env' => 'dev']);
+
+        $this->compilerPass->process($this->container);
+
+        $taskLocator = $this->container->getDefinition('workerman.task_locator');
+        $args = $taskLocator->getArguments();
+        $references = $args[0];
+
+        $this->assertCount(2, $references);
+        $this->assertArrayHasKey('service.one', $references);
+        $this->assertArrayHasKey('service.two', $references);
+        $this->assertSame('service.one', (string) $references['service.one']);
+        $this->assertSame('service.two', (string) $references['service.two']);
+    }
+
+    public function testRebootStrategyReferenceMapUsesOnlyServiceIds(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->container->register('strategy.a', \stdClass::class)
+            ->addTag('workerman.reboot_strategy');
+        $this->container->register('strategy.b', \stdClass::class)
+            ->addTag('workerman.reboot_strategy');
+
+        $this->compilerPass->process($this->container);
+
+        $rebootStrategy = $this->container->getDefinition('workerman.reboot_strategy');
+        $args = $rebootStrategy->getArguments();
+        $references = $args[0];
+
+        $this->assertCount(2, $references);
+        $this->assertArrayHasKey('strategy.a', $references);
+        $this->assertArrayHasKey('strategy.b', $references);
+    }
 }
