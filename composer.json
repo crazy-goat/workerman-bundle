@@ -60,7 +60,7 @@
         "sort-packages": true,
         "audit": {
             "block-insecure": false,
-            "abandoned": "ignore"
+            "abandoned": "report"
         },
         "allow-plugins": {
             "symfony/runtime": true,
