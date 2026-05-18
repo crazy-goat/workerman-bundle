@@ -133,4 +133,13 @@ final class PeriodicalTriggerTest extends TestCase
             '1 week' => ['+1 week', '2024-01-22 12:00:00'],
         ];
     }
+
+    public function testMaxScheduleHorizonConstantIsDefined(): void
+    {
+        $reflection = new \ReflectionClass(PeriodicalTrigger::class);
+        $constant = $reflection->getReflectionConstant('MAX_SCHEDULE_HORIZON');
+        $this->assertInstanceOf(\ReflectionClassConstant::class, $constant);
+        $this->assertTrue($constant->isPrivate());
+        $this->assertSame('+10 year', $constant->getValue());
+    }
 }

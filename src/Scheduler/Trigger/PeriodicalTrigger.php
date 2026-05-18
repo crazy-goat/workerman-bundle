@@ -8,6 +8,8 @@ use CrazyGoat\WorkermanBundle\Exception\InvalidTriggerException;
 
 final class PeriodicalTrigger implements TriggerInterface
 {
+    private const MAX_SCHEDULE_HORIZON = '+10 year';
+
     private \DateInterval $interval;
     private string $description;
 
@@ -35,7 +37,7 @@ final class PeriodicalTrigger implements TriggerInterface
 
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
-        $period = new \DatePeriod($now, $this->interval, $now->modify('+10 year'));
+        $period = new \DatePeriod($now, $this->interval, $now->modify(self::MAX_SCHEDULE_HORIZON));
         /** @var \Iterator<\DateTimeImmutable> $iterator */
         $iterator = $period->getIterator();
         $iterator->next();
