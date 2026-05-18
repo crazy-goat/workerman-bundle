@@ -22,9 +22,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 
 return static function (array $config, ContainerBuilder $container): void {
-    $container
-        ->setParameter('workerman.response_chunk_size', $config['response_chunk_size'])
-    ;
+    $container->setParameter('workerman.response_chunk_size', $config['response_chunk_size']);
+    $container->setParameter('workerman.cache_warmup_timeout', $config['cache_warmup_timeout']);
 
     $container
         ->register('workerman.config_loader', ConfigLoader::class)

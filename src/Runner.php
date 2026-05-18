@@ -14,8 +14,6 @@ use Workerman\Worker;
 
 final readonly class Runner implements RunnerInterface
 {
-    private const CACHE_WARMUP_TIMEOUT = 30;
-
     public function __construct(
         private KernelFactory $kernelFactory,
     ) {
@@ -50,7 +48,7 @@ final readonly class Runner implements RunnerInterface
                 \posix_kill((int) \getmypid(), $success ? \SIGKILL : \SIGTERM);
             }
 
-            $timeout = self::CACHE_WARMUP_TIMEOUT;
+            $timeout = $this->getCacheWarmupTimeout();
             $deadline = \time() + $timeout;
             $status = 0;
 
@@ -159,6 +157,20 @@ final readonly class Runner implements RunnerInterface
         Worker::runAll();
 
         return 0;
+    }
+
+    private function getCacheWarmupTimeout(): int
+    {
+        if (isset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']) && $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] !== '') {
+            $timeout = (int) $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'];
+            if ($timeout < 1) {
+                throw new \InvalidArgumentException('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+            }
+
+            return $timeout;
+        }
+
+        return 30;
     }
 
     private function getCacheDir(): string
