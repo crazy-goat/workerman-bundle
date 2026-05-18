@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\App;
 
+use CrazyGoat\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -56,6 +57,16 @@ final class ResponseTestController extends AbstractController
         $property->setValue($response, true);
 
         return $response;
+    }
+
+    #[Route('/response_test_streamed_binary', name: 'app_response_test_streamed_binary')]
+    public function streamedBinaryFileResponse(): StreamedBinaryFileResponse
+    {
+        $testFile = __DIR__ . '/../fixtures/test_download.txt';
+
+        return new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
     }
 
     #[Route('/response_test_temp_file', name: 'app_response_test_temp_file')]

@@ -101,6 +101,17 @@ final class ResponseTest extends KernelTestCase
         // File should be deleted after download (handled by strategy)
     }
 
+    public function testStreamedBinaryFileResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test_streamed_binary');
+
+        $this->assertContains($response->getStatusCode(), [200, 206]);
+        $this->assertStringContainsString('Test file download content', (string) $response->getBody());
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+    }
+
     public function testBinaryFileResponseWithTempFileObject(): void
     {
         $client = new Client(['http_errors' => false]);

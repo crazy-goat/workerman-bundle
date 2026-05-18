@@ -26,8 +26,6 @@ class StreamedBinaryFileResponse extends BinaryFileResponse implements StreamRes
                 $file = new \SplFileObject($this->file->getPathname(), 'r');
             }
 
-            ignore_user_abort(true);
-
             if (0 !== $this->offset) {
                 $file->fseek($this->offset);
             }
@@ -40,9 +38,6 @@ class StreamedBinaryFileResponse extends BinaryFileResponse implements StreamRes
                     break;
                 }
                 yield $data;
-                if (connection_aborted() !== 0) {
-                    break;
-                }
                 if (0 < $length) {
                     $length -= strlen($data);
                 }
