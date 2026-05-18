@@ -70,11 +70,77 @@ final class UtilsTest extends TestCase
         new Utils();
     }
 
-    public function testReboot(): void
+    public function testReloadSendsSigusr1(): void
     {
-        $this->markTestSkipped(
-            'Utils::reboot() sends POSIX signals and requires a running Workerman process. ' .
-            'Cannot be tested in unit test context — requires integration test.',
+        if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
+            $this->markTestSkipped('pcntl and posix extensions are required for this test.');
+        }
+
+        $signalReceived = false;
+        \pcntl_signal(SIGUSR1, static function () use (&$signalReceived): void {
+            $signalReceived = true;
+        });
+
+        try {
+            Utils::reload();
+            \pcntl_signal_dispatch();
+            $this->assertTrue($signalReceived, 'reload() should send SIGUSR1 signal.');
+        } finally {
+            \pcntl_signal(SIGUSR1, SIG_DFL);
+        }
+    }
+
+    public function testDeprecatedRebootTriggersDeprecation(): void
+    {
+        if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
+            $this->markTestSkipped('pcntl and posix extensions are required for this test.');
+        }
+
+        \pcntl_signal(SIGUSR1, static fn(): null => null);
+
+        $deprecationTriggered = false;
+        \set_error_handler(
+            static function (int $errno, string $errstr) use (&$deprecationTriggered): bool {
+                if ($errno === \E_USER_DEPRECATED && \str_contains($errstr, 'Utils::reboot() is deprecated')) {
+                    $deprecationTriggered = true;
+
+                    return true;
+                }
+
+                return false;
+            },
         );
+
+        try {
+            Utils::reboot();
+            \pcntl_signal_dispatch();
+            $this->assertTrue($deprecationTriggered, 'reboot() should trigger a deprecation notice.');
+        } finally {
+            \restore_error_handler();
+            \pcntl_signal(SIGUSR1, SIG_DFL);
+        }
+    }
+
+    public function testDeprecatedRebootDelegatesToReload(): void
+    {
+        if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
+            $this->markTestSkipped('pcntl and posix extensions are required for this test.');
+        }
+
+        $signalReceived = false;
+        \pcntl_signal(SIGUSR1, static function () use (&$signalReceived): void {
+            $signalReceived = true;
+        });
+
+        \set_error_handler(static fn(int $errno): bool => $errno === \E_USER_DEPRECATED);
+
+        try {
+            Utils::reboot();
+            \pcntl_signal_dispatch();
+            $this->assertTrue($signalReceived, 'reboot() should delegate to reload() and send SIGUSR1.');
+        } finally {
+            \restore_error_handler();
+            \pcntl_signal(SIGUSR1, SIG_DFL);
+        }
     }
 }

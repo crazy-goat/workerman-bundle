@@ -45,9 +45,18 @@ final class Utils
         return \DIRECTORY_SEPARATOR !== '/';
     }
 
+    public static function reload(bool $reloadAllWorkers = false): void
+    {
+        posix_kill($reloadAllWorkers ? posix_getppid() : posix_getpid(), SIGUSR1);
+    }
+
+    /**
+     * @deprecated since 0.17.0, use Utils::reload() instead.
+     */
     public static function reboot(bool $rebootAllWorkers = false): void
     {
-        posix_kill($rebootAllWorkers ? posix_getppid() : posix_getpid(), SIGUSR1);
+        trigger_deprecation('crazy-goat/workerman-bundle', '0.17.0', 'Utils::reboot() is deprecated, use Utils::reload() instead.');
+        self::reload($rebootAllWorkers);
     }
 
     public static function clearOpcache(): void
