@@ -9,7 +9,7 @@ use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use PHPUnit\Framework\TestCase;
 use Workerman\Protocols\Http\Response;
 
-class StaticFilesMiddlewareTest extends TestCase
+final class StaticFilesMiddlewareTest extends TestCase
 {
     private string $rootDirectory;
 
