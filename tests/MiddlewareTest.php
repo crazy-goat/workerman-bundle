@@ -10,7 +10,7 @@ use function PHPUnit\Framework\assertIsArray;
 
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
-class MiddlewareTest extends WebTestCase
+final class MiddlewareTest extends WebTestCase
 {
     public function testHeaders(): void
     {
