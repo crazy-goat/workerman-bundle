@@ -18,6 +18,11 @@ final class PollingMonitorWatcherE2ETest extends TestCase
 
     protected function setUp(): void
     {
+        if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
+            \pcntl_async_signals(true);
+            \pcntl_signal(\SIGUSR1, \SIG_IGN);
+        }
+
         $autoloadPath = \realpath(__DIR__ . '/../vendor/autoload.php');
         if ($autoloadPath === false) {
             self::markTestSkipped('vendor/autoload.php not found.');

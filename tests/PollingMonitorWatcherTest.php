@@ -14,6 +14,13 @@ final class PollingMonitorWatcherTest extends TestCase
 
     protected function setUp(): void
     {
+        // checkFileSystemChanges triggers Utils::reload() which sends SIGUSR1
+        // to the parent process. Ignore it to prevent test runner termination.
+        if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
+            \pcntl_async_signals(true);
+            \pcntl_signal(\SIGUSR1, \SIG_IGN);
+        }
+
         $this->tempDir = \sys_get_temp_dir() . '/workerman_polling_' . \bin2hex(\random_bytes(4));
         \mkdir($this->tempDir, 0700, true);
     }
