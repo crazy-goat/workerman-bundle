@@ -11,21 +11,20 @@ use PHPUnit\Framework\TestCase;
  */
 final class ComposerAuditE2ETest extends TestCase
 {
-    private const COMPOSER_AUDIT_COMMAND = 'composer audit 2>&1';
-
     private string $projectDir;
 
     protected function setUp(): void
     {
-        $this->projectDir = \realpath(__DIR__ . '/..');
-        if ($this->projectDir === false) {
+        $projectDir = \realpath(__DIR__ . '/..');
+        if ($projectDir === false) {
             self::fail('Cannot determine project root directory.');
         }
+        $this->projectDir = $projectDir;
     }
 
     public function testComposerValidatePasses(): void
     {
-        $command = \sprintf('composer validate --strict 2>&1');
+        $command = 'composer validate --strict 2>&1';
         $output = $this->runCommand($command);
 
         self::assertStringContainsString(
@@ -37,7 +36,7 @@ final class ComposerAuditE2ETest extends TestCase
 
     public function testComposerAuditCompletesSuccessfully(): void
     {
-        $command = \sprintf('composer audit --no-dev 2>&1');
+        $command = 'composer audit --no-dev 2>&1';
         $output = $this->runCommand($command);
 
         self::assertStringNotContainsString(

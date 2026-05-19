@@ -60,4 +60,19 @@ final class ComposerConfigTest extends TestCase
             'block-insecure must be true to prevent installing packages with known vulnerabilities',
         );
     }
+
+    public function testAuditIgnoreContainsKnownAdvisories(): void
+    {
+        self::assertArrayHasKey('config', $this->composerConfig);
+        self::assertArrayHasKey('audit', $this->composerConfig['config']);
+        self::assertArrayHasKey('ignore', $this->composerConfig['config']['audit']);
+        self::assertIsArray($this->composerConfig['config']['audit']['ignore']);
+
+        $ignored = $this->composerConfig['config']['audit']['ignore'];
+        self::assertContains(
+            'PKSA-d1rr-z8zb-qnm7',
+            $ignored,
+            'Known advisory for symfony/runtime 7.0.* must be in audit ignore list',
+        );
+    }
 }

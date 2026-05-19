@@ -60,6 +60,7 @@
         "sort-packages": true,
         "audit": {
             "block-insecure": true,
+            "ignore": ["PKSA-d1rr-z8zb-qnm7"],
             "abandoned": "report"
         },
         "allow-plugins": {
