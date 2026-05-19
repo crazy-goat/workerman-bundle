@@ -73,8 +73,9 @@ final class PollingMonitorWatcherE2ETest extends TestCase
      */
     private function runPhpScript(string $scriptFile, array $args): int
     {
+        $command = array_values(['php', $scriptFile, ...$args]);
         $proc = \proc_open(
-            ['php', $scriptFile, ...$args],
+            $command,
             [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],

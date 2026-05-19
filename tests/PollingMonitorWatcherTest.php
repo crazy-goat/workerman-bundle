@@ -52,13 +52,16 @@ final class PollingMonitorWatcherTest extends TestCase
         $reflection = new \ReflectionClass(PollingMonitorWatcher::class);
         $instance = $reflection->newInstanceWithoutConstructor();
 
-        $workerProp = $reflection->getParentClass()->getProperty('worker');
+        $parentClass = $reflection->getParentClass();
+        \assert($parentClass instanceof \ReflectionClass);
+
+        $workerProp = $parentClass->getProperty('worker');
         $workerProp->setValue($instance, $worker);
 
-        $sourceDirProp = $reflection->getParentClass()->getProperty('sourceDir');
+        $sourceDirProp = $parentClass->getProperty('sourceDir');
         $sourceDirProp->setValue($instance, $sourceDir);
 
-        $filePatternProp = $reflection->getParentClass()->getProperty('filePattern');
+        $filePatternProp = $parentClass->getProperty('filePattern');
         $filePatternProp->setValue($instance, $filePattern);
 
         $lastMTimeProp = $reflection->getProperty('lastMTime');
@@ -219,9 +222,12 @@ final class PollingMonitorWatcherTest extends TestCase
 
     public function testDirectCallToGetMTimeNotGetFileInfo(): void
     {
+        $source = \file_get_contents(__DIR__ . '/../src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php');
+        \assert(\is_string($source));
+
         $this->assertStringNotContainsString(
             'getFileInfo',
-            \file_get_contents(__DIR__ . '/../src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php'),
+            $source,
             'PollingMonitorWatcher should call getMTime() directly, not via getFileInfo()',
         );
     }

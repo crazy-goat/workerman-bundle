@@ -33,19 +33,21 @@ $worker->name = 'e2e-test';
 $watcherClass = new ReflectionClass(PollingMonitorWatcher::class);
 $watcher = $watcherClass->newInstanceWithoutConstructor();
 
-$workerProp = $watcherClass->getParentClass()->getProperty('worker');
+$parentClass = $watcherClass->getParentClass();
+assert($parentClass instanceof ReflectionClass);
+
+$workerProp = $parentClass->getProperty('worker');
 $workerProp->setValue($watcher, $worker);
 
-$sourceDirProp = $watcherClass->getParentClass()->getProperty('sourceDir');
+$sourceDirProp = $parentClass->getProperty('sourceDir');
 $sourceDirProp->setValue($watcher, [$tempDir]);
 
-$filePatternProp = $watcherClass->getParentClass()->getProperty('filePattern');
+$filePatternProp = $parentClass->getProperty('filePattern');
 $filePatternProp->setValue($watcher, ['*.php']);
 
 $lastMTimeProp = $watcherClass->getProperty('lastMTime');
 $lastMTimeProp->setValue($watcher, time() - 5);
 
-// Verify detection before file change
 $checkMethod = $watcherClass->getMethod('checkFileSystemChanges');
 $checkMethod->invoke($watcher);
 
@@ -57,12 +59,10 @@ if ($beforeMTime !== $expectedBefore) {
     exit(2);
 }
 
-// Modify the file
 usleep(1000);
 file_put_contents($watchedFile, '<?php // v2');
 clearstatcache(true, $watchedFile);
 
-// Invoke checkFileSystemChanges
 $checkMethod->invoke($watcher);
 
 $afterMTime = $lastMTimeProp->getValue($watcher);
