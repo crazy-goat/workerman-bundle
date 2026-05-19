@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 include __DIR__ . '/../../vendor/autoload.php';
 
+// PollingMonitorWatcher tests call Utils::reload(reloadAllWorkers: true) which
+// sends SIGUSR1 to posix_getppid() — the PHPUnit parent process. Ignore it.
+if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
+    \pcntl_async_signals(true);
+    \pcntl_signal(\SIGUSR1, \SIG_IGN);
+}
+
 \workerman_start();
 \register_shutdown_function(\workerman_stop(...));
 
