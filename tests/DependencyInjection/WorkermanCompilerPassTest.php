@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\Tests\DependencyInjection;
+namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use PHPUnit\Framework\TestCase;

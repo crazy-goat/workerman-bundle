@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\Tests\Scheduler;
+namespace CrazyGoat\WorkermanBundle\Test\Scheduler;
 
 use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\Tests\Util;
+namespace CrazyGoat\WorkermanBundle\Test\Util;
 
 use CrazyGoat\WorkermanBundle\Util\ServiceMethodHelper;
 use PHPUnit\Framework\TestCase;

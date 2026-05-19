@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\Tests;
+namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use PHPUnit\Framework\TestCase;
