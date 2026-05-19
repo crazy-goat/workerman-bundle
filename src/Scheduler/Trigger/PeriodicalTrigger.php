@@ -17,13 +17,21 @@ final class PeriodicalTrigger implements TriggerInterface
     {
         try {
             if (is_int($interval)) {
-                $this->interval = \DateInterval::createFromDateString(sprintf('%d seconds', $interval));
-                $this->description = sprintf('every %s', $interval);
+                $dateInterval = \DateInterval::createFromDateString(sprintf('%d seconds', $interval));
+                if ($dateInterval === false) {
+                    throw new InvalidTriggerException('Invalid numeric interval');
+                }
+                $this->interval = $dateInterval;
+                $this->description = sprintf('every %d', $interval);
             } elseif (\is_string($interval) && str_starts_with($interval, 'P')) {
                 $this->interval = new \DateInterval($interval);
                 $this->description = sprintf('DateInterval (%s)', $interval);
             } elseif (\is_string($interval)) {
-                $this->interval = \DateInterval::createFromDateString($interval);
+                $dateInterval = \DateInterval::createFromDateString($interval);
+                if ($dateInterval === false) {
+                    throw new InvalidTriggerException(sprintf('Invalid string interval "%s"', $interval));
+                }
+                $this->interval = $dateInterval;
                 $this->description = sprintf('every %s', $interval);
             } else {
                 $this->interval = $interval;
@@ -31,7 +39,8 @@ final class PeriodicalTrigger implements TriggerInterface
                 $this->description = isset($a['from_string']) ? sprintf('every %s', $a['from_string']) : 'DateInterval';
             }
         } catch (\Throwable $e) {
-            throw new InvalidTriggerException(sprintf('Invalid interval "%s": %s', $interval instanceof \DateInterval ? 'instance of \DateInterval' : $interval, $e->getMessage()), 0, $e);
+            $original = $interval instanceof \DateInterval ? 'instance of \DateInterval' : (string) $interval;
+            throw new InvalidTriggerException(sprintf('Invalid interval "%s": %s', $original, $e->getMessage()), 0, $e);
         }
     }
 

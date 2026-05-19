@@ -41,7 +41,6 @@ final class ServerActionTest extends TestCase
 
     public function testTryFromInvalidValueReturnsNull(): void
     {
-        /** @phpstan-ignore staticMethod.alreadyNarrowedType */
         self::assertNull(ServerAction::tryFrom('invalid'));
     }
 }
