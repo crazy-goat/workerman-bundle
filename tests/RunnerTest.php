@@ -21,13 +21,14 @@ use PHPUnit\Framework\TestCase;
 final class RunnerTest extends TestCase
 {
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/runner_test_runner.php';
+    private const RUNNER_SOURCE = __DIR__ . '/../src/Runner.php';
 
     /**
      * Structural test: verify Runner source uses correct error handling pattern.
      */
     public function testRunnerUsesCorrectForkErrorHandling(): void
     {
-        $sourceFile = dirname(__DIR__) . '/src/Runner.php';
+        $sourceFile = self::RUNNER_SOURCE;
         $this->assertFileExists($sourceFile);
 
         $content = file_get_contents($sourceFile);
@@ -117,7 +118,7 @@ final class RunnerTest extends TestCase
      */
     public function testCacheWarmupTimeoutDefaultsTo30(): void
     {
-        $sourceFile = dirname(__DIR__) . '/src/Runner.php';
+        $sourceFile = self::RUNNER_SOURCE;
         $this->assertFileExists($sourceFile);
 
         $content = file_get_contents($sourceFile);
@@ -240,6 +241,7 @@ final class RunnerTest extends TestCase
                 '-d', 'extension=posix',
                 self::RUNNER_SCRIPT,
                 $testName,
+                self::RUNNER_SOURCE,
             ],
             $descriptors,
             $pipes,

@@ -7,7 +7,7 @@
  * shutdown functions, and other PHPUnit state that interferes with
  * pcntl_fork() + exit() behavior.
  *
- * Usage: php runner_test_runner.php <test_name>
+ * Usage: php runner_test_runner.php <test_name> [source_file]
  *
  * Exit codes:
  *   0 = test passed
@@ -21,11 +21,12 @@ declare(strict_types=1);
 /** @var list<string> $argv */
 
 if ($argc < 2) {
-    fwrite(STDERR, "Usage: php runner_test_runner.php <test_name>\n");
+    fwrite(STDERR, "Usage: php runner_test_runner.php <test_name> [source_file]\n");
     exit(2);
 }
 
 $testName = $argv[1];
+define('RUNNER_SOURCE_FILE', $argv[2] ?? dirname(__DIR__) . '/src/Runner.php');
 
 function fail(string $message): never
 {
@@ -68,8 +69,7 @@ match ($testName) {
  */
 function testForkFailure(): void
 {
-    $sourceFile = dirname(__DIR__) . '/src/Runner.php';
-    $content = file_get_contents($sourceFile);
+    $content = file_get_contents(RUNNER_SOURCE_FILE);
     if ($content === false) {
         fail('Cannot read Runner.php');
     }
