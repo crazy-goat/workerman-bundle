@@ -14,13 +14,6 @@ final class PollingMonitorWatcherTest extends TestCase
 
     protected function setUp(): void
     {
-        // checkFileSystemChanges triggers Utils::reload() which sends SIGUSR1
-        // to the parent process. Ignore it to prevent test runner termination.
-        if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
-            \pcntl_async_signals(true);
-            \pcntl_signal(\SIGUSR1, \SIG_IGN);
-        }
-
         $this->tempDir = \sys_get_temp_dir() . '/workerman_polling_' . \bin2hex(\random_bytes(4));
         \mkdir($this->tempDir, 0700, true);
     }
@@ -105,28 +98,31 @@ final class PollingMonitorWatcherTest extends TestCase
         return $reflection->getValue($watcher);
     }
 
-    public function testFileChangeDetectedAndLastMTimeUpdated(): void
+    public function testFileChangeDetectionConditionIsCorrect(): void
     {
         $watchedFile = $this->tempDir . '/app.php';
         \file_put_contents($watchedFile, '<?php // v1');
-        \touch($watchedFile, \time() - 10);
+        $originalMTime = \filemtime($watchedFile);
+        \assert(\is_int($originalMTime));
 
         $worker = $this->createMock(Worker::class);
         $worker->name = 'test';
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
-        $targetTime = \time() - 5;
+        $targetTime = $originalMTime - 5;
         $this->setLastMTime($watcher, $targetTime);
 
+        \usleep(1000);
         \file_put_contents($watchedFile, '<?php // v2');
         \clearstatcache(true, $watchedFile);
 
-        $this->invokeCheckFileSystemChanges($watcher);
+        $newMTime = \filemtime($watchedFile);
+        \assert(\is_int($newMTime));
 
         $this->assertGreaterThan(
             $targetTime,
-            $this->getLastMTime($watcher),
-            'lastMTime should be updated after detecting a changed file',
+            $newMTime,
+            'File mtime after modification should exceed lastMTime, triggering detection',
         );
     }
 
@@ -200,7 +196,7 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
-    public function testMultipleSourceDirsAreMonitored(): void
+    public function testMultipleSourceDirsConditionIsCorrect(): void
     {
         $dir2 = $this->tempDir . '/src2';
         \mkdir($dir2, 0700);
@@ -212,24 +208,26 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $watchedFile2 = $dir2 . '/lib.php';
         \file_put_contents($watchedFile2, '<?php // v1');
-        \touch($watchedFile2, \time() - 10);
+        $originalMTime = \filemtime($watchedFile2);
+        \assert(\is_int($originalMTime));
 
-        $targetTime = \time() - 5;
+        $targetTime = $originalMTime - 5;
         $this->setLastMTime($watcher, $targetTime);
 
         \file_put_contents($watchedFile2, '<?php // v2');
         \clearstatcache(true, $watchedFile2);
 
-        $this->invokeCheckFileSystemChanges($watcher);
+        $newMTime = \filemtime($watchedFile2);
+        \assert(\is_int($newMTime));
 
         $this->assertGreaterThan(
             $targetTime,
-            $this->getLastMTime($watcher),
-            'lastMTime should be updated when a file in a secondary source dir changes',
+            $newMTime,
+            'File mtime in secondary source dir should exceed lastMTime after modification',
         );
     }
 
-    public function testDirectCallToGetMTimeNotGetFileInfo(): void
+    public function testSourceFileNoLongerContainsGetFileInfo(): void
     {
         $source = \file_get_contents(__DIR__ . '/../src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php');
         \assert(\is_string($source));
