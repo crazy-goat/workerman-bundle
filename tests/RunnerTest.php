@@ -46,9 +46,27 @@ final class RunnerTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            "throw new \RuntimeException('Cache warmup failed in forked process')",
+            'Cache warmup failed in forked process (exit code',
             $content,
-            'Must throw when child exits with non-zero code',
+            'Must throw with exit code when child exits with non-zero code',
+        );
+
+        $this->assertStringContainsString(
+            'Cache warmup failed in forked process (child signaled failure via SIGTERM)',
+            $content,
+            'Must throw with SIGTERM-specific message when child signals failure',
+        );
+
+        $this->assertStringContainsString(
+            'Cache warmup failed in forked process (killed by unexpected signal',
+            $content,
+            'Must throw with signal number when child is killed by unexpected signal',
+        );
+
+        $this->assertStringContainsString(
+            'Cache warmup failed in forked process (unexpected status',
+            $content,
+            'Must throw with unexpected status when child neither exited nor signaled',
         );
 
         $this->assertStringContainsString(
