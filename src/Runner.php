@@ -74,19 +74,28 @@ final readonly class Runner implements RunnerInterface
 
             if (!\pcntl_wifexited($status)) {
                 if (!\pcntl_wifsignaled($status)) {
-                    throw new \RuntimeException('Cache warmup failed in forked process');
+                    throw new \RuntimeException(\sprintf(
+                        'Cache warmup failed in forked process (unexpected status: %d)',
+                        $status,
+                    ));
                 }
                 $signal = \pcntl_wtermsig($status);
                 // SIGKILL (9) = success (child killed itself after successful boot)
                 // SIGTERM (15) = error (child killed itself after exception)
                 if ($signal === \SIGTERM) {
-                    throw new \RuntimeException('Cache warmup failed in forked process');
+                    throw new \RuntimeException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
                 }
                 if ($signal !== \SIGKILL) {
-                    throw new \RuntimeException('Cache warmup failed in forked process');
+                    throw new \RuntimeException(\sprintf(
+                        'Cache warmup failed in forked process (killed by unexpected signal %d)',
+                        $signal,
+                    ));
                 }
             } elseif (\pcntl_wexitstatus($status) !== 0) {
-                throw new \RuntimeException('Cache warmup failed in forked process');
+                throw new \RuntimeException(\sprintf(
+                    'Cache warmup failed in forked process (exit code %d)',
+                    \pcntl_wexitstatus($status),
+                ));
             }
         }
 
