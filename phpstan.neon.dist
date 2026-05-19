@@ -4,3 +4,8 @@ parameters:
 	paths:
 		- src
 		- tests
+	ignoreErrors:
+		-
+			message: '#never returns string so it can be removed from the return type#'
+			path: tests/
+			reportUnmatched: false
