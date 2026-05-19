@@ -5,11 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.17.0] - 2026-05-19
+
+### Added
+
+- Added `Utils::reload()` method as the canonical name for graceful worker restart ([#32](https://github.com/crazy-goat/workerman-bundle/issues/32))
+  - `Utils::reboot()` is preserved as a deprecated alias with deprecation notice
+  - Updated all internal callers and watcher classes
+
+- Added `SymfonyController` injection via DI into `HttpRequestHandler` ([#158](https://github.com/crazy-goat/workerman-bundle/issues/158))
+  - `HttpRequestHandler` now accepts `SymfonyController $controller` via constructor injection
+  - `WorkermanCompilerPass` registers `workerman.symfony_controller` service with autowiring alias
+  - Removed unused `KernelInterface` and `ResponseConverter` dependencies
+
+### Changed
+
+- Replaced `require` pattern in `WorkermanBundle` with proper injectable classes ([#145](https://github.com/crazy-goat/workerman-bundle/issues/145))
+  - Extracted configuration tree building into `ConfigurationTreeBuilder`
+  - Extracted service registration into `ServicesConfigurator`
+  - Removed `src/config/configuration.php` and `src/config/services.php`
+
+- Removed unnecessary `array_map` calls and simplified data flow in `WorkermanCompilerPass` ([#24](https://github.com/crazy-goat/workerman-bundle/issues/24))
+
+- composer.json `audit.abandoned` config from `"ignore"` to `"report"` so abandoned package warnings are no longer silently suppressed ([#163](https://github.com/crazy-goat/workerman-bundle/issues/163))
+
+### Fixed
+
+- Removed FPM-specific no-op calls (`ignore_user_abort()`, `connection_aborted()`) from `StreamedBinaryFileResponse` — these have no effect in Workerman's event-driven architecture ([#160](https://github.com/crazy-goat/workerman-bundle/issues/160))
+  - Added 14 unit tests and 1 E2E test for streamed binary file response
+
+- Extracted magic string `'+10 year'` to class constant `MAX_SCHEDULE_HORIZON` in `PeriodicalTrigger` ([#156](https://github.com/crazy-goat/workerman-bundle/issues/156))
 
 ### Removed
 
 - Removed dead `StreamResponseInterface` and `streamContent()` method from `StreamedBinaryFileResponse` — the generator-based streaming was never called by the response pipeline; `BinaryFileResponseStrategy` handles it via `withFile()` ([#165](https://github.com/crazy-goat/workerman-bundle/issues/165))
+
+- Removed 8 permanently skipped tests from `HttpRequestHandlerTest` that were never executed ([#154](https://github.com/crazy-goat/workerman-bundle/issues/154))
 
 ## [0.15.0] - 2026-04-15
 
@@ -110,12 +141,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed CI: upgraded `actions/checkout` from v2 to v6.0.2 with SHA pinning ([#172](https://github.com/crazy-goat/workerman-bundle/pull/172))
 - Fixed CI: pinned `shivammathur/setup-php` to commit SHA in tests workflow ([#149](https://github.com/crazy-goat/workerman-bundle/issues/149), [#175](https://github.com/crazy-goat/workerman-bundle/pull/175))
-
-## [Unreleased]
-
-### Changed
-
-- composer.json `audit.abandoned` config from `"ignore"` to `"report"` so abandoned package warnings are no longer silently suppressed ([#163](https://github.com/crazy-goat/workerman-bundle/issues/163))
 
 ## [0.14.0] - 2026-04-14
 
