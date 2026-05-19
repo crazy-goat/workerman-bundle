@@ -60,7 +60,15 @@ final class WorkermanCommandTest extends KernelTestCase
 
         // Restart via index.php (Runtime path — works with proc_open).
         $descriptor = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        \proc_open(\workerman_create_command('start -d'), $descriptor, $pipes);
+        $process = \proc_open(\workerman_create_command('start -d'), $descriptor, $pipes);
+
+        if (\is_resource($process)) {
+            foreach ($pipes as $pipe) {
+                \fclose($pipe);
+            }
+            \proc_close($process);
+        }
+
         \usleep(500_000);
 
         // Server should be back up.
