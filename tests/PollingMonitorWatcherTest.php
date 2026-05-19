@@ -52,7 +52,6 @@ final class PollingMonitorWatcherTest extends TestCase
         $reflection = new \ReflectionClass(PollingMonitorWatcher::class);
         $instance = $reflection->newInstanceWithoutConstructor();
 
-        /** @var \ReflectionClass $parentClass */
         $parentClass = $reflection->getParentClass();
         if (!$parentClass instanceof \ReflectionClass) {
             throw new \RuntimeException('Failed to get parent class reflection');
