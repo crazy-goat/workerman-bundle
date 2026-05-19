@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CrazyGoat\WorkermanBundle\Tests\Supervisor;
+namespace CrazyGoat\WorkermanBundle\Test\Supervisor;
 
 use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
