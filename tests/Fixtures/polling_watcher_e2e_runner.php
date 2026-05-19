@@ -34,7 +34,10 @@ $watcherClass = new ReflectionClass(PollingMonitorWatcher::class);
 $watcher = $watcherClass->newInstanceWithoutConstructor();
 
 $parentClass = $watcherClass->getParentClass();
-assert($parentClass instanceof ReflectionClass);
+if (!$parentClass instanceof ReflectionClass) {
+    fprintf(STDERR, "FAIL: Cannot get parent class reflection\n");
+    exit(4);
+}
 
 $workerProp = $parentClass->getProperty('worker');
 $workerProp->setValue($watcher, $worker);
@@ -49,10 +52,10 @@ $lastMTimeProp = $watcherClass->getProperty('lastMTime');
 $lastMTimeProp->setValue($watcher, time() - 5);
 
 $checkMethod = $watcherClass->getMethod('checkFileSystemChanges');
+$expectedBefore = $lastMTimeProp->getValue($watcher);
 $checkMethod->invoke($watcher);
 
 $beforeMTime = $lastMTimeProp->getValue($watcher);
-$expectedBefore = time() - 5;
 
 if ($beforeMTime !== $expectedBefore) {
     fprintf(STDERR, "FAIL: lastMTime changed without file modification (was %d, expected %d)\n", $beforeMTime, $expectedBefore);

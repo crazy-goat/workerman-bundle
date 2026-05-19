@@ -52,8 +52,11 @@ final class PollingMonitorWatcherTest extends TestCase
         $reflection = new \ReflectionClass(PollingMonitorWatcher::class);
         $instance = $reflection->newInstanceWithoutConstructor();
 
+        /** @var \ReflectionClass $parentClass */
         $parentClass = $reflection->getParentClass();
-        \assert($parentClass instanceof \ReflectionClass);
+        if (!$parentClass instanceof \ReflectionClass) {
+            throw new \RuntimeException('Failed to get parent class reflection');
+        }
 
         $workerProp = $parentClass->getProperty('worker');
         $workerProp->setValue($instance, $worker);
@@ -106,16 +109,16 @@ final class PollingMonitorWatcherTest extends TestCase
         $worker->name = 'test';
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
-        $this->setLastMTime($watcher, \time() - 5);
+        $targetTime = \time() - 5;
+        $this->setLastMTime($watcher, $targetTime);
 
-        \usleep(1000);
         \file_put_contents($watchedFile, '<?php // v2');
         \clearstatcache(true, $watchedFile);
 
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertGreaterThan(
-            \time() - 5,
+            $targetTime,
             $this->getLastMTime($watcher),
             'lastMTime should be updated after detecting a changed file',
         );
@@ -129,14 +132,14 @@ final class PollingMonitorWatcherTest extends TestCase
         $worker = $this->createMock(Worker::class);
         $worker->name = 'test';
 
-        $currentTime = \time();
+        $futureTime = \time() + 3600;
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
-        $this->setLastMTime($watcher, $currentTime + 3600);
+        $this->setLastMTime($watcher, $futureTime);
 
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertSame(
-            $currentTime + 3600,
+            $futureTime,
             $this->getLastMTime($watcher),
             'lastMTime should remain unchanged when no file has been modified',
         );
@@ -152,16 +155,16 @@ final class PollingMonitorWatcherTest extends TestCase
         $worker->name = 'test';
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
-        $this->setLastMTime($watcher, \time() - 60);
+        $pastTime = \time() - 60;
+        $this->setLastMTime($watcher, $pastTime);
 
-        \usleep(1000);
         \file_put_contents($nonWatchedFile, 'd,e,f');
         \clearstatcache(true, $nonWatchedFile);
 
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertSame(
-            \time() - 60,
+            $pastTime,
             $this->getLastMTime($watcher),
             'lastMTime should not be updated when a non-matching file changes',
         );
@@ -176,16 +179,16 @@ final class PollingMonitorWatcherTest extends TestCase
         $worker->name = 'test';
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*']);
-        $this->setLastMTime($watcher, \time() - 60);
+        $pastTime = \time() - 60;
+        $this->setLastMTime($watcher, $pastTime);
 
-        \usleep(1000);
         \touch($subDir, \time() + 10);
         \clearstatcache(true, $subDir);
 
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertSame(
-            \time() - 60,
+            $pastTime,
             $this->getLastMTime($watcher),
             'lastMTime should not be updated when only directories change',
         );
@@ -205,16 +208,16 @@ final class PollingMonitorWatcherTest extends TestCase
         \file_put_contents($watchedFile2, '<?php // v1');
         \touch($watchedFile2, \time() - 10);
 
-        $this->setLastMTime($watcher, \time() - 5);
+        $targetTime = \time() - 5;
+        $this->setLastMTime($watcher, $targetTime);
 
-        \usleep(1000);
         \file_put_contents($watchedFile2, '<?php // v2');
         \clearstatcache(true, $watchedFile2);
 
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertGreaterThan(
-            \time() - 5,
+            $targetTime,
             $this->getLastMTime($watcher),
             'lastMTime should be updated when a file in a secondary source dir changes',
         );
