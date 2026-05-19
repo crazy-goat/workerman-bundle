@@ -83,9 +83,7 @@ final readonly class Runner implements RunnerInterface
                 // SIGKILL (9) = success (child killed itself after successful boot)
                 // SIGTERM (15) = error (child killed itself after exception)
                 if ($signal === \SIGTERM) {
-                    throw new \RuntimeException(\sprintf(
-                        'Cache warmup failed in forked process (child signaled failure via SIGTERM)',
-                    ));
+                    throw new \RuntimeException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
                 }
                 if ($signal !== \SIGKILL) {
                     throw new \RuntimeException(\sprintf(
