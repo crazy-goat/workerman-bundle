@@ -13,6 +13,9 @@ jobs:
 
       - name: Setup PHP
         uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: '8.2'
+          tools: composer:v2
 
       - name: Validate composer.json
         run: composer validate --strict
