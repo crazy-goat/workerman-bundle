@@ -24,6 +24,8 @@ final readonly class JitterTrigger implements TriggerInterface
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
         $seconds = $this->randomizer->getInt(0, $this->maxSeconds);
-        return $this->trigger->getNextRunDate($now)?->modify(sprintf('+%d seconds', $seconds));
+        $date = $this->trigger->getNextRunDate($now)?->modify(sprintf('+%d seconds', $seconds));
+
+        return $date instanceof \DateTimeImmutable ? $date : null;
     }
 }
