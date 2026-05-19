@@ -49,4 +49,15 @@ final class ComposerConfigTest extends TestCase
             sprintf('abandoned config must be "report" or "fail", got: %s', $currentValue),
         );
     }
+
+    public function testBlockInsecureEnabled(): void
+    {
+        self::assertArrayHasKey('config', $this->composerConfig);
+        self::assertArrayHasKey('audit', $this->composerConfig['config']);
+        self::assertArrayHasKey('block-insecure', $this->composerConfig['config']['audit']);
+        self::assertTrue(
+            $this->composerConfig['config']['audit']['block-insecure'],
+            'block-insecure must be true to prevent installing packages with known vulnerabilities',
+        );
+    }
 }

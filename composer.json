@@ -59,7 +59,7 @@
     "config": {
         "sort-packages": true,
         "audit": {
-            "block-insecure": false,
+            "block-insecure": true,
             "abandoned": "report"
         },
         "allow-plugins": {
