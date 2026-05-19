@@ -109,6 +109,53 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
+    public function testReusePortTrueDoesNotThrow(): void
+    {
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'http://127.0.0.1:8081',
+                'reuse_port' => true,
+            ],
+        );
+
+        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should accept reuse_port=true');
+    }
+
+    public function testReusePortFalseDoesNotThrow(): void
+    {
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'http://127.0.0.1:8082',
+                'reuse_port' => false,
+            ],
+        );
+
+        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should accept reuse_port=false');
+    }
+
+    public function testReusePortDefaultsToFalse(): void
+    {
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'http://127.0.0.1:8083',
+            ],
+        );
+
+        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should work without reuse_port key');
+    }
+
     public function testCorrectSslConfigurationDoesNotThrow(): void
     {
         $certFile = $this->tempDir . '/cert.pem';

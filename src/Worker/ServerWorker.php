@@ -50,7 +50,7 @@ final readonly class ServerWorker
         $worker->group = $group ?? '';
         $worker->count = $serverConfig['processes'] ?? Utils::cpuCount() * 2;
         $worker->transport = $transport;
-        $worker->reusePort = boolval($serverConfig['reuse_port'] ?? false);
+        $worker->reusePort = (bool) ($serverConfig['reuse_port'] ?? false);
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
             Http::requestClass(Request::class);
