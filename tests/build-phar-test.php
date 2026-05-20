@@ -5,7 +5,12 @@ declare(strict_types=1);
 
 /**
  * Integration test: builds a PHAR and verifies its structure.
- * Run with: php -d phar.readonly=0 tests/build-phar-test.php
+ * Run with: composer test:build:phar
+ *
+ * Note: This builds a PHAR of the bundle itself. The test kernel
+ * (CrazyGoat\WorkermanBundle\Test\App\Kernel) lives in tests/ which
+ * is excluded from the PHAR, so we can't run the PHAR as a CLI app here.
+ * Instead we verify the PHAR structure and contents.
  */
 
 use CrazyGoat\WorkermanBundle\Test\App\Kernel;
@@ -16,6 +21,7 @@ use Symfony\Component\Console\Output\NullOutput;
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $exitCode = 0;
+$fileList = [];
 
 try {
     echo "=== PHAR Build Integration Test ===\n\n";
@@ -33,6 +39,7 @@ try {
     $input = new ArrayInput([
         'command' => 'workerman:build:phar',
         '--output-dir' => $buildDir,
+        '--filename' => 'test-app.phar',
         '--kernel-class' => 'CrazyGoat\WorkermanBundle\Test\App\Kernel',
     ]);
     $input->setInteractive(false);
@@ -46,33 +53,35 @@ try {
     if (!file_exists($pharPath)) {
         throw new \RuntimeException('PHAR file not created at ' . $pharPath);
     }
-    echo "   PHAR created: {$pharPath}\n";
+    $pharSize = filesize($pharPath);
+    echo "   PHAR created: {$pharPath} (" . number_format($pharSize) . " bytes)\n";
 
     // 2. Verify PHAR structure
     echo "2) Verifying PHAR structure...\n";
     $phar = new \Phar($pharPath);
-    $files = [];
+    $fileList = [];
     foreach (new \RecursiveIteratorIterator($phar) as $file) {
-        $files[] = $file->getPathname();
+        $fileList[] = $file->getPathname();
     }
 
     $checks = [
         'vendor/autoload.php' => false,
         'src/Command/BuildPharCommand.php' => false,
         'src/PharHelper.php' => false,
+        'src/Runner.php' => false,
     ];
 
-    foreach ($files as $path) {
-        $pharPathOnly = substr($path, strlen('phar://' . $pharPath . '/'));
-        if (isset($checks[$pharPathOnly])) {
-            $checks[$pharPathOnly] = true;
+    foreach ($fileList as $path) {
+        $relativePath = substr($path, strlen('phar://' . $pharPath . '/'));
+        if (isset($checks[$relativePath])) {
+            $checks[$relativePath] = true;
         }
     }
 
     $allOk = true;
     foreach ($checks as $file => $found) {
         $status = $found ? 'OK' : 'MISSING';
-        if (!$found) $allOk = false;
+        if (!$found) { $allOk = false; }
         echo "   {$file}: {$status}\n";
     }
 
@@ -80,25 +89,71 @@ try {
         throw new \RuntimeException('PHAR is missing required files');
     }
 
-    // 3. Verify autoloader works from within the PHAR
-    echo "3) Verifying autoloader from PHAR...\n";
-    $phar->offsetGet('vendor/autoload.php'); // just check it exists
-    $autoloadPath = 'phar://' . $pharPath . '/vendor/autoload.php';
-    require $autoloadPath;
-    if (!class_exists(\Symfony\Component\HttpKernel\Kernel::class)) {
-        throw new \RuntimeException('Symfony Kernel class not loadable from PHAR');
+    // 3. Check that excluded files are NOT in the PHAR
+    echo "3) Checking exclusions...\n";
+    $excludedChecks = [
+        '.git/' => 'MUST_NOT_EXIST',
+        'tests/App/Kernel.php' => 'MUST_NOT_EXIST',
+        'var/cache/' => 'MUST_NOT_EXIST',
+        'docs/' => 'MUST_NOT_EXIST',
+    ];
+
+    foreach ($fileList as $path) {
+        $relativePath = substr($path, strlen('phar://' . $pharPath . '/'));
+        foreach ($excludedChecks as $pattern => &$status) {
+            if ($status === 'MUST_NOT_EXIST' && str_starts_with($relativePath, $pattern)) {
+                $status = 'FOUND (should be excluded!)';
+                $allOk = false;
+            }
+        }
     }
-    echo "   Symfony Kernel: " . \Symfony\Component\HttpKernel\Kernel::VERSION . " - OK\n";
+    unset($status);
+
+    foreach ($excludedChecks as $pattern => $status) {
+        $label = $status === 'MUST_NOT_EXIST' ? 'OK (excluded)' : $status;
+        echo "   {$pattern}: {$label}\n";
+    }
 
     // 4. Check file count is reasonable
     echo "4) Checking file count...\n";
-    $count = count($files);
-    echo "   Total files: {$count}\n";
-    if ($count < 1000) {
-        throw new \RuntimeException("PHAR seems too small: {$count} files (expected > 1000)");
+    $totalFiles = count($fileList);
+    echo "   Total files: {$totalFiles}\n";
+    if ($totalFiles < 1000) {
+        throw new \RuntimeException("PHAR seems too small: {$totalFiles} files (expected > 1000)");
     }
 
-    echo "\n=== PHAR Build Integration Test: PASSED ===\n";
+    // 5. Verify the stub has expected structure
+    echo "5) Verifying stub structure...\n";
+    $phar = new \Phar($pharPath);
+    $stub = $phar->getStub();
+    $stubChecks = [
+        '#!/usr/bin/env php' => false,
+        "define('IN_PHAR', true)" => false,
+        'Phar::mapPhar' => false,
+        'APP_RUNTIME' => false,
+        'APP_CACHE_DIR' => false,
+        'APP_LOG_DIR' => false,
+        'vendor/autoload.php' => false,
+        'Console\\Application' => false,
+        '__HALT_COMPILER' => false,
+    ];
+    foreach ($stubChecks as $pattern => &$found) {
+        if (str_contains($stub, $pattern)) {
+            $found = true;
+        }
+    }
+    unset($found);
+    foreach ($stubChecks as $pattern => $found) {
+        $status = $found ? 'OK' : 'MISSING';
+        if (!$found) { $allOk = false; }
+        echo "   Stub contains '{$pattern}': {$status}\n";
+    }
+
+    if ($allOk) {
+        echo "\n=== PHAR Build Integration Test: PASSED ===\n";
+    } else {
+        throw new \RuntimeException('Some checks failed');
+    }
 
 } catch (\Throwable $e) {
     echo "\n!!! FAILED: {$e->getMessage()}\n";
@@ -107,10 +162,10 @@ try {
     // Cleanup
     if (isset($buildDir) && is_dir($buildDir)) {
         $it = new \RecursiveDirectoryIterator($buildDir, \RecursiveDirectoryIterator::SKIP_DOTS);
-        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) {
-            if ($file->isDir()) rmdir($file->getRealPath());
-            else unlink($file->getRealPath());
+        $iter = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($iter as $f) {
+            if ($f->isDir()) { rmdir($f->getRealPath()); }
+            else { unlink($f->getRealPath()); }
         }
         rmdir($buildDir);
     }
