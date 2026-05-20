@@ -5,11 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.18.0] - 2026-05-20
+
+### Added
+
+- PHAR and standalone binary packaging support ([#191](https://github.com/crazy-goat/workerman-bundle/issues/191))
+  - New `workerman:build:phar` command to build PHAR archives with dynamic stub
+  - New `workerman:build:bin` command to create standalone binaries (SFX + custom php.ini + PHAR)
+  - New `PharHelper` utility for detecting PHAR mode and resolving runtime paths outside the archive
+  - New `build` configuration section for PHAR exclusions, custom php.ini, and SFX sources
+  - `--kernel-class` CLI option for overriding kernel class in PHAR stub
+  - File monitor automatically disabled in PHAR mode
+  - `ConfigLoader` fallback when cache is missing for PHAR scenarios
+
+### Changed
+
+- `Runner` source path is now configurable instead of hardcoded to `tests/App` ([#130](https://github.com/crazy-goat/workerman-bundle/issues/130))
 
 ### Fixed
 
 - Improved cache warmup error messages to include exit codes, signal numbers, and status details ([#129](https://github.com/crazy-goat/workerman-bundle/issues/129))
+- Closed `proc_open` pipes in test bootstrap to prevent file descriptor leaks ([#170](https://github.com/crazy-goat/workerman-bundle/issues/170))
+- Replaced `boolval()` with `(bool)` cast for consistent style across the codebase ([#159](https://github.com/crazy-goat/workerman-bundle/issues/159))
+- Added missing `final` keyword to `MiddlewareTest` and `StaticFilesMiddlewareTest` ([#168](https://github.com/crazy-goat/workerman-bundle/issues/168))
+- Removed redundant `getFileInfo()` call on `SplFileInfo` object in `PollingMonitorWatcher` ([#166](https://github.com/crazy-goat/workerman-bundle/issues/166))
+- Replaced deprecated `LevelSetList::UP_TO_PHP_82` with `withPhpSets()` in `rector.php` ([#164](https://github.com/crazy-goat/workerman-bundle/issues/164))
+- Enabled `composer audit block-insecure` to report insecure packages instead of silently ignoring them ([#43](https://github.com/crazy-goat/workerman-bundle/issues/43))
+- Aligned test namespace with PSR-4 `autoload-dev` mapping ([#167](https://github.com/crazy-goat/workerman-bundle/issues/167))
+- Updated `phpunit.xml` schema version to match installed PHPUnit 10.5 ([#162](https://github.com/crazy-goat/workerman-bundle/issues/162))
+- Pinned PHP version to 8.2 in CI lint job for deterministic behavior ([#169](https://github.com/crazy-goat/workerman-bundle/issues/169))
+- Replaced flaky composer audit shell-based test with resilient JSON-based E2E tests ([#188](https://github.com/crazy-goat/workerman-bundle/issues/188))
 
 ## [0.17.0] - 2026-05-19
 
