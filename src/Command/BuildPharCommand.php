@@ -108,7 +108,8 @@ class BuildPharCommand extends Command
 
         unset($phar);
 
-        $io->success(sprintf('PHAR archive built: %s (%s)', $pharPath, $this->formatSize(filesize($pharPath))));
+        $pharSize = filesize($pharPath);
+        $io->success(sprintf('PHAR archive built: %s (%s)', $pharPath, $this->formatSize(is_int($pharSize) ? $pharSize : 0)));
 
         return Command::SUCCESS;
     }

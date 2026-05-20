@@ -19,14 +19,6 @@ final readonly class Resolver implements ResolverInterface
     {
         [$app, $args] = $this->resolver->resolve();
 
-        // Only wrap in KernelFactory for server start/restart commands.
-        // For other actions (stop, status, reload, connections),
-        // let the parent SymfonyRuntime handle them via the Console runner.
-        $command = $_SERVER['argv'][1] ?? '';
-        if ($command === 'start' || $command === 'restart') {
-            return [static fn(...$args): KernelFactory => new KernelFactory(...$args), [$app, $args, $this->options]];
-        }
-
-        return [$app, $args];
+        return [static fn(...$args): KernelFactory => new KernelFactory(...$args), [$app, $args, $this->options]];
     }
 }

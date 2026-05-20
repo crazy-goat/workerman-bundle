@@ -91,6 +91,7 @@ final class BuildBinCommandTest extends TestCase
         self::assertFileExists($binPath);
 
         $content = file_get_contents($binPath);
+        self::assertNotFalse($content);
         self::assertStringContainsString('MOCK_SFX_CONTENT', $content);
         self::assertStringContainsString('MOCK_PHAR_CONTENT', $content);
 
@@ -123,6 +124,7 @@ final class BuildBinCommandTest extends TestCase
         self::assertFileExists($binPath);
 
         $content = file_get_contents($binPath);
+        self::assertNotFalse($content);
 
         // Magic bytes for custom INI
         self::assertStringContainsString("\xfd\xf6\x69\xe6", $content);
@@ -152,6 +154,7 @@ final class BuildBinCommandTest extends TestCase
         ]);
 
         $content = file_get_contents($binPath);
+        self::assertNotFalse($content);
 
         // Order: SFX first, then INI header, then PHAR last
         $sfxPos = strpos($content, '<<<SFX>>>');
@@ -186,6 +189,7 @@ final class BuildBinCommandTest extends TestCase
         ]);
 
         $content = file_get_contents($binPath);
+        self::assertNotFalse($content);
         self::assertStringNotContainsString("\xfd\xf6\x69\xe6", $content);
     }
 

@@ -108,9 +108,6 @@ final readonly class Runner implements RunnerInterface
         $stdoutFile = $this->resolveRuntimePath($config['stdout_file']);
         $stopTimeout = $config['stop_timeout'];
         $maxPackageSize = $config['max_package_size'];
-        assert(is_string($pidFile));
-        assert(is_string($logFile));
-        assert(is_string($stdoutFile));
         assert(is_int($stopTimeout));
         assert(is_int($maxPackageSize));
 

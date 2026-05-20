@@ -93,7 +93,7 @@ class BuildBinCommand extends Command
         $io->success(sprintf(
             'Standalone binary built: %s (%s)',
             $binPath,
-            $this->formatSize($binSize),
+            $this->formatSize(is_int($binSize) ? $binSize : 0),
         ));
 
         $io->note(sprintf(
@@ -265,6 +265,9 @@ class BuildBinCommand extends Command
 
             $headerPath = $binPath . '.iniheader.tmp';
             $f = fopen($headerPath, 'wb');
+            if (!is_resource($f)) {
+                throw new \RuntimeException(sprintf('Unable to open file "%s" for writing.', $headerPath));
+            }
             fwrite($f, self::MAGIC_BYTES);
             fwrite($f, pack('N', strlen($customIni)));
             fwrite($f, $customIni);
