@@ -28,6 +28,7 @@ final class ServicesConfiguratorTest extends TestCase
         $this->container->setParameter('kernel.project_dir', '/tmp/test');
         $this->container->setParameter('kernel.cache_dir', '/tmp/test/cache');
         $this->container->setParameter('kernel.debug', false);
+        $this->container->setParameter('kernel.environment', 'test');
         $this->configurator = new ServicesConfigurator();
     }
 
@@ -138,6 +139,7 @@ final class ServicesConfiguratorTest extends TestCase
     private function getDefaultConfig(): array
     {
         return [
+            'runtime_dir' => '%kernel.project_dir%',
             'user' => null,
             'group' => null,
             'stop_timeout' => 2,
@@ -173,6 +175,20 @@ final class ServicesConfiguratorTest extends TestCase
                     'limit' => 134_217_728,
                     'gc_limit' => 100_663_296,
                 ],
+            ],
+            'build' => [
+                'build_dir' => '%kernel.project_dir%/build',
+                'kernel_class' => 'App\\Kernel',
+                'phar_filename' => 'app.phar',
+                'bin_filename' => 'app.bin',
+                'bin_php_version' => null,
+                'sfx' => [
+                    'url' => null,
+                    'file' => null,
+                ],
+                'exclude_patterns' => [],
+                'exclude_files' => [],
+                'custom_ini' => null,
             ],
         ];
     }

@@ -6,6 +6,8 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Command\BuildBinCommand;
+use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
@@ -34,7 +36,9 @@ final readonly class ServicesConfigurator
 
         $container
             ->register('workerman.config_loader', ConfigLoader::class)
+            ->setPublic(true)
             ->addMethodCall('setWorkermanConfig', [$config])
+            ->addMethodCall('setBuildConfig', [$config['build']])
             ->addTag('kernel.cache_warmer')
             ->setArguments([
                 $container->getParameter('kernel.project_dir'),
@@ -129,6 +133,22 @@ final readonly class ServicesConfigurator
 
         $container
             ->register(WorkermanCommand::class)
+            ->addTag('console.command')
+            ->setAutowired(true)
+        ;
+
+        $container
+            ->register(BuildPharCommand::class)
+            ->addTag('console.command')
+            ->setArguments([
+                new Reference('workerman.config_loader'),
+                $container->getParameter('kernel.project_dir'),
+                $container->getParameter('kernel.environment'),
+            ])
+        ;
+
+        $container
+            ->register(BuildBinCommand::class)
             ->addTag('console.command')
             ->setAutowired(true)
         ;

@@ -14,6 +14,10 @@ final readonly class ConfigurationTreeBuilder
 
         $root->addDefaultsIfNotSet()
             ->children()
+                ->scalarNode('runtime_dir')
+                    ->info('Writable runtime directory for cache, logs, and PID files. In PHAR mode defaults to directory containing the PHAR. Can be overridden with WORKERMAN_RUNTIME_DIR env var.')
+                    ->defaultValue('%kernel.project_dir%')
+                    ->end()
                 ->scalarNode('user')
                     ->info('Unix user of processes. Default: current user')
                     ->defaultNull()
@@ -201,6 +205,78 @@ final readonly class ConfigurationTreeBuilder
                             ->end()
                         ->end()
                     ->end()
+                ->end()
+                ->arrayNode('build')
+                    ->info('PHAR and standalone binary build configuration')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('build_dir')
+                            ->info('Output directory for built artifacts')
+                            ->defaultValue('%kernel.project_dir%/build')
+                            ->end()
+                        ->scalarNode('kernel_class')
+                            ->info('Fully qualified class name of the Symfony Kernel (e.g. App\\Kernel)')
+                            ->defaultValue('App\\Kernel')
+                            ->end()
+                        ->scalarNode('phar_filename')
+                            ->info('Name of the generated PHAR file')
+                            ->defaultValue('app.phar')
+                            ->end()
+                        ->scalarNode('bin_filename')
+                            ->info('Name of the generated standalone binary')
+                            ->defaultValue('app.bin')
+                            ->end()
+                        ->scalarNode('bin_php_version')
+                            ->info('PHP version for the static PHP binary (phpmicro.sfx). Default: current PHP version')
+                            ->defaultNull()
+                            ->end()
+                        ->arrayNode('sfx')
+                            ->info('Configuration for the phpmicro SFX binary used in BIN mode')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->scalarNode('url')
+                                    ->info('Custom URL to download phpmicro.sfx from')
+                                    ->defaultNull()
+                                    ->end()
+                                ->scalarNode('file')
+                                    ->info('Local path to an existing phpmicro.sfx binary')
+                                    ->defaultNull()
+                                    ->end()
+                                ->end()
+                            ->end()
+                        ->arrayNode('exclude_patterns')
+                            ->info('Regex patterns for files to exclude from the PHAR')
+                            ->prototype('scalar')->end()
+                            ->defaultValue([
+                                '/\.git/',
+                                '/\.github/',
+                                '/tests/',
+                                '/docs/',
+                                '/phpunit\.xml/',
+                                '/\.php-cs-fixer/',
+                                '/phpstan\.neon/',
+                                '/rector\.php/',
+                                '/var/',
+                            ])
+                            ->end()
+                        ->arrayNode('exclude_files')
+                            ->info('Specific files to exclude from the PHAR')
+                            ->prototype('scalar')->end()
+                            ->defaultValue([
+                                '.env',
+                                '.env.local',
+                                '.env.prod',
+                                '.env.prod.local',
+                                '.env.test',
+                            ])
+                            ->end()
+                        ->scalarNode('custom_ini')
+                            ->info('Custom php.ini directives for the standalone binary (BIN mode only)')
+                            ->defaultNull()
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
                 ->end();
     }
 }

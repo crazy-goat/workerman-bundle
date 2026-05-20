@@ -8,7 +8,7 @@ use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
-final class ConfigLoader implements CacheWarmerInterface
+class ConfigLoader implements CacheWarmerInterface
 {
     /** @var mixed[] */
     private array $config;
@@ -59,7 +59,26 @@ final class ConfigLoader implements CacheWarmerInterface
     /** @return array<string, mixed[]> */
     private function getConfig(): array
     {
-        return $this->config ??= require $this->cache->getPath();
+        // If config was set directly via setters, return it without filesystem access.
+        if (isset($this->config)) {
+            return $this->config;
+        }
+
+        // Config not set in memory — try to load from cache file.
+        // Use @ to suppress warning when cache file doesn't exist (e.g., during test teardown).
+        $cachePath = $this->cache->getPath();
+        if (is_file($cachePath)) {
+            return $this->config = require $cachePath;
+        }
+
+        // Cache not available and config not injected — this happens when ServerManager
+        // creates a fresh ConfigLoader outside the DI container. Return empty sections.
+        return $this->config = [
+            ConfigSection::WORKERMAN->value => [],
+            ConfigSection::PROCESS->value => [],
+            ConfigSection::SCHEDULER->value => [],
+            ConfigSection::BUILD->value => [],
+        ];
     }
 
     /** @param mixed[] $config */
@@ -92,9 +111,21 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->getConfig()[ConfigSection::PROCESS->value];
     }
 
+    /** @param mixed[] $config */
+    public function setBuildConfig(array $config): void
+    {
+        $this->config[ConfigSection::BUILD->value] = $config;
+    }
+
     /** @return mixed[] */
     public function getSchedulerConfig(): array
     {
         return $this->getConfig()[ConfigSection::SCHEDULER->value];
+    }
+
+    /** @return mixed[] */
+    public function getBuildConfig(): array
+    {
+        return $this->getConfig()[ConfigSection::BUILD->value];
     }
 }

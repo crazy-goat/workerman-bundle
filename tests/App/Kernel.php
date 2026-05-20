@@ -9,6 +9,7 @@ use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
@@ -56,6 +57,12 @@ final class Kernel extends BaseKernel
                     ],
                 ],
             ]);
+
+            // Prevent log messages from leaking into HTTP responses.
+            // The default Logger uses error_log() which writes to STDOUT,
+            // which Workerman routes to the client socket.
+            $container->register('logger', NullLogger::class)
+                ->setPublic(false);
 
             $container->register('kernel', self::class)
                 ->addTag('controller.service_arguments')

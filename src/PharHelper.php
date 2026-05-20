@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CrazyGoat\WorkermanBundle;
+
+/**
+ * @internal
+ */
+final class PharHelper
+{
+    /**
+     * Whether the current process is running from a PHAR archive.
+     */
+    public static function isPhar(): bool
+    {
+        $pharPath = \Phar::running(false);
+
+        return $pharPath !== '';
+    }
+
+    /**
+     * Returns the writable runtime directory.
+     *
+     * In PHAR mode, this is the directory containing the PHAR file
+     * (or WORKERMAN_RUNTIME_DIR env var if set).
+     *
+     * In non-PHAR mode, this is the project directory.
+     *
+     * @param string $projectDir The project root directory (kernel.project_dir)
+     */
+    public static function getRuntimeDir(string $projectDir): string
+    {
+        if (isset($_SERVER['WORKERMAN_RUNTIME_DIR']) && $_SERVER['WORKERMAN_RUNTIME_DIR'] !== '') {
+            return rtrim((string) $_SERVER['WORKERMAN_RUNTIME_DIR'], '/');
+        }
+
+        if (!self::isPhar()) {
+            return rtrim($projectDir, '/');
+        }
+
+        return \dirname(\Phar::running(false));
+    }
+
+    /**
+     * Returns the project directory (always inside the PHAR in PHAR mode).
+     *
+     * @param string $projectDir The project root directory (kernel.project_dir)
+     */
+    public static function getProjectDir(string $projectDir): string
+    {
+        return rtrim($projectDir, '/');
+    }
+}

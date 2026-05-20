@@ -48,6 +48,25 @@ final class KernelFactory
 
     public function getCacheDir(): string
     {
-        return $this->getProjectDir() . '/var/cache/' . $this->getEnvironment();
+        $runtimeDir = PharHelper::getRuntimeDir($this->getProjectDir());
+
+        return $runtimeDir . '/var/cache/' . $this->getEnvironment();
+    }
+
+    public function getLogDir(): string
+    {
+        $runtimeDir = PharHelper::getRuntimeDir($this->getProjectDir());
+
+        return $runtimeDir . '/var/log';
+    }
+
+    public function getRuntimeDir(): string
+    {
+        return PharHelper::getRuntimeDir($this->getProjectDir());
+    }
+
+    public function isPhar(): bool
+    {
+        return PharHelper::isPhar();
     }
 }

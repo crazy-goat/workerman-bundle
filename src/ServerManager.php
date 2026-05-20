@@ -331,10 +331,33 @@ final class ServerManager
             return $this->config;
         }
 
-        $cacheDir = $this->kernel->getContainer()->getParameter('kernel.cache_dir');
+        // Try the DI container's ConfigLoader first (has config via setter injection)
+        $container = $this->kernel->getContainer();
+        if ($container->has('workerman.config_loader')) {
+            /** @var ConfigLoader $configLoader */
+            $configLoader = $container->get('workerman.config_loader');
+            $workermanConfig = $configLoader->getWorkermanConfig();
+
+            // If we got valid config (non-empty), cache and return it
+            if ($workermanConfig !== []) {
+                return $this->config = $workermanConfig;
+            }
+        }
+
+        // Fallback: create a fresh ConfigLoader and read from cache file
+        $cacheDir = $container->getParameter('kernel.cache_dir');
 
         if (!\is_string($cacheDir)) {
             throw new InvalidCacheDirectoryException('kernel.cache_dir parameter must be a string');
+        }
+
+        if (PharHelper::isPhar()) {
+            $projectDir = $this->kernel->getProjectDir();
+            $runtimeDir = PharHelper::getRuntimeDir($projectDir);
+
+            if ($runtimeDir !== $projectDir && str_starts_with($cacheDir, $projectDir)) {
+                $cacheDir = $runtimeDir . substr($cacheDir, strlen($projectDir));
+            }
         }
 
         $configLoader = new ConfigLoader(
