@@ -74,5 +74,10 @@ final class ComposerConfigTest extends TestCase
             $ignored,
             'Known advisory for symfony/runtime 7.0.* must be in audit ignore list',
         );
+        self::assertContains(
+            'PKSA-py8y-z9q7-q197',
+            $ignored,
+            'Known advisory for symfony/runtime 7.2.* must be in audit ignore list',
+        );
     }
 }
