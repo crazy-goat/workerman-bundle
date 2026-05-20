@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Command;
 
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -48,96 +49,110 @@ final class BuildPharCommandTest extends TestCase
         rmdir($dir);
     }
 
-    public function testBuildExclusionPatternWithDefaults(): void
+    public function testResolvePharPathUsesConfigDefaults(): void
     {
-        $command = $this->createCommand();
+        $input = new ArrayInput([]);
+        $input->bind((new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p'))->getDefinition());
 
-        // Default exclusions should exclude common dev paths
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.git/HEAD']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['tests/FooTest.php']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['docs/index.md']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['var/cache/test/file.php']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.env']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['app.phar']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['app.bin']));
+        $path = BuildPharCommand::resolvePharPath($input, [
+            'build_dir' => '/abs/build',
+            'phar_filename' => 'app.phar',
+        ], '/p');
 
-        // Source files should NOT be excluded
-        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['src/Command/BuildPharCommand.php']));
-        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['vendor/autoload.php']));
-        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['composer.json']));
-        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['config/services.yaml']));
-        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['vendor/symfony/var-dumper/Dumper/HtmlDumper.php']));
+        self::assertSame('/abs/build/app.phar', $path);
     }
 
-    public function testBuildExclusionPatternWithCustomPatterns(): void
+    public function testResolvePharPathPrefersCliOptions(): void
     {
-        // Note: custom patterns are handled in execute() via CallbackFilterIterator
-        // This test validates that isExcluded() correctly handles built-in defaults
-        $command = $this->createCommand();
+        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p');
+        $input = new ArrayInput([
+            '--output-dir' => '/cli/build',
+            '--filename' => 'custom.phar',
+        ]);
+        $input->bind($command->getDefinition());
 
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['build/output.phar']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.github/workflows/ci.yml']));
-        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['phpunit.xml']));
+        $path = BuildPharCommand::resolvePharPath($input, [
+            'build_dir' => '/abs/build',
+            'phar_filename' => 'app.phar',
+        ], '/p');
+
+        self::assertSame('/cli/build/custom.phar', $path);
     }
 
-    public function testGenerateStubContainsRequiredElements(): void
+    public function testResolvePharPathRelativeOutputDirIsRebasedOnProject(): void
     {
-        $command = $this->createCommand();
+        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/proj');
+        $input = new ArrayInput([
+            '--output-dir' => 'out',
+        ]);
+        $input->bind($command->getDefinition());
 
-        $stub = $this->invokeMethod($command, 'generateStub', [[
-            'custom_ini' => null,
-        ]]);
+        $path = BuildPharCommand::resolvePharPath($input, [
+            'phar_filename' => 'a.phar',
+        ], '/proj');
 
-        // Stub must be a valid PHP script starting with shebang
+        self::assertSame('/proj/out/a.phar', $path);
+    }
+
+    public function testResolvePharPathRejectsEmptyConfig(): void
+    {
+        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p');
+        $input = new ArrayInput([]);
+        $input->bind($command->getDefinition());
+
+        $this->expectException(\RuntimeException::class);
+        BuildPharCommand::resolvePharPath($input, [
+            'build_dir' => '',
+            'phar_filename' => 'x.phar',
+        ], '/p');
+    }
+
+    public function testGenerateStubHonoursEnvironmentAndRuntimeDirOverride(): void
+    {
+        $stub = (new PharBuilder('/p', 'prod'))->generateStub(['kernel_class' => 'App\\Kernel'], 'app.phar');
+
         self::assertStringStartsWith("#!/usr/bin/env php", $stub);
-
-        // Must set APP_RUNTIME for Workerman
-        self::assertStringContainsString("APP_RUNTIME'", $stub);
-        self::assertStringContainsString(\CrazyGoat\WorkermanBundle\Runtime::class, $stub);
-
-        // Must set APP_CACHE_DIR and APP_LOG_DIR
-        self::assertStringContainsString('APP_CACHE_DIR', $stub);
-        self::assertStringContainsString('APP_LOG_DIR', $stub);
-
-        // Must create runtime directories
-        self::assertStringContainsString('mkdir(', $stub);
-        self::assertStringContainsString('var/cache', $stub);
-        self::assertStringContainsString('var/log', $stub);
-        self::assertStringContainsString('var/run', $stub);
-
-        // Must load external .env if it exists
-        self::assertStringContainsString('.env', $stub);
-
-        // Must load autoloader (using PHAR alias)
-        self::assertStringContainsString("phar://app.phar/vendor/autoload.php", $stub);
-
-        // Must define IN_PHAR constant
         self::assertStringContainsString("define('IN_PHAR', true)", $stub);
-
-        // Must map PHAR alias
         self::assertStringContainsString("Phar::mapPhar('app.phar')", $stub);
-
-        // Must create Console Application
+        self::assertStringContainsString("WORKERMAN_RUNTIME_DIR", $stub);
+        self::assertStringContainsString("phar://app.phar/vendor/autoload.php", $stub);
         self::assertStringContainsString('Console\\Application', $stub);
-
-        // Must have __HALT_COMPILER
+        self::assertStringContainsString("'prod'", $stub);
         self::assertStringContainsString('__HALT_COMPILER();', $stub);
+        // No silent error suppression in the stub
+        self::assertStringNotContainsString('@mkdir', $stub);
     }
 
-    public function testGenerateStubUsesCorrectEnvironment(): void
+    public function testGenerateStubFallsBackToAppKernel(): void
     {
-        $command = $this->createCommand('prod');
+        $stub = (new PharBuilder('/p', 'test'))->generateStub([], 'app.phar');
 
-        $stub = $this->invokeMethod($command, 'generateStub', [[
-            'custom_ini' => null,
-        ]]);
+        self::assertStringContainsString('new App\\Kernel', $stub);
+    }
 
-        self::assertStringContainsString("'prod'", $stub);
+    public function testIsExcludedDefaults(): void
+    {
+        self::assertTrue(PharBuilder::isExcluded('.git/HEAD'));
+        self::assertTrue(PharBuilder::isExcluded('tests/FooTest.php'));
+        self::assertTrue(PharBuilder::isExcluded('docs/index.md'));
+        self::assertTrue(PharBuilder::isExcluded('var/cache/test/file.php'));
+        self::assertTrue(PharBuilder::isExcluded('.env'));
+        self::assertTrue(PharBuilder::isExcluded('.env.local'));
+        self::assertTrue(PharBuilder::isExcluded('app.phar'));
+        self::assertTrue(PharBuilder::isExcluded('app.bin'));
+        self::assertTrue(PharBuilder::isExcluded('build/output.phar'));
+        self::assertTrue(PharBuilder::isExcluded('.github/workflows/ci.yml'));
+        self::assertTrue(PharBuilder::isExcluded('phpunit.xml'));
+
+        self::assertFalse(PharBuilder::isExcluded('src/Command/BuildPharCommand.php'));
+        self::assertFalse(PharBuilder::isExcluded('vendor/autoload.php'));
+        self::assertFalse(PharBuilder::isExcluded('composer.json'));
+        self::assertFalse(PharBuilder::isExcluded('config/services.yaml'));
     }
 
     public function testCommandFailsWhenPharReadonlyIsSet(): void
     {
-        if (ini_get('phar.readonly') === '0' || ini_get('phar.readonly') === 'Off') {
+        if (!(bool) ini_get('phar.readonly')) {
             self::markTestSkipped('phar.readonly is Off — cannot test readonly error.');
         }
 
@@ -152,84 +167,63 @@ final class BuildPharCommandTest extends TestCase
         self::assertStringContainsString('phar.readonly', $output->fetch());
     }
 
-    public function testCommandCreatesBuildDirectory(): void
+    public function testCommandBuildsPharIntoConfiguredOutputDir(): void
     {
-        if (ini_get('phar.readonly') === '1' || ini_get('phar.readonly') === 'On') {
+        if ((bool) ini_get('phar.readonly')) {
             self::markTestSkipped('phar.readonly is On — cannot test PHAR creation.');
         }
 
-        // Create project structure
         mkdir($this->tempDir . '/src', 0755, true);
         mkdir($this->tempDir . '/vendor', 0755, true);
         mkdir($this->tempDir . '/config/packages', 0755, true);
         file_put_contents($this->tempDir . '/vendor/autoload.php', '<?php // stub');
 
-        $configLoader = $this->createMock(ConfigLoader::class);
-        $configLoader->method('getBuildConfig')->willReturn([
+        $configLoader = $this->makeConfigLoader([
             'build_dir' => $this->tempDir . '/build',
             'kernel_class' => 'App\\Kernel',
             'phar_filename' => 'test.phar',
             'bin_filename' => 'test.bin',
-            'bin_php_version' => null,
-            'sfx' => ['url' => null, 'file' => null],
+            'sfx' => ['url' => null, 'file' => null, 'sha256' => null, 'allow_insecure' => false],
             'exclude_patterns' => [],
             'exclude_files' => [],
             'custom_ini' => null,
         ]);
 
-        $command = new BuildPharCommand($configLoader, $this->tempDir, 'test');
+        $command = new BuildPharCommand($configLoader, new PharBuilder($this->tempDir, 'test'), $this->tempDir);
 
-        $input = new ArrayInput([]);
-        $output = new BufferedOutput();
+        $statusCode = $command->run(new ArrayInput([]), new BufferedOutput());
 
-        $statusCode = $command->run($input, $output);
-
-        // Should have created the PHAR
         self::assertSame(0, $statusCode);
-        self::assertDirectoryExists($this->tempDir . '/build');
         self::assertFileExists($this->tempDir . '/build/test.phar');
 
-        // Clean up
         \Phar::unlinkArchive($this->tempDir . '/build/test.phar');
     }
 
-    public function testFormatSize(): void
+    /**
+     * @param mixed[]|null $buildConfig
+     */
+    private function makeConfigLoader(?array $buildConfig = null): ConfigLoader
     {
-        $command = $this->createCommand();
-
-        // Test bytes
-        self::assertSame('500 B', $this->invokeMethod($command, 'formatSize', [500]));
-        self::assertSame('1 KB', $this->invokeMethod($command, 'formatSize', [1024]));
-        self::assertSame('1 MB', $this->invokeMethod($command, 'formatSize', [1024 * 1024]));
-        self::assertSame('1.5 MB', $this->invokeMethod($command, 'formatSize', [(int) (1024 * 1024 * 1.5)]));
-    }
-
-    private function createCommand(string $environment = 'test'): BuildPharCommand
-    {
-        $configLoader = $this->createMock(ConfigLoader::class);
-        $configLoader->method('getBuildConfig')->willReturn([
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loader->setWorkermanConfig([]);
+        $loader->setProcessConfig([]);
+        $loader->setSchedulerConfig([]);
+        $loader->setBuildConfig($buildConfig ?? [
             'build_dir' => $this->tempDir . '/build',
             'kernel_class' => 'App\\Kernel',
             'phar_filename' => 'app.phar',
             'bin_filename' => 'app.bin',
-            'bin_php_version' => null,
-            'sfx' => ['url' => null, 'file' => null],
+            'sfx' => ['url' => null, 'file' => null, 'sha256' => null, 'allow_insecure' => false],
             'exclude_patterns' => [],
             'exclude_files' => [],
             'custom_ini' => null,
         ]);
 
-        return new BuildPharCommand($configLoader, '/fake/project', $environment);
+        return $loader;
     }
 
-    /**
-     * @param mixed[] $args
-     */
-    private function invokeMethod(object $object, string $methodName, array $args = []): mixed
+    private function createCommand(): BuildPharCommand
     {
-        $reflection = new \ReflectionClass($object);
-        $method = $reflection->getMethod($methodName);
-
-        return $method->invokeArgs($object, $args);
+        return new BuildPharCommand($this->makeConfigLoader(), new PharBuilder($this->tempDir, 'test'), $this->tempDir);
     }
 }

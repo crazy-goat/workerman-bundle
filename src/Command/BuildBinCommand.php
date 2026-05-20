@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Command;
 
+use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
+use CrazyGoat\WorkermanBundle\Phar\ByteFormatter;
+use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
+use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -12,14 +17,16 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(name: 'workerman:build:bin', description: 'Build a standalone binary of the Symfony application (PHAR + static PHP)')]
-class BuildBinCommand extends Command
+final class BuildBinCommand extends Command
 {
     private const DEFAULT_SFX_URL = 'https://download.workerman.net/php/php%s.micro.sfx';
 
-    private const MAGIC_BYTES = "\xfd\xf6\x69\xe6";
-
     public function __construct(
-        private readonly BuildPharCommand $buildPharCommand,
+        private readonly ConfigLoader $configLoader,
+        private readonly PharBuilder $pharBuilder,
+        private readonly SfxDownloader $sfxDownloader,
+        private readonly BinaryComposer $binaryComposer,
+        private readonly string $projectDir,
     ) {
         parent::__construct();
     }
@@ -29,9 +36,13 @@ class BuildBinCommand extends Command
         $this
             ->addOption('output-dir', 'o', InputOption::VALUE_REQUIRED, 'Output directory for the binary')
             ->addOption('filename', null, InputOption::VALUE_REQUIRED, 'Name of the generated binary')
+            ->addOption('phar-filename', null, InputOption::VALUE_REQUIRED, 'Name of the intermediate PHAR file')
+            ->addOption('kernel-class', null, InputOption::VALUE_REQUIRED, 'Kernel class to use in the PHAR stub')
             ->addOption('sfx-file', null, InputOption::VALUE_REQUIRED, 'Local path to phpmicro.sfx binary')
             ->addOption('sfx-url', null, InputOption::VALUE_REQUIRED, 'URL to download phpmicro.sfx from')
+            ->addOption('sfx-checksum', null, InputOption::VALUE_REQUIRED, 'Expected SHA-256 of the SFX binary (hex)')
             ->addOption('php-version', null, InputOption::VALUE_REQUIRED, 'PHP version for the static binary (e.g. 8.3)')
+            ->addOption('insecure', null, InputOption::VALUE_NONE, 'Disable TLS peer verification when downloading the SFX (not recommended)')
         ;
     }
 
@@ -39,84 +50,113 @@ class BuildBinCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        // Step 1: Build the PHAR first
-        $io->section('Step 1/4: Building PHAR');
+        $buildConfig = $this->configLoader->getBuildConfig();
 
-        $pharResult = $this->buildPharCommand->execute($input, $output);
-        if ($pharResult !== Command::SUCCESS) {
-            // Errors already printed by BuildPharCommand
-            return $pharResult;
+        $kernelClassOption = $input->getOption('kernel-class');
+        if (is_string($kernelClassOption) && $kernelClassOption !== '') {
+            $buildConfig['kernel_class'] = $kernelClassOption;
         }
 
-        // Determine output paths (mirror BuildPharCommand logic)
-        $buildConfig = $this->buildPharCommand->getConfigLoader()->getBuildConfig();
-        $projectDir = $this->buildPharCommand->getProjectDir();
+        try {
+            $pharPath = self::resolvePharPath($input, $buildConfig, $this->projectDir);
+            $binPath = self::resolveBinPath($input, $buildConfig, $this->projectDir);
 
-        $buildDir = $input->getOption('output-dir') ?: $buildConfig['build_dir'] ?? $projectDir . '/build';
-        if (!is_string($buildDir)) {
-            $io->error('Invalid build directory.');
+            $io->section('Step 1/3: Building PHAR');
+            $this->pharBuilder->build($buildConfig, $pharPath);
+            $pharSize = filesize($pharPath);
+            $io->text(sprintf('PHAR: %s (%s)', $pharPath, ByteFormatter::format(is_int($pharSize) ? $pharSize : 0)));
+
+            $io->section('Step 2/3: Obtaining phpmicro.sfx');
+            $sfxPath = $this->resolveSfx($input, $buildConfig, dirname($binPath), $io);
+            $io->text(sprintf('SFX ready: %s', $sfxPath));
+
+            $io->section('Step 3/3: Composing standalone binary');
+            $customIni = isset($buildConfig['custom_ini']) && is_string($buildConfig['custom_ini'])
+                ? $buildConfig['custom_ini']
+                : null;
+            $this->binaryComposer->compose($sfxPath, $pharPath, $binPath, $customIni);
+        } catch (\RuntimeException $e) {
+            $io->error($e->getMessage());
 
             return Command::FAILURE;
         }
-        if (!str_starts_with($buildDir, '/')) {
-            $buildDir = $projectDir . '/' . $buildDir;
-        }
 
-        $pharFilename = $input->getOption('filename') ?: $buildConfig['phar_filename'] ?? 'app.phar';
-        if (!is_string($pharFilename)) {
-            $pharFilename = 'app.phar';
-        }
-        $binFilename = $buildConfig['bin_filename'] ?? 'app.bin';
-        if (!is_string($binFilename)) {
-            $binFilename = 'app.bin';
-        }
-
-        $pharPath = $buildDir . '/' . $pharFilename;
-        $binPath = $buildDir . '/' . $binFilename;
-
-        // Step 2: Obtain phpmicro.sfx
-        $io->section('Step 2/4: Obtaining phpmicro.sfx');
-
-        $sfxPath = $this->resolveSfxPath($input, $buildConfig, $buildDir, $io);
-        if ($sfxPath === null) {
-            return Command::FAILURE;
-        }
-
-        // Step 3: Build the binary
-        $io->section('Step 3/4: Building standalone binary');
-
-        $this->buildBinary($sfxPath, $pharPath, $binPath, $buildConfig['custom_ini'] ?? null, $io);
-
-        // Step 4: Verify
-        $io->section('Step 4/4: Verifying');
         $binSize = filesize($binPath);
         $io->success(sprintf(
             'Standalone binary built: %s (%s)',
             $binPath,
-            $this->formatSize(is_int($binSize) ? $binSize : 0),
+            ByteFormatter::format(is_int($binSize) ? $binSize : 0),
         ));
-
-        $io->note(sprintf(
-            'To run: ./%s workerman:server start  (or any other console command)',
-            $binFilename,
-        ));
+        $io->note(sprintf('To run: ./%s workerman:server start', basename($binPath)));
 
         return Command::SUCCESS;
     }
 
     /**
      * @param mixed[] $buildConfig
+     *
+     * @throws \RuntimeException
      */
-    private function resolveSfxPath(InputInterface $input, array $buildConfig, string $buildDir, SymfonyStyle $io): ?string
+    public static function resolvePharPath(InputInterface $input, array $buildConfig, string $projectDir): string
     {
-        // Priority: CLI option --sfx-file > config sfx.file > CLI option --sfx-url > config sfx.url > default URL
+        $buildDir = self::resolveBuildDir($input, $buildConfig, $projectDir);
 
+        $pharFilename = $input->getOption('phar-filename')
+            ?: ($buildConfig['phar_filename'] ?? 'app.phar');
+        if (!is_string($pharFilename) || $pharFilename === '') {
+            $pharFilename = 'app.phar';
+        }
+
+        return $buildDir . '/' . $pharFilename;
+    }
+
+    /**
+     * @param mixed[] $buildConfig
+     *
+     * @throws \RuntimeException
+     */
+    public static function resolveBinPath(InputInterface $input, array $buildConfig, string $projectDir): string
+    {
+        $buildDir = self::resolveBuildDir($input, $buildConfig, $projectDir);
+
+        $binFilename = $input->getOption('filename')
+            ?: ($buildConfig['bin_filename'] ?? 'app.bin');
+        if (!is_string($binFilename) || $binFilename === '') {
+            $binFilename = 'app.bin';
+        }
+
+        return $buildDir . '/' . $binFilename;
+    }
+
+    /**
+     * @param mixed[] $buildConfig
+     *
+     * @throws \RuntimeException
+     */
+    private static function resolveBuildDir(InputInterface $input, array $buildConfig, string $projectDir): string
+    {
+        $buildDir = $input->getOption('output-dir') ?: ($buildConfig['build_dir'] ?? $projectDir . '/build');
+        if (!is_string($buildDir) || $buildDir === '') {
+            throw new \RuntimeException('Invalid build configuration: build_dir must be a non-empty string.');
+        }
+
+        if (!str_starts_with($buildDir, '/')) {
+            $buildDir = $projectDir . '/' . $buildDir;
+        }
+
+        return $buildDir;
+    }
+
+    /**
+     * @param mixed[] $buildConfig
+     */
+    private function resolveSfx(InputInterface $input, array $buildConfig, string $downloadDir, SymfonyStyle $io): string
+    {
+        // Priority: --sfx-file > sfx.file > --sfx-url > sfx.url > default mirror
         $sfxFile = $input->getOption('sfx-file');
         if (is_string($sfxFile) && $sfxFile !== '') {
             if (!is_file($sfxFile)) {
-                $io->error(sprintf('SFX file not found: %s', $sfxFile));
-
-                return null;
+                throw new \RuntimeException(sprintf('SFX file not found: %s', $sfxFile));
             }
             $io->text(sprintf('Using local SFX file: %s', $sfxFile));
 
@@ -135,164 +175,36 @@ class BuildBinCommand extends Command
             $sfxUrl = $buildConfig['sfx']['url'] ?? null;
         }
 
-        if (is_string($sfxUrl) && $sfxUrl !== '') {
-            return $this->downloadSfx($sfxUrl, $buildDir, $io);
-        }
-
-        // Default: download from webman mirror
-        $phpVersion = $input->getOption('php-version');
-        if (!is_string($phpVersion) || $phpVersion === '') {
-            $phpVersion = $buildConfig['bin_php_version'] ?? null;
-        }
-        if (!is_string($phpVersion) || $phpVersion === '') {
-            $phpVersion = sprintf('%s.%s', PHP_MAJOR_VERSION, PHP_MINOR_VERSION);
-        }
-
-        $defaultUrl = sprintf(self::DEFAULT_SFX_URL, $phpVersion);
-        $io->text(sprintf('Downloading phpmicro.sfx for PHP %s from default mirror...', $phpVersion));
-
-        return $this->downloadSfx($defaultUrl, $buildDir, $io);
-    }
-
-    private function downloadSfx(string $url, string $buildDir, SymfonyStyle $io): ?string
-    {
-        $io->text(sprintf('Downloading: %s', $url));
-
-        $parts = explode('/', $url);
-        $filename = end($parts);
-        $destination = $buildDir . '/' . $filename;
-
-        if (is_file($destination)) {
-            $io->text(sprintf('Already downloaded: %s', $destination));
-
-            return $destination;
-        }
-
-        // Also check for .zip variant
-        $supportZip = class_exists(\ZipArchive::class);
-        $zipDestination = $destination . '.zip';
-
-        if (is_file($zipDestination)) {
-            $io->text(sprintf('Already downloaded: %s', $zipDestination));
-        } else {
-            $content = $this->httpDownload($url, $io);
-            if ($content === null) {
-                // Try .zip variant
-                if ($supportZip) {
-                    $io->text('Trying .zip variant...');
-                    $content = $this->httpDownload($url . '.zip', $io);
-                    if ($content === null) {
-                        return null;
-                    }
-                    file_put_contents($zipDestination, $content);
-                } else {
-                    return null;
-                }
-            } else {
-                file_put_contents($destination, $content);
+        if (!is_string($sfxUrl) || $sfxUrl === '') {
+            $phpVersion = $input->getOption('php-version');
+            if (!is_string($phpVersion) || $phpVersion === '') {
+                $phpVersion = $buildConfig['bin_php_version'] ?? null;
             }
-        }
-
-        // Unzip if needed
-        if ($supportZip && is_file($zipDestination) && !is_file($destination)) {
-            $io->text('Extracting SFX from zip...');
-            $zip = new \ZipArchive();
-            $zip->open($zipDestination, \ZipArchive::CHECKCONS);
-            $zip->extractTo($buildDir);
-            $zip->close();
-
-            if (!is_file($destination)) {
-                // The extracted file might have a different name - find it
-                $sfxFile = $buildDir . '/' . str_replace('.zip', '', $filename);
-                if (is_file($sfxFile)) {
-                    $destination = $sfxFile;
-                } else {
-                    $io->error('Failed to extract SFX from zip.');
-
-                    return null;
-                }
+            if (!is_string($phpVersion) || $phpVersion === '') {
+                $phpVersion = sprintf('%s.%s', PHP_MAJOR_VERSION, PHP_MINOR_VERSION);
             }
+            $sfxUrl = sprintf(self::DEFAULT_SFX_URL, $phpVersion);
+            $io->text(sprintf('Resolved SFX for PHP %s', $phpVersion));
         }
 
-        if (!is_file($destination)) {
-            $io->error('Failed to obtain phpmicro.sfx.');
-
-            return null;
+        $checksum = $input->getOption('sfx-checksum');
+        if (!is_string($checksum) || $checksum === '') {
+            $checksum = $buildConfig['sfx']['sha256'] ?? null;
+        }
+        if (!is_string($checksum) || $checksum === '') {
+            $checksum = null;
         }
 
-        $io->text(sprintf('SFX ready: %s', $destination));
-
-        return $destination;
-    }
-
-    private function httpDownload(string $url, SymfonyStyle $io): ?string
-    {
-        $context = null;
-        if (extension_loaded('openssl') && str_starts_with($url, 'https://')) {
-            $context = stream_context_create([
-                'ssl' => [
-                    'verify_peer' => false,
-                    'verify_peer_name' => false,
-                ],
-            ]);
+        $allowInsecure = (bool) $input->getOption('insecure') || (bool) ($buildConfig['sfx']['allow_insecure'] ?? false);
+        if ($allowInsecure) {
+            $io->warning('Downloading SFX with TLS peer verification disabled. This is unsafe — provide --sfx-checksum or use a trusted mirror.');
+        }
+        if ($checksum === null) {
+            $io->warning('No SFX SHA-256 configured. The downloaded binary is not verified. Set build.sfx.sha256 (or pass --sfx-checksum) to enable verification.');
         }
 
-        $result = @file_get_contents($url, false, $context);
+        $io->text(sprintf('Downloading: %s', $sfxUrl));
 
-        if ($result === false) {
-            $io->warning(sprintf('Failed to download: %s', $url));
-
-            return null;
-        }
-
-        return $result;
-    }
-
-    private function buildBinary(string $sfxPath, string $pharPath, string $binPath, string|null $customIni, SymfonyStyle $io): void
-    {
-        if (file_exists($binPath)) {
-            unlink($binPath);
-        }
-
-        // 1. Write SFX binary
-        $sfxContent = file_get_contents($sfxPath);
-        file_put_contents($binPath, $sfxContent);
-        unset($sfxContent);
-
-        // 2. Write custom INI header (if configured)
-        if (is_string($customIni) && $customIni !== '') {
-            $io->text('Embedding custom php.ini directives...');
-
-            $headerPath = $binPath . '.iniheader.tmp';
-            $f = fopen($headerPath, 'wb');
-            if (!is_resource($f)) {
-                throw new \RuntimeException(sprintf('Unable to open file "%s" for writing.', $headerPath));
-            }
-            fwrite($f, self::MAGIC_BYTES);
-            fwrite($f, pack('N', strlen($customIni)));
-            fwrite($f, $customIni);
-            fclose($f);
-
-            file_put_contents($binPath, file_get_contents($headerPath), FILE_APPEND);
-            unlink($headerPath);
-            unset($headerPath);
-        }
-
-        // 3. Append PHAR payload
-        file_put_contents($binPath, file_get_contents($pharPath), FILE_APPEND);
-
-        // 4. Make executable
-        chmod($binPath, 0755);
-    }
-
-    private function formatSize(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-
-        for ($i = 0; $bytes >= 1024 && $i < count($units) - 1; $i++) {
-            $bytes /= 1024;
-        }
-
-        return round($bytes, 2) . ' ' . $units[$i];
+        return $this->sfxDownloader->fetch($sfxUrl, $downloadDir, $checksum, $allowInsecure);
     }
 }

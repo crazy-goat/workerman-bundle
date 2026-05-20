@@ -242,23 +242,25 @@ final readonly class ConfigurationTreeBuilder
                                     ->info('Local path to an existing phpmicro.sfx binary')
                                     ->defaultNull()
                                     ->end()
+                                ->scalarNode('sha256')
+                                    ->info('SHA-256 hex digest of the SFX binary. When set, the downloaded SFX is verified against it. Strongly recommended.')
+                                    ->defaultNull()
+                                    ->end()
+                                ->booleanNode('allow_insecure')
+                                    ->info('Disable TLS peer verification when downloading the SFX. Off by default. Use only for local mirrors with self-signed certificates.')
+                                    ->defaultFalse()
+                                    ->end()
                                 ->end()
                             ->end()
                         ->arrayNode('exclude_patterns')
-                            ->info('Additional regex patterns for files to exclude from the PHAR (added on top of built-in defaults)')
+                            ->info('Additional regex patterns for files to exclude from the PHAR (added on top of built-in defaults). Note: .env* files at project root and tests/, var/, build/, .git/, .github/, docs/ are always excluded.')
                             ->prototype('scalar')->end()
                             ->defaultValue([])
                             ->end()
                         ->arrayNode('exclude_files')
                             ->info('Specific files to exclude from the PHAR (relative to project root)')
                             ->prototype('scalar')->end()
-                            ->defaultValue([
-                                '.env',
-                                '.env.local',
-                                '.env.prod',
-                                '.env.prod.local',
-                                '.env.test',
-                            ])
+                            ->defaultValue([])
                             ->end()
                         ->scalarNode('custom_ini')
                             ->info('Custom php.ini directives for the standalone binary (BIN mode only)')

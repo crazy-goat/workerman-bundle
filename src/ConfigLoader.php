@@ -8,7 +8,7 @@ use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
-class ConfigLoader implements CacheWarmerInterface
+final class ConfigLoader implements CacheWarmerInterface
 {
     /** @var mixed[] */
     private array $config;
@@ -64,15 +64,17 @@ class ConfigLoader implements CacheWarmerInterface
             return $this->config;
         }
 
-        // Config not set in memory — try to load from cache file.
-        // Use @ to suppress warning when cache file doesn't exist (e.g., during test teardown).
+        // Config not set in memory — load from cache file.
         $cachePath = $this->cache->getPath();
         if (is_file($cachePath)) {
             return $this->config = require $cachePath;
         }
 
-        // Cache not available and config not injected — this happens when ServerManager
-        // creates a fresh ConfigLoader outside the DI container. Return empty sections.
+        // Cache not available and config not injected. This is reachable when a fresh
+        // ConfigLoader is constructed outside the DI container (e.g. ServerManager's
+        // fallback path) and no cache has been warmed up yet. Returning empty sections
+        // is intentional so downstream getters do not error; the caller is responsible
+        // for treating "empty config" as "no Workerman configuration".
         return $this->config = [
             ConfigSection::WORKERMAN->value => [],
             ConfigSection::PROCESS->value => [],

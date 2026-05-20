@@ -185,6 +185,8 @@ final class ServicesConfiguratorTest extends TestCase
                 'sfx' => [
                     'url' => null,
                     'file' => null,
+                    'sha256' => null,
+                    'allow_insecure' => false,
                 ],
                 'exclude_patterns' => [],
                 'exclude_files' => [],

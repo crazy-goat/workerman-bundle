@@ -10,14 +10,25 @@ declare(strict_types=1);
 $exitCode = 0;
 $appDir = __DIR__ . '/../e2e';
 
+/**
+ * @return array{0: list<string>, 1: int}
+ */
 function pharExec(string $pharPath, string $cmd, bool $quiet = false): array
 {
-    $c = sprintf('APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime APP_ENV=test %s -d phar.readonly=0 %s workerman:server %s 2>&1',
-        PHP_BINARY, escapeshellarg($pharPath), $cmd);
+    $c = sprintf(
+        'APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime APP_ENV=test %s -d phar.readonly=0 %s workerman:server %s 2>&1',
+        PHP_BINARY,
+        escapeshellarg($pharPath),
+        $cmd,
+    );
+    $out = [];
     exec($c, $out, $ret);
     return [$out, $ret];
 }
 
+/**
+ * @return array{0: int, 1: string, 2: string}
+ */
 function httpGet(string $url, int $timeout = 5): array
 {
     $ch = curl_init($url);
@@ -28,7 +39,7 @@ function httpGet(string $url, int $timeout = 5): array
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
     curl_close($ch);
-    return [$code, (string)$body, $err];
+    return [$code, (string) $body, $err];
 }
 
 function assertEq(mixed $expected, mixed $actual, string $msg): void
@@ -43,16 +54,26 @@ try {
 
     // ---- 1. Install ----
     echo "1) Installing dependencies...\n";
+    $out = [];
     exec('composer install --no-interaction --working-dir=' . escapeshellarg($appDir) . ' 2>&1', $out, $ret);
-    if ($ret !== 0) throw new \RuntimeException('Composer install failed');
+    if ($ret !== 0) {
+        throw new \RuntimeException('Composer install failed');
+    }
 
     // ---- 2. Build PHAR ----
     echo "\n2) Building PHAR...\n";
     $pharPath = $appDir . '/build/test-app.phar';
-    exec(sprintf('php -d phar.readonly=0 %s/console workerman:build:phar -o %s/build --filename test-app.phar 2>&1',
-        escapeshellarg($appDir), escapeshellarg($appDir)), $out, $ret);
-    if ($ret !== 0 || !file_exists($pharPath)) throw new \RuntimeException('PHAR build failed');
-    echo "   PHAR: {$pharPath} (" . number_format(filesize($pharPath)) . " bytes)\n";
+    $out = [];
+    exec(sprintf(
+        'php -d phar.readonly=0 %s/console workerman:build:phar -o %s/build --filename test-app.phar 2>&1',
+        escapeshellarg($appDir),
+        escapeshellarg($appDir),
+    ), $out, $ret);
+    if ($ret !== 0 || !file_exists($pharPath)) {
+        throw new \RuntimeException('PHAR build failed');
+    }
+    $size = filesize($pharPath);
+    echo "   PHAR: {$pharPath} (" . number_format((float) ($size === false ? 0 : $size)) . " bytes)\n";
 
     // ---- 3. Start ----
     echo "\n3) Starting server...\n";
@@ -100,9 +121,9 @@ try {
 
     // ---- 10. HTTP after stop (should fail) ----
     echo "\n10) Verifying server is stopped...\n";
-    [$code, , $err] = httpGet('http://127.0.0.1:8887/health', 2);
-    // Connection refused is expected — if we got a response, something's wrong
-    if (($err === '' || $code !== 0) && $code !== 0) {
+    [$code, , ] = httpGet('http://127.0.0.1:8887/health', 2);
+    // Connection refused → $code === 0. Any real HTTP code means the server is still up.
+    if ($code !== 0) {
         throw new \RuntimeException('Server still responding after stop (HTTP ' . $code . ')');
     }
     echo "   Server stopped (connection refused) — OK\n";
@@ -115,8 +136,11 @@ try {
 } finally {
     // Ensure server is stopped
     if (isset($pharPath) && file_exists($pharPath)) {
-        exec(sprintf('APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime %s -d phar.readonly=0 %s workerman:server stop 2>&1',
-            PHP_BINARY, escapeshellarg($pharPath)));
+        exec(sprintf(
+            'APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime %s -d phar.readonly=0 %s workerman:server stop 2>&1',
+            PHP_BINARY,
+            escapeshellarg($pharPath),
+        ));
         sleep(1);
     }
 }
