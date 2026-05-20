@@ -94,7 +94,7 @@
             "php bin/install-git-hook.php"
         ],
         "test:build:phar": [
-            "@php -d phar.readonly=0 tests/build-phar-test.php"
+            "@php -d phar.readonly=0 tests/build-phar-e2e-test.php"
         ],
         "test:build:bin": [
             "@php -d phar.readonly=0 vendor/bin/phpunit --filter='BuildBin' tests/Command/"

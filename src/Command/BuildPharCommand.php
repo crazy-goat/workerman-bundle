@@ -29,6 +29,7 @@ class BuildPharCommand extends Command
             ->addOption('output-dir', 'o', InputOption::VALUE_REQUIRED, 'Output directory for the PHAR file')
             ->addOption('filename', null, InputOption::VALUE_REQUIRED, 'Name of the generated PHAR file')
             ->addOption('kernel-class', null, InputOption::VALUE_REQUIRED, 'Kernel class to use in the PHAR stub')
+            ->addOption('include-tests', null, InputOption::VALUE_NONE, 'Include tests/ directory in the PHAR (for testing only)')
         ;
     }
 
@@ -97,6 +98,7 @@ class BuildPharCommand extends Command
 
         $excludePatterns = $buildConfig['exclude_patterns'] ?? [];
         $excludeFiles = $buildConfig['exclude_files'] ?? [];
+        $includeTests = (bool) $input->getOption('include-tests');
 
         // Build the set of files to include (everything except excluded patterns)
         $directory = new \RecursiveDirectoryIterator(
@@ -108,7 +110,7 @@ class BuildPharCommand extends Command
         $excludePatterns = is_array($excludePatterns) ? $excludePatterns : [];
         $excludeFiles = is_array($excludeFiles) ? $excludeFiles : [];
 
-        $filtered = new \CallbackFilterIterator($iterator, function (\SplFileInfo $file) use ($excludePatterns, $excludeFiles): bool {
+        $filtered = new \CallbackFilterIterator($iterator, function (\SplFileInfo $file) use ($excludePatterns, $excludeFiles, $includeTests): bool {
             $relativePath = str_replace(
                 [$this->projectDir . '/', $this->projectDir],
                 '',
@@ -121,9 +123,10 @@ class BuildPharCommand extends Command
             }
 
             // Check against built-in exclusion patterns
-            if ($this->isExcluded($relativePath)) {
+            if (!$includeTests && $this->isExcluded($relativePath)) {
                 return false;
             }
+
 
             // Check against config exclude_patterns
             foreach ($excludePatterns as $pattern) {
