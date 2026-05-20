@@ -101,7 +101,7 @@ class BuildPharCommand extends Command
         // Build the set of files to include (everything except excluded patterns)
         $directory = new \RecursiveDirectoryIterator(
             $this->projectDir,
-            \RecursiveDirectoryIterator::SKIP_DOTS
+            \RecursiveDirectoryIterator::SKIP_DOTS,
         );
         $iterator = new \RecursiveIteratorIterator($directory);
 
@@ -112,7 +112,7 @@ class BuildPharCommand extends Command
             $relativePath = str_replace(
                 [$this->projectDir . '/', $this->projectDir],
                 '',
-                $file->getPathname()
+                $file->getPathname(),
             );
             $relativePath = ltrim($relativePath, '/');
 
