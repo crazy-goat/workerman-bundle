@@ -3,6 +3,6 @@ composer.lock
 vendor/
 var/
 .vscode/
-.worktrees//tests/Integration/build/
-/tests/Integration/vendor/
-/tests/Integration/composer.lock
+/e2e/build/
+/e2e/vendor/
+/e2e/composer.lock

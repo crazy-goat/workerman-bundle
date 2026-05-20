@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 
 $exitCode = 0;
-$appDir = __DIR__ . '/Integration';
+$appDir = __DIR__ . '/../e2e';
 
 function pharExec(string $pharPath, string $cmd, bool $quiet = false): array
 {
@@ -64,7 +64,7 @@ try {
     echo "\n4) HTTP GET /health...\n";
     [$code, $body] = httpGet('http://127.0.0.1:8887/health');
     assertEq(200, $code, 'HTTP status');
-    $data = json_decode($body, true);
+    $data = json_decode((string) $body, true);
     assertEq('ok', $data['status'] ?? null, 'Response status');
     echo "   HTTP/{$code}: {$body}\n";
 
@@ -101,11 +101,9 @@ try {
     // ---- 10. HTTP after stop (should fail) ----
     echo "\n10) Verifying server is stopped...\n";
     [$code, , $err] = httpGet('http://127.0.0.1:8887/health', 2);
-    if ($err === '' || $code !== 0) {
-        // Connection refused is expected — if we got a response, something's wrong
-        if ($code !== 0) {
-            throw new \RuntimeException('Server still responding after stop (HTTP ' . $code . ')');
-        }
+    // Connection refused is expected — if we got a response, something's wrong
+    if (($err === '' || $code !== 0) && $code !== 0) {
+        throw new \RuntimeException('Server still responding after stop (HTTP ' . $code . ')');
     }
     echo "   Server stopped (connection refused) — OK\n";
 

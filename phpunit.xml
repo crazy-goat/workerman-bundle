@@ -10,7 +10,6 @@
   <testsuites>
     <testsuite name="Test Suite">
       <directory>tests</directory>
-      <exclude>tests/Integration</exclude>
     </testsuite>
   </testsuites>
   <coverage/>
