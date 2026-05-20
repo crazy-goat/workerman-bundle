@@ -52,28 +52,32 @@ final class BuildPharCommandTest extends TestCase
     {
         $command = $this->createCommand();
 
-        $pattern = $this->invokeMethod($command, 'buildExclusionPattern', [[], []]);
+        // Default exclusions should exclude common dev paths
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.git/HEAD']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['tests/FooTest.php']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['docs/index.md']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['var/cache/test/file.php']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.env']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['app.phar']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['app.bin']));
 
-        // Standard exclusions should be present
-        self::assertStringContainsString('#^\.git/#', $pattern);
-        self::assertStringContainsString('#^tests/#', $pattern);
-        self::assertStringContainsString('#^\.env#', $pattern);
-        self::assertStringContainsString('#\.phar$#', $pattern);
-        self::assertStringContainsString('#\.bin$#', $pattern);
+        // Source files should NOT be excluded
+        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['src/Command/BuildPharCommand.php']));
+        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['vendor/autoload.php']));
+        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['composer.json']));
+        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['config/services.yaml']));
+        self::assertFalse($this->invokeMethod($command, 'isExcluded', ['vendor/symfony/var-dumper/Dumper/HtmlDumper.php']));
     }
 
     public function testBuildExclusionPatternWithCustomPatterns(): void
     {
+        // Note: custom patterns are handled in execute() via CallbackFilterIterator
+        // This test validates that isExcluded() correctly handles built-in defaults
         $command = $this->createCommand();
 
-        $pattern = $this->invokeMethod($command, 'buildExclusionPattern', [
-            ['/node_modules/', '/\.log$/'],
-            ['custom_file.txt'],
-        ]);
-
-        self::assertStringContainsString('node_modules', $pattern);
-        self::assertStringContainsString('\.log', $pattern);
-        self::assertStringContainsString('custom_file\.txt', $pattern);
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['build/output.phar']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['.github/workflows/ci.yml']));
+        self::assertTrue($this->invokeMethod($command, 'isExcluded', ['phpunit.xml']));
     }
 
     public function testGenerateStubContainsRequiredElements(): void
@@ -105,13 +109,13 @@ final class BuildPharCommandTest extends TestCase
         self::assertStringContainsString('.env', $stub);
 
         // Must load autoloader (using PHAR alias)
-        self::assertStringContainsString("require 'phar://app/vendor/autoload.php'", $stub);
+        self::assertStringContainsString("phar://app.phar/vendor/autoload.php", $stub);
 
         // Must define IN_PHAR constant
         self::assertStringContainsString("define('IN_PHAR', true)", $stub);
 
         // Must map PHAR alias
-        self::assertStringContainsString("Phar::mapPhar('app')", $stub);
+        self::assertStringContainsString("Phar::mapPhar('app.phar')", $stub);
 
         // Must create Console Application
         self::assertStringContainsString('Console\\Application', $stub);

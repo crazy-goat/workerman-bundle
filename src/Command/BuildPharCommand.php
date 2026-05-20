@@ -28,6 +28,7 @@ class BuildPharCommand extends Command
         $this
             ->addOption('output-dir', 'o', InputOption::VALUE_REQUIRED, 'Output directory for the PHAR file')
             ->addOption('filename', null, InputOption::VALUE_REQUIRED, 'Name of the generated PHAR file')
+            ->addOption('kernel-class', null, InputOption::VALUE_REQUIRED, 'Kernel class to use in the PHAR stub')
         ;
     }
 
@@ -48,6 +49,13 @@ class BuildPharCommand extends Command
         }
 
         $buildConfig = $this->configLoader->getBuildConfig();
+
+        // CLI --kernel-class overrides config value
+        $kernelClassOption = $input->getOption('kernel-class');
+        if (is_string($kernelClassOption) && $kernelClassOption !== '') {
+            $buildConfig['kernel_class'] = $kernelClassOption;
+        }
+
         $workermanConfig = $this->configLoader->getWorkermanConfig();
 
         // Warn if file_monitor is enabled — it's useless in a PHAR (files are frozen)
@@ -87,22 +95,67 @@ class BuildPharCommand extends Command
         $phar = new \Phar($pharPath, 0, $pharFilename);
         $phar->startBuffering();
 
-        // Build the exclusion regex pattern
         $excludePatterns = $buildConfig['exclude_patterns'] ?? [];
         $excludeFiles = $buildConfig['exclude_files'] ?? [];
 
-        $excludePattern = $this->buildExclusionPattern(
-            is_array($excludePatterns) ? $excludePatterns : [],
-            is_array($excludeFiles) ? $excludeFiles : [],
+        // Build the set of files to include (everything except excluded patterns)
+        $directory = new \RecursiveDirectoryIterator(
+            $this->projectDir,
+            \RecursiveDirectoryIterator::SKIP_DOTS
         );
+        $iterator = new \RecursiveIteratorIterator($directory);
 
-        $io->text(sprintf('Exclusion pattern: %s', $excludePattern));
+        $excludePatterns = is_array($excludePatterns) ? $excludePatterns : [];
+        $excludeFiles = is_array($excludeFiles) ? $excludeFiles : [];
 
-        $phar->buildFromDirectory($this->projectDir, $excludePattern);
+        $filtered = new \CallbackFilterIterator($iterator, function (\SplFileInfo $file) use ($excludePatterns, $excludeFiles): bool {
+            $relativePath = str_replace(
+                [$this->projectDir . '/', $this->projectDir],
+                '',
+                $file->getPathname()
+            );
+            $relativePath = ltrim($relativePath, '/');
+
+            if ($relativePath === '') {
+                return false;
+            }
+
+            // Check against built-in exclusion patterns
+            if ($this->isExcluded($relativePath)) {
+                return false;
+            }
+
+            // Check against config exclude_patterns
+            foreach ($excludePatterns as $pattern) {
+                // Strip delimiters if present
+                $inner = $pattern;
+                if (strlen($pattern) > 2 && $pattern[0] === $pattern[strlen($pattern) - 1]) {
+                    $inner = substr($pattern, 1, -1);
+                }
+                // Ensure ^ prefix for matching from start of relative path
+                if (!str_starts_with($inner, '^')) {
+                    $inner = '^' . $inner;
+                }
+                if (preg_match('#' . $inner . '#', $relativePath)) {
+                    return false;
+                }
+            }
+
+            // Check against config exclude_files (exact match relative to project root)
+            foreach ($excludeFiles as $file) {
+                if ($relativePath === $file || str_starts_with($relativePath, $file . '/')) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        $phar->buildFromIterator($filtered, $this->projectDir);
 
         $io->text('Files collected, generating stub...');
 
-        $phar->setStub($this->generateStub($buildConfig));
+        $phar->setStub($this->generateStub($buildConfig, $pharFilename));
 
         $phar->stopBuffering();
 
@@ -115,52 +168,38 @@ class BuildPharCommand extends Command
     }
 
     /**
-     * @param string[] $excludePatterns
-     * @param string[] $excludeFiles
+     * Check if a relative path should be excluded from the PHAR archive.
      */
-    protected function buildExclusionPattern(array $excludePatterns, array $excludeFiles): string
+    protected function isExcluded(string $relativePath): bool
     {
-        // Standard patterns: build dir, vendor build artifacts, VCS, dev tools
-        $patterns = [
-            '#^build/#',
-            '#^\.git/#',
-            '#^\.github/#',
-            '#^tests/#',
-            '#^docs/#',
-            '#phpunit\.xml#',
-            '#\.php-cs-fixer#',
-            '#phpstan\.neon#',
-            '#rector\.php#',
-            // Exclude the PHAR/binary files from the archive itself
-            '#\.phar$#',
-            '#\.bin$#',
-            // Env files handled separately (live outside PHAR)
-            '#^\.env#',
-        ];
-
-        foreach ($excludePatterns as $pattern) {
-            $patterns[] = $pattern;
+        // Standard patterns: build dir, VCS, dev tools, cache, etc.
+        if (preg_match('#^(build/|\\.git/|\\.github/|tests/|docs/|var/)#', $relativePath)) {
+            return true;
         }
 
-        foreach ($excludeFiles as $file) {
-            $patterns[] = '#^' . preg_quote($file, '#') . '#';
+        // Config/dev files at the root
+        // Config/dev files at the root
+        if (preg_match('#^(phpunit\.xml|\.php-cs-fixer|phpstan\.neon|rector\.php)$#', $relativePath)) {
+            return true;
         }
 
-        return implode('|', $patterns);
+        // PHAR/binary output files at root
+        if (preg_match('#^[^/]+\.(phar|bin)$#', $relativePath)) {
+            return true;
+        }
+
+        // Env files at root
+        return (bool) preg_match('#^\.env#', $relativePath);
     }
-
     /**
      * @param mixed[] $buildConfig
      */
-    protected function generateStub(array $buildConfig): string
+    protected function generateStub(array $buildConfig, string $pharAlias = 'app.phar'): string
     {
         $runtimeEnv = \CrazyGoat\WorkermanBundle\Runtime::class;
         $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
             ? $buildConfig['kernel_class']
             : 'App\\Kernel';
-        $pharAlias = \is_string($buildConfig['phar_filename'] ?? null) && $buildConfig['phar_filename'] !== ''
-            ? basename($buildConfig['phar_filename'], '.phar')
-            : 'app';
 
         return <<<"PHP"
 #!/usr/bin/env php

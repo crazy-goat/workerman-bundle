@@ -245,22 +245,12 @@ final readonly class ConfigurationTreeBuilder
                                 ->end()
                             ->end()
                         ->arrayNode('exclude_patterns')
-                            ->info('Regex patterns for files to exclude from the PHAR')
+                            ->info('Additional regex patterns for files to exclude from the PHAR (added on top of built-in defaults)')
                             ->prototype('scalar')->end()
-                            ->defaultValue([
-                                '/\.git/',
-                                '/\.github/',
-                                '/tests/',
-                                '/docs/',
-                                '/phpunit\.xml/',
-                                '/\.php-cs-fixer/',
-                                '/phpstan\.neon/',
-                                '/rector\.php/',
-                                '/var/',
-                            ])
+                            ->defaultValue([])
                             ->end()
                         ->arrayNode('exclude_files')
-                            ->info('Specific files to exclude from the PHAR')
+                            ->info('Specific files to exclude from the PHAR (relative to project root)')
                             ->prototype('scalar')->end()
                             ->defaultValue([
                                 '.env',
