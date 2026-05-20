@@ -7,8 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Test\Command;
 use CrazyGoat\WorkermanBundle\Command\BuildBinCommand;
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Output\BufferedOutput;
 
 final class BuildBinCommandTest extends TestCase
 {
