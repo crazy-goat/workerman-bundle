@@ -34,16 +34,26 @@ final class ComposerAuditE2ETest extends TestCase
         );
     }
 
-    public function testComposerAuditCompletesSuccessfully(): void
+    public function testComposerAuditProducesValidJson(): void
     {
-        $command = 'composer audit --no-dev 2>&1';
-        $output = $this->runCommand($command);
+        $output = $this->runAuditCommand();
 
-        self::assertStringNotContainsString(
-            'ComposerAuditCommand',
-            $output,
-            'composer audit should not throw exceptions',
-        );
+        $decoded = \json_decode($output, true);
+        self::assertIsArray($decoded, 'composer audit --format=json must produce valid JSON');
+
+        self::assertArrayHasKey('advisories', $decoded, 'Audit JSON must contain advisories key');
+        self::assertArrayHasKey('abandoned', $decoded, 'Audit JSON must contain abandoned key');
+    }
+
+    public function testComposerAuditJsonHasAbandonedKey(): void
+    {
+        $output = $this->runAuditCommand();
+
+        $decoded = \json_decode($output, true);
+        self::assertIsArray($decoded, 'composer audit --format=json must produce valid JSON');
+
+        self::assertArrayHasKey('abandoned', $decoded, 'Audit JSON must contain abandoned key');
+        self::assertIsArray($decoded['abandoned'], 'abandoned value must be an array');
     }
 
     private function runCommand(string $command): string
@@ -87,5 +97,58 @@ final class ComposerAuditE2ETest extends TestCase
         }
 
         return \is_string($stdout) ? $stdout : '';
+    }
+
+    private function runAuditCommand(): string
+    {
+        $command = 'composer audit --format=json --no-dev';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $proc = \proc_open(
+            $command,
+            $descriptors,
+            $pipes,
+            $this->projectDir,
+        );
+
+        if (!\is_resource($proc)) {
+            self::fail('Failed to start composer audit');
+        }
+
+        \fclose($pipes[0]);
+        $stdout = \stream_get_contents($pipes[1]);
+        \fclose($pipes[1]);
+        $stderr = \stream_get_contents($pipes[2]);
+        \fclose($pipes[2]);
+
+        $exitCode = \proc_close($proc);
+
+        $stdout = \is_string($stdout) ? $stdout : '';
+        $stderr = \is_string($stderr) ? $stderr : '';
+
+        // composer audit exits 0 (clean) or 1 (advisories/abandoned found)
+        if ($exitCode !== 0 && $exitCode !== 1) {
+            self::fail(\sprintf(
+                "composer audit failed unexpectedly (exit code %d):\nstdout: %s\nstderr: %s",
+                $exitCode,
+                $stdout,
+                $stderr,
+            ));
+        }
+
+        if ($stdout === '') {
+            self::fail(\sprintf(
+                "composer audit produced no output (exit code %d):\nstderr: %s",
+                $exitCode,
+                $stderr,
+            ));
+        }
+
+        return $stdout;
     }
 }
