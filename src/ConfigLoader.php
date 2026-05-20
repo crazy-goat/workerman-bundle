@@ -59,7 +59,28 @@ final class ConfigLoader implements CacheWarmerInterface
     /** @return array<string, mixed[]> */
     private function getConfig(): array
     {
-        return $this->config ??= require $this->cache->getPath();
+        // If config was set directly via setters, return it without filesystem access.
+        if (isset($this->config)) {
+            return $this->config;
+        }
+
+        // Config not set in memory — load from cache file.
+        $cachePath = $this->cache->getPath();
+        if (is_file($cachePath)) {
+            return $this->config = require $cachePath;
+        }
+
+        // Cache not available and config not injected. This is reachable when a fresh
+        // ConfigLoader is constructed outside the DI container (e.g. ServerManager's
+        // fallback path) and no cache has been warmed up yet. Returning empty sections
+        // is intentional so downstream getters do not error; the caller is responsible
+        // for treating "empty config" as "no Workerman configuration".
+        return $this->config = [
+            ConfigSection::WORKERMAN->value => [],
+            ConfigSection::PROCESS->value => [],
+            ConfigSection::SCHEDULER->value => [],
+            ConfigSection::BUILD->value => [],
+        ];
     }
 
     /** @param mixed[] $config */
@@ -92,9 +113,21 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->getConfig()[ConfigSection::PROCESS->value];
     }
 
+    /** @param mixed[] $config */
+    public function setBuildConfig(array $config): void
+    {
+        $this->config[ConfigSection::BUILD->value] = $config;
+    }
+
     /** @return mixed[] */
     public function getSchedulerConfig(): array
     {
         return $this->getConfig()[ConfigSection::SCHEDULER->value];
+    }
+
+    /** @return mixed[] */
+    public function getBuildConfig(): array
+    {
+        return $this->getConfig()[ConfigSection::BUILD->value];
     }
 }

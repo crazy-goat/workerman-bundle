@@ -61,9 +61,9 @@
         "audit": {
             "block-insecure": true,
             "ignore": [
-    "PKSA-d1rr-z8zb-qnm7",
-    "PKSA-py8y-z9q7-q197"
-],
+                "PKSA-d1rr-z8zb-qnm7",
+                "PKSA-py8y-z9q7-q197"
+            ],
             "abandoned": "report"
         },
         "allow-plugins": {
@@ -92,6 +92,12 @@
         ],
         "post-update-cmd": [
             "php bin/install-git-hook.php"
+        ],
+        "test:build:phar": [
+            "@php -d phar.readonly=0 tests/build-phar-e2e-test.php"
+        ],
+        "test:build:bin": [
+            "@php -d phar.readonly=0 vendor/bin/phpunit --filter='BuildBin' tests/Command/"
         ]
     }
 }

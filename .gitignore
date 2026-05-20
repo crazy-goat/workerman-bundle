@@ -3,4 +3,6 @@ composer.lock
 vendor/
 var/
 .vscode/
-.worktrees/
+/e2e/build/
+/e2e/vendor/
+/e2e/composer.lock

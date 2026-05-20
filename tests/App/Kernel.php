@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\App;
 
 use CrazyGoat\WorkermanBundle\WorkermanBundle;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
@@ -56,6 +57,12 @@ final class Kernel extends BaseKernel
                     ],
                 ],
             ]);
+
+            // Prevent log messages from leaking into HTTP responses.
+            // The default Logger uses error_log() which writes to STDOUT,
+            // which Workerman routes to the client socket.
+            $container->register('logger', NullLogger::class)
+                ->setPublic(false);
 
             $container->register('kernel', self::class)
                 ->addTag('controller.service_arguments')

@@ -222,7 +222,7 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testHandlerWithRootDirectoryAddsStaticFilesMiddleware(): void
     {
-        $result = $this->handler->withRootDirectory('/var/www');
+        $result = $this->handler->withRootDirectory(sys_get_temp_dir());
         $this->assertSame($this->handler, $result);
     }
 

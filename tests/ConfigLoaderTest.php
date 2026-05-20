@@ -49,9 +49,10 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only process and scheduler config
+        // Set only process, scheduler, and build config
         $loader->setProcessConfig(['some' => 'process']);
         $loader->setSchedulerConfig(['some' => 'scheduler']);
+        $loader->setBuildConfig(['some' => 'build']);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('All config sections must be set before warming up. Missing: workerman');
@@ -63,9 +64,10 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman and scheduler config
+        // Set only workerman, scheduler, and build config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setSchedulerConfig(['some' => 'scheduler']);
+        $loader->setBuildConfig(['some' => 'build']);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('All config sections must be set before warming up. Missing: process');
@@ -77,12 +79,28 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman and process config
+        // Set only workerman, process, and build config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setProcessConfig(['some' => 'process']);
+        $loader->setBuildConfig(['some' => 'build']);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('All config sections must be set before warming up. Missing: scheduler');
+
+        $loader->warmUp($this->tempDir . '/cache');
+    }
+
+    public function testWarmUpThrowsExceptionWhenBuildConfigIsMissing(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        // Set only workerman, process, and scheduler config
+        $loader->setWorkermanConfig(['some' => 'workerman']);
+        $loader->setProcessConfig(['some' => 'process']);
+        $loader->setSchedulerConfig(['some' => 'scheduler']);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('All config sections must be set before warming up. Missing: build');
 
         $loader->warmUp($this->tempDir . '/cache');
     }
@@ -93,6 +111,7 @@ final class ConfigLoaderTest extends TestCase
 
         // Set only workerman config
         $loader->setWorkermanConfig(['some' => 'workerman']);
+        $loader->setBuildConfig(['some' => 'build']);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('All config sections must be set before warming up. Missing: process, scheduler');
@@ -107,7 +126,7 @@ final class ConfigLoaderTest extends TestCase
         // Don't set any config
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('All config sections must be set before warming up. Missing: workerman, process, scheduler');
+        $this->expectExceptionMessage('All config sections must be set before warming up. Missing: workerman, process, scheduler, build');
 
         $loader->warmUp($this->tempDir . '/cache');
     }
@@ -120,6 +139,7 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig(['schedules' => []]);
+        $loader->setBuildConfig(['build_dir' => '/tmp/build']);
 
         // Should not throw exception
         $result = $loader->warmUp($this->tempDir . '/cache');
@@ -133,9 +153,11 @@ final class ConfigLoaderTest extends TestCase
         $this->assertArrayHasKey('workerman', $loadedConfig);
         $this->assertArrayHasKey('process', $loadedConfig);
         $this->assertArrayHasKey('scheduler', $loadedConfig);
+        $this->assertArrayHasKey('build', $loadedConfig);
         $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:8080']], $loadedConfig['workerman']);
         $this->assertSame(['processes' => []], $loadedConfig['process']);
         $this->assertSame(['schedules' => []], $loadedConfig['scheduler']);
+        $this->assertSame(['build_dir' => '/tmp/build'], $loadedConfig['build']);
     }
 
     public function testGetWorkermanConfigReturnsCorrectSection(): void
@@ -146,6 +168,7 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig($workermanConfig);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig(['schedules' => []]);
+        $loader->setBuildConfig(['build_dir' => '/tmp/build']);
 
         $this->assertSame($workermanConfig, $loader->getWorkermanConfig());
     }
@@ -158,6 +181,7 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig(['server' => []]);
         $loader->setProcessConfig($processConfig);
         $loader->setSchedulerConfig(['schedules' => []]);
+        $loader->setBuildConfig(['build_dir' => '/tmp/build']);
 
         $this->assertSame($processConfig, $loader->getProcessConfig());
     }
@@ -170,7 +194,21 @@ final class ConfigLoaderTest extends TestCase
         $loader->setWorkermanConfig(['server' => []]);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig($schedulerConfig);
+        $loader->setBuildConfig(['build_dir' => '/tmp/build']);
 
         $this->assertSame($schedulerConfig, $loader->getSchedulerConfig());
+    }
+
+    public function testGetBuildConfigReturnsCorrectSection(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $buildConfig = ['build_dir' => '/tmp/build'];
+        $loader->setWorkermanConfig(['server' => []]);
+        $loader->setProcessConfig(['processes' => []]);
+        $loader->setSchedulerConfig(['schedules' => []]);
+        $loader->setBuildConfig($buildConfig);
+
+        $this->assertSame($buildConfig, $loader->getBuildConfig());
     }
 }

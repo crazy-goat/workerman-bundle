@@ -9,4 +9,5 @@ enum ConfigSection: string
     case WORKERMAN = 'workerman';
     case PROCESS = 'process';
     case SCHEDULER = 'scheduler';
+    case BUILD = 'build';
 }

@@ -6,11 +6,16 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\Command\BuildBinCommand;
+use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
+use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
+use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
+use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
@@ -34,7 +39,9 @@ final readonly class ServicesConfigurator
 
         $container
             ->register('workerman.config_loader', ConfigLoader::class)
+            ->setPublic(true)
             ->addMethodCall('setWorkermanConfig', [$config])
+            ->addMethodCall('setBuildConfig', [$config['build']])
             ->addTag('kernel.cache_warmer')
             ->setArguments([
                 $container->getParameter('kernel.project_dir'),
@@ -131,6 +138,44 @@ final readonly class ServicesConfigurator
             ->register(WorkermanCommand::class)
             ->addTag('console.command')
             ->setAutowired(true)
+        ;
+
+        $container
+            ->register('workerman.phar_builder', PharBuilder::class)
+            ->setArguments([
+                $container->getParameter('kernel.project_dir'),
+                $container->getParameter('kernel.environment'),
+            ])
+        ;
+
+        $container
+            ->register('workerman.sfx_downloader', SfxDownloader::class)
+        ;
+
+        $container
+            ->register('workerman.binary_composer', BinaryComposer::class)
+        ;
+
+        $container
+            ->register(BuildPharCommand::class)
+            ->addTag('console.command')
+            ->setArguments([
+                new Reference('workerman.config_loader'),
+                new Reference('workerman.phar_builder'),
+                $container->getParameter('kernel.project_dir'),
+            ])
+        ;
+
+        $container
+            ->register(BuildBinCommand::class)
+            ->addTag('console.command')
+            ->setArguments([
+                new Reference('workerman.config_loader'),
+                new Reference('workerman.phar_builder'),
+                new Reference('workerman.sfx_downloader'),
+                new Reference('workerman.binary_composer'),
+                $container->getParameter('kernel.project_dir'),
+            ])
         ;
 
         $container

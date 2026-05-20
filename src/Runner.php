@@ -103,19 +103,23 @@ final readonly class Runner implements RunnerInterface
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
-        $pidFile = $config['pid_file'];
-        $logFile = $config['log_file'];
-        $stdoutFile = $config['stdout_file'];
+        $pidFile = $this->resolveRuntimePath($config['pid_file']);
+        $logFile = $this->resolveRuntimePath($config['log_file']);
+        $stdoutFile = $this->resolveRuntimePath($config['stdout_file']);
         $stopTimeout = $config['stop_timeout'];
         $maxPackageSize = $config['max_package_size'];
-        assert(is_string($pidFile));
-        assert(is_string($logFile));
-        assert(is_string($stdoutFile));
         assert(is_int($stopTimeout));
         assert(is_int($maxPackageSize));
 
-        if (!is_dir($varRunDir = dirname($pidFile)) && !mkdir(directory: $varRunDir, recursive: true) && !is_dir($varRunDir)) {
-            throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $varRunDir));
+        // Ensure runtime directories exist (critical in PHAR mode where they're outside the archive)
+        foreach ([
+            dirname($pidFile),
+            dirname($logFile),
+            dirname($stdoutFile),
+        ] as $runtimeDir) {
+            if (!is_dir($runtimeDir) && !mkdir(directory: $runtimeDir, recursive: true) && !is_dir($runtimeDir)) {
+                throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $runtimeDir));
+            }
         }
 
         TcpConnection::$defaultMaxPackageSize = $maxPackageSize;
@@ -146,12 +150,18 @@ final readonly class Runner implements RunnerInterface
         }
 
         if ($config['reload_strategy']['file_monitor']['active'] && $this->kernelFactory->isDebug()) {
-            new FileMonitorWorker(
-                user: $config['user'],
-                group: $config['group'],
-                sourceDir: $config['reload_strategy']['file_monitor']['source_dir'],
-                filePattern: $config['reload_strategy']['file_monitor']['file_pattern'],
-            );
+            if ($this->kernelFactory->isPhar()) {
+                // File monitor is useless in PHAR mode — files are frozen inside the archive.
+                // Log a warning and skip.
+                Worker::log('File monitor is disabled in PHAR mode. Use restart to apply code changes.');
+            } else {
+                new FileMonitorWorker(
+                    user: $config['user'],
+                    group: $config['group'],
+                    sourceDir: $config['reload_strategy']['file_monitor']['source_dir'],
+                    filePattern: $config['reload_strategy']['file_monitor']['file_pattern'],
+                );
+            }
         }
 
         if ($processConfig !== []) {
@@ -184,10 +194,27 @@ final readonly class Runner implements RunnerInterface
 
     private function getCacheDir(): string
     {
-        if (isset($_SERVER['APP_CACHE_DIR'])) {
+        if (isset($_SERVER['APP_CACHE_DIR']) && $_SERVER['APP_CACHE_DIR'] !== '') {
             return $_SERVER['APP_CACHE_DIR'] . '/' . $this->kernelFactory->getEnvironment();
         }
 
         return $this->kernelFactory->getCacheDir();
+    }
+
+    /**
+     * Resolves a path that was configured relative to project_dir,
+     * replacing the project_dir prefix with runtime_dir when in PHAR mode.
+     */
+    private function resolveRuntimePath(string $path): string
+    {
+        $projectDir = $this->kernelFactory->getProjectDir();
+        $runtimeDir = $this->kernelFactory->getRuntimeDir();
+
+        // If running from PHAR, replace the project dir prefix with runtime dir
+        if ($runtimeDir !== $projectDir && str_starts_with($path, $projectDir)) {
+            return $runtimeDir . substr($path, strlen($projectDir));
+        }
+
+        return $path;
     }
 }
