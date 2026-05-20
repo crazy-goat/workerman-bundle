@@ -186,3 +186,23 @@ final class ProcessService
     }
 }
 ```
+
+## Packaging (experimental)
+
+> **⚠️ Experimental:** PHAR and standalone binary packaging are new features. The API may change in future releases.
+
+The bundle provides commands to package your Symfony application as a standalone PHAR archive or a native binary:
+
+```bash
+# Build a PHAR archive
+$ php -d phar.readonly=0 bin/console workerman:build:phar
+
+# Build a standalone binary (requires phpmicro.sfx)
+$ php -d phar.readonly=0 bin/console workerman:build:bin
+
+# Options
+$ php -d phar.readonly=0 bin/console workerman:build:phar --help
+$ php -d phar.readonly=0 bin/console workerman:build:bin --help
+```
+
+See [docs/build-packaging.md](docs/build-packaging.md) for full documentation, build configuration options, and known limitations.
