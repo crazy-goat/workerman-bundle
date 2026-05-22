@@ -685,6 +685,112 @@ final class TestRequestTrackingKernel implements KernelInterface
 }
 
 /**
+ * Test kernel that throws during handle() to simulate crash.
+ */
+final class TestThrowingKernel implements KernelInterface, TerminableInterface
+{
+    public bool $bootCalled = false;
+    public bool $terminateCalled = false;
+
+    public function __construct(private readonly \Throwable $exception)
+    {
+    }
+
+    public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
+    {
+        $this->terminateCalled = true;
+    }
+
+    public function boot(): void
+    {
+        $this->bootCalled = true;
+    }
+
+    public function shutdown(): void
+    {
+    }
+
+    public function registerBundles(): iterable
+    {
+        return [];
+    }
+
+    public function registerContainerConfiguration(\Symfony\Component\Config\Loader\LoaderInterface $loader): void
+    {
+    }
+
+    public function handle(\Symfony\Component\HttpFoundation\Request $request, int $type = 1, bool $catch = true): \Symfony\Component\HttpFoundation\Response
+    {
+        throw $this->exception;
+    }
+
+    public function getBundles(): array
+    {
+        return [];
+    }
+
+    public function getBundle(string $name): \Symfony\Component\HttpKernel\Bundle\BundleInterface
+    {
+        throw new \RuntimeException('Not implemented');
+    }
+
+    public function locateResource(string $name): string
+    {
+        return '';
+    }
+
+    public function getEnvironment(): string
+    {
+        return 'test';
+    }
+
+    public function isDebug(): bool
+    {
+        return true;
+    }
+
+    public function getProjectDir(): string
+    {
+        return '/tmp';
+    }
+
+    public function getCacheDir(): string
+    {
+        return '/tmp/cache';
+    }
+
+    public function getBuildDir(): string
+    {
+        return '/tmp/build';
+    }
+
+    public function getShareDir(): ?string
+    {
+        return null;
+    }
+
+    public function getLogDir(): string
+    {
+        return '/tmp/log';
+    }
+
+    public function getCharset(): string
+    {
+        return 'UTF-8';
+    }
+
+    public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
+    {
+        throw new \RuntimeException('Not implemented');
+    }
+
+    public function getStartTime(): float
+    {
+        return 0.0;
+    }
+}
+
+/**
  * @covers \CrazyGoat\WorkermanBundle\Middleware\SymfonyController
  */
 final class SymfonyControllerTest extends TestCase
@@ -1180,6 +1286,28 @@ final class SymfonyControllerTest extends TestCase
                 return 12345;
             }
         };
+    }
+
+    public function testReferencesAreNullifiedWhenKernelHandleThrows(): void
+    {
+        $kernel = new TestThrowingKernel(new \RuntimeException('kernel crash'));
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter);
+
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        try {
+            $controller($request, $this->connection);
+            $this->fail('Expected exception was not thrown');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('kernel crash', $e->getMessage());
+        }
+
+        $controller->terminateIfNeeded();
+
+        $this->assertFalse($kernel->terminateCalled, 'terminate() must not be called when __invoke threw — references should be null');
     }
 
     public function testTerminateIfNeededCallsServicesResetter(): void
