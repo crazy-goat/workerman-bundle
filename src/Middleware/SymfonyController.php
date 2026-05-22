@@ -39,10 +39,16 @@ final class SymfonyController
         $this->symfonyRequest = RequestConverter::toSymfonyRequest($request);
         $this->kernel->boot();
 
-        $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
-        $this->symfonyResponse->prepare($this->symfonyRequest);
+        try {
+            $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
+            $this->symfonyResponse->prepare($this->symfonyRequest);
 
-        return $this->responseConverter->convert($this->symfonyResponse, $connection);
+            return $this->responseConverter->convert($this->symfonyResponse, $connection);
+        } catch (\Throwable $e) {
+            $this->symfonyRequest = null;
+            $this->symfonyResponse = null;
+            throw $e;
+        }
     }
 
     /**
