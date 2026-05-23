@@ -12,7 +12,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 {
     private string $rootRealPath;
 
-    public function __construct(private string $rootDirectory)
+    public function __construct(string $rootDirectory)
     {
         $resolved = realpath($rootDirectory);
         if ($resolved === false) {
@@ -35,13 +35,19 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     private function getPublicPathFile(Request $request): string|false
     {
-        $resolved = realpath($this->rootDirectory . $request->path());
+        $path = $request->path();
+
+        if (str_contains($path, "\0") || str_contains($path, '%00') || str_contains($path, '\\')) {
+            return false;
+        }
+
+        $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($path, '/'));
 
         if ($resolved === false) {
             return false;
         }
 
-        if (!str_starts_with($resolved, $this->rootRealPath . DIRECTORY_SEPARATOR)) {
+        if (!str_starts_with($resolved . DIRECTORY_SEPARATOR, $this->rootRealPath . DIRECTORY_SEPARATOR)) {
             return false;
         }
 
