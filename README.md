@@ -212,3 +212,5 @@ $ php -d phar.readonly=0 bin/console workerman:build:bin --help
 ```
 
 See [docs/build-packaging.md](docs/build-packaging.md) for full documentation, build configuration options, and known limitations.
+
+For an overview of all documentation files, see [docs/](docs/).
