@@ -109,7 +109,18 @@ There are a few restart strategies that are implemented and can be enabled or di
    Reload all workers each time you change the files**.
  - **always**  
    Reload worker after each request.
-
+ - **memory**  
+   Reload worker when memory usage reaches a certain threshold. Three options are available:
+   `active` (default: `false`) toggles the strategy, `limit` (default: `134217728` — 128 MB) is the RSS threshold in bytes that triggers a worker reload, and `gc_limit` (default: `100663296` — 96 MB) runs `gc_collect_cycles()` preemptively before the reload check.
+   ```yaml
+   workerman:
+     reload_strategy:
+       memory:
+         active: true
+         limit: 268435456       # 256 MB
+         gc_limit: 201326592    # 192 MB
+   ```
+ 
 ** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very cpu and disk intensive for large projects.
 
 See all available options for each strategy in the command output.
