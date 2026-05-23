@@ -16,7 +16,7 @@ final readonly class ConfigurationTreeBuilder
         $root->addDefaultsIfNotSet();
         $children = $root->children();
 
-        $this->configureTopLevelScalarNodes($children);
+        $this->configureTopLevelPrimitiveNodes($children);
         $this->configureServersNode($children);
         $this->configureReloadStrategyNode($children);
         $this->configureBuildNode($children);
@@ -25,7 +25,7 @@ final readonly class ConfigurationTreeBuilder
         $root->end();
     }
 
-    private function configureTopLevelScalarNodes(NodeBuilder $node): void
+    private function configureTopLevelPrimitiveNodes(NodeBuilder $node): void
     {
         $node
             ->scalarNode('runtime_dir')
@@ -268,6 +268,34 @@ final readonly class ConfigurationTreeBuilder
             ->end();
     }
 
+    private function configureSfxNode(NodeBuilder $node): void
+    {
+        $node
+            ->arrayNode('sfx')
+                ->info('Configuration for the phpmicro SFX binary used in BIN mode')
+                ->addDefaultsIfNotSet()
+                ->children()
+                    ->scalarNode('url')
+                        ->info('Custom URL to download phpmicro.sfx from')
+                        ->defaultNull()
+                        ->end()
+                    ->scalarNode('file')
+                        ->info('Local path to an existing phpmicro.sfx binary')
+                        ->defaultNull()
+                        ->end()
+                    ->scalarNode('sha256')
+                        ->info('SHA-256 hex digest of the SFX binary. When set, the downloaded SFX is verified against it. Strongly recommended.')
+                        ->defaultNull()
+                        ->end()
+                    ->booleanNode('allow_insecure')
+                        ->info('Disable TLS peer verification when downloading the SFX. Off by default. Use only for local mirrors with self-signed certificates.')
+                        ->defaultFalse()
+                        ->end()
+                    ->end()
+                ->end()
+            ->end();
+    }
+
     private function configureBuildNode(NodeBuilder $node): void
     {
         $buildNode = $node->arrayNode('build')
@@ -296,29 +324,11 @@ final readonly class ConfigurationTreeBuilder
             ->scalarNode('bin_php_version')
                 ->info('PHP version for the static PHP binary (phpmicro.sfx). Default: current PHP version')
                 ->defaultNull()
-                ->end()
-            ->arrayNode('sfx')
-                ->info('Configuration for the phpmicro SFX binary used in BIN mode')
-                ->addDefaultsIfNotSet()
-                ->children()
-                    ->scalarNode('url')
-                        ->info('Custom URL to download phpmicro.sfx from')
-                        ->defaultNull()
-                        ->end()
-                    ->scalarNode('file')
-                        ->info('Local path to an existing phpmicro.sfx binary')
-                        ->defaultNull()
-                        ->end()
-                    ->scalarNode('sha256')
-                        ->info('SHA-256 hex digest of the SFX binary. When set, the downloaded SFX is verified against it. Strongly recommended.')
-                        ->defaultNull()
-                        ->end()
-                    ->booleanNode('allow_insecure')
-                        ->info('Disable TLS peer verification when downloading the SFX. Off by default. Use only for local mirrors with self-signed certificates.')
-                        ->defaultFalse()
-                        ->end()
-                    ->end()
-                ->end()
+                ->end();
+
+        $this->configureSfxNode($children);
+
+        $children
             ->arrayNode('exclude_patterns')
                 ->info('Additional regex patterns for files to exclude from the PHAR (added on top of built-in defaults). Note: .env* files at project root and tests/, var/, build/, .git/, .github/, docs/ are always excluded.')
                 ->prototype('scalar')->end()
