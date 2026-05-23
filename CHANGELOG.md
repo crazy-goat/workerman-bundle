@@ -73,55 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed 8 permanently skipped tests from `HttpRequestHandlerTest` that were never executed ([#154](https://github.com/crazy-goat/workerman-bundle/issues/154))
 
-## [0.15.0] - 2026-04-15
-
-### Security
-
-- Enabled branch protection on `master` branch ([#132](https://github.com/crazy-goat/workerman-bundle/issues/132))
-  - Required status checks: `Tests/lint` and `Tests/tests`
-  - Require branches to be up to date before merging
-  - Require conversation resolution before merging
-  - No approval count required (solo dev project)
-
-### Added
-
-- Added `ServerAction` enum for type-safe command actions ([#135](https://github.com/crazy-goat/workerman-bundle/issues/135))
-  - Replaces string-based action constants with strongly-typed enum
-  - Cases: START, STOP, RESTART, RELOAD, STATUS
-  - Used by `WorkermanCommand` and `ServerManager` for improved type safety
-
-- Added validation in `ConfigLoader::warmUp()` to ensure all config sections are set before caching ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
-  - New `ConfigSection` enum with cases: WORKERMAN, PROCESS, SCHEDULER
-  - Throws `LogicException` with descriptive message when any section is missing
-  - Prevents incomplete configuration from being cached
-
-- Added pre-push git hook to run `composer lint` before pushing ([#137](https://github.com/crazy-goat/workerman-bundle/issues/137))
-  - Hook runs static analysis and code style checks before push
-  - Prevents pushing code that doesn't pass linting
-
-### Fixed
-
-- Fixed `TriggerFactory` fragile cron expression detection heuristic ([#34](https://github.com/crazy-goat/workerman-bundle/issues/34), [#138](https://github.com/crazy-goat/workerman-bundle/issues/138))
-  - Uses `CronExpression::isValidExpression()` for robust detection instead of exception-based heuristic
-  - Added `class_exists` check for graceful handling when package is not installed
-
-- Fixed `SupervisorWorker` — removed `sleep(1)` hack and added proper logging ([#36](https://github.com/crazy-goat/workerman-bundle/issues/36), [#143](https://github.com/crazy-goat/workerman-bundle/issues/143))
-  - Removed arbitrary 1-second sleep that was causing race conditions
-  - Added proper logging for state transitions and errors
-  - Improved reliability of worker supervision
-
-- Fixed `WorkermanCompilerPass` — replaced anonymous class with proper named class ([#37](https://github.com/crazy-goat/workerman-bundle/issues/37), [#144](https://github.com/crazy-goat/workerman-bundle/issues/144))
-  - Extracted anonymous class from `config/compilerpass.php` to `src/DependencyInjection/WorkermanCompilerPass.php`
-  - Added comprehensive unit tests for compiler pass functionality
-
-### Changed
-
-- **Breaking**: Config cache format changed from numeric indices to string keys ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
-  - **Old format:** `[0 => ..., 1 => ..., 2 => ...]`
-  - **New format:** `['workerman' => ..., 'process' => ..., 'scheduler' => ...]`
-  - Uses `ConfigSection` enum values as keys for clarity and type safety
-  - **Migration**: Clear cache after upgrade: `rm -rf var/cache/*`
-
 ## [0.16.0] - 2026-05-18
 
 ### Added
@@ -172,6 +123,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed CI: upgraded `actions/checkout` from v2 to v6.0.2 with SHA pinning ([#172](https://github.com/crazy-goat/workerman-bundle/pull/172))
 - Fixed CI: pinned `shivammathur/setup-php` to commit SHA in tests workflow ([#149](https://github.com/crazy-goat/workerman-bundle/issues/149), [#175](https://github.com/crazy-goat/workerman-bundle/pull/175))
+
+## [0.15.0] - 2026-04-15
+
+### Security
+
+- Enabled branch protection on `master` branch ([#132](https://github.com/crazy-goat/workerman-bundle/issues/132))
+  - Required status checks: `Tests/lint` and `Tests/tests`
+  - Require branches to be up to date before merging
+  - Require conversation resolution before merging
+  - No approval count required (solo dev project)
+
+### Added
+
+- Added `ServerAction` enum for type-safe command actions ([#135](https://github.com/crazy-goat/workerman-bundle/issues/135))
+  - Replaces string-based action constants with strongly-typed enum
+  - Cases: START, STOP, RESTART, RELOAD, STATUS
+  - Used by `WorkermanCommand` and `ServerManager` for improved type safety
+
+- Added validation in `ConfigLoader::warmUp()` to ensure all config sections are set before caching ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
+  - New `ConfigSection` enum with cases: WORKERMAN, PROCESS, SCHEDULER
+  - Throws `LogicException` with descriptive message when any section is missing
+  - Prevents incomplete configuration from being cached
+
+- Added pre-push git hook to run `composer lint` before pushing ([#137](https://github.com/crazy-goat/workerman-bundle/issues/137))
+  - Hook runs static analysis and code style checks before push
+  - Prevents pushing code that doesn't pass linting
+
+### Fixed
+
+- Fixed `TriggerFactory` fragile cron expression detection heuristic ([#34](https://github.com/crazy-goat/workerman-bundle/issues/34), [#138](https://github.com/crazy-goat/workerman-bundle/issues/138))
+  - Uses `CronExpression::isValidExpression()` for robust detection instead of exception-based heuristic
+  - Added `class_exists` check for graceful handling when package is not installed
+
+- Fixed `SupervisorWorker` — removed `sleep(1)` hack and added proper logging ([#36](https://github.com/crazy-goat/workerman-bundle/issues/36), [#143](https://github.com/crazy-goat/workerman-bundle/issues/143))
+  - Removed arbitrary 1-second sleep that was causing race conditions
+  - Added proper logging for state transitions and errors
+  - Improved reliability of worker supervision
+
+- Fixed `WorkermanCompilerPass` — replaced anonymous class with proper named class ([#37](https://github.com/crazy-goat/workerman-bundle/issues/37), [#144](https://github.com/crazy-goat/workerman-bundle/issues/144))
+  - Extracted anonymous class from `config/compilerpass.php` to `src/DependencyInjection/WorkermanCompilerPass.php`
+  - Added comprehensive unit tests for compiler pass functionality
+
+### Changed
+
+- **Breaking**: Config cache format changed from numeric indices to string keys ([#35](https://github.com/crazy-goat/workerman-bundle/issues/35))
+  - **Old format:** `[0 => ..., 1 => ..., 2 => ...]`
+  - **New format:** `['workerman' => ..., 'process' => ..., 'scheduler' => ...]`
+  - Uses `ConfigSection` enum values as keys for clarity and type safety
+  - **Migration**: Clear cache after upgrade: `rm -rf var/cache/*`
 
 ## [0.14.0] - 2026-04-14
 
