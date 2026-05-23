@@ -34,6 +34,146 @@ final class StaticFilesMiddlewareTest extends TestCase
     }
 
     /**
+     * @dataProvider invalidCharacterProvider
+     */
+    public function testInvalidCharactersPassToNext(string $path): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest($path);
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(200);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, "Next should be called for invalid path: $path");
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidCharacterProvider(): array
+    {
+        return [
+            'NUL byte in path' => ["/test.txt\0"],
+            'URL-encoded NUL prefix' => ['/%00/../etc/passwd'],
+            'backslash in path' => ['/..\\test.txt'],
+            'encoded backslash in path' => ['/%5C/../etc/passwd'],
+        ];
+    }
+
+    public function testPrefixCollisionBlocked(): void
+    {
+        $siblingDir = dirname($this->rootDirectory) . '/public-other';
+        @mkdir($siblingDir, 0777, true);
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/../public-other/test.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(200);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertTrue($called, 'Next should be called for prefix collision path');
+            $this->assertEquals(200, $response->getStatusCode());
+        } finally {
+            if (is_dir($siblingDir)) {
+                rmdir($siblingDir);
+            }
+        }
+    }
+
+    public function testSymlinkEscapingBlocked(): void
+    {
+        $targetDir = __DIR__ . '/data/outside';
+        $linkPath = $this->rootDirectory . '/escape_link';
+
+        try {
+            if (!is_dir($targetDir)) {
+                mkdir($targetDir, 0777, true);
+            }
+            file_put_contents($targetDir . '/secret.txt', 'secret content');
+
+            if (!file_exists($linkPath)) {
+                symlink($targetDir, $linkPath);
+            }
+
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/escape_link/secret.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(200);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertTrue($called, 'Next should be called for symlink escaping path');
+            $this->assertEquals(200, $response->getStatusCode());
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (file_exists($targetDir . '/secret.txt')) {
+                unlink($targetDir . '/secret.txt');
+            }
+            if (is_dir($targetDir)) {
+                rmdir($targetDir);
+            }
+        }
+    }
+
+    public function testSymlinkInsideRootAllowed(): void
+    {
+        $linkPath = $this->rootDirectory . '/linked';
+        $subDir = $this->rootDirectory . '/subdir';
+
+        try {
+            if (!is_dir($subDir)) {
+                mkdir($subDir, 0777, true);
+            }
+            file_put_contents($subDir . '/linked_file.txt', 'linked content');
+
+            if (!file_exists($linkPath)) {
+                symlink($subDir, $linkPath);
+            }
+
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/linked/linked_file.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should not be called for symlink inside root');
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (file_exists($subDir . '/linked_file.txt')) {
+                unlink($subDir . '/linked_file.txt');
+            }
+            if (is_dir($subDir)) {
+                rmdir($subDir);
+            }
+        }
+    }
+
+    /**
      * @dataProvider pathTraversalProvider
      */
     public function testPathTraversalBlocked(string $path): void
