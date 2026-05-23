@@ -52,12 +52,14 @@ final readonly class PharBuilder
         $phar = new \Phar($pharPath, 0, $pharFilename);
         $phar->startBuffering();
 
-        $excludePatterns = isset($buildConfig['exclude_patterns']) && is_array($buildConfig['exclude_patterns'])
-            ? $buildConfig['exclude_patterns']
-            : [];
-        $excludeFiles = isset($buildConfig['exclude_files']) && is_array($buildConfig['exclude_files'])
-            ? $buildConfig['exclude_files']
-            : [];
+        $excludePatterns = $this->buildExcludePatterns($buildConfig);
+        $excludeFiles = $this->buildExcludeFiles($buildConfig);
+        $filter = new PharFileFilter(
+            $this->projectDir,
+            $includeTests,
+            $excludePatterns,
+            $excludeFiles,
+        );
 
         $directory = new \RecursiveDirectoryIterator(
             $this->projectDir,
@@ -65,48 +67,7 @@ final readonly class PharBuilder
         );
         $iterator = new \RecursiveIteratorIterator($directory);
 
-        $projectDir = $this->projectDir;
-        $filtered = new \CallbackFilterIterator($iterator, function (\SplFileInfo $file) use ($excludePatterns, $excludeFiles, $includeTests, $projectDir): bool {
-            $relativePath = ltrim(
-                str_replace([$projectDir . '/', $projectDir], '', $file->getPathname()),
-                '/',
-            );
-
-            if ($relativePath === '') {
-                return false;
-            }
-
-            if (!$includeTests && self::isExcluded($relativePath)) {
-                return false;
-            }
-
-            foreach ($excludePatterns as $pattern) {
-                if (!is_string($pattern) || $pattern === '') {
-                    continue;
-                }
-                $inner = $pattern;
-                if (strlen($pattern) > 2 && $pattern[0] === $pattern[strlen($pattern) - 1]) {
-                    $inner = substr($pattern, 1, -1);
-                }
-                if (!str_starts_with($inner, '^')) {
-                    $inner = '^' . $inner;
-                }
-                if (preg_match('#' . $inner . '#', $relativePath)) {
-                    return false;
-                }
-            }
-
-            foreach ($excludeFiles as $excluded) {
-                if (!is_string($excluded) || $excluded === '') {
-                    continue;
-                }
-                if ($relativePath === $excluded || str_starts_with($relativePath, $excluded . '/')) {
-                    return false;
-                }
-            }
-
-            return true;
-        });
+        $filtered = new \CallbackFilterIterator($iterator, $filter->shouldInclude(...));
 
         $phar->buildFromIterator($filtered, $this->projectDir);
         $phar->setStub($this->generateStub($buildConfig, $pharFilename));
@@ -115,6 +76,44 @@ final readonly class PharBuilder
         unset($phar);
 
         return $pharPath;
+    }
+
+    /**
+     * @param mixed[] $buildConfig
+     *
+     * @return ExcludePattern[]
+     */
+    private function buildExcludePatterns(array $buildConfig): array
+    {
+        $raw = $buildConfig['exclude_patterns'] ?? [];
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $patterns = [];
+        foreach ($raw as $pattern) {
+            if (!is_string($pattern) || $pattern === '') {
+                continue;
+            }
+            $patterns[] = new ExcludePattern($pattern);
+        }
+
+        return $patterns;
+    }
+
+    /**
+     * @param mixed[] $buildConfig
+     *
+     * @return string[]
+     */
+    private function buildExcludeFiles(array $buildConfig): array
+    {
+        $raw = $buildConfig['exclude_files'] ?? [];
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        return array_values(array_filter($raw, static fn($f): bool => is_string($f) && $f !== ''));
     }
 
     /**
