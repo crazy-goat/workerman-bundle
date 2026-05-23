@@ -97,7 +97,9 @@ final class FileMonitorWatcherTest extends TestCase
         $instance = $reflection->newInstanceWithoutConstructor();
 
         $parentClass = $reflection->getParentClass();
-        \assert($parentClass instanceof \ReflectionClass);
+        if (!$parentClass instanceof \ReflectionClass) {
+            throw new \RuntimeException('Cannot get parent class reflection for ' . PollingMonitorWatcher::class);
+        }
 
         $workerProp = $parentClass->getProperty('worker');
         $workerProp->setValue($instance, $worker);
