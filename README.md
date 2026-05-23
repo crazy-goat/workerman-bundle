@@ -60,8 +60,10 @@ workerman:
       active: true
 ```
 
-> **Note:** The example above binds an unprivileged port (`8080`) so it works without `sudo`.  
-> To bind a port below 1024 (e.g. `80` or `443`) you must run the process as **root** or grant the `CAP_NET_BIND_SERVICE` capability on Linux.  
+> **Note:** The example above binds an unprivileged port (`8080`) so it works without `sudo`.
+>
+> To bind a port below 1024 (e.g. `80` or `443`) you must run the process as **root** or grant the `CAP_NET_BIND_SERVICE` capability on Linux.
+>
 > In production, consider using the `user` and `group` config keys to drop privileges after binding, or front with a reverse proxy (e.g. nginx, Caddy).
 
 ### Start application
