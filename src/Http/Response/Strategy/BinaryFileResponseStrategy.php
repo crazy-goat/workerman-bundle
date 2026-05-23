@@ -15,9 +15,17 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  *
  * This handles file downloads properly by using Workerman's native withFile()
  * method, which efficiently streams files without loading them into memory.
+ *
+ * @see BinaryFileResponse         Depends on private fields: tempFileObject, offset, maxlen, deleteFileAfterSend
+ * @see BinaryFileResponseReflector
  */
 final readonly class BinaryFileResponseStrategy implements ResponseConverterStrategyInterface
 {
+    public function __construct(
+        private BinaryFileResponseReflector $reflector = new BinaryFileResponseReflector(),
+    ) {
+    }
+
     public function supports(SymfonyResponse $response): bool
     {
         return $response instanceof BinaryFileResponse;
@@ -31,10 +39,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $headers,
         );
 
-        // Handle SplTempFileObject (in-memory files) - read directly to body
-        // SplTempFileObject stores data in memory (default max 2MB, configurable via $max_memory)
-        // For larger data, use regular files on disk instead of SplTempFileObject
-        $tempFileObject = $this->getTempFileObject($response);
+        $tempFileObject = $this->reflector->getTempFileObject($response);
         if ($tempFileObject instanceof \SplTempFileObject) {
             $tempFileObject->rewind();
             $content = '';
@@ -46,13 +51,11 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             return $workermanResponse;
         }
 
-        // Regular file - use Workerman's efficient file streaming
         $file = $response->getFile();
-        $offset = $this->getPrivateProperty($response, 'offset');
-        $maxlen = $this->getPrivateProperty($response, 'maxlen');
-        $deleteFileAfterSend = $this->getPrivateProperty($response, 'deleteFileAfterSend');
+        $offset = $this->reflector->getOffset($response);
+        $maxlen = $this->reflector->getMaxlen($response);
+        $deleteFileAfterSend = $this->reflector->getDeleteFileAfterSend($response);
 
-        // If file should be deleted after send, stream it and register cleanup on connection close
         if ($deleteFileAfterSend === true) {
             $filePath = $file->getPathname();
 
@@ -78,40 +81,5 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
                 @unlink($filePath);
             }
         };
-    }
-
-    /**
-     * Get the temp file object from BinaryFileResponse if it exists.
-     * Uses reflection to access private property with graceful fallback.
-     */
-    private function getTempFileObject(BinaryFileResponse $response): ?\SplTempFileObject
-    {
-        try {
-            $reflection = new \ReflectionClass($response);
-            $property = $reflection->getProperty('tempFileObject');
-            $value = $property->getValue($response);
-
-            return $value instanceof \SplTempFileObject ? $value : null;
-        } catch (\ReflectionException) {
-            // Property doesn't exist in this Symfony version, assume no temp file
-            return null;
-        }
-    }
-
-    /**
-     * Get a private property value from BinaryFileResponse.
-     * Uses reflection with graceful fallback if property doesn't exist.
-     */
-    private function getPrivateProperty(BinaryFileResponse $response, string $propertyName): mixed
-    {
-        try {
-            $reflection = new \ReflectionClass($response);
-            $property = $reflection->getProperty($propertyName);
-
-            return $property->getValue($response);
-        } catch (\ReflectionException) {
-            // Property doesn't exist in this Symfony version, return null
-            return null;
-        }
     }
 }
