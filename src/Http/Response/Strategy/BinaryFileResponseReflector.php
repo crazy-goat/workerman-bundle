@@ -13,6 +13,9 @@ final class BinaryFileResponseReflector
      */
     private static array $propertyCache = [];
 
+    /** @var list<string> */
+    private const TARGET_PROPERTIES = ['tempFileObject', 'offset', 'maxlen', 'deleteFileAfterSend'];
+
     public function getTempFileObject(BinaryFileResponse $response): ?\SplTempFileObject
     {
         $value = $this->resolvePropertyValue($response, 'tempFileObject');
@@ -35,27 +38,38 @@ final class BinaryFileResponseReflector
         return $this->resolvePropertyValue($response, 'deleteFileAfterSend');
     }
 
-    private function resolvePropertyValue(BinaryFileResponse $response, string $name): mixed
+    public static function resetCache(): void
     {
-        $property = $this->resolveProperty($response, $name);
-
-        return $property?->getValue($response);
+        self::$propertyCache = [];
     }
 
-    private function resolveProperty(BinaryFileResponse $response, string $name): ?\ReflectionProperty
+    private function resolvePropertyValue(BinaryFileResponse $response, string $name): mixed
     {
         $class = $response::class;
+        $this->ensurePropertiesCached($class);
 
-        if (!isset(self::$propertyCache[$class][$name])) {
+        return self::$propertyCache[$class][$name]?->getValue($response);
+    }
+
+    /**
+     * @param class-string $class
+     */
+    private function ensurePropertiesCached(string $class): void
+    {
+        if (isset(self::$propertyCache[$class])) {
+            return;
+        }
+
+        self::$propertyCache[$class] = [];
+
+        $reflection = new \ReflectionClass($class);
+
+        foreach (self::TARGET_PROPERTIES as $name) {
             try {
-                $reflection = new \ReflectionClass($response);
-                $property = $reflection->getProperty($name);
-                self::$propertyCache[$class][$name] = $property;
+                self::$propertyCache[$class][$name] = $reflection->getProperty($name);
             } catch (\ReflectionException) {
                 self::$propertyCache[$class][$name] = null;
             }
         }
-
-        return self::$propertyCache[$class][$name];
     }
 }
