@@ -15,7 +15,7 @@ Please see [CONTRIBUTING.md](https://github.com/crazy-goat/workerman-bundle/blob
 
 ## What new in this fork
 * `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
-* `servers.serve_files` - set to `false` to disable serving file. Use this option for RestAPI projects. Default: `false`
+* `servers.serve_files` - set to `false` to disable serving file (**deprecated**, use [StaticFilesMiddleware](#static-files-middleware) instead). Default: `false`
 *  By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
 This `workerman-bundle` will create symfony request without psr7 it increase performance, but it is still experimental. 
 ## Getting started
@@ -148,6 +148,94 @@ final class TestRebootStrategy implements RebootStrategyInterface
     }
 }
 ```
+
+## Middlewares
+
+Middlewares allow you to intercept and process requests before they reach the Symfony controller, or modify responses before they are sent to the client.
+
+A middleware is any service implementing `CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface`:
+
+```php
+<?php
+
+use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
+use Workerman\Protocols\Http\Response;
+
+final readonly class MyMiddleware implements MiddlewareInterface
+{
+    public function __invoke(Request $request, callable $next): Response
+    {
+        // Pre-processing: inspect or modify the request
+        if ($request->header('X-Custom') === null) {
+            return new Response(400);
+        }
+
+        $response = $next($request);
+
+        // Post-processing: inspect or modify the response
+        $response->header('X-Processed-By', 'MyMiddleware');
+        return $response;
+    }
+}
+```
+
+### Registering middlewares
+
+Register your middleware as a service in the Symfony container, then reference its service ID under `workerman.servers[].middlewares`:
+
+```yaml
+# config/services.yaml
+services:
+  App\Middleware\MyMiddleware: ~
+```
+
+```yaml
+# config/packages/workerman.yaml
+workerman:
+  servers:
+    - name: 'Symfony webserver'
+      listen: http://127.0.0.1:8080
+      processes: 4
+      middlewares:
+        - App\Middleware\MyMiddleware
+```
+
+### Static files middleware
+
+The deprecated `serve_files` and `root_dir` server options are replaced by the `StaticFilesMiddleware`. To serve static files from a public directory, register the middleware with the root directory path:
+
+```yaml
+# config/services.yaml
+services:
+  workerman.middleware.static_files:
+    class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    arguments:
+      $rootDirectory: '%kernel.project_dir%/public'
+```
+
+```yaml
+# config/packages/workerman.yaml
+workerman:
+  servers:
+    - name: 'Symfony webserver'
+      listen: http://127.0.0.1:8080
+      processes: 4
+      middlewares:
+        - workerman.middleware.static_files
+```
+
+The `StaticFilesMiddleware` resolves requests against the configured root directory, serves matching files directly, and passes through to the next handler for non-file requests. Directory traversal attacks are prevented by ensuring the resolved path stays within the root directory.
+
+### Execution order
+
+Middlewares are executed in reverse registration order (last registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
+
+```
+Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response
+```
+
+This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller process the request.
 
 ## Scheduler
 Periodic tasks can be configured with attributes or with tags in configuration files.  
