@@ -27,7 +27,7 @@ final class FileUploadValidator
      * This is the single source of truth for file-entry shape recognition,
      * shared between this validator and RequestConverter.
      *
-     * @param array<string, mixed> $data
+     * @param array<mixed, mixed> $data
      */
     public static function isSingleFileEntry(array $data): bool
     {
@@ -39,7 +39,7 @@ final class FileUploadValidator
      *
      * A file list is an indexed array whose first element is itself an array.
      *
-     * @param array<string, mixed> $data
+     * @param array<mixed, mixed> $data
      */
     public static function isFileList(array $data): bool
     {

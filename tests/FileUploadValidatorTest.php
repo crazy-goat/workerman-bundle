@@ -13,6 +13,57 @@ use PHPUnit\Framework\TestCase;
  */
 final class FileUploadValidatorTest extends TestCase
 {
+    public function testIsSingleFileEntryReturnsTrueWhenNamePresent(): void
+    {
+        $this->assertTrue(FileUploadValidator::isSingleFileEntry(['name' => 'test.txt']));
+    }
+
+    public function testIsSingleFileEntryReturnsTrueWhenTmpNamePresent(): void
+    {
+        $this->assertTrue(FileUploadValidator::isSingleFileEntry(['tmp_name' => '/tmp/test']));
+    }
+
+    public function testIsSingleFileEntryReturnsFalseWhenNoFileKeys(): void
+    {
+        $this->assertFalse(FileUploadValidator::isSingleFileEntry(['foo' => 'bar']));
+    }
+
+    public function testIsSingleFileEntryReturnsFalseForEmptyArray(): void
+    {
+        $this->assertFalse(FileUploadValidator::isSingleFileEntry([]));
+    }
+
+    public function testIsFileListReturnsTrueForIndexedArrayOfArrays(): void
+    {
+        $this->assertTrue(FileUploadValidator::isFileList([
+            ['name' => 'a.txt', 'tmp_name' => '/tmp/a'],
+            ['name' => 'b.txt', 'tmp_name' => '/tmp/b'],
+        ]));
+    }
+
+    public function testIsFileListReturnsFalseForSingleFileEntry(): void
+    {
+        $this->assertFalse(FileUploadValidator::isFileList(['name' => 'a.txt', 'tmp_name' => '/tmp/a']));
+    }
+
+    public function testIsFileListReturnsFalseForEmptyArray(): void
+    {
+        $this->assertFalse(FileUploadValidator::isFileList([]));
+    }
+
+    public function testIsFileListReturnsFalseForNestedAssociativeArray(): void
+    {
+        $this->assertFalse(FileUploadValidator::isFileList([
+            'avatar' => ['name' => 'a.png', 'tmp_name' => '/tmp/a'],
+            'resume' => ['name' => 'b.pdf', 'tmp_name' => '/tmp/b'],
+        ]));
+    }
+
+    public function testIsFileListReturnsFalseForListOfScalars(): void
+    {
+        $this->assertFalse(FileUploadValidator::isFileList(['a', 'b', 'c']));
+    }
+
     public function testEmptyFilesArrayIsAccepted(): void
     {
         // Validation passes when no exception is thrown

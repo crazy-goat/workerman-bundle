@@ -720,7 +720,7 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * @param array<string, array<string, mixed>|array<int, array<string, mixed>>|string> $files
+     * @param array<string, mixed> $files
      */
     private function createRequestWithFiles(string $buffer, array $files): Request
     {
