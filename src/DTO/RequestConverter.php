@@ -11,7 +11,9 @@ use Symfony\Component\HttpFoundation\Request;
 final class RequestConverter
 {
     /**
-     * RFC 7230 token pattern for HTTP methods: one or more uppercase ASCII letters.
+     * Security-hardened HTTP method pattern: only uppercase ASCII letters allowed.
+     * This is stricter than RFC 7230 (which allows digits and special characters
+     * in tokens) to minimise the attack surface for method-based routing bypasses.
      */
     private const METHOD_REGEX = '/^[A-Z]+$/';
     private const MAX_METHOD_LENGTH = 32;
@@ -26,7 +28,7 @@ final class RequestConverter
     {
         if (preg_match('/[\x00-\x1F\x7F]/', $uri)) {
             throw new \InvalidArgumentException(
-                \sprintf('Request URI contains control characters: %s', $uri),
+                \sprintf('Request URI contains control characters: %s', \addcslashes($uri, "\x00..\x1F\x7F")),
             );
         }
     }

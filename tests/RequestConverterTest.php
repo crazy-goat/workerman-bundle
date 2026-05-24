@@ -579,9 +579,10 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('key=value', $symfonyRequest->getContent());
     }
 
-    public function testUriWithControlCharacterIsRejected(): void
+    /** @dataProvider provideControlCharacters */
+    public function testUriWithControlCharacterIsRejected(string $controlChar): void
     {
-        $buffer = "GET /test\x00something HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $buffer = "GET /test{$controlChar}something HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = new Request($buffer);
 
         $this->expectException(\InvalidArgumentException::class);
@@ -589,24 +590,15 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    public function testUriWithCarriageReturnIsRejected(): void
+    /** @return iterable<string, array{string}> */
+    public static function provideControlCharacters(): iterable
     {
-        $buffer = "GET /test\rsomething HTTP/1.1\r\nHost: localhost\r\n\r\n";
-        $rawRequest = new Request($buffer);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Request URI contains control characters');
-        RequestConverter::toSymfonyRequest($rawRequest);
-    }
-
-    public function testUriWithLineFeedIsRejected(): void
-    {
-        $buffer = "GET /test\nsomething HTTP/1.1\r\nHost: localhost\r\n\r\n";
-        $rawRequest = new Request($buffer);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Request URI contains control characters');
-        RequestConverter::toSymfonyRequest($rawRequest);
+        yield 'NUL byte' => ["\x00"];
+        yield 'carriage return' => ["\r"];
+        yield 'line feed' => ["\n"];
+        yield 'vertical tab' => ["\v"];
+        yield 'form feed' => ["\f"];
+        yield 'DEL byte' => ["\x7F"];
     }
 
     public function testMethodWithControlCharacterIsRejected(): void
