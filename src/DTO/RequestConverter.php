@@ -57,7 +57,6 @@ final class RequestConverter
 
     public static function toSymfonyRequest(\Workerman\Protocols\Http\Request $rawRequest): Request
     {
-        $cookies = $rawRequest->cookie();
         $query = $rawRequest->get();
         // IMPORTANT: Get files BEFORE post() because parsePost() clears the files array
         $files = $rawRequest->file() ?? [];
@@ -75,9 +74,6 @@ final class RequestConverter
         $isFormUrlEncoded = str_starts_with($contentType, 'application/x-www-form-urlencoded');
         $isMultipart = str_starts_with($contentType, 'multipart/form-data');
         $isFormData = $isFormUrlEncoded || $isMultipart;
-
-        // Build server bag with HTTP_* headers (CGI convention)
-        $headers = $rawRequest->header() ?? [];
 
         // Detect HTTPS from Workerman's SSL transport (configured via https:// listen address)
         $isHttps = isset($rawRequest->connection) && $rawRequest->connection->transport === 'ssl';
@@ -107,11 +103,74 @@ final class RequestConverter
             $server['HTTPS'] = 'on';
         }
 
-        // Convert headers to HTTP_* format for ServerBag
-        foreach ($headers as $name => $value) {
-            $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
-            // Handle repeated headers (Workerman returns arrays for multiple values)
-            $server[$key] = is_array($value) ? implode(', ', $value) : $value;
+        // Build server headers from raw HTTP with security hardening
+        $server = self::buildServerHeaders($rawRequest, $server);
+
+        // For multipart requests, pass empty content to match PHP-FPM behavior
+        // (php://input is not available for multipart - body is consumed during $_POST/$_FILES parsing)
+        $content = $isMultipart ? '' : $rawRequest->rawBody();
+
+        return new Request(
+            is_array($query) ? $query : [],
+            $isFormData && is_array($post) ? $post : [],
+            [],
+            self::parseCookiesFromServerBag($server),
+            $files,
+            $server,
+            $content,
+        );
+    }
+
+    /**
+     * Build server headers from Workerman request with security hardening.
+     *
+     * Uses Workerman's parsed headers as the base (includes middleware-added headers),
+     * and only falls back to raw header parsing to detect duplicate header values
+     * for special handling:
+     *
+     * - Cookie: multiple header values joined with '; ' per RFC 6265
+     * - Host, Content-Length, Authorization: only the first value is used (duplicates discarded)
+     * - All other headers: joined with ', ' per RFC 7230
+     * - Header values containing control characters are rejected
+     *
+     * @param array<string, float|int|string> $server
+     *
+     * @return array<string, float|int|string>
+     */
+    private static function buildServerHeaders(\Workerman\Protocols\Http\Request $rawRequest, array $server): array
+    {
+        $workermanHeaders = $rawRequest->header() ?? [];
+        $rawHeaders = self::parseRawHeaderLines($rawRequest->rawHead());
+
+        foreach ($workermanHeaders as $name => $value) {
+            $nameLower = \strtolower((string) $name);
+            $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
+
+            // Validate header value for control characters
+            $stringValue = (string) $value;
+            if (\preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $stringValue)) {
+                throw new \InvalidArgumentException(
+                    \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
+                );
+            }
+
+            // Check if this header had duplicate values in the raw request
+            $originalValues = $rawHeaders[$nameLower] ?? null;
+            $hadDuplicates = $originalValues !== null && \count($originalValues) > 1;
+
+            if ($hadDuplicates) {
+                $server[$key] = match ($nameLower) {
+                    // RFC 6265: multiple Cookie header values must be joined with '; '
+                    'cookie' => \implode('; ', $originalValues),
+                    // Security-sensitive headers: only the first value is meaningful
+                    // Transfer-encoding is also protected against TE/TE smuggling
+                    'host', 'content-length', 'authorization', 'transfer-encoding' => $originalValues[0],
+                    // Standard HTTP behavior: join with ', ' per RFC 7230
+                    default => \implode(', ', $originalValues),
+                };
+            } else {
+                $server[$key] = $stringValue;
+            }
         }
 
         // Content-Type, Content-Length, Content-MD5 use CGI convention (no HTTP_ prefix)
@@ -123,19 +182,72 @@ final class RequestConverter
             }
         }
 
-        // For multipart requests, pass empty content to match PHP-FPM behavior
-        // (php://input is not available for multipart - body is consumed during $_POST/$_FILES parsing)
-        $content = $isMultipart ? '' : $rawRequest->rawBody();
+        return $server;
+    }
 
-        return new Request(
-            is_array($query) ? $query : [],
-            $isFormData && is_array($post) ? $post : [],
-            [],
-            is_array($cookies) ? $cookies : [],
-            $files,
-            $server,
-            $content,
-        );
+    /**
+     * Parse raw HTTP headers into name => list of values.
+     *
+     * The request line (first line of the head) is skipped.
+     * Header names are returned in lowercase.
+     *
+     * @return array<string, list<string>>
+     */
+    private static function parseRawHeaderLines(string $rawHead): array
+    {
+        $headers = [];
+        $lines = \explode("\r\n", $rawHead);
+        \array_shift($lines);
+
+        foreach ($lines as $line) {
+            if ($line === '' || $line === "\r") {
+                continue;
+            }
+            if (\str_contains($line, ':')) {
+                [$name, $value] = \explode(':', $line, 2);
+                $nameLower = \strtolower(\trim($name));
+                $value = \ltrim($value);
+                $headers[$nameLower][] = $value;
+            }
+        }
+
+        return $headers;
+    }
+
+    /**
+     * Parse cookies from the server bag's HTTP_COOKIE value.
+     *
+     * This replaces Workerman's built-in cookie() call to ensure correct
+     * handling when duplicate Cookie headers are present (see security issue #217).
+     *
+     * @param array<string, mixed> $server
+     *
+     * @return array<string, string>
+     */
+    private static function parseCookiesFromServerBag(array $server): array
+    {
+        $cookieHeader = $server['HTTP_COOKIE'] ?? '';
+        if ($cookieHeader === '') {
+            return [];
+        }
+
+        $cookies = [];
+        $pairs = \explode(';', (string) $cookieHeader);
+
+        foreach ($pairs as $pair) {
+            $pair = \trim($pair);
+            if ($pair === '') {
+                continue;
+            }
+            $parts = \explode('=', $pair, 2);
+            $name = \trim($parts[0]);
+            if ($name === '') {
+                continue;
+            }
+            $cookies[$name] = $parts[1] ?? '';
+        }
+
+        return $cookies;
     }
 
     /**

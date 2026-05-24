@@ -659,6 +659,152 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
+    public function testMultipleCookieHeadersJoinedWithSemicolon(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: session=abc123\r\n";
+        $buffer .= "Cookie: token=xyz789\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('session=abc123; token=xyz789', $symfonyRequest->server->get('HTTP_COOKIE'));
+        $this->assertSame('abc123', $symfonyRequest->cookies->get('session'));
+        $this->assertSame('xyz789', $symfonyRequest->cookies->get('token'));
+    }
+
+    public function testMultipleHostHeadersKeepsFirstOnly(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Host: attacker.com\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertStringNotContainsString('attacker.com', $symfonyRequest->server->get('HTTP_HOST'));
+    }
+
+    public function testMultipleContentLengthHeadersKeepsFirstOnly(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Content-Length: 100\r\n";
+        $buffer .= "Content-Length: 9999\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('100', $symfonyRequest->server->get('CONTENT_LENGTH'));
+        $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_LENGTH'));
+    }
+
+    public function testMultipleAuthorizationHeadersKeepsFirstOnly(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Authorization: Bearer valid-token\r\n";
+        $buffer .= "Authorization: Bearer attacker-token\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('Bearer valid-token', $symfonyRequest->server->get('HTTP_AUTHORIZATION'));
+        $this->assertStringNotContainsString('attacker-token', $symfonyRequest->server->get('HTTP_AUTHORIZATION'));
+    }
+
+    public function testNonSensitiveDuplicateHeadersJoinedWithComma(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Accept: text/plain\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('text/plain, application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
+    }
+
+    public function testSingleValueHeadersStillWork(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "Authorization: Basic dXNlcjpwYXNz\r\n";
+        $buffer .= "Content-Type: application/json\r\n";
+        $buffer .= "Content-Length: 123\r\n";
+        $buffer .= "X-Custom: custom-value\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
+        $this->assertSame('Basic dXNlcjpwYXNz', $symfonyRequest->server->get('HTTP_AUTHORIZATION'));
+        $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
+        $this->assertSame('123', $symfonyRequest->server->get('CONTENT_LENGTH'));
+        $this->assertSame('custom-value', $symfonyRequest->server->get('HTTP_X_CUSTOM'));
+    }
+
+    public function testMultipleTransferEncodingHeadersKeepsFirstOnly(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Transfer-Encoding: chunked\r\n";
+        $buffer .= "Transfer-Encoding: x\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('chunked', $symfonyRequest->server->get('HTTP_TRANSFER_ENCODING'));
+        $this->assertStringNotContainsString('x', $symfonyRequest->server->get('HTTP_TRANSFER_ENCODING'));
+    }
+
+    public function testMixedSingleAndDuplicateHeaders(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Accept: text/plain\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "X-Custom: single-value\r\n";
+        $buffer .= "X-Another: value-a\r\n";
+        $buffer .= "X-Another: value-b\r\n";
+        $buffer .= "X-Another: value-c\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertSame('text/plain, application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
+        $this->assertSame('single-value', $symfonyRequest->server->get('HTTP_X_CUSTOM'));
+        $this->assertSame('value-a, value-b, value-c', $symfonyRequest->server->get('HTTP_X_ANOTHER'));
+    }
+
+    public function testHeaderWithControlCharacterIsRejected(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-Injected: value\x00malicious\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Header "x-injected" contains control characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
     private function createMockConnection(int $localPort, string $transport = 'tcp'): \Workerman\Connection\TcpConnection
     {
         return new class ($localPort, $transport) extends \Workerman\Connection\TcpConnection {
