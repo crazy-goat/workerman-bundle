@@ -270,6 +270,19 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
+    public function testNonArrayFileEntryIsNotSilentlyDropped(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('expected array, got string');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'invalid_file' => 'not an array',
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
     public function testHeadersAreAvailableInServerBag(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -707,7 +720,7 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * @param array<string, array<string, mixed>|array<int, array<string, mixed>>> $files
+     * @param array<string, mixed> $files
      */
     private function createRequestWithFiles(string $buffer, array $files): Request
     {

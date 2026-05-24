@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\DTO;
 
+use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -151,23 +152,31 @@ final class RequestConverter
     {
         $result = [];
         foreach ($files as $key => $value) {
-            if (is_array($value)) {
-                // Check if this is a single file structure (has 'tmp_name' key)
-                if (array_key_exists('tmp_name', $value)) {
-                    $type = $value['type'] ?? 'application/octet-stream';
-                    $error = $value['error'] ?? \UPLOAD_ERR_OK;
+            if (!is_array($value)) {
+                throw new FileUploadValidationException(
+                    \sprintf(
+                        'Malformed file upload data for field "%s": expected array, got %s',
+                        $key,
+                        \gettype($value),
+                    ),
+                );
+            }
 
-                    $result[$key] = new UploadedFile(
-                        $value['tmp_name'],
-                        $value['name'] ?? '',
-                        $type === '' ? 'application/octet-stream' : $type,
-                        $error,
-                        true, // test mode: files are already moved to temp dir by Workerman
-                    );
-                } else {
-                    // Nested array - recurse
-                    $result[$key] = self::processFiles($value);
-                }
+            // Check if this is a single file entry using shared shape recognition
+            if (FileUploadValidator::isSingleFileEntry($value)) {
+                $type = $value['type'] ?? 'application/octet-stream';
+                $error = $value['error'] ?? \UPLOAD_ERR_OK;
+
+                $result[$key] = new UploadedFile(
+                    $value['tmp_name'],
+                    $value['name'] ?? '',
+                    $type === '' ? 'application/octet-stream' : $type,
+                    $error,
+                    true,
+                );
+            } else {
+                // Nested array - recurse
+                $result[$key] = self::processFiles($value);
             }
         }
 
