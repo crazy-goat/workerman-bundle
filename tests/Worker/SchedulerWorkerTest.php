@@ -314,7 +314,6 @@ final class SchedulerWorkerTest extends TestCase
         $process = proc_open(
             [
                 PHP_BINARY,
-                '-n',
                 self::RUNNER_SCRIPT,
                 $testName,
                 __DIR__ . '/../../vendor/autoload.php',
