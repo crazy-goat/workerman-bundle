@@ -175,6 +175,81 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertFileDoesNotExist($tempFile);
     }
 
+    public function testConvertPreservesExistingOnCloseCallback(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/delete_chain_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Chain me!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $existingCalled = false;
+        $this->connection->onClose = function () use (&$existingCalled): void {
+            $existingCalled = true;
+        };
+
+        $strategy->convert($binaryResponse, [
+            'Content-Type' => ['text/plain'],
+        ], $this->connection);
+
+        $onCloseCallback = $this->connection->onClose;
+        $onCloseCallback();
+
+        $this->assertTrue($existingCalled, 'Previous onClose callback must be invoked');
+        $this->assertFileDoesNotExist($tempFile);
+    }
+
+    public function testConvertHandlesMultipleChainedCleanups(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile1 = sys_get_temp_dir() . '/chain_1_' . uniqid() . '.txt';
+        $tempFile2 = sys_get_temp_dir() . '/chain_2_' . uniqid() . '.txt';
+        file_put_contents($tempFile1, 'First');
+        file_put_contents($tempFile2, 'Second');
+
+        $callOrder = [];
+        $this->connection->onClose = function () use (&$callOrder): void {
+            $callOrder[] = 'existing';
+        };
+
+        $binaryResponse = new BinaryFileResponse($tempFile1, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $strategy->convert($binaryResponse, [], $this->connection);
+
+        $onCloseCallback = $this->connection->onClose;
+        $onCloseCallback();
+
+        $this->assertSame(['existing'], $callOrder);
+        $this->assertFileDoesNotExist($tempFile1);
+
+        file_put_contents($tempFile2, 'Second');
+
+        $binaryResponse2 = new BinaryFileResponse($tempFile2, Response::HTTP_OK);
+        $reflection2 = new \ReflectionClass($binaryResponse2);
+        $property2 = $reflection2->getProperty('deleteFileAfterSend');
+        $property2->setValue($binaryResponse2, true);
+
+        $this->connection->onClose = $onCloseCallback;
+
+        $strategy->convert($binaryResponse2, [], $this->connection);
+
+        $secondOnClose = $this->connection->onClose;
+
+        $callOrder = [];
+        $secondOnClose();
+
+        $this->assertSame(['existing'], $callOrder);
+        $this->assertFileDoesNotExist($tempFile2);
+    }
+
     public function testConvertWorksForNormalBinaryFileResponse(): void
     {
         $strategy = new BinaryFileResponseStrategy();
