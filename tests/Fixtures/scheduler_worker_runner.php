@@ -31,6 +31,10 @@ if ($testName === '' || $autoloadPath === '' || $tempDir === '' || !is_dir($temp
 
 require $autoloadPath;
 
+if (\extension_loaded('pcntl')) {
+    \pcntl_async_signals(false);
+}
+
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
