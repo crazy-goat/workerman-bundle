@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\ServerManager;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -18,6 +19,24 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 final class ServerManagerTest extends TestCase
 {
+    private function createEmptyConfigLoader(): ConfigLoader
+    {
+        return new ConfigLoader(
+            projectDir: sys_get_temp_dir(),
+            cacheDir: sys_get_temp_dir(),
+            isDebug: false,
+        );
+    }
+
+    /** @param array<string, mixed> $config */
+    private function createConfigLoaderWithConfig(array $config): ConfigLoader
+    {
+        $configLoader = $this->createEmptyConfigLoader();
+        $configLoader->setWorkermanConfig($config);
+
+        return $configLoader;
+    }
+
     /**
      * Invoke the private waitForProcessToStop method on a ServerManager instance.
      *
@@ -46,7 +65,7 @@ final class ServerManagerTest extends TestCase
     public function testGracefulStopRespectsTimeout(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
+        $manager = new ServerManager($kernel, $this->createEmptyConfigLoader());
 
         // Use a non-existent PID (0) which is immediately considered "not alive"
         // This tests that the method returns quickly without infinite looping
@@ -67,7 +86,7 @@ final class ServerManagerTest extends TestCase
     public function testRegularStopRespectsTimeout(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
+        $manager = new ServerManager($kernel, $this->createEmptyConfigLoader());
 
         // Use a non-existent PID (0) which is immediately considered "not alive"
         $startTime = microtime(true);
@@ -147,7 +166,7 @@ final class ServerManagerTest extends TestCase
     public function testWaitForFileReturnsTrueWhenFileExists(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
+        $manager = new ServerManager($kernel, $this->createEmptyConfigLoader());
 
         $tempFile = tempnam(sys_get_temp_dir(), 'workerman_test_');
         register_shutdown_function(static function () use ($tempFile): void {
@@ -165,7 +184,7 @@ final class ServerManagerTest extends TestCase
     public function testWaitForFileReturnsFalseOnTimeout(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
+        $manager = new ServerManager($kernel, $this->createEmptyConfigLoader());
 
         $nonExistentFile = sys_get_temp_dir() . '/workerman_test_nonexistent_' . uniqid();
 
@@ -183,7 +202,7 @@ final class ServerManagerTest extends TestCase
     public function testWaitForFileReturnsTrueWhenFileAppearsDuringPolling(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
+        $manager = new ServerManager($kernel, $this->createEmptyConfigLoader());
 
         $tempFile = sys_get_temp_dir() . '/workerman_test_appears_' . uniqid();
         register_shutdown_function(static function () use ($tempFile): void {
@@ -221,12 +240,7 @@ final class ServerManagerTest extends TestCase
     public function testGetStatusTimeoutDefault(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
-
-        // Inject config via reflection to avoid requiring a booted kernel
-        $reflection = new ReflectionClass($manager);
-        $configProp = $reflection->getProperty('config');
-        $configProp->setValue($manager, ['stop_timeout' => 2]);
+        $manager = new ServerManager($kernel, $this->createConfigLoaderWithConfig(['stop_timeout' => 2]));
 
         $timeout = $this->invokeGetStatusTimeout($manager);
 
@@ -236,12 +250,7 @@ final class ServerManagerTest extends TestCase
     public function testGetStatusTimeoutFromConfig(): void
     {
         $kernel = $this->createMock(KernelInterface::class);
-        $manager = new ServerManager($kernel);
-
-        // Inject config with custom status_timeout
-        $reflection = new ReflectionClass($manager);
-        $configProp = $reflection->getProperty('config');
-        $configProp->setValue($manager, ['status_timeout' => 10, 'stop_timeout' => 2]);
+        $manager = new ServerManager($kernel, $this->createConfigLoaderWithConfig(['status_timeout' => 10, 'stop_timeout' => 2]));
 
         $timeout = $this->invokeGetStatusTimeout($manager);
 

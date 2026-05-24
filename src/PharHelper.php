@@ -51,4 +51,23 @@ final class PharHelper
     {
         return rtrim($projectDir, '/');
     }
+
+    /**
+     * Resolve a path relative to project_dir, replacing the project_dir
+     * prefix with runtime_dir when in PHAR mode.
+     *
+     * Consolidates logic previously duplicated across Runner, KernelFactory,
+     * and ServerManager.
+     */
+    public static function resolveRuntimePath(string $path, string $projectDir): string
+    {
+        $projectDir = self::getProjectDir($projectDir);
+        $runtimeDir = self::getRuntimeDir($projectDir);
+
+        if ($runtimeDir !== $projectDir && str_starts_with($path, $projectDir)) {
+            return $runtimeDir . substr($path, strlen($projectDir));
+        }
+
+        return $path;
+    }
 }

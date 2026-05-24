@@ -52,4 +52,40 @@ final class PharHelperTest extends TestCase
     {
         self::assertSame('/app', PharHelper::getProjectDir('/app/'));
     }
+
+    public function testResolveRuntimePathReturnsPathUnchangedInNormalMode(): void
+    {
+        self::assertSame(
+            '/app/var/cache/test',
+            PharHelper::resolveRuntimePath('/app/var/cache/test', '/app'),
+        );
+    }
+
+    public function testResolveRuntimePathReplacesProjectDirPrefixWhenRuntimeDirDiffers(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        self::assertSame(
+            '/runtime/var/cache/test',
+            PharHelper::resolveRuntimePath('/app/var/cache/test', '/app'),
+        );
+    }
+
+    public function testResolveRuntimePathReturnsPathUnchangedWhenNotUnderProjectDir(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        self::assertSame(
+            '/other/path/file.txt',
+            PharHelper::resolveRuntimePath('/other/path/file.txt', '/app'),
+        );
+    }
+
+    public function testResolveRuntimePathTrimsTrailingSlashFromProjectDir(): void
+    {
+        self::assertSame(
+            '/app/var/cache/test',
+            PharHelper::resolveRuntimePath('/app/var/cache/test', '/app/'),
+        );
+    }
 }
