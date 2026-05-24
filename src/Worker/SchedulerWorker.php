@@ -99,17 +99,13 @@ final class SchedulerWorker
     private function runCallback(TriggerInterface $trigger, string $service, string $taskName): void
     {
         $pidFile = $this->getTaskPidPath($service);
-        $fp = fopen($pidFile, 'c');
-
-        if ($fp === false) {
-            $this->worker->log(sprintf('%s Task "%s" cannot open PID file: %s', $this->worker->name, $taskName, $pidFile));
+        $fp = $this->openPidFile($pidFile, $taskName);
+        if ($fp === null) {
             $this->scheduleCallback($trigger, $service, $taskName);
             return;
         }
 
-        // Try to acquire exclusive lock (non-blocking)
-        if (!flock($fp, LOCK_EX | LOCK_NB)) {
-            // Another process holds the lock - task is already running
+        if (!$this->acquireLock($fp)) {
             fclose($fp);
             $this->scheduleCallback($trigger, $service, $taskName);
             return;
@@ -117,61 +113,107 @@ final class SchedulerWorker
 
         $pid = \pcntl_fork();
         if ($pid === -1) {
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
-            $this->scheduleCallback($trigger, $service, $taskName);
+            $this->handleForkError($fp, $trigger, $service, $taskName);
         } elseif ($pid > 0) {
-            // Parent process - release lock and close file
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
-            $this->scheduleCallback($trigger, $service, $taskName);
+            $this->handleParent($fp, $trigger, $service, $taskName);
         } else {
-            // Child process: close inherited fd and reopen to get independent lock
-            fclose($fp);
-            $fp = fopen($pidFile, 'c');
-            if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
-                // Lost the race to another child, exit
-                if ($fp !== false) {
-                    fclose($fp);
-                }
-                exit(0);
-            }
-
-            $this->worker::$globalEvent?->deleteAllTimer();
-            $title = str_replace(self::PROCESS_TITLE, sprintf('%s %s', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
-            cli_set_process_title($title);
-
-            // Write PID to file while holding the lock
-            ftruncate($fp, 0);
-            rewind($fp);
-            fwrite($fp, strval(posix_getpid()));
-            fflush($fp);
-
-            $childExitCode = 0;
-            try {
-                ($this->handler)($service, $taskName);
-            } catch (\Throwable $e) {
-                $this->worker->log(sprintf(
-                    '%s Task "%s" failed: [%s] %s in %s:%d\nStack trace:\n%s',
-                    $this->worker->name,
-                    $taskName,
-                    $e::class,
-                    $e->getMessage(),
-                    $e->getFile(),
-                    $e->getLine(),
-                    $e->getTraceAsString(),
-                ));
-                $childExitCode = 1;
-            } finally {
-                // Release lock, cleanup and exit
-                flock($fp, LOCK_UN);
-                fclose($fp);
-                $this->deleteTaskPid($service);
-                exit($childExitCode);
-            }
+            $this->handleChild($pidFile, $service, $taskName);
         }
+    }
+
+    /**
+     * @return resource|null
+     */
+    private function openPidFile(string $pidFile, string $taskName): mixed
+    {
+        $fp = fopen($pidFile, 'c');
+        if ($fp === false) {
+            $this->worker->log(sprintf('%s Task "%s" cannot open PID file: %s', $this->worker->name, $taskName, $pidFile));
+
+            return null;
+        }
+
+        return $fp;
+    }
+
+    private function acquireLock(mixed $fp): bool
+    {
+        return flock($fp, LOCK_EX | LOCK_NB);
+    }
+
+    private function releaseLockAndClose(mixed $fp): void
+    {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+
+    private function handleForkError(mixed $fp, TriggerInterface $trigger, string $service, string $taskName): void
+    {
+        $this->releaseLockAndClose($fp);
+        $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
+        $this->scheduleCallback($trigger, $service, $taskName);
+    }
+
+    private function handleParent(mixed $fp, TriggerInterface $trigger, string $service, string $taskName): void
+    {
+        $this->releaseLockAndClose($fp);
+        $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
+        $this->scheduleCallback($trigger, $service, $taskName);
+    }
+
+    private function handleChild(string $pidFile, string $service, string $taskName): void
+    {
+        $fp = $this->openChildPidFile($pidFile);
+        if ($fp === null) {
+            exit(0);
+        }
+
+        $this->worker::$globalEvent?->deleteAllTimer();
+        $title = str_replace(self::PROCESS_TITLE, sprintf('%s %s', self::PROCESS_TITLE, $taskName), strval(cli_get_process_title()));
+        cli_set_process_title($title);
+
+        ftruncate($fp, 0);
+        rewind($fp);
+        fwrite($fp, strval(posix_getpid()));
+        fflush($fp);
+
+        $childExitCode = 0;
+        try {
+            ($this->handler)($service, $taskName);
+        } catch (\Throwable $e) {
+            $this->worker->log(sprintf(
+                '%s Task "%s" failed: [%s] %s in %s:%d\nStack trace:\n%s',
+                $this->worker->name,
+                $taskName,
+                $e::class,
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine(),
+                $e->getTraceAsString(),
+            ));
+            $childExitCode = 1;
+        } finally {
+            $this->releaseLockAndClose($fp);
+            $this->deleteTaskPid($service);
+            exit($childExitCode);
+        }
+    }
+
+    /**
+     * @return resource|null
+     */
+    private function openChildPidFile(string $pidFile): mixed
+    {
+        $fp = fopen($pidFile, 'c');
+        if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
+            if ($fp !== false) {
+                fclose($fp);
+            }
+
+            return null;
+        }
+
+        return $fp;
     }
 
     private function getTaskPidPath(string $serviceId): string
