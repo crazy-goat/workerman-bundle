@@ -148,7 +148,7 @@ final class SchedulerWorkerTest extends TestCase
             Worker::$outputStream = $savedOutputStream;
             Worker::$logFile = $savedLogFile;
             if (\extension_loaded('pcntl')) {
-                \pcntl_signal(\SIGCHLD, \SIG_IGN);
+                \pcntl_signal(\SIGCHLD, \SIG_DFL);
             }
         }
 
@@ -283,7 +283,7 @@ final class SchedulerWorkerTest extends TestCase
             Worker::$outputStream = $savedOutputStream;
             Worker::$logFile = $savedLogFile;
             if (\extension_loaded('pcntl')) {
-                \pcntl_signal(\SIGCHLD, \SIG_IGN);
+                \pcntl_signal(\SIGCHLD, \SIG_DFL);
             }
         }
 
@@ -311,14 +311,9 @@ final class SchedulerWorkerTest extends TestCase
             2 => ['pipe', 'w'],
         ];
 
-        $extensionDir = ini_get('extension_dir');
-
         $process = proc_open(
             [
                 PHP_BINARY,
-                '-n',
-                '-d', 'extension_dir=' . $extensionDir,
-                '-d', 'extension=posix',
                 self::RUNNER_SCRIPT,
                 $testName,
                 __DIR__ . '/../../vendor/autoload.php',
