@@ -135,11 +135,13 @@ final class WorkermanCompilerPassTest extends TestCase
         $definition = $this->container->getDefinition('workerman.symfony_controller');
         $args = $definition->getArguments();
 
-        $this->assertCount(2, $args);
+        $this->assertCount(4, $args);
         $this->assertInstanceOf(Reference::class, $args[0]);
         $this->assertSame(KernelInterface::class, (string) $args[0]);
         $this->assertInstanceOf(Reference::class, $args[1]);
         $this->assertSame('workerman.response_converter', (string) $args[1]);
+        $this->assertNull($args[2]); // logger (optional)
+        $this->assertSame('%workerman.trusted_hosts%', $args[3]);
     }
 
     public function testTaskAndProcessHandlersArePublic(): void

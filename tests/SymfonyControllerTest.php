@@ -10,6 +10,8 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -800,6 +802,8 @@ final class SymfonyControllerTest extends TestCase
     protected function setUp(): void
     {
         $this->connection = $this->createMock(TcpConnection::class);
+
+        SymfonyRequest::setTrustedHosts([]);
     }
 
     private function createResponseConverter(bool $withStreamedStrategy = false): ResponseConverter
@@ -1350,5 +1354,48 @@ final class SymfonyControllerTest extends TestCase
         $controller->terminateIfNeeded();
 
         $this->assertTrue($kernel->terminateCalled, 'Terminate should be called');
+    }
+
+    public function testTrustedHostsAllowsMatchingHost(): void
+    {
+        $symfonyResponse = new SymfonyResponse('OK');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter, null, ['^example\.com$']);
+
+        $buffer = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request, $this->connection);
+
+        $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('example.com', $kernel->receivedRequest?->getHost());
+    }
+
+    public function testTrustedHostsRejectsNonMatchingHost(): void
+    {
+        $symfonyResponse = new SymfonyResponse('OK');
+        $kernel = new TestRequestTrackingKernel($symfonyResponse);
+        $responseConverter = $this->createResponseConverter();
+
+        $controller = new SymfonyController($kernel, $responseConverter, null, ['^example\.com$']);
+
+        $buffer = "GET /test HTTP/1.1\r\nHost: attacker.com\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request, $this->connection);
+
+        $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
+        $this->assertSame(400, $response->getStatusCode());
+
+        // Kernel should NOT have handled the request (early validation before boot)
+        $this->assertNull($kernel->receivedRequest);
+
+        // Verify the static trusted hosts are still active for subsequent requests
+        $suspiciousRequest = SymfonyRequest::create('http://attacker.com/');
+        $this->expectException(SuspiciousOperationException::class);
+        $suspiciousRequest->getHost();
     }
 }

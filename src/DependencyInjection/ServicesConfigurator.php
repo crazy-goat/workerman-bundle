@@ -36,6 +36,7 @@ final readonly class ServicesConfigurator
     {
         $container->setParameter('workerman.response_chunk_size', $config['response_chunk_size']);
         $container->setParameter('workerman.cache_warmup_timeout', $config['cache_warmup_timeout']);
+        $container->setParameter('workerman.trusted_hosts', $config['trusted_hosts']);
 
         $container
             ->register('workerman.config_loader', ConfigLoader::class)

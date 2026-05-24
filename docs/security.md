@@ -46,3 +46,30 @@ The `RequestConverter` also validates:
 
 - **URI**: Control characters in the request URI are rejected (defense against log forging and URI-based access bypass)
 - **Method**: Only uppercase ASCII letters are allowed (stricter than RFC 7230 to minimise routing bypass attacks), with a maximum length of 32 characters
+
+## Trusted Host Enforcement
+
+Host-header poisoning is a class of attack where an attacker controls the `Host` header sent to the server, potentially affecting password-reset links, cache keys, and routing decisions made by the application.
+
+By default, all `Host` header values from incoming requests are accepted. To restrict which hostnames your application responds to, configure `trusted_hosts` in your Workerman configuration:
+
+```yaml
+workerman:
+    trusted_hosts:
+        - '^example\.com$'
+        - '^api\.example\.com$'
+```
+
+Each entry is a regular expression pattern (without delimiters). Symfony adds the delimiters automatically. A request whose `Host` header does not match any pattern will be rejected with a `SuspiciousOperationException`, resulting in a 400 response.
+
+### Interaction with Symfony's `framework.trusted_hosts`
+
+If you also configure `framework.trusted_hosts` in Symfony, note that:
+
+- `workerman.trusted_hosts` is enforced **inside the Workerman worker process**, before the Symfony kernel handles the request.
+- If both are configured, the Workerman-level enforcement is sufficient — the Symfony-level setting is redundant but harmless.
+- If you use PHP-FPM alongside Workerman workers, configure both independently.
+
+### When this matters
+
+Configure `trusted_hosts` when your application generates absolute URLs based on the incoming `Host` header (e.g., password-reset emails, webhook callbacks, OAuth redirects). Without it, an attacker can craft a request with a spoofed `Host` header and trick the application into generating URLs pointing to an attacker-controlled domain.

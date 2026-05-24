@@ -75,6 +75,11 @@ final readonly class ConfigurationTreeBuilder
             ->integerNode('response_chunk_size')
                 ->info('Response chunk size')
                 ->defaultValue(2048)
+                ->end()
+            ->arrayNode('trusted_hosts')
+                ->info('A list of regular expression patterns that match trusted hostnames. When configured, requests with a Host header that does not match any pattern are rejected with SuspiciousOperationException. Each pattern is a regex without delimiters (e.g., "^example\\.com$"). Leave empty to accept all hosts (default).')
+                ->prototype('scalar')->end()
+                ->defaultValue([])
                 ->end();
     }
 
