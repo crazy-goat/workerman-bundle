@@ -60,7 +60,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $filePath = $file->getPathname();
 
             $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
-            $connection->onClose = $this->createCleanupCallback($filePath);
+            $connection->onClose = $this->createCleanupCallback($filePath, $connection->onClose);
 
             return $workermanResponse;
         }
@@ -74,11 +74,17 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         return $workermanResponse;
     }
 
-    private function createCleanupCallback(string $filePath): \Closure
+    private function createCleanupCallback(string $filePath, mixed $previousOnClose): \Closure
     {
-        return static function () use ($filePath): void {
-            if (is_file($filePath)) {
-                @unlink($filePath);
+        return static function () use ($filePath, $previousOnClose): void {
+            try {
+                if (is_callable($previousOnClose)) {
+                    $previousOnClose();
+                }
+            } finally {
+                if (is_file($filePath)) {
+                    @unlink($filePath);
+                }
             }
         };
     }
