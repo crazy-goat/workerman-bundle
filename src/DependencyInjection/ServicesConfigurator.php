@@ -51,6 +51,8 @@ final readonly class ServicesConfigurator
             ])
         ;
 
+        $container->setAlias(ConfigLoader::class, 'workerman.config_loader');
+
         $container
             ->register('workerman.task_error_listener', TaskErrorListener::class)
             ->addTag('kernel.event_subscriber')
