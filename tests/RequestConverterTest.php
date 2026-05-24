@@ -579,6 +579,81 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('key=value', $symfonyRequest->getContent());
     }
 
+    public function testUriWithControlCharacterIsRejected(): void
+    {
+        $buffer = "GET /test\x00something HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Request URI contains control characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testUriWithCarriageReturnIsRejected(): void
+    {
+        $buffer = "GET /test\rsomething HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Request URI contains control characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testUriWithLineFeedIsRejected(): void
+    {
+        $buffer = "GET /test\nsomething HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Request URI contains control characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testMethodWithControlCharacterIsRejected(): void
+    {
+        $buffer = "G\x00ET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('HTTP method contains invalid characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testMethodExceedsMaxLengthIsRejected(): void
+    {
+        $longMethod = str_repeat('A', 33);
+        $buffer = "{$longMethod} /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('HTTP method exceeds maximum length');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testStandardMethodsAndUrisStillWork(): void
+    {
+        $methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE'];
+
+        foreach ($methods as $method) {
+            $buffer = "{$method} /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+            $rawRequest = new Request($buffer);
+
+            $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+            $this->assertSame("/test", $symfonyRequest->server->get('REQUEST_URI'));
+            $this->assertSame($method, $symfonyRequest->server->get('REQUEST_METHOD'));
+        }
+    }
+
+    public function testMethodWithLowercaseIsRejected(): void
+    {
+        $buffer = "get /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('HTTP method contains invalid characters');
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
     private function createMockConnection(int $localPort, string $transport = 'tcp'): \Workerman\Connection\TcpConnection
     {
         return new class ($localPort, $transport) extends \Workerman\Connection\TcpConnection {

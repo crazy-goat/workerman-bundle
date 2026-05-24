@@ -10,6 +10,48 @@ use Symfony\Component\HttpFoundation\Request;
 
 final class RequestConverter
 {
+    /**
+     * RFC 7230 token pattern for HTTP methods: one or more uppercase ASCII letters.
+     */
+    private const METHOD_REGEX = '/^[A-Z]+$/';
+    private const MAX_METHOD_LENGTH = 32;
+
+    /**
+     * Validates that a URI does not contain control characters.
+     *
+     * Control characters (\x00-\x1F, \x7F) in the URI enable log forging,
+     * response splitting, and bypass of URI-based access checks.
+     */
+    private static function validateUri(string $uri): void
+    {
+        if (preg_match('/[\x00-\x1F\x7F]/', $uri)) {
+            throw new \InvalidArgumentException(
+                \sprintf('Request URI contains control characters: %s', $uri),
+            );
+        }
+    }
+
+    /**
+     * Validates that an HTTP method conforms to RFC 7230 token format.
+     *
+     * Only uppercase ASCII letters are allowed. Length is limited to prevent
+     * abuse through oversized method tokens.
+     */
+    private static function validateMethod(string $method): void
+    {
+        if (\strlen($method) > self::MAX_METHOD_LENGTH) {
+            throw new \InvalidArgumentException(
+                \sprintf('HTTP method exceeds maximum length of %d: %s', self::MAX_METHOD_LENGTH, $method),
+            );
+        }
+
+        if (preg_match(self::METHOD_REGEX, $method) !== 1) {
+            throw new \InvalidArgumentException(
+                \sprintf('HTTP method contains invalid characters: %s', $method),
+            );
+        }
+    }
+
     public static function toSymfonyRequest(\Workerman\Protocols\Http\Request $rawRequest): Request
     {
         $cookies = $rawRequest->cookie();
@@ -38,9 +80,16 @@ final class RequestConverter
         $isHttps = isset($rawRequest->connection) && $rawRequest->connection->transport === 'ssl';
 
         $requestTimeFloat = microtime(true);
+
+        // Validate URI and method before propagating to Symfony
+        $uri = $rawRequest->uri();
+        $method = $rawRequest->method();
+        self::validateUri($uri);
+        self::validateMethod($method);
+
         $server = [
-            'REQUEST_URI' => $rawRequest->uri(),
-            'REQUEST_METHOD' => $rawRequest->method(),
+            'REQUEST_URI' => $uri,
+            'REQUEST_METHOD' => $method,
             'SERVER_PROTOCOL' => 'HTTP/' . $rawRequest->protocolVersion(),
             'REMOTE_ADDR' => $rawRequest->connection?->getRemoteIp() ?? '127.0.0.1',
             'REMOTE_PORT' => $rawRequest->connection?->getRemotePort() ?? 0,
