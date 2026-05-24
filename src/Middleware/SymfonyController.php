@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -23,20 +24,40 @@ final class SymfonyController
     private ?ResetInterface $servicesResetter = null;
     private bool $servicesResetterInitialized = false;
 
+    /**
+     * @param string[] $trustedHosts List of regex patterns for trusted hostnames
+     */
     public function __construct(
         private readonly KernelInterface $kernel,
         private readonly ResponseConverter $responseConverter,
         private readonly ?LoggerInterface $logger = null,
+        private readonly array $trustedHosts = [],
     ) {
     }
 
     /**
      * Process the request through Symfony kernel and return Workerman response.
      * Note: kernel->terminate() is NOT called here - use terminateIfNeeded() after sending response.
+     * On first invocation with trusted_hosts configured, applies Symfony's global trusted host patterns.
      */
     public function __invoke(Request $request, TcpConnection $connection): Response
     {
+        if ($this->trustedHosts !== []) {
+            SymfonyRequest::setTrustedHosts($this->trustedHosts);
+        }
+
         $this->symfonyRequest = RequestConverter::toSymfonyRequest($request);
+
+        // Early validation: reject non-matching Host headers before kernel boot
+        // This prevents the kernel from processing requests with spoofed Host headers
+        if ($this->trustedHosts !== []) {
+            try {
+                $this->symfonyRequest->getHost();
+            } catch (SuspiciousOperationException) {
+                return new Response(400);
+            }
+        }
+
         $this->kernel->boot();
 
         try {

@@ -58,6 +58,8 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->setArguments([
                 new Reference(KernelInterface::class),
                 new Reference('workerman.response_converter'),
+                null, // logger (optional)
+                '%workerman.trusted_hosts%', // trusted hosts patterns
             ]);
 
         $container->setAlias(SymfonyController::class, 'workerman.symfony_controller');

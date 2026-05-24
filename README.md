@@ -228,3 +228,5 @@ $ php -d phar.readonly=0 bin/console workerman:build:bin --help
 See [docs/build-packaging.md](docs/build-packaging.md) for full documentation, build configuration options, and known limitations.
 
 For an overview of all documentation files, see [docs/](docs/).
+
+For security-related documentation including Host-header protection and trusted hosts configuration, see [docs/security.md](docs/security.md).

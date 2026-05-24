@@ -38,6 +38,7 @@ final class ServicesConfiguratorTest extends TestCase
 
         self::assertSame(2048, $this->container->getParameter('workerman.response_chunk_size'));
         self::assertSame(30, $this->container->getParameter('workerman.cache_warmup_timeout'));
+        self::assertSame([], $this->container->getParameter('workerman.trusted_hosts'));
     }
 
     public function testConfigureRegistersConfigLoader(): void
@@ -150,6 +151,7 @@ final class ServicesConfiguratorTest extends TestCase
             'stdout_file' => '%kernel.project_dir%/var/log/workerman.stdout.log',
             'max_package_size' => 10 * 1024 * 1024,
             'response_chunk_size' => 2048,
+            'trusted_hosts' => [],
             'servers' => [],
             'reload_strategy' => [
                 'exception' => [
