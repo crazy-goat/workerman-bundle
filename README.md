@@ -69,6 +69,25 @@ workerman:
 > **`listen` is effectively required.** Omitting it creates a worker that does not accept connections — no traffic reaches your application.
 > Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL), `tcp://` (raw TCP).
 
+## Configuration reference
+
+All top-level `workerman` configuration options:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `runtime_dir` | `string` | `%kernel.project_dir%` | Writable runtime directory for cache, logs, and PID files. In PHAR mode defaults to the directory containing the PHAR. Can be overridden with `WORKERMAN_RUNTIME_DIR` env var. See [build-packaging.md](docs/build-packaging.md#writable-paths). |
+| `user` | `string\|null` | `null` (current user) | Unix user of processes. |
+| `group` | `string\|null` | `null` (current group) | Unix group of processes. |
+| `stop_timeout` | `int` | `2` | Max seconds of child process work before force kill. |
+| `cache_warmup_timeout` | `int` | `30` | Max seconds to wait for cache warmup in forked process. Can be overridden with `WORKERMAN_CACHE_WARMUP_TIMEOUT` env var. |
+| `status_timeout` | `int` | `5` | Max seconds to wait for status file generation after sending SIGIOT. |
+| `pid_file` | `string` | `%kernel.project_dir%/var/run/workerman.pid` | File to store master process PID. |
+| `log_file` | `string` | `%kernel.project_dir%/var/log/workerman.log` | Log file. |
+| `stdout_file` | `string` | `%kernel.project_dir%/var/log/workerman.stdout.log` | File to write all output (echo, var_dump, etc.) to when running as daemon. |
+| `max_package_size` | `int` | `10485760` (10 MB) | Maximum accepted package size in bytes. |
+| `response_chunk_size` | `int` | `2048` | Response chunk size in bytes. |
+| `trusted_hosts` | `string[]` | `[]` | List of regex patterns for trusted hostnames. Requests with a non-matching `Host` header are rejected with `SuspiciousOperationException`. See [security.md](docs/security.md). |
+
 ### Start application
 
 Using the Symfony console command:
