@@ -29,8 +29,8 @@ final readonly class Runner implements RunnerInterface
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
-        $this->configureWorkermanGlobals($config);
-        $this->instantiateWorkers($config, $schedulerConfig, $processConfig);
+        $this->applyWorkermanConfig($config);
+        $this->createWorkers($config, $schedulerConfig, $processConfig);
 
         Worker::runAll();
 
@@ -46,6 +46,16 @@ final readonly class Runner implements RunnerInterface
         );
     }
 
+    /**
+     * Warm up cache in a forked process so the main process never boots the kernel.
+     *
+     * Uses posix_kill with different signals to distinguish success/failure:
+     * - SIGKILL (9) for success
+     * - SIGTERM (15) for error
+     * This avoids deadlock with extensions that register shutdown handlers (e.g., grpc).
+     *
+     * @throws \RuntimeException on fork failure, timeout, or unexpected child status
+     */
     private function warmUpCache(ConfigLoader $configLoader): void
     {
         if ($configLoader->isFresh()) {
@@ -120,8 +130,17 @@ final readonly class Runner implements RunnerInterface
         }
     }
 
-    /** @param mixed[] $config */
-    private function configureWorkermanGlobals(array $config): void
+    /**
+     * Apply resolved config paths to Worker and TcpConnection static properties.
+     *
+     * Also ensures runtime directories exist. This is critical in PHAR mode
+     * where directories live outside the archive and may not exist yet.
+     *
+     * @param mixed[] $config
+     *
+     * @throws \RuntimeException when a runtime directory cannot be created
+     */
+    private function applyWorkermanConfig(array $config): void
     {
         $pidFile = $this->resolveRuntimePath($config['pid_file']);
         $logFile = $this->resolveRuntimePath($config['log_file']);
@@ -151,11 +170,16 @@ final readonly class Runner implements RunnerInterface
     }
 
     /**
+     * Create and register all worker types based on config.
+     *
+     * Workers register themselves via constructor side-effects (no return value needed).
+     * File monitor is skipped in PHAR mode — files are frozen inside the archive.
+     *
      * @param mixed[] $config
      * @param mixed[] $schedulerConfig
      * @param mixed[] $processConfig
      */
-    private function instantiateWorkers(array $config, array $schedulerConfig, array $processConfig): void
+    private function createWorkers(array $config, array $schedulerConfig, array $processConfig): void
     {
         assert(is_array($config['servers']));
         foreach ($config['servers'] as $serverConfig) {
