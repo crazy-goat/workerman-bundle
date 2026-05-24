@@ -21,88 +21,127 @@ final readonly class Runner implements RunnerInterface
 
     public function run(): int
     {
-        $configLoader = new ConfigLoader(
-            projectDir: $this->kernelFactory->getProjectDir(),
-            cacheDir: $this->getCacheDir(),
-            isDebug: $this->kernelFactory->isDebug(),
-        );
+        $configLoader = $this->createConfigLoader();
 
-        // Warm up cache if no workerman fresh config found (do it in a forked process as the main process should not boot kernel)
-        if (!$configLoader->isFresh()) {
-            $pid = \pcntl_fork();
-            if ($pid === -1) {
-                throw new \RuntimeException('Failed to fork process for cache warmup');
-            }
-            if ($pid === 0) {
-                $success = false;
-                try {
-                    $this->kernelFactory->createKernel()->boot();
-                    $success = true;
-                } catch (\Throwable $e) {
-                    fwrite(STDERR, $e->getMessage() . PHP_EOL);
-                }
-                // Use posix_kill with different signals to distinguish success/failure:
-                // - SIGKILL (9) for success
-                // - SIGTERM (15) for error
-                // This avoids deadlock with extensions that register shutdown handlers (e.g., grpc)
-                \posix_kill((int) \getmypid(), $success ? \SIGKILL : \SIGTERM);
-            }
-
-            $timeout = $this->getCacheWarmupTimeout();
-            $deadline = \time() + $timeout;
-            $status = 0;
-
-            while (true) {
-                $result = \pcntl_waitpid($pid, $status, WNOHANG);
-
-                if ($result === $pid) {
-                    break;
-                }
-
-                if ($result === -1) {
-                    throw new \RuntimeException('Failed to wait for cache warmup process');
-                }
-
-                if (\time() >= $deadline) {
-                    \posix_kill($pid, \SIGKILL);
-                    \pcntl_waitpid($pid, $status, 0);
-                    throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
-                }
-
-                \usleep(100_000);
-            }
-
-            if (!\pcntl_wifexited($status)) {
-                if (!\pcntl_wifsignaled($status)) {
-                    throw new \RuntimeException(\sprintf(
-                        'Cache warmup failed in forked process (unexpected status: %d)',
-                        $status,
-                    ));
-                }
-                $signal = \pcntl_wtermsig($status);
-                // SIGKILL (9) = success (child killed itself after successful boot)
-                // SIGTERM (15) = error (child killed itself after exception)
-                if ($signal === \SIGTERM) {
-                    throw new \RuntimeException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
-                }
-                if ($signal !== \SIGKILL) {
-                    throw new \RuntimeException(\sprintf(
-                        'Cache warmup failed in forked process (killed by unexpected signal %d)',
-                        $signal,
-                    ));
-                }
-            } elseif (\pcntl_wexitstatus($status) !== 0) {
-                throw new \RuntimeException(\sprintf(
-                    'Cache warmup failed in forked process (exit code %d)',
-                    \pcntl_wexitstatus($status),
-                ));
-            }
-        }
+        $this->warmUpCache($configLoader);
 
         $config = $configLoader->getWorkermanConfig();
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
+        $this->applyWorkermanConfig($config);
+        $this->createWorkers($config, $schedulerConfig, $processConfig);
+
+        Worker::runAll();
+
+        return 0;
+    }
+
+    private function createConfigLoader(): ConfigLoader
+    {
+        return new ConfigLoader(
+            projectDir: $this->kernelFactory->getProjectDir(),
+            cacheDir: $this->getCacheDir(),
+            isDebug: $this->kernelFactory->isDebug(),
+        );
+    }
+
+    /**
+     * Warm up cache in a forked process so the main process never boots the kernel.
+     *
+     * Uses posix_kill with different signals to distinguish success/failure:
+     * - SIGKILL (9) for success
+     * - SIGTERM (15) for error
+     * This avoids deadlock with extensions that register shutdown handlers (e.g., grpc).
+     *
+     * @throws \RuntimeException on fork failure, timeout, or unexpected child status
+     */
+    private function warmUpCache(ConfigLoader $configLoader): void
+    {
+        if ($configLoader->isFresh()) {
+            return;
+        }
+
+        $pid = \pcntl_fork();
+        if ($pid === -1) {
+            throw new \RuntimeException('Failed to fork process for cache warmup');
+        }
+
+        if ($pid === 0) {
+            $success = false;
+            try {
+                $this->kernelFactory->createKernel()->boot();
+                $success = true;
+            } catch (\Throwable $e) {
+                fwrite(STDERR, $e->getMessage() . PHP_EOL);
+            }
+
+            \posix_kill((int) \getmypid(), $success ? \SIGKILL : \SIGTERM);
+        }
+
+        $timeout = $this->getCacheWarmupTimeout();
+        $deadline = \time() + $timeout;
+        $status = 0;
+
+        while (true) {
+            $result = \pcntl_waitpid($pid, $status, WNOHANG);
+
+            if ($result === $pid) {
+                break;
+            }
+
+            if ($result === -1) {
+                throw new \RuntimeException('Failed to wait for cache warmup process');
+            }
+
+            if (\time() >= $deadline) {
+                \posix_kill($pid, \SIGKILL);
+                \pcntl_waitpid($pid, $status, 0);
+                throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
+            }
+
+            \usleep(100_000);
+        }
+
+        if (!\pcntl_wifexited($status)) {
+            if (!\pcntl_wifsignaled($status)) {
+                throw new \RuntimeException(\sprintf(
+                    'Cache warmup failed in forked process (unexpected status: %d)',
+                    $status,
+                ));
+            }
+
+            $signal = \pcntl_wtermsig($status);
+            if ($signal === \SIGTERM) {
+                throw new \RuntimeException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
+            }
+
+            if ($signal !== \SIGKILL) {
+                throw new \RuntimeException(\sprintf(
+                    'Cache warmup failed in forked process (killed by unexpected signal %d)',
+                    $signal,
+                ));
+            }
+        } elseif (\pcntl_wexitstatus($status) !== 0) {
+            throw new \RuntimeException(\sprintf(
+                'Cache warmup failed in forked process (exit code %d)',
+                \pcntl_wexitstatus($status),
+            ));
+        }
+    }
+
+    /**
+     * Apply resolved config paths to Worker and TcpConnection static properties.
+     *
+     * Also ensures runtime directories exist. This is critical in PHAR mode
+     * where directories live outside the archive and may not exist yet.
+     *
+     * @param mixed[] $config
+     *
+     * @throws \RuntimeException when a runtime directory cannot be created
+     */
+    private function applyWorkermanConfig(array $config): void
+    {
         $pidFile = $this->resolveRuntimePath($config['pid_file']);
         $logFile = $this->resolveRuntimePath($config['log_file']);
         $stdoutFile = $this->resolveRuntimePath($config['stdout_file']);
@@ -111,7 +150,6 @@ final readonly class Runner implements RunnerInterface
         assert(is_int($stopTimeout));
         assert(is_int($maxPackageSize));
 
-        // Ensure runtime directories exist (critical in PHAR mode where they're outside the archive)
         foreach ([
             dirname($pidFile),
             dirname($logFile),
@@ -129,7 +167,20 @@ final readonly class Runner implements RunnerInterface
         Worker::$stopTimeout = $stopTimeout;
         Worker::$statusFile = (string) preg_replace('/\.pid$/', '.status', $pidFile);
         Worker::$onMasterReload = Utils::clearOpcache(...);
+    }
 
+    /**
+     * Create and register all worker types based on config.
+     *
+     * Workers register themselves via constructor side-effects (no return value needed).
+     * File monitor is skipped in PHAR mode — files are frozen inside the archive.
+     *
+     * @param mixed[] $config
+     * @param mixed[] $schedulerConfig
+     * @param mixed[] $processConfig
+     */
+    private function createWorkers(array $config, array $schedulerConfig, array $processConfig): void
+    {
         assert(is_array($config['servers']));
         foreach ($config['servers'] as $serverConfig) {
             new ServerWorker(
@@ -151,8 +202,6 @@ final readonly class Runner implements RunnerInterface
 
         if ($config['reload_strategy']['file_monitor']['active'] && $this->kernelFactory->isDebug()) {
             if ($this->kernelFactory->isPhar()) {
-                // File monitor is useless in PHAR mode — files are frozen inside the archive.
-                // Log a warning and skip.
                 Worker::log('File monitor is disabled in PHAR mode. Use restart to apply code changes.');
             } else {
                 new FileMonitorWorker(
@@ -172,10 +221,6 @@ final readonly class Runner implements RunnerInterface
                 processConfig: $processConfig,
             );
         }
-
-        Worker::runAll();
-
-        return 0;
     }
 
     private function getCacheWarmupTimeout(): int
