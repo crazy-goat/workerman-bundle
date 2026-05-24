@@ -13,7 +13,11 @@ use Workerman\Worker;
 final class SupervisorWorkerTest extends TestCase
 {
     private KernelFactory $kernelFactory;
+
+    /** @var array<string, Worker> */
     private array $initialWorkers;
+
+    /** @var array<string, array<int, int>> */
     private array $initialPidMap;
 
     protected function setUp(): void
@@ -280,7 +284,9 @@ final class SupervisorWorkerTest extends TestCase
      */
     private function getNewWorkerClosureVars(): array
     {
-        $closureRef = new \ReflectionFunction($this->getNewWorker()->onWorkerStart);
+        $callable = $this->getNewWorker()->onWorkerStart;
+        $this->assertInstanceOf(\Closure::class, $callable);
+        $closureRef = new \ReflectionFunction($callable);
 
         return $closureRef->getStaticVariables();
     }
