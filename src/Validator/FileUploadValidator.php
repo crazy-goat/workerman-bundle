@@ -21,6 +21,36 @@ final class FileUploadValidator
     private const REQUIRED_FIELDS = ['name', 'tmp_name', 'type', 'size', 'error'];
 
     /**
+     * Determine whether the given array is a single file entry.
+     *
+     * A single file entry has either 'tmp_name' or 'name' key.
+     * This is the single source of truth for file-entry shape recognition,
+     * shared between this validator and RequestConverter.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function isSingleFileEntry(array $data): bool
+    {
+        return isset($data['tmp_name']) || isset($data['name']);
+    }
+
+    /**
+     * Determine whether the given array is a list of file entries.
+     *
+     * A file list is an indexed array whose first element is itself an array.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function isFileList(array $data): bool
+    {
+        if ($data === []) {
+            return false;
+        }
+
+        return array_is_list($data) && is_array($data[0]);
+    }
+
+    /**
      * Validate the structure of uploaded files array.
      * Workerman should always return properly structured file data, but this
      * provides clearer error messages if something goes wrong.
@@ -58,7 +88,7 @@ final class FileUploadValidator
         }
 
         // Handle nested file arrays (e.g., files[field][])
-        if (array_is_list($fileData) && count($fileData) > 0 && is_array($fileData[0])) {
+        if (self::isFileList($fileData)) {
             foreach ($fileData as $index => $nestedFile) {
                 if (!is_array($nestedFile)) {
                     throw new FileUploadValidationException(
@@ -77,7 +107,7 @@ final class FileUploadValidator
         }
 
         // Check if this is a file structure or nested associative array (e.g., files[field][subfield])
-        if (isset($fileData['tmp_name']) || isset($fileData['name'])) {
+        if (self::isSingleFileEntry($fileData)) {
             self::validateSingleFileArray($fieldName, $fileData);
 
             return;
@@ -86,7 +116,7 @@ final class FileUploadValidator
         // Nested associative array - validate each entry
         foreach ($fileData as $subFieldName => $subFileData) {
             if (is_array($subFileData)) {
-                if (array_is_list($subFileData) && count($subFileData) > 0 && is_array($subFileData[0])) {
+                if (self::isFileList($subFileData)) {
                     // Array of files in nested field
                     foreach ($subFileData as $index => $nestedFile) {
                         if (is_array($nestedFile)) {
@@ -103,7 +133,7 @@ final class FileUploadValidator
                             );
                         }
                     }
-                } elseif (isset($subFileData['tmp_name']) || isset($subFileData['name'])) {
+                } elseif (self::isSingleFileEntry($subFileData)) {
                     // Single file in nested field
                     self::validateSingleFileArray($fieldName . '[' . $subFieldName . ']', $subFileData);
                 } else {
