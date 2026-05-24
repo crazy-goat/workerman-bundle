@@ -66,6 +66,9 @@ workerman:
 >
 > In production, consider using the `user` and `group` config keys to drop privileges after binding, or front with a reverse proxy (e.g. nginx, Caddy).
 
+> **`listen` is effectively required.** Omitting it creates a worker that does not accept connections — no traffic reaches your application.
+> Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL), `tcp://` (raw TCP).
+
 ### Start application
 
 Using the Symfony console command:
