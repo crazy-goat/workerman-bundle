@@ -147,6 +147,9 @@ final class SchedulerWorkerTest extends TestCase
         } finally {
             Worker::$outputStream = $savedOutputStream;
             Worker::$logFile = $savedLogFile;
+            if (\extension_loaded('pcntl')) {
+                \pcntl_signal(\SIGCHLD, \SIG_IGN);
+            }
         }
 
         rewind($tempStream);
@@ -279,6 +282,9 @@ final class SchedulerWorkerTest extends TestCase
         } finally {
             Worker::$outputStream = $savedOutputStream;
             Worker::$logFile = $savedLogFile;
+            if (\extension_loaded('pcntl')) {
+                \pcntl_signal(\SIGCHLD, \SIG_IGN);
+            }
         }
 
         rewind($tempStream);
