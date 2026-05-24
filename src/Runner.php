@@ -252,14 +252,6 @@ final readonly class Runner implements RunnerInterface
      */
     private function resolveRuntimePath(string $path): string
     {
-        $projectDir = $this->kernelFactory->getProjectDir();
-        $runtimeDir = $this->kernelFactory->getRuntimeDir();
-
-        // If running from PHAR, replace the project dir prefix with runtime dir
-        if ($runtimeDir !== $projectDir && str_starts_with($path, $projectDir)) {
-            return $runtimeDir . substr($path, strlen($projectDir));
-        }
-
-        return $path;
+        return PharHelper::resolveRuntimePath($path, $this->kernelFactory->getProjectDir());
     }
 }

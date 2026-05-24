@@ -71,10 +71,10 @@ final class ConfigLoader implements CacheWarmerInterface
         }
 
         // Cache not available and config not injected. This is reachable when a fresh
-        // ConfigLoader is constructed outside the DI container (e.g. ServerManager's
-        // fallback path) and no cache has been warmed up yet. Returning empty sections
-        // is intentional so downstream getters do not error; the caller is responsible
-        // for treating "empty config" as "no Workerman configuration".
+        // ConfigLoader is constructed outside the DI container and no cache has been
+        // warmed up yet. Returning empty sections is intentional so downstream getters
+        // do not error; the caller is responsible for treating "empty config" as
+        // "no Workerman configuration".
         return $this->config = [
             ConfigSection::WORKERMAN->value => [],
             ConfigSection::PROCESS->value => [],

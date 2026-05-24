@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Command\ServerAction;
-use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Worker;
 
-final class ServerManager
+final readonly class ServerManager
 {
-    /** @var array<string, mixed>|null */
-    private ?array $config = null;
-
     public function __construct(
-        private readonly KernelInterface $kernel,
+        private KernelInterface $kernel,
+        private ConfigLoader $configLoader,
     ) {
     }
 
@@ -327,46 +324,7 @@ final class ServerManager
      */
     private function getConfig(): array
     {
-        if ($this->config !== null) {
-            return $this->config;
-        }
-
-        // Try the DI container's ConfigLoader first (has config via setter injection)
-        $container = $this->kernel->getContainer();
-        if ($container->has('workerman.config_loader')) {
-            /** @var ConfigLoader $configLoader */
-            $configLoader = $container->get('workerman.config_loader');
-            $workermanConfig = $configLoader->getWorkermanConfig();
-
-            // If we got valid config (non-empty), cache and return it
-            if ($workermanConfig !== []) {
-                return $this->config = $workermanConfig;
-            }
-        }
-
-        // Fallback: create a fresh ConfigLoader and read from cache file
-        $cacheDir = $container->getParameter('kernel.cache_dir');
-
-        if (!\is_string($cacheDir)) {
-            throw new InvalidCacheDirectoryException('kernel.cache_dir parameter must be a string');
-        }
-
-        if (PharHelper::isPhar()) {
-            $projectDir = $this->kernel->getProjectDir();
-            $runtimeDir = PharHelper::getRuntimeDir($projectDir);
-
-            if ($runtimeDir !== $projectDir && str_starts_with($cacheDir, $projectDir)) {
-                $cacheDir = $runtimeDir . substr($cacheDir, strlen($projectDir));
-            }
-        }
-
-        $configLoader = new ConfigLoader(
-            projectDir: $this->kernel->getProjectDir(),
-            cacheDir: $cacheDir,
-            isDebug: $this->kernel->isDebug(),
-        );
-
-        return $this->config = $configLoader->getWorkermanConfig();
+        return $this->configLoader->getWorkermanConfig();
     }
 
     private function createKernelFactory(): KernelFactory
