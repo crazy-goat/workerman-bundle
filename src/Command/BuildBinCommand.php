@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
 use CrazyGoat\WorkermanBundle\Phar\ByteFormatter;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
+use CrazyGoat\WorkermanBundle\Phar\SfxSourceResolver;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,14 +20,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'workerman:build:bin', description: 'Build a standalone binary of the Symfony application (PHAR + static PHP)')]
 final class BuildBinCommand extends Command
 {
-    private const DEFAULT_SFX_URL = 'https://download.workerman.net/php/php%s.micro.sfx';
-
     public function __construct(
         private readonly ConfigLoader $configLoader,
         private readonly PharBuilder $pharBuilder,
         private readonly SfxDownloader $sfxDownloader,
         private readonly BinaryComposer $binaryComposer,
         private readonly BuildPathResolver $pathResolver,
+        private readonly SfxSourceResolver $sfxSourceResolver,
         private readonly string $projectDir,
     ) {
         parent::__construct();
@@ -99,59 +99,34 @@ final class BuildBinCommand extends Command
      */
     private function resolveSfx(InputInterface $input, array $buildConfig, string $downloadDir, SymfonyStyle $io): string
     {
-        // Priority: --sfx-file > sfx.file > --sfx-url > sfx.url > default mirror
-        $sfxFile = $input->getOption('sfx-file');
-        if (is_string($sfxFile) && $sfxFile !== '') {
-            if (!is_file($sfxFile)) {
-                throw new \RuntimeException(sprintf('SFX file not found: %s', $sfxFile));
+        $source = $this->sfxSourceResolver->resolve($input, $buildConfig);
+
+        if ($source->isLocal()) {
+            if ($source->localPath === null) {
+                throw new \RuntimeException('Resolver returned a local source without a local path.');
             }
-            $io->text(sprintf('Using local SFX file: %s', $sfxFile));
+            $io->text(sprintf('Using local SFX file: %s', $source->localPath));
 
-            return $sfxFile;
+            return $source->localPath;
         }
 
-        $configSfxFile = $buildConfig['sfx']['file'] ?? null;
-        if (is_string($configSfxFile) && $configSfxFile !== '' && is_file($configSfxFile)) {
-            $io->text(sprintf('Using SFX file from config: %s', $configSfxFile));
-
-            return $configSfxFile;
+        if ($source->url === null) {
+            throw new \RuntimeException('Resolver returned a remote source without a URL.');
         }
 
-        $sfxUrl = $input->getOption('sfx-url');
-        if (!is_string($sfxUrl) || $sfxUrl === '') {
-            $sfxUrl = $buildConfig['sfx']['url'] ?? null;
+        if ($source->resolvedPhpVersion !== null) {
+            $io->text(sprintf('Resolved SFX for PHP %s', $source->resolvedPhpVersion));
         }
 
-        if (!is_string($sfxUrl) || $sfxUrl === '') {
-            $phpVersion = $input->getOption('php-version');
-            if (!is_string($phpVersion) || $phpVersion === '') {
-                $phpVersion = $buildConfig['bin_php_version'] ?? null;
-            }
-            if (!is_string($phpVersion) || $phpVersion === '') {
-                $phpVersion = sprintf('%s.%s', PHP_MAJOR_VERSION, PHP_MINOR_VERSION);
-            }
-            $sfxUrl = sprintf(self::DEFAULT_SFX_URL, $phpVersion);
-            $io->text(sprintf('Resolved SFX for PHP %s', $phpVersion));
-        }
-
-        $checksum = $input->getOption('sfx-checksum');
-        if (!is_string($checksum) || $checksum === '') {
-            $checksum = $buildConfig['sfx']['sha256'] ?? null;
-        }
-        if (!is_string($checksum) || $checksum === '') {
-            $checksum = null;
-        }
-
-        $allowInsecure = (bool) $input->getOption('insecure') || (bool) ($buildConfig['sfx']['allow_insecure'] ?? false);
-        if ($allowInsecure) {
+        if ($source->allowInsecure) {
             $io->warning('Downloading SFX with TLS peer verification disabled. This is unsafe — provide --sfx-checksum or use a trusted mirror.');
         }
-        if ($checksum === null) {
+        if ($source->checksum === null) {
             $io->warning('No SFX SHA-256 configured. The downloaded binary is not verified. Set build.sfx.sha256 (or pass --sfx-checksum) to enable verification.');
         }
 
-        $io->text(sprintf('Downloading: %s', $sfxUrl));
+        $io->text(sprintf('Downloading: %s', $source->url));
 
-        return $this->sfxDownloader->fetch($sfxUrl, $downloadDir, $checksum, $allowInsecure);
+        return $this->sfxDownloader->fetch($source->url, $downloadDir, $source->checksum, $source->allowInsecure);
     }
 }
