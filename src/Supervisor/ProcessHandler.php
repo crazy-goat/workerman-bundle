@@ -18,20 +18,20 @@ final readonly class ProcessHandler
     ) {
     }
 
-    public function __invoke(ServiceMethod $service, string $processName): void
+    public function __invoke(ServiceMethod $serviceMethod, string $processName): void
     {
-        $serviceInstance = $this->locator->get($service->serviceId);
+        $serviceInstance = $this->locator->get($serviceMethod->serviceId);
         assert(is_object($serviceInstance));
 
         $this->eventDispatcher->dispatch(new ProcessStartEvent($serviceInstance::class, $processName));
 
         try {
-            if (!method_exists($serviceInstance, $service->method)) {
+            if (!method_exists($serviceInstance, $serviceMethod->method)) {
                 throw new \InvalidArgumentException(
-                    sprintf('Method "%s" does not exist on service "%s" (class "%s").', $service->method, $service->serviceId, $serviceInstance::class),
+                    sprintf('Method "%s" does not exist on service "%s" (class "%s").', $serviceMethod->method, $serviceMethod->serviceId, $serviceInstance::class),
                 );
             }
-            $serviceInstance->{$service->method}();
+            $serviceInstance->{$serviceMethod->method}();
         } catch (\Throwable $e) {
             $this->eventDispatcher->dispatch(new ProcessErrorEvent($e, $serviceInstance::class, $processName));
         }

@@ -31,10 +31,28 @@ final class ServiceMethodTest extends TestCase
         $this->assertSame('App\Service\MyService::execute', $serviceMethod->toString());
     }
 
-    public function testIsReadonly(): void
+    public function testCannotModifyReadonlyProperties(): void
     {
-        $reflection = new \ReflectionClass(ServiceMethod::class);
+        $serviceMethod = new ServiceMethod('svc', 'm');
 
-        $this->assertTrue($reflection->isReadOnly());
+        $this->expectException(\Error::class);
+        $serviceMethod->serviceId = 'other';
+    }
+
+    /** @dataProvider provideEmptyStrings */
+    public function testConstructorThrowsOnEmptyString(string $serviceId, string $method): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Service ID and method must not be empty');
+
+        new ServiceMethod($serviceId, $method);
+    }
+
+    /** @return iterable<array{string, string}> */
+    public static function provideEmptyStrings(): iterable
+    {
+        yield 'empty service ID' => ['', 'method'];
+        yield 'empty method' => ['service', ''];
+        yield 'both empty' => ['', ''];
     }
 }
