@@ -123,3 +123,15 @@ When `allowed_extensions` is set, only files with one of the listed extensions a
 - **Keep `root_dir` isolated**: Point `root_dir` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
 - **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
+
+## SFX Download Protection (Zip-Slip)
+
+The `SfxDownloader` downloads and extracts `phpmicro.sfx` from upstream HTTPS mirrors. Before extracting a downloaded ZIP archive, each entry name is validated against path traversal attacks (zip-slip):
+
+- **Backslashes**: Entry names containing backslashes (`\`) are rejected.
+- **Absolute paths**: Entry names starting with `/` or a Windows drive letter (`C:\`) are rejected.
+- **Path traversal**: Entry names containing `..` segments after normalization are rejected.
+- **Destination containment**: Each entry is checked to ensure it resolves to a path inside the destination directory.
+
+If any entry fails validation, the build aborts with a `\RuntimeException`.
+

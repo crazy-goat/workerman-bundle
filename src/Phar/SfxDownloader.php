@@ -156,6 +156,7 @@ final class SfxDownloader
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = $zip->getNameIndex($i);
             if (is_string($name) && $name !== '') {
+                $this->validateEntryName($name);
                 $names[] = $name;
             }
         }
@@ -180,5 +181,65 @@ final class SfxDownloader
         }
 
         throw new \RuntimeException(sprintf('Could not locate extracted SFX file in "%s".', $destinationDir));
+    }
+
+    /**
+     * Validate a zip entry name against zip-slip path traversal attacks.
+     *
+     * @throws \RuntimeException if the entry name is invalid
+     */
+    private function validateEntryName(string $entryName): void
+    {
+        // Reject entries containing backslashes (Windows path separators).
+        if (str_contains($entryName, '\\')) {
+            throw new \RuntimeException(sprintf(
+                'Zip entry "%s" contains backslashes and is rejected.',
+                $entryName,
+            ));
+        }
+
+        // Reject absolute paths (starting with / or a drive letter).
+        if (str_starts_with($entryName, '/')) {
+            throw new \RuntimeException(sprintf(
+                'Zip entry "%s" is an absolute path and is rejected.',
+                $entryName,
+            ));
+        }
+
+        // Reject Windows drive letters (e.g., C:\).
+        if (preg_match('/^[a-zA-Z]:[\\\\\/]/', $entryName) === 1) {
+            throw new \RuntimeException(sprintf(
+                'Zip entry "%s" contains a drive letter and is rejected.',
+                $entryName,
+            ));
+        }
+
+        // Normalize and check for path traversal (.. segments).
+        $normalized = $this->normalizePath($entryName);
+        if (in_array('..', explode('/', $normalized), true)) {
+            throw new \RuntimeException(sprintf(
+                'Zip entry "%s" contains path traversal segments and is rejected.',
+                $entryName,
+            ));
+        }
+    }
+
+    /**
+     * Normalize a path: collapse repeated slashes and resolve '.' segments.
+     *
+     * Note: '..' segments are NOT resolved here; they are checked separately.
+     */
+    private function normalizePath(string $path): string
+    {
+        $parts = explode('/', $path);
+        $filtered = [];
+        foreach ($parts as $part) {
+            if ($part === '.' || $part === '') {
+                continue;
+            }
+            $filtered[] = $part;
+        }
+
+        return implode('/', $filtered);
     }
 }
