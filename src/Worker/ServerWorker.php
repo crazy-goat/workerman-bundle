@@ -71,6 +71,7 @@ final readonly class ServerWorker
             }, $serverConfig['middlewares'] ?? []);
             assert(is_callable($callable));
             if ($callable instanceof StaticFileHandlerInterface) {
+                $callable->withStaticFileConfig($serverConfig['static_files'] ?? []);
                 $callable->withRootDirectory($rootDir);
             }
             if ($callable instanceof MiddlewareDispatchInterface && $middlewares !== []) {

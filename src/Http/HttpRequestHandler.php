@@ -17,6 +17,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 {
     /** @var MiddlewareInterface[] */
     private array $middlewares = [];
+    /** @var array<string, mixed> */
+    private array $staticFileConfig = [];
     private ?int $terminateTimerId = null;
 
     public function __construct(
@@ -37,7 +39,14 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         if ($rootDirectory === null) {
             return $this;
         }
-        $this->middlewares[] = new StaticFilesMiddleware(rtrim($rootDirectory, '/'));
+        $allowedExtensions = $this->staticFileConfig['allowed_extensions'] ?? [];
+        $this->middlewares[] = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
+        return $this;
+    }
+
+    public function withStaticFileConfig(array $staticFileConfig): self
+    {
+        $this->staticFileConfig = $staticFileConfig;
         return $this;
     }
 

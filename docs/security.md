@@ -73,3 +73,53 @@ If you also configure `framework.trusted_hosts` in Symfony, note that:
 ### When this matters
 
 Configure `trusted_hosts` when your application generates absolute URLs based on the incoming `Host` header (e.g., password-reset emails, webhook callbacks, OAuth redirects). Without it, an attacker can craft a request with a spoofed `Host` header and trick the application into generating URLs pointing to an attacker-controlled domain.
+
+## Static Files Protection
+
+When `serve_files` is enabled on a server, `StaticFilesMiddleware` serves files from the configured root directory. This middleware applies security hardening to prevent accidental exposure of sensitive files:
+
+### Built-in Denylist
+
+The following are **always blocked** (requests return 404):
+
+- **Dotfiles and dot-directories**: Any path component starting with `.` is rejected (e.g., `.env`, `.git/HEAD`, `.htaccess`, `.hidden/secret.txt`).
+- **Executable file extensions**: `.php`, `.phar`, and `.phtml` files are never served.
+- **Well-known leak files**: `composer.json`, `composer.lock`, and `package.json` are blocked.
+- **Server configuration files**: `.htaccess` and `.htpasswd` are blocked.
+
+### Extension Allowlist
+
+To restrict which file types are served, configure an explicit extension allowlist:
+
+```yaml
+workerman:
+    servers:
+        - name: 'Web'
+          listen: 'http://0.0.0.0:80'
+          serve_files: true
+          root_dir: '%kernel.project_dir%/public'
+          static_files:
+              allowed_extensions:
+                  - 'css'
+                  - 'js'
+                  - 'png'
+                  - 'jpg'
+                  - 'jpeg'
+                  - 'gif'
+                  - 'webp'
+                  - 'svg'
+                  - 'woff'
+                  - 'woff2'
+                  - 'ico'
+                  - 'html'
+                  - 'json'
+                  - 'txt'
+```
+
+When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
+
+### Security Considerations
+
+- **Keep `root_dir` isolated**: Point `root_dir` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
+- **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
+- **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
