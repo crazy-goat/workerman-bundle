@@ -53,7 +53,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
         $response = $next($request);
 
-        $connection->send(Http::encode($response, $connection), true);
+        $responseAlreadySent = $connection->context instanceof \stdClass
+            && isset($connection->context->responseSentDirectly);
+        if ($responseAlreadySent) {
+            unset($connection->context->responseSentDirectly);
+        }
+
+        if (!$responseAlreadySent) {
+            $connection->send(Http::encode($response, $connection), true);
+        }
 
         // Cancel any pending terminate timer from previous request (safety)
         if ($this->terminateTimerId !== null) {

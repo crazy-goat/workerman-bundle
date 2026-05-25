@@ -206,6 +206,9 @@ final readonly class ServicesConfigurator
         $container
             ->register('workerman.default_response_strategy', DefaultResponseStrategy::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 0])
+            ->setArguments([
+                $container->getParameter('workerman.response_chunk_size'),
+            ])
         ;
     }
 }
