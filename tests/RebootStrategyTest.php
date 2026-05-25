@@ -212,6 +212,14 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($strategy->shouldReboot());
     }
 
+    public function testMemoryRebootStrategyDoesNotRebootWhenGcLimitIsNull(): void
+    {
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, null);
+
+        $this->assertFalse($strategy->shouldReboot());
+        $this->assertFalse($strategy->shouldReboot());
+    }
+
     public function testStackRebootStrategyReturnsFalseWithEmptyStack(): void
     {
         $strategy = new StackRebootStrategy([]);

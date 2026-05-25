@@ -12,9 +12,12 @@ final readonly class MemoryRebootStrategy implements RebootStrategyInterface
 
     public function shouldReboot(): bool
     {
-        if ($this->gcLimit !== null &&  memory_get_usage() > $this->gcLimit) {
+        $memoryUsage = memory_get_usage();
+
+        if ($this->gcLimit !== null && $memoryUsage > $this->gcLimit) {
             gc_collect_cycles();
+            $memoryUsage = memory_get_usage();
         }
-        return memory_get_usage() > $this->limit;
+        return $memoryUsage > $this->limit;
     }
 }
