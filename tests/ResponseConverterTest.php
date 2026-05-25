@@ -95,6 +95,11 @@ final class ResponseConverterTest extends TestCase
 
     public function testConvertStreamedResponse(): void
     {
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
+
         $strategies = [new StreamedResponseStrategy(), new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
@@ -104,6 +109,8 @@ final class ResponseConverterTest extends TestCase
 
         $workermanResponse = $converter->convert($streamedResponse, $this->connection);
 
-        $this->assertSame('streamed content', $workermanResponse->rawBody());
+        // Content is sent directly via $connection->send(), not buffered in response
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
     }
 }

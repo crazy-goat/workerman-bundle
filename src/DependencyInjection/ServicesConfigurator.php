@@ -201,6 +201,9 @@ final readonly class ServicesConfigurator
         $container
             ->register('workerman.streamed_response_strategy', StreamedResponseStrategy::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 50])
+            ->setArguments([
+                $container->getParameter('workerman.response_chunk_size'),
+            ])
         ;
 
         $container

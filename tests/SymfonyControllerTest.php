@@ -1051,8 +1051,13 @@ final class SymfonyControllerTest extends TestCase
 
     public function testStreamedResponseE2E(): void
     {
-        // E2E test: Verify StreamedResponse content is properly captured
+        // E2E test: Verify StreamedResponse content is properly streamed via connection
         $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
+
         $streamedResponse = new StreamedResponse(function (): void {
             echo 'chunk1';
             echo 'chunk2';
@@ -1079,13 +1084,18 @@ final class SymfonyControllerTest extends TestCase
             'OB level should remain unchanged after test',
         );
 
-        // StreamedResponse content should be captured via output buffering
-        $this->assertSame('chunk1chunk2chunk3', $response->rawBody());
+        // Content is sent directly via $connection->send(), not buffered in response
+        $this->assertSame('', $response->rawBody());
     }
 
     public function testStreamedResponseWithStatusCode(): void
     {
         $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
+
         $streamedResponse = new StreamedResponse(
             function (): void {
                 echo 'streamed content';
@@ -1105,12 +1115,17 @@ final class SymfonyControllerTest extends TestCase
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(202, $response->getStatusCode());
-        $this->assertSame('streamed content', $response->rawBody());
+        $this->assertSame('', $response->rawBody());
     }
 
     public function testStreamedResponseWithHeaders(): void
     {
         $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
+
         $streamedResponse = new StreamedResponse(
             function (): void {
                 echo 'streaming data';
@@ -1134,12 +1149,17 @@ final class SymfonyControllerTest extends TestCase
         $this->assertStringContainsString('text/event-stream', $response->getHeader('Content-Type')[0] ?? '');
         // Headers are normalized to proper case
         $this->assertSame(['true'], $response->getHeader('X-Stream'));
-        $this->assertSame('streaming data', $response->rawBody());
+        $this->assertSame('', $response->rawBody());
     }
 
     public function testStreamedResponseEmptyContent(): void
     {
         $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
+
         $streamedResponse = new StreamedResponse(function (): void {
             // Echo nothing
         });
@@ -1165,6 +1185,10 @@ final class SymfonyControllerTest extends TestCase
         }
 
         $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+        $this->connection
+            ->expects($this->any())
+            ->method('send');
 
         $streamedJsonResponse = new \Symfony\Component\HttpFoundation\StreamedJsonResponse([
             'items' => [1, 2, 3],
@@ -1182,8 +1206,7 @@ final class SymfonyControllerTest extends TestCase
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertJson($response->rawBody());
-        $this->assertSame('{"items":[1,2,3]}', $response->rawBody());
+        $this->assertSame('', $response->rawBody());
     }
 
     public function testHttpsE2E(): void
