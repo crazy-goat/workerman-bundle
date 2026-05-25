@@ -16,6 +16,8 @@ final readonly class ServerManager
     public function __construct(
         private KernelInterface $kernel,
         private ConfigLoader $configLoader,
+        private ProcessInspector $processInspector,
+        private StatusFileReader $statusFileReader,
     ) {
     }
 
@@ -41,15 +43,15 @@ final readonly class ServerManager
     public function stop(bool $graceful = false): bool
     {
         $masterPid = $this->getRunningMasterPid();
-        $parentPid = $this->getParentPid($masterPid);
+        $parentPid = $this->processInspector->getParentPid($masterPid);
 
         posix_kill($masterPid, $graceful ? \SIGQUIT : \SIGINT);
 
-        if (!$this->waitForProcessToStop($masterPid, $this->getStopTimeout(), $graceful)) {
+        if (!$this->processInspector->waitForProcessToStop($masterPid, $this->getStopTimeout(), $graceful)) {
             return false;
         }
 
-        $this->killOrphanedIntermediateFork($parentPid);
+        $this->processInspector->killOrphanedIntermediateFork($parentPid);
 
         return true;
     }
@@ -88,9 +90,9 @@ final readonly class ServerManager
     {
         posix_kill($this->getRunningMasterPid(), \SIGIOT);
 
-        $statusFile = $this->getStatusFilePath();
+        $statusFile = $this->statusFileReader->getStatusFilePath();
 
-        if (!$this->waitForFile($statusFile, $this->getStatusTimeout())) {
+        if (!$this->statusFileReader->waitForFile($statusFile, $this->statusFileReader->getStatusTimeout())) {
             return null;
         }
 
@@ -118,9 +120,9 @@ final readonly class ServerManager
     {
         posix_kill($this->getRunningMasterPid(), \SIGIO);
 
-        $connectionsFile = $this->getStatusFilePath() . '.connection';
+        $connectionsFile = $this->statusFileReader->getStatusFilePath() . '.connection';
 
-        if (!$this->waitForFile($connectionsFile, $this->getStatusTimeout())) {
+        if (!$this->statusFileReader->waitForFile($connectionsFile, $this->statusFileReader->getStatusTimeout())) {
             return null;
         }
 
@@ -136,7 +138,7 @@ final readonly class ServerManager
 
     public function isRunning(): bool
     {
-        return $this->isMasterRunning($this->getMasterPid());
+        return $this->processInspector->isMasterRunning($this->getMasterPid());
     }
 
     private function prepareWorkerStart(ServerAction $action, bool $daemon, bool $graceful): void
@@ -164,105 +166,17 @@ final readonly class ServerManager
     {
         $masterPid = $this->getMasterPid();
 
-        if (!$this->isMasterRunning($masterPid)) {
+        if (!$this->processInspector->isMasterRunning($masterPid)) {
             throw new ServerNotRunningException();
         }
 
         return $masterPid;
     }
 
-    private function waitForProcessToStop(int $pid, int $stopTimeout, bool $graceful): bool
-    {
-        // Graceful stop gets longer timeout (3x + 3s buffer), ensuring it's always longer than regular
-        $timeout = $graceful ? $stopTimeout * 3 + 3 : $stopTimeout + 3;
-        $startTime = time();
-        $sleepMs = 10;
-
-        while (true) {
-            if (!$this->isProcessAlive($pid)) {
-                return true;
-            }
-
-            // Always check timeout, regardless of graceful mode
-            if ((time() - $startTime) >= $timeout) {
-                return false;
-            }
-
-            // Exponential backoff: start at 10ms, max 250ms
-            usleep($sleepMs * 1000);
-            $sleepMs = min($sleepMs * 2, 250);
-        }
-    }
-
-    private function isProcessAlive(int $pid): bool
-    {
-        if ($pid <= 0 || !posix_kill($pid, 0)) {
-            return false;
-        }
-
-        $statusFile = "/proc/{$pid}/status";
-        if (is_readable($statusFile)) {
-            $status = file_get_contents($statusFile);
-            if (\is_string($status) && preg_match('/^State:\s+Z/m', $status)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function getParentPid(int $pid): int
-    {
-        $statusFile = "/proc/{$pid}/status";
-        if (!is_readable($statusFile)) {
-            return 0;
-        }
-
-        $status = file_get_contents($statusFile);
-        if (\is_string($status) && preg_match('/^PPid:\s+(\d+)/m', $status, $matches)) {
-            return (int) $matches[1];
-        }
-
-        return 0;
-    }
-
-    private function killOrphanedIntermediateFork(int $parentPid): void
-    {
-        if ($parentPid <= 0 || !$this->isProcessAlive($parentPid)) {
-            return;
-        }
-
-        $cmdline = "/proc/{$parentPid}/cmdline";
-        if (!is_readable($cmdline)) {
-            return;
-        }
-
-        $content = file_get_contents($cmdline);
-        if (\is_string($content) && str_contains($content, 'WorkerMan')) {
-            posix_kill($parentPid, \SIGKILL);
-        }
-    }
-
-    private function isMasterRunning(int $masterPid): bool
-    {
-        if ($masterPid <= 0 || !$this->isProcessAlive($masterPid)) {
-            return false;
-        }
-
-        $cmdline = "/proc/{$masterPid}/cmdline";
-        if (is_readable($cmdline)) {
-            $content = file_get_contents($cmdline);
-            if (\is_string($content) && $content !== '') {
-                return str_contains($content, 'WorkerMan') || str_contains($content, 'php');
-            }
-        }
-
-        return true;
-    }
-
     private function getMasterPid(): int
     {
-        $pidFile = $this->getConfig()['pid_file'] ?? '';
+        $config = $this->configLoader->getWorkermanConfig();
+        $pidFile = $config['pid_file'] ?? '';
 
         if (!\is_string($pidFile) || $pidFile === '' || !is_file($pidFile)) {
             return 0;
@@ -275,56 +189,10 @@ final readonly class ServerManager
 
     private function getStopTimeout(): int
     {
-        $timeout = $this->getConfig()['stop_timeout'] ?? 2;
+        $config = $this->configLoader->getWorkermanConfig();
+        $timeout = $config['stop_timeout'] ?? 2;
 
         return \is_int($timeout) ? $timeout : 2;
-    }
-
-    private function getStatusTimeout(): int
-    {
-        $timeout = $this->getConfig()['status_timeout'] ?? 5;
-
-        return \is_int($timeout) ? $timeout : 5;
-    }
-
-    /**
-     * Poll for a file to exist, with a configurable timeout.
-     *
-     * Checks every 50ms whether the file exists, up to $timeout seconds.
-     *
-     * @return bool true if file exists within timeout, false otherwise
-     */
-    private function waitForFile(string $filePath, int $timeout): bool
-    {
-        $interval = 50_000; // 50ms in microseconds
-        $elapsed = 0;
-        $timeoutMicro = $timeout * 1_000_000;
-
-        while (!file_exists($filePath) && $elapsed < $timeoutMicro) {
-            usleep($interval);
-            $elapsed += $interval;
-        }
-
-        return file_exists($filePath);
-    }
-
-    private function getStatusFilePath(): string
-    {
-        $pidFile = $this->getConfig()['pid_file'] ?? '';
-
-        if (!\is_string($pidFile)) {
-            return '';
-        }
-
-        return preg_replace('/\.pid$/', '.status', $pidFile) ?? $pidFile;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function getConfig(): array
-    {
-        return $this->configLoader->getWorkermanConfig();
     }
 
     private function createKernelFactory(): KernelFactory

@@ -16,12 +16,14 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
+use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskErrorListener;
 use CrazyGoat\WorkermanBundle\ServerManager;
+use CrazyGoat\WorkermanBundle\StatusFileReader;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessErrorListener;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -134,6 +136,16 @@ final readonly class ServicesConfigurator
 
         $container
             ->register(ServerManager::class)
+            ->setAutowired(true)
+        ;
+
+        $container
+            ->register(ProcessInspector::class)
+            ->setAutowired(true)
+        ;
+
+        $container
+            ->register(StatusFileReader::class)
             ->setAutowired(true)
         ;
 

@@ -7,12 +7,14 @@ namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\DependencyInjection\ServicesConfigurator;
+use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskErrorListener;
 use CrazyGoat\WorkermanBundle\ServerManager;
+use CrazyGoat\WorkermanBundle\StatusFileReader;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessErrorListener;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -68,6 +70,12 @@ final class ServicesConfiguratorTest extends TestCase
 
         self::assertTrue($this->container->hasDefinition(ServerManager::class));
         self::assertTrue($this->container->getDefinition(ServerManager::class)->isAutowired());
+
+        self::assertTrue($this->container->hasDefinition(ProcessInspector::class));
+        self::assertTrue($this->container->getDefinition(ProcessInspector::class)->isAutowired());
+
+        self::assertTrue($this->container->hasDefinition(StatusFileReader::class));
+        self::assertTrue($this->container->getDefinition(StatusFileReader::class)->isAutowired());
 
         self::assertTrue($this->container->hasDefinition(WorkermanCommand::class));
         self::assertTrue($this->container->getDefinition(WorkermanCommand::class)->hasTag('console.command'));
