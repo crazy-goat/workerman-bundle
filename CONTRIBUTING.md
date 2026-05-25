@@ -55,6 +55,10 @@ rm .git/hooks/pre-push
    composer test
    ```
 
+   Note: `composer test` boots a real Workerman daemon binding ports 8888 and
+   9999 for E2E tests. If you see "Address already in use" errors, ensure
+   those ports are free.
+
 3. Ensure all checks pass before pushing
 
 4. Update CHANGELOG.md:
