@@ -1,0 +1,157 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CrazyGoat\WorkermanBundle\Test;
+
+use CrazyGoat\WorkermanBundle\Exception\KernelCreationException;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\KernelInterface;
+
+final class KernelFactoryTest extends TestCase
+{
+    protected function tearDown(): void
+    {
+        unset($_SERVER['WORKERMAN_RUNTIME_DIR']);
+    }
+
+    public function testCreateKernelReturnsKernel(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $factory = new KernelFactory(
+            static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel,
+            [],
+        );
+
+        self::assertSame($kernel, $factory->createKernel());
+    }
+
+    public function testCreateKernelMemoization(): void
+    {
+        $count = 0;
+        $kernel = $this->createMock(KernelInterface::class);
+        $factory = new KernelFactory(
+            static function () use ($kernel, &$count): KernelInterface {
+                ++$count;
+
+                return $kernel;
+            },
+            [],
+        );
+
+        $factory->createKernel();
+        $factory->createKernel();
+
+        self::assertSame(1, $count, 'The closure must be called exactly once');
+    }
+
+    public function testCreateKernelThrowsForNullReturn(): void
+    {
+        $factory = new KernelFactory(
+            static fn(): null => null,
+            [],
+        );
+
+        $this->expectException(KernelCreationException::class);
+
+        $factory->createKernel();
+    }
+
+    public function testGetEnvironment(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects(self::once())->method('getEnvironment')->willReturn('test');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('test', $factory->getEnvironment());
+    }
+
+    public function testIsDebug(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects(self::once())->method('isDebug')->willReturn(true);
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertTrue($factory->isDebug());
+    }
+
+    public function testGetProjectDir(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects(self::once())->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/app', $factory->getProjectDir());
+    }
+
+    public function testGetCacheDirInNormalMode(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getEnvironment')->willReturn('test');
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/app/var/cache/test', $factory->getCacheDir());
+    }
+
+    public function testGetLogDirInNormalMode(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/app/var/log', $factory->getLogDir());
+    }
+
+    public function testGetRuntimeDirInNormalMode(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/app', $factory->getRuntimeDir());
+    }
+
+    public function testGetCacheDirWithCustomRuntimeDir(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getEnvironment')->willReturn('prod');
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/runtime/var/cache/prod', $factory->getCacheDir());
+    }
+
+    public function testGetLogDirWithCustomRuntimeDir(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/runtime/var/log', $factory->getLogDir());
+    }
+
+    public function testGetRuntimeDirWithCustomRuntimeDir(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/runtime', $factory->getRuntimeDir());
+    }
+
+    public function testIsPharReturnsFalseInNormalMode(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+
+        self::assertFalse($factory->isPhar());
+    }
+}
