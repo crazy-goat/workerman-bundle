@@ -15,7 +15,6 @@ Please see [CONTRIBUTING.md](https://github.com/crazy-goat/workerman-bundle/blob
 
 ## What new in this fork
 * `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
-* `servers.serve_files` - set to `false` to disable serving file (**deprecated**, use [StaticFilesMiddleware](#static-files-middleware) instead). Default: `false`
 *  By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
 This `workerman-bundle` will create symfony request without psr7 it increase performance, but it is still experimental. 
 ## Getting started
