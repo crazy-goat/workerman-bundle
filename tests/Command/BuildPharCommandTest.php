@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Command;
 
+use CrazyGoat\WorkermanBundle\Command\BuildPathResolver;
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
@@ -51,60 +52,44 @@ final class BuildPharCommandTest extends TestCase
 
     public function testResolvePharPathUsesConfigDefaults(): void
     {
-        $input = new ArrayInput([]);
-        $input->bind((new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p'))->getDefinition());
-
-        $path = BuildPharCommand::resolvePharPath($input, [
-            'build_dir' => '/abs/build',
+        $resolver = new BuildPathResolver();
+        $path = $resolver->resolvePharPath(null, '/abs/build', [
             'phar_filename' => 'app.phar',
-        ], '/p');
+        ]);
 
         self::assertSame('/abs/build/app.phar', $path);
     }
 
     public function testResolvePharPathPrefersCliOptions(): void
     {
-        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p');
-        $input = new ArrayInput([
-            '--output-dir' => '/cli/build',
-            '--filename' => 'custom.phar',
-        ]);
-        $input->bind($command->getDefinition());
-
-        $path = BuildPharCommand::resolvePharPath($input, [
-            'build_dir' => '/abs/build',
+        $resolver = new BuildPathResolver();
+        $path = $resolver->resolvePharPath('custom.phar', '/cli/build', [
             'phar_filename' => 'app.phar',
-        ], '/p');
+        ]);
 
         self::assertSame('/cli/build/custom.phar', $path);
     }
 
     public function testResolvePharPathRelativeOutputDirIsRebasedOnProject(): void
     {
-        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/proj');
-        $input = new ArrayInput([
-            '--output-dir' => 'out',
-        ]);
-        $input->bind($command->getDefinition());
-
-        $path = BuildPharCommand::resolvePharPath($input, [
+        $resolver = new BuildPathResolver();
+        $buildDir = $resolver->resolveBuildDir('out', [
             'phar_filename' => 'a.phar',
         ], '/proj');
+        $path = $resolver->resolvePharPath(null, $buildDir, [
+            'phar_filename' => 'a.phar',
+        ]);
 
         self::assertSame('/proj/out/a.phar', $path);
     }
 
     public function testResolvePharPathRejectsEmptyConfig(): void
     {
-        $command = new BuildPharCommand($this->makeConfigLoader(), new PharBuilder('/p', 'test'), '/p');
-        $input = new ArrayInput([]);
-        $input->bind($command->getDefinition());
+        $resolver = new BuildPathResolver();
 
         $this->expectException(\RuntimeException::class);
-        BuildPharCommand::resolvePharPath($input, [
-            'build_dir' => '',
-            'phar_filename' => 'x.phar',
-        ], '/p');
+        $this->expectExceptionMessage('build_dir must be a non-empty string');
+        $resolver->resolveBuildDir(null, ['build_dir' => ''], '/p');
     }
 
     public function testGenerateStubHonoursEnvironmentAndRuntimeDirOverride(): void
@@ -189,7 +174,7 @@ final class BuildPharCommandTest extends TestCase
             'custom_ini' => null,
         ]);
 
-        $command = new BuildPharCommand($configLoader, new PharBuilder($this->tempDir, 'test'), $this->tempDir);
+        $command = new BuildPharCommand($configLoader, new PharBuilder($this->tempDir, 'test'), new BuildPathResolver(), $this->tempDir);
 
         $statusCode = $command->run(new ArrayInput([]), new BufferedOutput());
 
@@ -224,6 +209,6 @@ final class BuildPharCommandTest extends TestCase
 
     private function createCommand(): BuildPharCommand
     {
-        return new BuildPharCommand($this->makeConfigLoader(), new PharBuilder($this->tempDir, 'test'), $this->tempDir);
+        return new BuildPharCommand($this->makeConfigLoader(), new PharBuilder($this->tempDir, 'test'), new BuildPathResolver(), $this->tempDir);
     }
 }
