@@ -142,6 +142,12 @@ final readonly class PharBuilder
 
     /**
      * @param mixed[] $buildConfig
+     *
+     * Placeholders replaced in the stub template:
+     *   __PHAR_ALIAS__    — PHAR archive alias
+     *   __KERNEL_CLASS__  — Symfony kernel FQCN
+     *   __RUNTIME_CLASS__ — Workerman Runtime class FQCN
+     *   __APP_ENV__       — default environment name
      */
     public function generateStub(array $buildConfig, string $pharAlias = 'app.phar'): string
     {
@@ -150,46 +156,18 @@ final readonly class PharBuilder
             ? $buildConfig['kernel_class']
             : 'App\\Kernel';
 
-        return <<<"PHP"
-#!/usr/bin/env php
-<?php
+        $templatePath = __DIR__ . '/../../resources/phar-stub.tpl';
+        $template = file_get_contents($templatePath);
 
-define('IN_PHAR', true);
-Phar::mapPhar('{$pharAlias}');
+        if ($template === false) {
+            throw new \RuntimeException(sprintf('Unable to read PHAR stub template from "%s".', $templatePath));
+        }
 
-\$runtimeDir = isset(\$_SERVER['WORKERMAN_RUNTIME_DIR']) && \$_SERVER['WORKERMAN_RUNTIME_DIR'] !== ''
-    ? rtrim((string) \$_SERVER['WORKERMAN_RUNTIME_DIR'], '/')
-    : dirname(Phar::running(false));
-
-\$_SERVER['APP_RUNTIME'] = '{$runtimeEnv}';
-\$_ENV['APP_CACHE_DIR'] = \$runtimeDir . '/var/cache';
-\$_ENV['APP_LOG_DIR'] = \$runtimeDir . '/var/log';
-
-foreach (['/var/cache', '/var/log', '/var/run'] as \$sub) {
-    \$dir = \$runtimeDir . \$sub;
-    if (!is_dir(\$dir) && !mkdir(\$dir, 0755, true) && !is_dir(\$dir)) {
-        fwrite(STDERR, sprintf('Unable to create runtime directory "%s". Set WORKERMAN_RUNTIME_DIR to a writable path.' . PHP_EOL, \$dir));
-        exit(1);
-    }
-}
-
-// Load external .env if it exists
-if (file_exists(\$runtimeDir . '/.env')) {
-    if (class_exists('Symfony\\Component\\Dotenv\\Dotenv')) {
-        (new Symfony\\Component\\Dotenv\\Dotenv())->load(\$runtimeDir . '/.env');
-    }
-}
-
-require 'phar://{$pharAlias}/vendor/autoload.php';
-
-\$env = \$_SERVER['APP_ENV'] ?? '{$this->environment}';
-\$debug = (bool)(\$_SERVER['APP_DEBUG'] ?? false);
-
-\$kernel = new {$kernelClass}(\$env, \$debug);
-\$application = new Symfony\\Bundle\\FrameworkBundle\\Console\\Application(\$kernel);
-\$application->run(new Symfony\\Component\\Console\\Input\\ArgvInput());
-
-__HALT_COMPILER();
-PHP;
+        return strtr($template, [
+            '__PHAR_ALIAS__'    => $pharAlias,
+            '__KERNEL_CLASS__'  => $kernelClass,
+            '__RUNTIME_CLASS__' => $runtimeEnv,
+            '__APP_ENV__'       => $this->environment,
+        ]);
     }
 }
