@@ -31,12 +31,11 @@ final class ServiceMethodTest extends TestCase
         $this->assertSame('App\Service\MyService::execute', $serviceMethod->toString());
     }
 
-    public function testCannotModifyReadonlyProperties(): void
+    public function testClassIsReadonly(): void
     {
-        $serviceMethod = new ServiceMethod('svc', 'm');
+        $reflection = new \ReflectionClass(ServiceMethod::class);
 
-        $this->expectException(\Error::class);
-        $serviceMethod->serviceId = 'other';
+        $this->assertTrue($reflection->isReadOnly());
     }
 
     /** @dataProvider provideEmptyStrings */
