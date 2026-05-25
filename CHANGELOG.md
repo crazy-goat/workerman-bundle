@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-05-25
+
+### Security
+
+- Validate URI and HTTP method in `RequestConverter` before propagation to Symfony — prevents header injection via crafted requests ([#220](https://github.com/crazy-goat/workerman-bundle/issues/220))
+- Cookie header merged with comma allows cookie smuggling — added strict cookie parsing ([#217](https://github.com/crazy-goat/workerman-bundle/issues/217))
+- `StaticFilesMiddleware` path traversal — replaced naive concatenation with explicit path-join helper ([#226](https://github.com/crazy-goat/workerman-bundle/issues/226))
+- Add `trusted_hosts` configuration option for Host header enforcement — non-matching hosts return 400 before kernel boot ([#213](https://github.com/crazy-goat/workerman-bundle/issues/213))
+- Nullify request/response references in `SymfonyController` on exception path — prevents request-scope memory leak across requests ([#303](https://github.com/crazy-goat/workerman-bundle/issues/303))
+
+### Performance
+
+- `DefaultResponseStrategy` sends large responses in chunks with configurable chunk size, eliminating full-body buffering ([#236](https://github.com/crazy-goat/workerman-bundle/issues/236))
+- `StreamedResponseStrategy` streams body in chunks via `ob_start` callback instead of buffering entire body — reduces peak RSS from response size to `chunk_size * 2` ([#229](https://github.com/crazy-goat/workerman-bundle/issues/229))
+- `BinaryFileResponseStrategy` chains `onClose` callbacks instead of overwriting, enabling multiple cleanup handlers ([#225](https://github.com/crazy-goat/workerman-bundle/issues/225))
+- Batch-load all `ReflectionProperty` instances in a single `ReflectionClass` call on the hot path ([#222](https://github.com/crazy-goat/workerman-bundle/issues/222))
+- Extract `BinaryFileResponseReflector` — consolidates reflection helpers and caches them by file class ([#223](https://github.com/crazy-goat/workerman-bundle/issues/223))
+
+### Added
+
+- New `ProcessInspector` and `StatusFileReader` classes extracted from `ServerManager` god class ([#211](https://github.com/crazy-goat/workerman-bundle/issues/211))
+- New `PharFileFilter` and `ExcludePattern` named classes extracted from `PharBuilder` inline filter ([#227](https://github.com/crazy-goat/workerman-bundle/issues/227))
+- New `BinaryFileResponseReflector` helper class for cached reflection access ([#223](https://github.com/crazy-goat/workerman-bundle/issues/223))
+- New `FileUploadValidator` focused validation methods replacing monolithic `validateFileEntry` ([#208](https://github.com/crazy-goat/workerman-bundle/issues/208))
+- `PharHelper::resolveRuntimePath()` as the single shared method for PHAR path resolution ([#211](https://github.com/crazy-goat/workerman-bundle/issues/211))
+
+### Changed
+
+- `ConfigLoader` is now injected directly into `ServerManager` instead of probing the DI container via service locator ([#214](https://github.com/crazy-goat/workerman-bundle/issues/214))
+- `Runner::run()` refactored into focused helper methods with clear single responsibilities ([#210](https://github.com/crazy-goat/workerman-bundle/issues/210))
+- `SchedulerWorker::runCallback()` refactored into extracted parent/child/error branches with shared cleanup ([#219](https://github.com/crazy-goat/workerman-bundle/issues/219))
+- `ConfigurationTreeBuilder::configure()` split into per-section builders reducing a 260-line method to coordinated delegates ([#216](https://github.com/crazy-goat/workerman-bundle/issues/216))
+- `RequestConverter::processFiles()` refactored to handle non-array file entries with proper logging ([#207](https://github.com/crazy-goat/workerman-bundle/issues/207))
+
+### Tests
+
+- Add `SchedulerWorker` behavioral tests covering fork, flock, and PID lifecycle ([#209](https://github.com/crazy-goat/workerman-bundle/issues/209))
+- Add `InotifyMonitorWatcherTest` covering `isFlagSet`, `start`, `watchDir`, `onNotify` ([#212](https://github.com/crazy-goat/workerman-bundle/issues/212))
+- Add `FileMonitorWorkerTest` covering file monitor worker lifecycle ([#218](https://github.com/crazy-goat/workerman-bundle/issues/218))
+- Add `SupervisorWorkerTest` covering process lifecycle, signal handling, and error dispatch ([#215](https://github.com/crazy-goat/workerman-bundle/issues/215))
+- Add `FileMonitorWatcherTest` for `create()` factory and `checkPattern()` ([#221](https://github.com/crazy-goat/workerman-bundle/issues/221))
+- Add `PharHelper` unit tests for `resolveRuntimePath()` ([#211](https://github.com/crazy-goat/workerman-bundle/issues/211))
+
+### Docs
+
+- Add Configuration reference section covering all top-level config options ([#243](https://github.com/crazy-goat/workerman-bundle/issues/243))
+- Add `docs/README.md` index page for user-facing documentation ([#244](https://github.com/crazy-goat/workerman-bundle/issues/244))
+- Document `reload_strategy.memory` in README ([#233](https://github.com/crazy-goat/workerman-bundle/issues/233))
+- Add Middlewares section to README with `StaticFilesMiddleware` example ([#231](https://github.com/crazy-goat/workerman-bundle/issues/231))
+- Document that `servers.listen` is effectively required ([#232](https://github.com/crazy-goat/workerman-bundle/issues/232))
+- Use unprivileged port (8080) in README quick-start example ([#245](https://github.com/crazy-goat/workerman-bundle/issues/245))
+
+### Fixed
+
+- Reorder `CHANGELOG.md` 0.16.0 to correct reverse-chronological position ([#255](https://github.com/crazy-goat/workerman-bundle/issues/255))
+
 ## [0.18.0] - 2026-05-20
 
 ### Added
