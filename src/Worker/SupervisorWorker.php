@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Workerman\Worker;
 
 final readonly class SupervisorWorker
@@ -42,8 +43,7 @@ final readonly class SupervisorWorker
                 /** @var ProcessHandler $handler */
                 $handler = $kernel->getContainer()->get('workerman.process_handler');
                 $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
-                assert(is_string($method));
-                $handler("$serviceId::$method", $taskName);
+                $handler(new ServiceMethod($serviceId, $method), $taskName);
                 $worker->log("Process \"$taskName\" (service: $serviceId::$method) finished unexpectedly");
                 exit(1);
             };

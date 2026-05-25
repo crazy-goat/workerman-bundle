@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Workerman\Worker;
 
 final readonly class SchedulerWorker
@@ -55,7 +56,7 @@ final readonly class SchedulerWorker
 
                 $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
                 $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
-                $service = "$serviceId::$method";
+                $service = new ServiceMethod($serviceId, $method);
                 $this->deleteTaskPid($service);
                 $this->scheduleCallback($trigger, $service, $taskName, $handler);
             }
@@ -84,7 +85,7 @@ final readonly class SchedulerWorker
         }
     }
 
-    private function scheduleCallback(TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
+    private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
         $currentDate = new \DateTimeImmutable();
         $nextRunDate = $trigger->getNextRunDate($currentDate);
@@ -94,7 +95,7 @@ final readonly class SchedulerWorker
         }
     }
 
-    private function runCallback(TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
+    private function runCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
         $pidFile = $this->getTaskPidPath($service);
         $fp = $this->openPidFile($pidFile, $taskName);
@@ -145,21 +146,21 @@ final readonly class SchedulerWorker
         fclose($fp);
     }
 
-    private function handleForkError(mixed $fp, TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
+    private function handleForkError(mixed $fp, TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
         $this->releaseLockAndClose($fp);
         $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
-    private function handleParent(mixed $fp, TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
+    private function handleParent(mixed $fp, TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
         $this->releaseLockAndClose($fp);
         $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
-    private function handleChild(string $pidFile, string $service, string $taskName, TaskHandler $handler): void
+    private function handleChild(string $pidFile, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
         $fp = $this->openChildPidFile($pidFile);
         if ($fp === null) {
@@ -214,12 +215,12 @@ final readonly class SchedulerWorker
         return $fp;
     }
 
-    private function getTaskPidPath(string $serviceId): string
+    private function getTaskPidPath(ServiceMethod $service): string
     {
-        return sprintf('%s/workerman.task.%s.pid', dirname(Worker::$pidFile), hash('xxh64', $serviceId));
+        return sprintf('%s/workerman.task.%s.pid', dirname(Worker::$pidFile), hash('xxh64', $service->toString()));
     }
 
-    private function deleteTaskPid(string $service): void
+    private function deleteTaskPid(ServiceMethod $service): void
     {
         $pidFile = $this->getTaskPidPath($service);
         if (is_file($pidFile)) {

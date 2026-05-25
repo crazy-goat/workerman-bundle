@@ -6,7 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Scheduler;
 
 use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
-use CrazyGoat\WorkermanBundle\Util\ServiceMethodHelper;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -18,23 +18,22 @@ final readonly class TaskHandler
     ) {
     }
 
-    public function __invoke(string $service, string $taskName): void
+    public function __invoke(ServiceMethod $serviceMethod, string $taskName): void
     {
-        [$serviceName, $method] = ServiceMethodHelper::split($service);
-        $service = $this->locator->get($serviceName);
-        assert(is_object($service));
+        $serviceInstance = $this->locator->get($serviceMethod->serviceId);
+        assert(is_object($serviceInstance));
 
-        $this->eventDispatcher->dispatch(new TaskStartEvent($service::class, $taskName));
+        $this->eventDispatcher->dispatch(new TaskStartEvent($serviceInstance::class, $taskName));
 
         try {
-            if (!method_exists($service, $method)) {
+            if (!method_exists($serviceInstance, $serviceMethod->method)) {
                 throw new \InvalidArgumentException(
-                    sprintf('Method "%s" does not exist on service "%s" (class "%s").', $method, $serviceName, $service::class),
+                    sprintf('Method "%s" does not exist on service "%s" (class "%s").', $serviceMethod->method, $serviceMethod->serviceId, $serviceInstance::class),
                 );
             }
-            $service->$method();
+            $serviceInstance->{$serviceMethod->method}();
         } catch (\Throwable $e) {
-            $this->eventDispatcher->dispatch(new TaskErrorEvent($e, $service::class, $taskName));
+            $this->eventDispatcher->dispatch(new TaskErrorEvent($e, $serviceInstance::class, $taskName));
         }
     }
 }
