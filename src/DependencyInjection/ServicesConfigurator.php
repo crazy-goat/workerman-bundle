@@ -17,6 +17,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
+use CrazyGoat\WorkermanBundle\Phar\SfxSourceResolver;
 use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
@@ -178,6 +179,10 @@ final readonly class ServicesConfigurator
         ;
 
         $container
+            ->register(SfxSourceResolver::class)
+        ;
+
+        $container
             ->register(BuildPharCommand::class)
             ->addTag('console.command')
             ->setArguments([
@@ -197,6 +202,7 @@ final readonly class ServicesConfigurator
                 new Reference('workerman.sfx_downloader'),
                 new Reference('workerman.binary_composer'),
                 new Reference(BuildPathResolver::class),
+                new Reference(SfxSourceResolver::class),
                 $container->getParameter('kernel.project_dir'),
             ])
         ;
