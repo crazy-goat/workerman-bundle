@@ -10,12 +10,11 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use Workerman\Worker;
 
-final class SchedulerWorker
+final readonly class SchedulerWorker
 {
     private const PROCESS_TITLE = '[Scheduler]';
 
-    private readonly Worker $worker;
-    private TaskHandler $handler;
+    private Worker $worker;
 
     /**
      * @param mixed[] $schedulerConfig
@@ -37,7 +36,6 @@ final class SchedulerWorker
             $kernel->boot();
             $handler = $kernel->getContainer()->get('workerman.task_handler');
             assert($handler instanceof TaskHandler);
-            $this->handler = $handler;
 
             foreach ($schedulerConfig as $serviceId => $serviceConfig) {
                 assert(is_array($serviceConfig));
@@ -59,7 +57,7 @@ final class SchedulerWorker
                 $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
                 $service = "$serviceId::$method";
                 $this->deleteTaskPid($service);
-                $this->scheduleCallback($trigger, $service, $taskName);
+                $this->scheduleCallback($trigger, $service, $taskName, $handler);
             }
         };
     }
@@ -86,38 +84,38 @@ final class SchedulerWorker
         }
     }
 
-    private function scheduleCallback(TriggerInterface $trigger, string $service, string $taskName): void
+    private function scheduleCallback(TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
     {
         $currentDate = new \DateTimeImmutable();
         $nextRunDate = $trigger->getNextRunDate($currentDate);
         if ($nextRunDate instanceof \DateTimeImmutable) {
             $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
-            $this->worker::$globalEvent?->delay($interval, fn() => $this->runCallback($trigger, $service, $taskName));
+            $this->worker::$globalEvent?->delay($interval, fn() => $this->runCallback($trigger, $service, $taskName, $handler));
         }
     }
 
-    private function runCallback(TriggerInterface $trigger, string $service, string $taskName): void
+    private function runCallback(TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
     {
         $pidFile = $this->getTaskPidPath($service);
         $fp = $this->openPidFile($pidFile, $taskName);
         if ($fp === null) {
-            $this->scheduleCallback($trigger, $service, $taskName);
+            $this->scheduleCallback($trigger, $service, $taskName, $handler);
             return;
         }
 
         if (!$this->acquireLock($fp)) {
             fclose($fp);
-            $this->scheduleCallback($trigger, $service, $taskName);
+            $this->scheduleCallback($trigger, $service, $taskName, $handler);
             return;
         }
 
         $pid = \pcntl_fork();
         if ($pid === -1) {
-            $this->handleForkError($fp, $trigger, $service, $taskName);
+            $this->handleForkError($fp, $trigger, $service, $taskName, $handler);
         } elseif ($pid > 0) {
-            $this->handleParent($fp, $trigger, $service, $taskName);
+            $this->handleParent($fp, $trigger, $service, $taskName, $handler);
         } else {
-            $this->handleChild($pidFile, $service, $taskName);
+            $this->handleChild($pidFile, $service, $taskName, $handler);
         }
     }
 
@@ -147,21 +145,21 @@ final class SchedulerWorker
         fclose($fp);
     }
 
-    private function handleForkError(mixed $fp, TriggerInterface $trigger, string $service, string $taskName): void
+    private function handleForkError(mixed $fp, TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
     {
         $this->releaseLockAndClose($fp);
         $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
-        $this->scheduleCallback($trigger, $service, $taskName);
+        $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
-    private function handleParent(mixed $fp, TriggerInterface $trigger, string $service, string $taskName): void
+    private function handleParent(mixed $fp, TriggerInterface $trigger, string $service, string $taskName, TaskHandler $handler): void
     {
         $this->releaseLockAndClose($fp);
         $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
-        $this->scheduleCallback($trigger, $service, $taskName);
+        $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
-    private function handleChild(string $pidFile, string $service, string $taskName): void
+    private function handleChild(string $pidFile, string $service, string $taskName, TaskHandler $handler): void
     {
         $fp = $this->openChildPidFile($pidFile);
         if ($fp === null) {
@@ -179,7 +177,7 @@ final class SchedulerWorker
 
         $childExitCode = 0;
         try {
-            ($this->handler)($service, $taskName);
+            $handler($service, $taskName);
         } catch (\Throwable $e) {
             $this->worker->log(sprintf(
                 '%s Task "%s" failed: [%s] %s in %s:%d\nStack trace:\n%s',
