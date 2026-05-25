@@ -139,7 +139,7 @@ final class ServicesConfiguratorTest extends TestCase
         self::assertTrue($this->container->hasDefinition('workerman.memory_reboot_strategy'));
         $definition = $this->container->getDefinition('workerman.memory_reboot_strategy');
         self::assertSame(MemoryRebootStrategy::class, $definition->getClass());
-        self::assertSame([134_217_728, 100_663_296], $definition->getArguments());
+        self::assertSame([134_217_728, 100_663_296, 60], $definition->getArguments());
     }
 
     /**
@@ -184,6 +184,7 @@ final class ServicesConfiguratorTest extends TestCase
                     'active' => false,
                     'limit' => 134_217_728,
                     'gc_limit' => 100_663_296,
+                    'gc_cooldown' => 60,
                 ],
             ],
             'build' => [

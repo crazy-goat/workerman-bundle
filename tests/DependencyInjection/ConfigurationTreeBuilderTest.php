@@ -125,6 +125,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertFalse($config['reload_strategy']['memory']['active']);
         self::assertSame(134_217_728, $config['reload_strategy']['memory']['limit']);
         self::assertSame(100_663_296, $config['reload_strategy']['memory']['gc_limit']);
+        self::assertSame(60, $config['reload_strategy']['memory']['gc_cooldown']);
     }
 
     private function createDefinitionConfigurator(): DefinitionConfigurator

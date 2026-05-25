@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Reboot\Strategy;
 
-final readonly class MemoryRebootStrategy implements RebootStrategyInterface
+use Workerman\Timer;
+
+final class MemoryRebootStrategy implements RebootStrategyInterface
 {
-    public function __construct(private int $limit, private ?int $gcLimit)
-    {
+    private ?float $lastGcTime = null;
+
+    public function __construct(
+        private readonly int $limit,
+        private readonly ?int $gcLimit,
+        private readonly int $gcCooldown = 60,
+        private readonly ?\Closure $gcScheduler = null,
+    ) {
     }
 
     public function shouldReboot(): bool
@@ -15,9 +23,29 @@ final readonly class MemoryRebootStrategy implements RebootStrategyInterface
         $memoryUsage = memory_get_usage();
 
         if ($this->gcLimit !== null && $memoryUsage > $this->gcLimit) {
-            gc_collect_cycles();
-            $memoryUsage = memory_get_usage();
+            $this->scheduleGarbageCollectionIfNeeded();
         }
+
         return $memoryUsage > $this->limit;
+    }
+
+    private function scheduleGarbageCollectionIfNeeded(): void
+    {
+        $now = microtime(true);
+        if ($this->lastGcTime !== null && ($now - $this->lastGcTime) <= $this->gcCooldown) {
+            return;
+        }
+
+        $this->lastGcTime = $now;
+
+        $scheduler = $this->gcScheduler ?? static function (): void {
+            try {
+                Timer::add(0, static function (): void {
+                    gc_collect_cycles();
+                }, persistent: false);
+            } catch (\RuntimeException) {
+            }
+        };
+        $scheduler();
     }
 }
