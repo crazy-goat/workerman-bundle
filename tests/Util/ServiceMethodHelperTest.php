@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Util;
 
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethodHelper;
 use PHPUnit\Framework\TestCase;
 
 final class ServiceMethodHelperTest extends TestCase
 {
     /** @dataProvider provideValidServiceStrings */
-    public function testSplitReturnsServiceIdAndMethod(string $input, string $expectedServiceId, string $expectedMethod): void
+    public function testSplitReturnsServiceMethod(string $input, string $expectedServiceId, string $expectedMethod): void
     {
-        [$serviceId, $method] = ServiceMethodHelper::split($input);
+        $serviceMethod = ServiceMethodHelper::split($input);
 
-        $this->assertSame($expectedServiceId, $serviceId);
-        $this->assertSame($expectedMethod, $method);
+        $this->assertInstanceOf(ServiceMethod::class, $serviceMethod);
+        $this->assertSame($expectedServiceId, $serviceMethod->serviceId);
+        $this->assertSame($expectedMethod, $serviceMethod->method);
     }
 
     /** @return iterable<array{string, string, string}> */

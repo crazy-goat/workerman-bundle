@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Supervisor;
 use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -33,7 +34,7 @@ final class ProcessHandlerTest extends TestCase
             ->with($this->isInstanceOf(ProcessStartEvent::class));
 
         $handler = new ProcessHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_service::run', 'test_process');
+        $handler->__invoke(new ServiceMethod('my_service', 'run'), 'test_process');
 
         $this->assertTrue($service->called);
     }
@@ -62,7 +63,7 @@ final class ProcessHandlerTest extends TestCase
             });
 
         $handler = new ProcessHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_service::nonexistent', 'test_process');
+        $handler->__invoke(new ServiceMethod('my_service', 'nonexistent'), 'test_process');
         // Should not throw - error is caught by try-catch and dispatched as event
     }
 
@@ -96,28 +97,6 @@ final class ProcessHandlerTest extends TestCase
             });
 
         $handler = new ProcessHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_service::run', 'test_process');
-    }
-
-    /** @dataProvider provideInvalidServiceStrings */
-    public function testInvokeThrowsExceptionOnInvalidFormat(string $input): void
-    {
-        $locator = $this->createMock(ContainerInterface::class);
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid service method format');
-
-        $handler = new ProcessHandler($locator, $eventDispatcher);
-        $handler->__invoke($input, 'test_process');
-    }
-
-    /** @return iterable<array{string}> */
-    public static function provideInvalidServiceStrings(): iterable
-    {
-        yield 'missing separator' => ['JustAService'];
-        yield 'empty service ID' => ['::method'];
-        yield 'empty method name' => ['service::'];
-        yield 'empty string' => [''];
+        $handler->__invoke(new ServiceMethod('my_service', 'run'), 'test_process');
     }
 }

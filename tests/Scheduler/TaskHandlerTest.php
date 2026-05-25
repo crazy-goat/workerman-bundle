@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Scheduler;
 use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -33,7 +34,7 @@ final class TaskHandlerTest extends TestCase
             ->with($this->isInstanceOf(TaskStartEvent::class));
 
         $handler = new TaskHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_task_service::execute', 'test_task');
+        $handler->__invoke(new ServiceMethod('my_task_service', 'execute'), 'test_task');
 
         $this->assertTrue($service->called);
     }
@@ -62,7 +63,7 @@ final class TaskHandlerTest extends TestCase
             });
 
         $handler = new TaskHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_task_service::nonexistent', 'test_task');
+        $handler->__invoke(new ServiceMethod('my_task_service', 'nonexistent'), 'test_task');
         // Should not throw - error is caught by try-catch and dispatched as event
     }
 
@@ -96,28 +97,6 @@ final class TaskHandlerTest extends TestCase
             });
 
         $handler = new TaskHandler($locator, $eventDispatcher);
-        $handler->__invoke('my_task_service::execute', 'test_task');
-    }
-
-    /** @dataProvider provideInvalidServiceStrings */
-    public function testInvokeThrowsExceptionOnInvalidFormat(string $input): void
-    {
-        $locator = $this->createMock(ContainerInterface::class);
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid service method format');
-
-        $handler = new TaskHandler($locator, $eventDispatcher);
-        $handler->__invoke($input, 'test_task');
-    }
-
-    /** @return iterable<array{string}> */
-    public static function provideInvalidServiceStrings(): iterable
-    {
-        yield 'missing separator' => ['JustAService'];
-        yield 'empty service ID' => ['::method'];
-        yield 'empty method name' => ['service::'];
-        yield 'empty string' => [''];
+        $handler->__invoke(new ServiceMethod('my_task_service', 'execute'), 'test_task');
     }
 }

@@ -14,13 +14,11 @@ final class ServiceMethodHelper
     }
 
     /**
-     * Validate and split a service method string into service ID and method name.
+     * Validate and split a service method string into a ServiceMethod value object.
      *
      * Expected format: "serviceId::methodName"
-     *
-     * @return array{string, string} [serviceId, methodName]
      */
-    public static function split(string $service): array
+    public static function split(string $service): ServiceMethod
     {
         $parts = explode('::', $service, 2);
         if (\count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
@@ -29,6 +27,6 @@ final class ServiceMethodHelper
             );
         }
 
-        return [$parts[0], $parts[1]];
+        return new ServiceMethod($parts[0], $parts[1]);
     }
 }
