@@ -40,10 +40,11 @@ final class KernelFactoryTest extends TestCase
             [],
         );
 
-        $factory->createKernel();
-        $factory->createKernel();
+        $first = $factory->createKernel();
+        $second = $factory->createKernel();
 
         self::assertSame(1, $count, 'The closure must be called exactly once');
+        self::assertSame($first, $second, 'Both calls must return the same instance');
     }
 
     public function testCreateKernelThrowsForNullReturn(): void
@@ -54,6 +55,40 @@ final class KernelFactoryTest extends TestCase
         );
 
         $this->expectException(KernelCreationException::class);
+        $this->expectExceptionMessage('Error creating Kernel instance');
+
+        $factory->createKernel();
+    }
+
+    public function testCreateKernelPassesArgsToClosure(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $actualArgs = null;
+        $factory = new KernelFactory(
+            static function (string $env, bool $debug) use ($kernel, &$actualArgs): KernelInterface {
+                $actualArgs = [$env, $debug];
+
+                return $kernel;
+            },
+            ['test', true],
+        );
+
+        $factory->createKernel();
+
+        self::assertSame(['test', true], $actualArgs);
+    }
+
+    public function testCreateKernelPropagatesClosureException(): void
+    {
+        $factory = new KernelFactory(
+            static function (): never {
+                throw new \RuntimeException('Closure failed');
+            },
+            [],
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Closure failed');
 
         $factory->createKernel();
     }
@@ -123,6 +158,18 @@ final class KernelFactoryTest extends TestCase
 
         $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
         self::assertSame('/runtime/var/cache/prod', $factory->getCacheDir());
+    }
+
+    public function testGetCacheDirWithEmptyRuntimeDirFallsBack(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '';
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getEnvironment')->willReturn('test');
+        $kernel->method('getProjectDir')->willReturn('/app');
+
+        $factory = new KernelFactory(static fn(): \PHPUnit\Framework\MockObject\MockObject => $kernel, []);
+        self::assertSame('/app/var/cache/test', $factory->getCacheDir());
     }
 
     public function testGetLogDirWithCustomRuntimeDir(): void
