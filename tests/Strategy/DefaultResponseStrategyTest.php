@@ -39,4 +39,58 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('', $workermanResponse->rawBody());
     }
+
+    public function testSmallBodyReturnsWorkermanResponse(): void
+    {
+        $strategy = new DefaultResponseStrategy(2048 * 1024);
+        $body = str_repeat('a', 1024);
+        $symfonyResponse = new Response($body);
+
+        $this->connection->expects($this->never())
+            ->method('send');
+
+        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
+
+        $this->assertSame(1024, strlen($workermanResponse->rawBody()));
+    }
+
+    public function testLargeBodySendsChunkedResponse(): void
+    {
+        $chunkSize = 2048;
+        $strategy = new DefaultResponseStrategy($chunkSize);
+        $chunkCount = 5;
+        $sendChunkSize = max($chunkSize, 8192);
+        $bodySize = $sendChunkSize * $chunkCount;
+        $body = str_repeat('a', $bodySize);
+        $symfonyResponse = new Response($body);
+
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $expectedSendCount = 1 + $chunkCount;
+        $this->connection
+            ->expects($this->exactly($expectedSendCount))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
+
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+
+        $this->assertCount($expectedSendCount, $sendCalls);
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString("Content-Length: {$bodySize}", $sendCalls[0]['data']);
+        $this->assertTrue($sendCalls[0]['raw']);
+
+        for ($i = 1; $i <= $chunkCount; $i++) {
+            $this->assertTrue($sendCalls[$i]['raw']);
+            $this->assertSame($sendChunkSize, strlen((string) $sendCalls[$i]['data']));
+        }
+
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue($this->connection->context->responseSentDirectly);
+    }
 }
