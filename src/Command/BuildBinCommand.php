@@ -26,6 +26,7 @@ final class BuildBinCommand extends Command
         private readonly PharBuilder $pharBuilder,
         private readonly SfxDownloader $sfxDownloader,
         private readonly BinaryComposer $binaryComposer,
+        private readonly BuildPathResolver $pathResolver,
         private readonly string $projectDir,
     ) {
         parent::__construct();
@@ -58,8 +59,9 @@ final class BuildBinCommand extends Command
         }
 
         try {
-            $pharPath = self::resolvePharPath($input, $buildConfig, $this->projectDir);
-            $binPath = self::resolveBinPath($input, $buildConfig, $this->projectDir);
+            $buildDir = $this->pathResolver->resolveBuildDir($input->getOption('output-dir'), $buildConfig, $this->projectDir);
+            $pharPath = $this->pathResolver->resolvePharPath($input->getOption('phar-filename'), $buildDir, $buildConfig);
+            $binPath = $this->pathResolver->resolveBinPath($input->getOption('filename'), $buildDir, $buildConfig);
 
             $io->section('Step 1/3: Building PHAR');
             $this->pharBuilder->build($buildConfig, $pharPath);
@@ -90,61 +92,6 @@ final class BuildBinCommand extends Command
         $io->note(sprintf('To run: ./%s workerman:server start', basename($binPath)));
 
         return Command::SUCCESS;
-    }
-
-    /**
-     * @param mixed[] $buildConfig
-     *
-     * @throws \RuntimeException
-     */
-    public static function resolvePharPath(InputInterface $input, array $buildConfig, string $projectDir): string
-    {
-        $buildDir = self::resolveBuildDir($input, $buildConfig, $projectDir);
-
-        $pharFilename = $input->getOption('phar-filename')
-            ?: ($buildConfig['phar_filename'] ?? 'app.phar');
-        if (!is_string($pharFilename) || $pharFilename === '') {
-            $pharFilename = 'app.phar';
-        }
-
-        return $buildDir . '/' . $pharFilename;
-    }
-
-    /**
-     * @param mixed[] $buildConfig
-     *
-     * @throws \RuntimeException
-     */
-    public static function resolveBinPath(InputInterface $input, array $buildConfig, string $projectDir): string
-    {
-        $buildDir = self::resolveBuildDir($input, $buildConfig, $projectDir);
-
-        $binFilename = $input->getOption('filename')
-            ?: ($buildConfig['bin_filename'] ?? 'app.bin');
-        if (!is_string($binFilename) || $binFilename === '') {
-            $binFilename = 'app.bin';
-        }
-
-        return $buildDir . '/' . $binFilename;
-    }
-
-    /**
-     * @param mixed[] $buildConfig
-     *
-     * @throws \RuntimeException
-     */
-    private static function resolveBuildDir(InputInterface $input, array $buildConfig, string $projectDir): string
-    {
-        $buildDir = $input->getOption('output-dir') ?: ($buildConfig['build_dir'] ?? $projectDir . '/build');
-        if (!is_string($buildDir) || $buildDir === '') {
-            throw new \RuntimeException('Invalid build configuration: build_dir must be a non-empty string.');
-        }
-
-        if (!str_starts_with($buildDir, '/')) {
-            $buildDir = $projectDir . '/' . $buildDir;
-        }
-
-        return $buildDir;
     }
 
     /**

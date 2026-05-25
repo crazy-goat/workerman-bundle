@@ -20,6 +20,7 @@ final class BuildPharCommand extends Command
     public function __construct(
         private readonly ConfigLoader $configLoader,
         private readonly PharBuilder $pharBuilder,
+        private readonly BuildPathResolver $pathResolver,
         private readonly string $projectDir,
     ) {
         parent::__construct();
@@ -53,7 +54,8 @@ final class BuildPharCommand extends Command
         }
 
         try {
-            $pharPath = self::resolvePharPath($input, $buildConfig, $this->projectDir);
+            $buildDir = $this->pathResolver->resolveBuildDir($input->getOption('output-dir'), $buildConfig, $this->projectDir);
+            $pharPath = $this->pathResolver->resolvePharPath($input->getOption('filename'), $buildDir, $buildConfig);
             $includeTests = (bool) $input->getOption('include-tests');
 
             $io->section('Building PHAR archive');
@@ -70,24 +72,4 @@ final class BuildPharCommand extends Command
         return Command::SUCCESS;
     }
 
-    /**
-     * @param mixed[] $buildConfig
-     *
-     * @throws \RuntimeException when build_dir/phar_filename are invalid
-     */
-    public static function resolvePharPath(InputInterface $input, array $buildConfig, string $projectDir): string
-    {
-        $buildDir = $input->getOption('output-dir') ?: $buildConfig['build_dir'] ?? $projectDir . '/build';
-        $pharFilename = $input->getOption('filename') ?: $buildConfig['phar_filename'] ?? 'app.phar';
-
-        if (!is_string($buildDir) || $buildDir === '' || !is_string($pharFilename) || $pharFilename === '') {
-            throw new \RuntimeException('Invalid build configuration: build_dir and phar_filename must be non-empty strings.');
-        }
-
-        if (!str_starts_with($buildDir, '/')) {
-            $buildDir = $projectDir . '/' . $buildDir;
-        }
-
-        return $buildDir . '/' . $pharFilename;
-    }
 }

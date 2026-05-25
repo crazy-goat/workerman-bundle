@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use CrazyGoat\WorkermanBundle\Command\BuildBinCommand;
+use CrazyGoat\WorkermanBundle\Command\BuildPathResolver;
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
@@ -172,11 +173,16 @@ final readonly class ServicesConfigurator
         ;
 
         $container
+            ->register(BuildPathResolver::class)
+        ;
+
+        $container
             ->register(BuildPharCommand::class)
             ->addTag('console.command')
             ->setArguments([
                 new Reference('workerman.config_loader'),
                 new Reference('workerman.phar_builder'),
+                new Reference(BuildPathResolver::class),
                 $container->getParameter('kernel.project_dir'),
             ])
         ;
@@ -189,6 +195,7 @@ final readonly class ServicesConfigurator
                 new Reference('workerman.phar_builder'),
                 new Reference('workerman.sfx_downloader'),
                 new Reference('workerman.binary_composer'),
+                new Reference(BuildPathResolver::class),
                 $container->getParameter('kernel.project_dir'),
             ])
         ;
