@@ -251,8 +251,373 @@ final class StaticFilesMiddlewareTest extends TestCase
 
     private function createRequest(string $path): Request
     {
-        // Create a proper HTTP request buffer
         $buffer = "GET $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
         return new Request($buffer);
+    }
+
+    public function testDotfilePathComponentBlockedReturns404(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $hiddenDir = $this->rootDirectory . '/.hidden';
+        if (!is_dir($hiddenDir)) {
+            mkdir($hiddenDir, 0777, true);
+        }
+        file_put_contents($hiddenDir . '/test.txt', 'hidden file');
+
+        try {
+            $request = $this->createRequest('/.hidden/test.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for dotfile path component');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for dotfile');
+        } finally {
+            unlink($hiddenDir . '/test.txt');
+            rmdir($hiddenDir);
+        }
+    }
+
+    public function testDotfileBlockedReturns404(): void
+    {
+        $dotfile = $this->rootDirectory . '/.secret';
+        file_put_contents($dotfile, 'secret');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/.secret');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for dotfile');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404');
+        } finally {
+            unlink($dotfile);
+        }
+    }
+
+    public function testPhpFileBlockedReturns404(): void
+    {
+        $phpFile = $this->rootDirectory . '/malicious.php';
+        file_put_contents($phpFile, '<?php echo "hacked";');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/malicious.php');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for .php file');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for .php');
+        } finally {
+            unlink($phpFile);
+        }
+    }
+
+    public function testEnvironFileBlockedReturns404(): void
+    {
+        $envFile = $this->rootDirectory . '/.env';
+        file_put_contents($envFile, 'DB_PASSWORD=secret');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/.env');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for .env file');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for .env');
+        } finally {
+            unlink($envFile);
+        }
+    }
+
+    public function testEnvironProdFileBlockedReturns404(): void
+    {
+        $envProdFile = $this->rootDirectory . '/.env.prod';
+        file_put_contents($envProdFile, 'DB_PASSWORD=prod-secret');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/.env.prod');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for .env.prod file');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for .env.prod');
+        } finally {
+            unlink($envProdFile);
+        }
+    }
+
+    public function testComposerFilesBlockedReturns404(): void
+    {
+        $composerFile = $this->rootDirectory . '/composer.json';
+        file_put_contents($composerFile, '{"name": "test"}');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/composer.json');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for composer.json');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for composer.json');
+        } finally {
+            unlink($composerFile);
+        }
+    }
+
+    public function testComposerLockBlockedReturns404(): void
+    {
+        $composerLockFile = $this->rootDirectory . '/composer.lock';
+        file_put_contents($composerLockFile, '{"packages": []}');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/composer.lock');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for composer.lock');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for composer.lock');
+        } finally {
+            unlink($composerLockFile);
+        }
+    }
+
+    public function testGitBlobBlockedReturns404(): void
+    {
+        $gitDir = $this->rootDirectory . '/.git';
+        if (!is_dir($gitDir)) {
+            mkdir($gitDir, 0777, true);
+        }
+        file_put_contents($gitDir . '/HEAD', 'ref: refs/heads/main');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/.git/HEAD');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for .git/HEAD');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for .git objects');
+        } finally {
+            unlink($gitDir . '/HEAD');
+            rmdir($gitDir);
+        }
+    }
+
+    /**
+     * @dataProvider blockedExtensionProvider
+     */
+    public function testBlockedExtensionsReturn404(string $fileName, string $extension): void
+    {
+        $file = $this->rootDirectory . '/' . $fileName;
+        file_put_contents($file, 'x');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/' . $fileName);
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, "Next should NOT be called for .$extension file");
+            $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for .$extension");
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function blockedExtensionProvider(): array
+    {
+        return [
+            'PHP file' => ['test.php', 'php'],
+            'PHAR file' => ['app.phar', 'phar'],
+            'PHTML file' => ['index.phtml', 'phtml'],
+        ];
+    }
+
+    public function testAllowedExtensionsWhitelistServing(): void
+    {
+        $cssFile = $this->rootDirectory . '/style.css';
+        file_put_contents($cssFile, 'body { color: red; }');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/style.css');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for allowed extension');
+        } finally {
+            unlink($cssFile);
+        }
+    }
+
+    public function testAllowedExtensionsWhitelistBlocking(): void
+    {
+        $jsonFile = $this->rootDirectory . '/data.json';
+        file_put_contents($jsonFile, '{"key": "value"}');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/data.json');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for disallowed extension');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for disallowed extension');
+        } finally {
+            unlink($jsonFile);
+        }
+    }
+
+    public function testValidFileStillServed(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(404);
+        };
+
+        $middleware($request, $next);
+
+        $this->assertFalse($called, 'Next should not be called for valid file');
+    }
+
+    public function testValidFileStillServedWithAllowlist(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory, ['txt', 'css', 'js']);
+
+        $request = $this->createRequest('/test.txt');
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(404);
+        };
+
+        $middleware($request, $next);
+
+        $this->assertFalse($called, 'Next should not be called for valid file with allowlist');
+    }
+
+    public function testUpperCaseComposerJsonBlocked(): void
+    {
+        $composerFile = $this->rootDirectory . '/Composer.json';
+        file_put_contents($composerFile, '{"name": "test"}');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/Composer.json');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for uppercase Composer.json');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for uppercase Composer.json');
+        } finally {
+            unlink($composerFile);
+        }
+    }
+
+    public function testMixedCasePackageJsonBlocked(): void
+    {
+        $packageFile = $this->rootDirectory . '/Package.json';
+        file_put_contents($packageFile, '{"name": "test"}');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/Package.json');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for Package.json');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for Package.json');
+        } finally {
+            unlink($packageFile);
+        }
     }
 }
