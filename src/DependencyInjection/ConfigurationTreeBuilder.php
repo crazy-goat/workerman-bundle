@@ -269,6 +269,10 @@ final readonly class ConfigurationTreeBuilder
                         ->info('Maximum memory usage after which gc_collect_cycles will be called to free memory')
                         ->defaultValue(100_663_296)
                     ->end()
+                    ->integerNode('gc_cooldown')
+                        ->info('Minimum seconds between garbage collection invocations to avoid repeated GC runs')
+                        ->defaultValue(60)
+                    ->end()
                 ->end()
             ->end();
     }

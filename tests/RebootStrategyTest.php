@@ -220,6 +220,55 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($strategy->shouldReboot());
     }
 
+    public function testMemoryRebootStrategyInvokesGcSchedulerWhenOverGcLimit(): void
+    {
+        $schedulerCallCount = 0;
+        $scheduler = static function () use (&$schedulerCallCount): void {
+            ++$schedulerCallCount;
+        };
+
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1, 60, $scheduler);
+
+        $this->assertFalse($strategy->shouldReboot());
+        $this->assertSame(1, $schedulerCallCount);
+    }
+
+    public function testMemoryRebootStrategyRespectsGcCooldown(): void
+    {
+        $schedulerCallCount = 0;
+        $scheduler = static function () use (&$schedulerCallCount): void {
+            ++$schedulerCallCount;
+        };
+
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1, 60, $scheduler);
+
+        $strategy->shouldReboot();
+        $this->assertSame(1, $schedulerCallCount);
+
+        $strategy->shouldReboot();
+        $this->assertSame(1, $schedulerCallCount);
+    }
+
+    public function testMemoryRebootStrategySchedulerNotCalledWhenGcLimitIsNull(): void
+    {
+        $schedulerCallCount = 0;
+        $scheduler = static function () use (&$schedulerCallCount): void {
+            ++$schedulerCallCount;
+        };
+
+        $strategy = new MemoryRebootStrategy(1, null, 60, $scheduler);
+
+        $this->assertTrue($strategy->shouldReboot());
+        $this->assertSame(0, $schedulerCallCount);
+    }
+
+    public function testMemoryRebootStrategyUsesDefaultSchedulerWithoutError(): void
+    {
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1);
+
+        $this->assertFalse($strategy->shouldReboot());
+    }
+
     public function testStackRebootStrategyReturnsFalseWithEmptyStack(): void
     {
         $strategy = new StackRebootStrategy([]);

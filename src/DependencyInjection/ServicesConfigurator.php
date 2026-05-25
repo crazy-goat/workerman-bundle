@@ -131,6 +131,7 @@ final readonly class ServicesConfigurator
                 ->setArguments([
                     $config['reload_strategy']['memory']['limit'],
                     $config['reload_strategy']['memory']['gc_limit'],
+                    $config['reload_strategy']['memory']['gc_cooldown'],
                 ])
             ;
         }
