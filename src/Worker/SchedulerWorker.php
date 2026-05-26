@@ -125,7 +125,31 @@ final readonly class SchedulerWorker
      */
     private function openPidFile(string $pidFile, string $taskName): mixed
     {
-        $fp = fopen($pidFile, 'c');
+        if ($this->isPidFileSymlink($pidFile)) {
+            $this->worker->log(sprintf('%s Task "%s" PID file is a symlink, rejecting: %s', $this->worker->name, $taskName, $pidFile));
+            return null;
+        }
+
+        $fp = $this->tryOpenPidFile($pidFile, $taskName);
+        if ($fp === null) {
+            return null;
+        }
+
+        if ($this->isPidFileInodeMismatch($fp, $pidFile)) {
+            fclose($fp);
+            $this->worker->log(sprintf('%s Task "%s" PID file inode mismatch, rejecting: %s', $this->worker->name, $taskName, $pidFile));
+            return null;
+        }
+
+        return $fp;
+    }
+
+    /**
+     * @return resource|null
+     */
+    private function tryOpenPidFile(string $pidFile, string $taskName): mixed
+    {
+        $fp = @fopen($pidFile, 'c');
         if ($fp === false) {
             $this->worker->log(sprintf('%s Task "%s" cannot open PID file: %s', $this->worker->name, $taskName, $pidFile));
 
@@ -133,6 +157,28 @@ final readonly class SchedulerWorker
         }
 
         return $fp;
+    }
+
+    private function isPidFileSymlink(string $pidFile): bool
+    {
+        clearstatcache(true, $pidFile);
+
+        return is_link($pidFile);
+    }
+
+    private function isPidFileInodeMismatch(mixed $fp, string $pidFile): bool
+    {
+        $statFd = @fstat($fp);
+        $statPath = @lstat($pidFile);
+        if ($statFd === false || $statPath === false) {
+            return true;
+        }
+
+        if ($statFd['ino'] !== $statPath['ino'] || $statFd['dev'] !== $statPath['dev']) {
+            return true;
+        }
+
+        return $statFd['uid'] !== posix_getuid();
     }
 
     private function acquireLock(mixed $fp): bool
@@ -203,12 +249,22 @@ final readonly class SchedulerWorker
      */
     private function openChildPidFile(string $pidFile): mixed
     {
-        $fp = fopen($pidFile, 'c');
-        if ($fp === false || !flock($fp, LOCK_EX | LOCK_NB)) {
-            if ($fp !== false) {
-                fclose($fp);
-            }
+        if ($this->isPidFileSymlink($pidFile)) {
+            return null;
+        }
 
+        $fp = @fopen($pidFile, 'c');
+        if ($fp === false) {
+            return null;
+        }
+
+        if ($this->isPidFileInodeMismatch($fp, $pidFile)) {
+            fclose($fp);
+            return null;
+        }
+
+        if (!flock($fp, LOCK_EX | LOCK_NB)) {
+            fclose($fp);
             return null;
         }
 
@@ -222,9 +278,6 @@ final readonly class SchedulerWorker
 
     private function deleteTaskPid(ServiceMethod $service): void
     {
-        $pidFile = $this->getTaskPidPath($service);
-        if (is_file($pidFile)) {
-            unlink($pidFile);
-        }
+        @unlink($this->getTaskPidPath($service));
     }
 }

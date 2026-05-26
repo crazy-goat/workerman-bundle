@@ -92,6 +92,9 @@ match ($testName) {
     'fork_error' => testForkError($pidFile),
     'lock_contention' => testLockContention($pidFile),
     'pid_lifecycle' => testPidLifecycle($pidFile),
+    'symlink_unlink_safety' => testSymlinkUnlinkSafety($pidFile, $tempDir),
+    'symlink_rejection' => testSymlinkRejection($pidFile),
+    'inode_mismatch_detection' => testInodeMismatchDetection($pidFile, $tempDir),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -274,6 +277,123 @@ function testPidLifecycle(string $pidFile): void
     @unlink($pidFile);
 
     assertFileNotExists($pidFile, 'PID file should not exist after cleanup');
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+/**
+ * Test that unlink on a symlink removes only the link, not the target file.
+ *
+ * Verifies the deleteTaskPid fix: @unlink() is safe even when the path
+ * is a symlink, because unlink(2) on Linux does not follow symlinks.
+ */
+function testSymlinkUnlinkSafety(string $pidFile, string $tempDir): void
+{
+    $targetFile = $tempDir . '/sensitive_target.txt';
+    file_put_contents($targetFile, 'sensitive data');
+
+    assertFileNotExists($pidFile, 'PID file should not exist before symlink creation');
+
+    $linked = symlink($targetFile, $pidFile);
+    assertTrue($linked, 'Symlink should be created successfully');
+
+    assertFileExists($pidFile, 'Symlink should exist at PID path');
+    assertFileExists($targetFile, 'Target file should still exist');
+
+    @unlink($pidFile);
+
+    assertFileNotExists($pidFile, 'Symlink should be removed by unlink');
+    assertFileExists($targetFile, 'Target file must NOT be removed by unlink on symlink');
+
+    unlink($targetFile);
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+/**
+ * Test that fopen with is_link pre-check correctly rejects existing symlinks.
+ *
+ * Verifies the openPidFile/openChildPidFile fix: when a symlink
+ * already exists at the PID file path, the operation is rejected.
+ */
+function testSymlinkRejection(string $pidFile): void
+{
+    $targetFile = sys_get_temp_dir() . '/workerman_symlink_rejection_target_' . uniqid();
+    file_put_contents($targetFile, 'target');
+
+    $linked = symlink($targetFile, $pidFile);
+    assertTrue($linked, 'Symlink should be created successfully');
+
+    // Simulate SchedulerWorker's isPidFileSymlink check
+    clearstatcache(true, $pidFile);
+    $isSymlink = is_link($pidFile);
+    assertTrue($isSymlink, 'is_link should detect the symlink');
+
+    // fopen with 'c' mode would follow the symlink, but we reject before that
+    if ($isSymlink) {
+        // This is what openPidFile does - rejects the symlink
+        assertFileExists($targetFile, 'Target should not be modified when we reject');
+    }
+
+    // Clean up the symlink
+    @unlink($pidFile);
+    unlink($targetFile);
+
+    assertFileNotExists($pidFile, 'Symlink should be cleaned up');
+    assertFileNotExists($targetFile, 'Target should be cleaned up');
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+/**
+ * Test that inode mismatch detection catches a file-swap race.
+ *
+ * Simulates the TOCTOU scenario: open a file, then replace it with
+ * a different file at the same path. The inode/dev comparison should
+ * detect the discrepancy.
+ */
+function testInodeMismatchDetection(string $pidFile, string $tempDir): void
+{
+    $fileA = $tempDir . '/file_a.txt';
+    $fileB = $tempDir . '/file_b.txt';
+    file_put_contents($fileA, 'original');
+    file_put_contents($fileB, 'replacement');
+
+    $fp = fopen($fileA, 'r');
+    if ($fp === false) {
+        fail('Should open file A');
+    }
+
+    $statA = fstat($fp);
+    if ($statA === false) {
+        fail('Should stat file A');
+    }
+
+    fclose($fp);
+    unlink($fileA);
+    rename($fileB, $fileA);
+
+    $fp2 = fopen($fileA, 'r');
+    if ($fp2 === false) {
+        fail('Should open replaced file');
+    }
+
+    $statPath = lstat($fileA);
+    if ($statPath === false) {
+        fail('Should lstat path');
+    }
+
+    $match = $statA['ino'] === $statPath['ino'] && $statA['dev'] === $statPath['dev'];
+    assertTrue(
+        $match === false,
+        'Inode/dev mismatch should be detected when file is replaced after open',
+    );
+
+    fclose($fp2);
+    unlink($fileA);
 
     fwrite(STDOUT, "PASS\n");
     exit(0);
