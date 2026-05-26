@@ -85,14 +85,109 @@ final class SfxDownloader
 
     private function downloadTo(string $url, string $destination, bool $allowInsecure): void
     {
-        $context = $this->buildContext($url, $allowInsecure);
+        if ($allowInsecure) {
+            $this->downloadWithRedirectCheck($url, $destination, $allowInsecure);
 
+            return;
+        }
+
+        $context = $this->buildContext($url, $allowInsecure);
+        $this->downloadStream($url, $destination, $context);
+    }
+
+    private function downloadWithRedirectCheck(string $url, string $destination, bool $allowInsecure): void
+    {
+        $maxRedirects = 5;
+        $currentUrl = $url;
+
+        for ($i = 0; $i <= $maxRedirects; $i++) {
+            $context = $this->buildContext($currentUrl, $allowInsecure);
+
+            $in = @fopen($currentUrl, 'rb', false, $context);
+            if (!is_resource($in)) {
+                $err = error_get_last()['message'] ?? 'unknown error';
+                throw new \RuntimeException(sprintf('Failed to open "%s" for download: %s', $currentUrl, $err));
+            }
+
+            $responseHeaders = $this->getHttpResponseHeaders(get_defined_vars());
+
+            $httpCode = 0;
+            if (isset($responseHeaders[0]) && preg_match('#^HTTP/\d+\.\d+\s+(\d+)#', $responseHeaders[0], $m)) {
+                $httpCode = (int) $m[1];
+            }
+
+            if ($httpCode < 300 || $httpCode >= 400) {
+                $this->writeStream($in, $destination);
+
+                return;
+            }
+
+            fclose($in);
+
+            $location = null;
+            foreach ($responseHeaders as $header) {
+                if (str_starts_with(strtolower($header), 'location:')) {
+                    $location = trim(substr($header, 9));
+                    break;
+                }
+            }
+
+            if ($location === null) {
+                throw new \RuntimeException(sprintf('Redirect response (%d) without Location header from "%s".', $httpCode, $currentUrl));
+            }
+
+            $location = $this->resolveRedirectUrl($currentUrl, $location);
+
+            if (str_starts_with($currentUrl, 'https://') && str_starts_with(strtolower($location), 'http://')) {
+                throw new \RuntimeException(sprintf(
+                    'Blocked cross-scheme redirect from HTTPS to "%s". Disable redirects or use a trusted mirror.',
+                    $location,
+                ));
+            }
+
+            $currentUrl = $location;
+        }
+
+        throw new \RuntimeException(sprintf('Too many redirects (max %d) for "%s".', $maxRedirects, $url));
+    }
+
+    private function resolveRedirectUrl(string $base, string $location): string
+    {
+        if (preg_match('#^https?://#i', $location)) {
+            return $location;
+        }
+
+        $parts = parse_url($base);
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            return $location;
+        }
+
+        $scheme = $parts['scheme'];
+        $host = $parts['host'];
+        $port = isset($parts['port']) ? ':' . $parts['port'] : '';
+
+        if ($location === '' || $location[0] !== '/') {
+            $basePath = isset($parts['path']) ? dirname($parts['path']) : '/';
+
+            return $scheme . '://' . $host . $port . rtrim($basePath, '/') . '/' . $location;
+        }
+
+        return $scheme . '://' . $host . $port . $location;
+    }
+
+    private function downloadStream(string $url, string $destination, mixed $context): void
+    {
         $in = @fopen($url, 'rb', false, $context);
         if (!is_resource($in)) {
             $err = error_get_last()['message'] ?? 'unknown error';
             throw new \RuntimeException(sprintf('Failed to open "%s" for download: %s', $url, $err));
         }
 
+        $this->writeStream($in, $destination);
+    }
+
+    private function writeStream(mixed $in, string $destination): void
+    {
         $out = fopen($destination, 'wb');
         if (!is_resource($out)) {
             fclose($in);
@@ -103,7 +198,7 @@ final class SfxDownloader
             while (!feof($in)) {
                 $chunk = fread($in, self::DOWNLOAD_CHUNK);
                 if ($chunk === false) {
-                    throw new \RuntimeException(sprintf('Failed to read from "%s".', $url));
+                    throw new \RuntimeException('Failed to read from stream.');
                 }
                 if ($chunk === '') {
                     continue;
@@ -137,8 +232,8 @@ final class SfxDownloader
         return stream_context_create([
             'ssl' => $sslOptions,
             'http' => [
-                'follow_location' => 1,
-                'max_redirects' => 5,
+                'follow_location' => $allowInsecure ? 0 : 1,
+                'max_redirects' => $allowInsecure ? 0 : 5,
                 'timeout' => 60,
             ],
         ]);
@@ -299,6 +394,18 @@ final class SfxDownloader
                 $entryName,
             ));
         }
+    }
+
+    /**
+     * @param array<string, mixed> $definedVars
+     *
+     * @return list<string>
+     */
+    private function getHttpResponseHeaders(array $definedVars): array
+    {
+        $headerVar = 'http_response_header';
+
+        return $definedVars[$headerVar] ?? [];
     }
 
     /**

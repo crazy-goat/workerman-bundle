@@ -5,10 +5,45 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Command;
 
 use CrazyGoat\WorkermanBundle\Command\BuildPathResolver;
+use CrazyGoat\WorkermanBundle\ConfigLoader;
 use PHPUnit\Framework\TestCase;
 
 final class BuildBinCommandTest extends TestCase
 {
+    public function testConfigureHasUnsafeNoChecksumOption(): void
+    {
+        $command = $this->createCommand();
+        $option = $command->getDefinition()->getOption('unsafe-no-checksum');
+
+        self::assertInstanceOf(\Symfony\Component\Console\Input\InputOption::class, $option);
+        self::assertFalse($option->acceptValue());
+    }
+
+    public function testConfigureHasInsecureOption(): void
+    {
+        $command = $this->createCommand();
+        $option = $command->getDefinition()->getOption('insecure');
+
+        self::assertInstanceOf(\Symfony\Component\Console\Input\InputOption::class, $option);
+        self::assertFalse($option->acceptValue());
+    }
+
+    private function createCommand(): \CrazyGoat\WorkermanBundle\Command\BuildBinCommand
+    {
+        $configLoader = new ConfigLoader('/tmp', '/tmp/cache/test', false);
+        $configLoader->setBuildConfig([]);
+
+        return new \CrazyGoat\WorkermanBundle\Command\BuildBinCommand(
+            $configLoader,
+            new \CrazyGoat\WorkermanBundle\Phar\PharBuilder('/tmp', 'test'),
+            new \CrazyGoat\WorkermanBundle\Phar\SfxDownloader(),
+            new \CrazyGoat\WorkermanBundle\Phar\BinaryComposer(),
+            new BuildPathResolver(),
+            new \CrazyGoat\WorkermanBundle\Phar\SfxSourceResolver(),
+            '/tmp',
+        );
+    }
+
     public function testResolveBinPathUsesConfigDefaults(): void
     {
         $resolver = new BuildPathResolver();

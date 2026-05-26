@@ -135,3 +135,26 @@ The `SfxDownloader` downloads and extracts `phpmicro.sfx` from upstream HTTPS mi
 
 If any entry fails validation, the build aborts with a `\RuntimeException`.
 
+## SFX Download Protection (Redirect Scheme)
+
+When downloading `phpmicro.sfx` with `--insecure` (or `build.sfx.allow_insecure: true`), TLS peer
+verification is disabled. To prevent an on-path attacker from downgrading the download from HTTPS
+to plain HTTP via a redirect:
+
+- **Automatic redirect following is disabled** in the stream context
+- Each redirect response is inspected manually
+- **Cross-scheme redirects (HTTPS → HTTP) are blocked** with a hard error
+- Redirects within the same scheme (HTTPS → HTTPS) are still allowed (up to 5 hops)
+
+This defense is always active when `allow_insecure` is enabled, regardless of whether a checksum
+is configured.
+
+## SFX Checksum Requirement
+
+The build **fails** if no SHA-256 checksum is configured, unless `--unsafe-no-checksum` is explicitly
+passed. This ensures supply-chain integrity by default:
+
+- `--sfx-checksum=HASH` or config `build.sfx.sha256` → checksum verified after download
+- `--unsafe-no-checksum` → no verification (not recommended)
+- Neither → build aborts with an error
+
