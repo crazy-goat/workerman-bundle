@@ -20,9 +20,14 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         'package.json',
     ];
 
+    private const CACHE_MAX_SIZE = 1024;
+    private const CACHE_TTL = 60;
+    private const CACHE_NEGATIVE_TTL = 5;
+
     private string $rootRealPath;
     /** @var string[] */
     private array $allowedExtensions;
+
 
     /**
      * @param string[] $allowedExtensions
@@ -50,7 +55,61 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return new Response(404);
         }
 
-        return (new Response())->withFile($filePath);
+        $fileMtime = filemtime($filePath);
+        if ($fileMtime === false) {
+            return (new Response())->withFile($filePath);
+        }
+
+        $etag = $this->generateEtag($filePath, $fileMtime);
+
+        if ($this->isNotModified($request, $etag, $fileMtime)) {
+            return new Response(304);
+        }
+
+        return (new Response())
+            ->withFile($filePath)
+            ->header('Last-Modified', $this->formatHttpDate($fileMtime))
+            ->header('ETag', $etag)
+            ->header('Cache-Control', 'public, max-age=3600, must-revalidate');
+    }
+
+    private function isNotModified(Request $request, string $etag, int $fileMtime): bool
+    {
+        $ifNoneMatch = $request->header('if-none-match');
+        if (is_string($ifNoneMatch) && $ifNoneMatch !== '') {
+            $trimmed = trim($ifNoneMatch);
+            if ($trimmed === '*') {
+                return true;
+            }
+
+            $stripped = trim($etag, '"');
+            $matchValues = explode(',', $trimmed);
+            foreach ($matchValues as $value) {
+                if (trim($value, '" ') === $stripped) {
+                    return true;
+                }
+            }
+        }
+
+        $ifModifiedSince = $request->header('if-modified-since');
+        if (is_string($ifModifiedSince) && $ifModifiedSince !== '') {
+            $ifModifiedSinceTime = strtotime($ifModifiedSince);
+            if ($ifModifiedSinceTime !== false && $ifModifiedSinceTime >= $fileMtime) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function generateEtag(string $filePath, int $fileMtime): string
+    {
+        return sprintf('"%x-%x"', $fileMtime, crc32($filePath));
+    }
+
+    private function formatHttpDate(int $timestamp): string
+    {
+        return gmdate('D, d M Y H:i:s', $timestamp) . ' GMT';
     }
 
     private function isFilePathBlocked(string $filePath): bool
@@ -93,7 +152,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return false;
         }
 
-        $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($path, '/'));
+        $resolved = $this->resolveRealPath($path);
 
         if ($resolved === false) {
             return false;
@@ -104,5 +163,47 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         return $resolved;
+    }
+
+    private function resolveRealPath(string $cacheKey): string|false
+    {
+        $now = time();
+
+        $cache = &$this->getRealPathCache();
+
+        if (isset($cache[$cacheKey])) {
+            $cached = $cache[$cacheKey];
+            $ttl = $cached['path'] === false ? self::CACHE_NEGATIVE_TTL : self::CACHE_TTL;
+            if ($now - $cached['time'] < $ttl) {
+                unset($cache[$cacheKey]);
+                $cache[$cacheKey] = $cached;
+
+                return $cached['path'];
+            }
+            unset($cache[$cacheKey]);
+        }
+
+        $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/'));
+
+        $cache[$cacheKey] = [
+            'path' => $resolved,
+            'time' => $now,
+        ];
+
+        if (count($cache) > self::CACHE_MAX_SIZE) {
+            array_shift($cache);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @return array<string, array{path: string|false, time: int}>
+     */
+    private function &getRealPathCache(): array
+    {
+        static $cache = [];
+
+        return $cache;
     }
 }

@@ -620,4 +620,105 @@ final class StaticFilesMiddlewareTest extends TestCase
             unlink($packageFile);
         }
     }
+
+    public function testFileServedWithCacheHeaders(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $response = $middleware($request, $next);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertNotNull($response->getHeader('Last-Modified'));
+        $this->assertNotNull($response->getHeader('ETag'));
+        $this->assertEquals('public, max-age=3600, must-revalidate', $response->getHeader('Cache-Control'));
+    }
+
+    public function testNotModifiedWhenEtagMatches(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $response = $middleware($request, $next);
+        $etag = $response->getHeader('ETag');
+        assert(is_string($etag));
+
+        $requestWithEtag = $this->createRequest('/test.txt');
+        $requestWithEtag->setHeader('If-None-Match', $etag);
+
+        $response304 = $middleware($requestWithEtag, $next);
+
+        $this->assertEquals(304, $response304->getStatusCode());
+    }
+
+    public function testNotModifiedWhenIfModifiedSinceFresh(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $response = $middleware($request, $next);
+        $lastModified = $response->getHeader('Last-Modified');
+        assert(is_string($lastModified));
+
+        $requestWithIMS = $this->createRequest('/test.txt');
+        $requestWithIMS->setHeader('If-Modified-Since', $lastModified);
+
+        $response304 = $middleware($requestWithIMS, $next);
+
+        $this->assertEquals(304, $response304->getStatusCode());
+    }
+
+    public function testNotModifiedWhenIfModifiedSinceAfterModification(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $futureDate = gmdate('D, d M Y H:i:s', time() + 3600) . ' GMT';
+
+        $requestWithIMS = $this->createRequest('/test.txt');
+        $requestWithIMS->setHeader('If-Modified-Since', $futureDate);
+
+        $response304 = $middleware($requestWithIMS, $next);
+
+        $this->assertEquals(304, $response304->getStatusCode());
+    }
+
+    public function testModifiedWhenEtagDoesNotMatch(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $requestWithBadEtag = $this->createRequest('/test.txt');
+        $requestWithBadEtag->setHeader('If-None-Match', '"non-matching-etag"');
+
+        $response = $middleware($requestWithBadEtag, $next);
+
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function testModifiedWhenIfModifiedSinceOlder(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $next = fn(): Response => new Response(404);
+
+        $oldDate = gmdate('D, d M Y H:i:s', 0) . ' GMT';
+        $requestWithOldIMS = $this->createRequest('/test.txt');
+        $requestWithOldIMS->setHeader('If-Modified-Since', $oldDate);
+
+        $response = $middleware($requestWithOldIMS, $next);
+
+        $this->assertEquals(200, $response->getStatusCode());
+    }
 }
