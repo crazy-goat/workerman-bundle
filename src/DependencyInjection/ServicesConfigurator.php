@@ -38,10 +38,32 @@ final readonly class ServicesConfigurator
      */
     public function configure(array $config, ContainerBuilder $container): void
     {
+        $this->configureParameters($config, $container);
+        $this->configureConfigLoader($config, $container);
+        $this->configureErrorListeners($container);
+        $this->configureAutoConfiguration($container);
+        $this->configureRebootStrategies($config, $container);
+        $this->configureCoreServices($container);
+        $this->configureBuildServices($container);
+        $this->configureBuildCommands($container);
+        $this->configureResponseStrategies($container);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function configureParameters(array $config, ContainerBuilder $container): void
+    {
         $container->setParameter('workerman.response_chunk_size', $config['response_chunk_size']);
         $container->setParameter('workerman.cache_warmup_timeout', $config['cache_warmup_timeout']);
         $container->setParameter('workerman.trusted_hosts', $config['trusted_hosts']);
+    }
 
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function configureConfigLoader(array $config, ContainerBuilder $container): void
+    {
         $container
             ->register('workerman.config_loader', ConfigLoader::class)
             ->setPublic(true)
@@ -56,7 +78,10 @@ final readonly class ServicesConfigurator
         ;
 
         $container->setAlias(ConfigLoader::class, 'workerman.config_loader');
+    }
 
+    private function configureErrorListeners(ContainerBuilder $container): void
+    {
         $container
             ->register('workerman.task_error_listener', TaskErrorListener::class)
             ->addTag('kernel.event_subscriber')
@@ -74,7 +99,10 @@ final readonly class ServicesConfigurator
                 new Reference('logger'),
             ])
         ;
+    }
 
+    private function configureAutoConfiguration(ContainerBuilder $container): void
+    {
         $container->registerAttributeForAutoconfiguration(AsProcess::class, static function (ChildDefinition $definition, AsProcess $attribute): void {
             $definition->addTag('workerman.process', [
                 'name' => $attribute->name,
@@ -91,7 +119,13 @@ final readonly class ServicesConfigurator
                 'jitter' => $attribute->jitter,
             ]);
         });
+    }
 
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function configureRebootStrategies(array $config, ContainerBuilder $container): void
+    {
         if ($config['reload_strategy']['always']['active']) {
             $container
                 ->register('workerman.always_reboot_strategy', AlwaysRebootStrategy::class)
@@ -136,7 +170,10 @@ final readonly class ServicesConfigurator
                 ])
             ;
         }
+    }
 
+    private function configureCoreServices(ContainerBuilder $container): void
+    {
         $container
             ->register(ServerManager::class)
             ->setAutowired(true)
@@ -157,7 +194,10 @@ final readonly class ServicesConfigurator
             ->addTag('console.command')
             ->setAutowired(true)
         ;
+    }
 
+    private function configureBuildServices(ContainerBuilder $container): void
+    {
         $container
             ->register('workerman.phar_builder', PharBuilder::class)
             ->setArguments([
@@ -181,7 +221,10 @@ final readonly class ServicesConfigurator
         $container
             ->register(SfxSourceResolver::class)
         ;
+    }
 
+    private function configureBuildCommands(ContainerBuilder $container): void
+    {
         $container
             ->register(BuildPharCommand::class)
             ->addTag('console.command')
@@ -206,7 +249,10 @@ final readonly class ServicesConfigurator
                 $container->getParameter('kernel.project_dir'),
             ])
         ;
+    }
 
+    private function configureResponseStrategies(ContainerBuilder $container): void
+    {
         $container
             ->register('workerman.binary_file_response_strategy', BinaryFileResponseStrategy::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 100])
