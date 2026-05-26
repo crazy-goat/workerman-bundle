@@ -91,13 +91,6 @@ final class PollingMonitorWatcherTest extends TestCase
         return $reflection->getValue($watcher);
     }
 
-    private function getTooManyFiles(PollingMonitorWatcher $watcher): bool
-    {
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'tooManyFiles');
-
-        return $reflection->getValue($watcher);
-    }
-
     public function testFileChangeDetectionConditionIsCorrect(): void
     {
         $watchedFile = $this->tempDir . '/app.php';
@@ -239,7 +232,7 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
-    public function testTooManyFilesWarningNotTriggeredWithFewFiles(): void
+    public function testResumePathsResetsAfterFullScan(): void
     {
         \file_put_contents($this->tempDir . '/a.php', '<?php');
         \file_put_contents($this->tempDir . '/b.php', '<?php');
@@ -251,9 +244,56 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $this->assertFalse(
-            $this->getTooManyFiles($watcher),
-            'tooManyFiles should remain false with few files',
-        );
+        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumePaths');
+        /** @var array<int, string> $resumePaths */
+        $resumePaths = $reflection->getValue($watcher);
+
+        $this->assertSame([], $resumePaths, 'resumePaths should be empty after full scan');
+    }
+
+    public function testMaxFilesPerTickRespectsBound(): void
+    {
+        for ($i = 0; $i < 600; $i++) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
+        }
+
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
+
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumePaths');
+        /** @var array<int, string> $resumePaths */
+        $resumePaths = $reflection->getValue($watcher);
+
+        $this->assertNotEmpty($resumePaths, 'resumePaths should have a resume point when files exceed MAX_FILES_PER_TICK');
+    }
+
+    public function testResumeContinuesAcrossMultipleTicks(): void
+    {
+        for ($i = 0; $i < 600; $i++) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
+        }
+
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
+
+        // Tick 1: process first 500 files, stop at boundary
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumePaths');
+        /** @var array<int, string> $resumePaths */
+        $resumePaths = $reflection->getValue($watcher);
+        $this->assertNotEmpty($resumePaths, 'Tick 1 should set resume path');
+
+        // Tick 2: continue from resume point, process remaining files
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        $resumePathsAfter = $reflection->getValue($watcher);
+        $this->assertSame([], $resumePathsAfter, 'resumePaths should be empty after completing full scan across multiple ticks');
     }
 }

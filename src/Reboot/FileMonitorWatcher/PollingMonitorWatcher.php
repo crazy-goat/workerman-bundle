@@ -6,36 +6,49 @@ namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
 final class PollingMonitorWatcher extends FileMonitorWatcher
 {
-    private const POLLING_INTERVAL = 1;
-    private const TOO_MANY_FILES_WARNING_LIMIT = 1000;
+    private const POLLING_INTERVAL = 3;
+    private const MAX_FILES_PER_TICK = 500;
 
     private int $lastMTime;
-    private bool $tooManyFiles = false;
+    /** @var array<int, string> */
+    private array $resumePaths = [];
 
     public function start(): void
     {
         $this->lastMTime = time();
         $this->worker::$globalEvent?->repeat(self::POLLING_INTERVAL, $this->checkFileSystemChanges(...));
-        $this->worker->log($this->worker->name . ' Polling file monitoring can be inefficient if the project has many files. Install the php-inotify extension to increase performance.');
+        $this->worker->log($this->worker->name . ' Polling file monitoring started with interval ' . self::POLLING_INTERVAL . 's, max ' . self::MAX_FILES_PER_TICK . ' files/tick.');
     }
 
     private function checkFileSystemChanges(): void
     {
-        $filesCount = 0;
+        $filesProcessed = 0;
 
-        foreach ($this->sourceDir as $dir) {
-            $dirIterator = new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS);
-            $iterator = new \RecursiveIteratorIterator($dirIterator, \RecursiveIteratorIterator::SELF_FIRST);
+        foreach ($this->sourceDir as $dirIdx => $dir) {
+            $dirIterator = new \RecursiveDirectoryIterator(
+                $dir,
+                \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::UNIX_PATHS,
+            );
+            $iterator = new \RecursiveIteratorIterator($dirIterator, \RecursiveIteratorIterator::LEAVES_ONLY);
+
+            $resumeFrom = $this->resumePaths[$dirIdx] ?? null;
+            $resuming = ($resumeFrom !== null);
 
             foreach ($iterator as $file) {
-                /** @var \SplFileInfo $file */
-                if ($file->isDir()) {
-                    continue;
+                if ($resuming) {
+                    if ($file->getPathname() !== $resumeFrom) {
+                        continue;
+                    }
+
+                    $resuming = false;
                 }
 
-                if (!$this->tooManyFiles && ++$filesCount > self::TOO_MANY_FILES_WARNING_LIMIT) {
-                    $this->tooManyFiles = true;
-                    $this->worker->log($this->worker->name . ' There are too many files. This makes file monitoring very slow. Install php-inotify extension to increase performance.');
+                $filesProcessed++;
+
+                if ($filesProcessed > self::MAX_FILES_PER_TICK) {
+                    $this->resumePaths[$dirIdx] = $file->getPathname();
+
+                    return;
                 }
 
                 if (!$this->checkPattern($file->getFilename())) {
@@ -44,10 +57,15 @@ final class PollingMonitorWatcher extends FileMonitorWatcher
 
                 if ($file->getMTime() > $this->lastMTime) {
                     $this->lastMTime = $file->getMTime();
+                    $this->resumePaths = [];
+
                     $this->reload();
+
                     return;
                 }
             }
+
+            unset($this->resumePaths[$dirIdx]);
         }
     }
 }
