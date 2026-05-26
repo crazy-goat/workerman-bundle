@@ -51,8 +51,10 @@ workerman:
 
         # PHPMicro SFX source (priority: sfx-file CLI > sfx.file > sfx-url > sfx.url > default)
         sfx:
-            url: null   # Custom download URL
-            file: null  # Local path to phpmicro.sfx
+            url: null        # Custom download URL
+            file: null       # Local path to phpmicro.sfx
+            sha256: null     # SHA-256 hex digest for checksum verification (strongly recommended)
+            allow_insecure: false  # Disable TLS peer verification (off by default; use only for local mirrors)
 
         # Files excluded from the PHAR
         exclude_patterns:
@@ -71,6 +73,39 @@ workerman:
             opcache.jit=1255
             memory_limit=256M
 ```
+
+### `build.sfx.sha256`
+
+The SHA-256 hex digest of the expected phpmicro.sfx binary. When configured, the SFX binary
+is verified against this checksum after download (and after zip extraction, if applicable),
+protecting against supply-chain attacks (corrupted download, man-in-the-middle substitution).
+**Strongly recommended** for all production builds.
+
+The `--sfx-checksum` CLI option overrides this config value when provided.
+
+```bash
+# Obtain the checksum for a specific PHP version
+curl -sL "https://download.workerman.net/php/php8.3.micro.sfx" | sha256sum
+# After obtaining a trusted copy, use its checksum in a subsequent build:
+php bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted.sfx | cut -d' ' -f1)"
+```
+
+Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
+
+### `build.sfx.allow_insecure`
+
+Disables TLS peer verification (`verify_peer`, `verify_peer_name`) when downloading the SFX
+binary. **Off by default** — keep it off unless you are serving phpmicro.sfx from a local
+mirror with a self-signed certificate.
+
+The `--insecure` CLI flag enables the same behavior.
+
+Security implications when enabled:
+- The connection is vulnerable to man-in-the-middle attacks
+- Redirects across schemes (HTTPS → HTTP) are followed, which can downgrade the download to plaintext
+- Always pair with `build.sfx.sha256` to verify the binary after download
+
+Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:310-313`.
 
 ## How It Works
 
