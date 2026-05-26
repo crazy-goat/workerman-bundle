@@ -105,11 +105,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `Utils::reload()` method as the canonical name for graceful worker restart ([#32](https://github.com/crazy-goat/workerman-bundle/issues/32))
   - `Utils::reboot()` is preserved as a deprecated alias with deprecation notice
   - Updated all internal callers and watcher classes
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-017) for details
 
 - Added `SymfonyController` injection via DI into `HttpRequestHandler` ([#158](https://github.com/crazy-goat/workerman-bundle/issues/158))
   - `HttpRequestHandler` now accepts `SymfonyController $controller` via constructor injection
   - `WorkermanCompilerPass` registers `workerman.symfony_controller` service with autowiring alias
   - Removed unused `KernelInterface` and `ResponseConverter` dependencies
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-017) for details
 
 ### Changed
 
@@ -132,6 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed dead `StreamResponseInterface` and `streamContent()` method from `StreamedBinaryFileResponse` — the generator-based streaming was never called by the response pipeline; `BinaryFileResponseStrategy` handles it via `withFile()` ([#165](https://github.com/crazy-goat/workerman-bundle/issues/165))
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-017) for details
 
 - Removed 8 permanently skipped tests from `HttpRequestHandlerTest` that were never executed ([#154](https://github.com/crazy-goat/workerman-bundle/issues/154))
 
@@ -150,6 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unconditionally. HTTPS is now detected only from the actual SSL transport
   layer. Users behind reverse proxies must configure Symfony's trusted
   proxies. ([#152](https://github.com/crazy-goat/workerman-bundle/issues/152))
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-016) for details
 
 ### Fixed
 
@@ -234,6 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **New format:** `['workerman' => ..., 'process' => ..., 'scheduler' => ...]`
   - Uses `ConfigSection` enum values as keys for clarity and type safety
   - **Migration**: Clear cache after upgrade: `rm -rf var/cache/*`
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-015) for details
 
 ## [0.14.0] - 2026-04-14
 
@@ -279,6 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All strategy implementations must be updated to accept the new parameter
   - Enables connection-aware features like immediate temp file cleanup on connection close
   - **Migration**: Add `TcpConnection $connection` parameter to your custom strategy's `convert()` method
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-014) for details
 
 - `BinaryFileResponseStrategy` now deletes temp files immediately after connection closes
   - Uses Workerman's `onClose` callback instead of loading file into memory
@@ -291,6 +297,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Previously `getContent()` returned full raw body including file contents
   - Files remain accessible via `$request->files` as before
   - **Migration**: If your code relies on reading raw multipart body via `getContent()`, you'll need to adapt it
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-014) for details
 
 - `StreamedBinaryFileResponse::streamContent()` simplified chunking logic
   - Removed redundant inner while loop that was effectively a no-op
@@ -339,6 +346,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Critical**: Priority-based strategy ordering is now enforced in compiler pass
   - Strategies are sorted by priority tag value (descending) before registration
   - Makes strategy ordering resilient to service registration order changes
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-013) for details
 
 ## [0.12.0] - 2026-04-04
 
@@ -381,6 +389,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 9 `\InvalidArgumentException` throw sites replaced with domain-specific validation/scheduler/middleware exceptions
   - 2 `\RuntimeException` throw sites replaced with `KernelCreationException` and `InvalidCacheDirectoryException`
   - 1 `\LogicException` throw site replaced with `InvalidCronExpressionException`
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-012) for details
 
 ### Removed
 
@@ -388,6 +397,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `CrazyGoat\WorkermanBundle\ServerAlreadyRunningException` → `CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException`
   - `CrazyGoat\WorkermanBundle\ServerNotRunningException` → `CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException`
   - `CrazyGoat\WorkermanBundle\ServerStopFailedException` → `CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException`
+  - See [UPGRADE.md](UPGRADE.md#upgrading-to-012) for details
 
 ### Fixed
 
@@ -412,42 +422,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration Guide
 
-#### For consumers catching specific exceptions
-
-Update your catch blocks to use the new exception classes:
-
-```php
-// Before
-use CrazyGoat\WorkermanBundle\ServerAlreadyRunningException;
-
-// After
-use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
-```
-
-#### For consumers catching generic exceptions
-
-**No changes required** - backward compatibility is maintained for:
-- Code catching `\RuntimeException` (all exceptions extend it via `WorkermanException`)
-- Code catching `\InvalidArgumentException` (validation/scheduler/middleware exceptions extend it)
-
-#### For consumers catching LogicException
-
-**Breaking change**: The exception thrown when cron expression package is not installed changed from `\LogicException` to `InvalidCronExpressionException` (extends `\InvalidArgumentException`).
-
-Update your code:
-
-```php
-// Before
-try {
-    new CronExpressionTrigger('* * * * *');
-} catch (\LogicException $e) {
-    // Handle missing package
-}
-
-// After
-try {
-    new CronExpressionTrigger('* * * * *');
-} catch (InvalidCronExpressionException $e) {
-    // Handle missing package or invalid expression
-}
-```
+For detailed migration instructions for all breaking changes, see [UPGRADE.md](UPGRADE.md#upgrading-to-012).
