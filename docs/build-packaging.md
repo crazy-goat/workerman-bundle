@@ -79,7 +79,7 @@ workerman:
 The SHA-256 hex digest of the expected phpmicro.sfx binary. When configured, the SFX binary
 is verified against this checksum after download (and after zip extraction, if applicable),
 protecting against supply-chain attacks (corrupted download, man-in-the-middle substitution).
-**Strongly recommended** for all production builds.
+**Required** for all builds unless `--unsafe-no-checksum` is explicitly passed.
 
 The `--sfx-checksum` CLI option overrides this config value when provided.
 
@@ -92,6 +92,21 @@ php bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
 
+### `--unsafe-no-checksum`
+
+Bypasses the mandatory checksum requirement and allows the download without SHA-256 verification.
+Use only when:
+- You are downloading from a trusted, local mirror
+- You have verified the binary integrity through out-of-band means
+
+Without this flag, the build **fails** with an error when no `--sfx-checksum` or `build.sfx.sha256`
+is configured.
+
+```bash
+# Warning: skips checksum verification
+php bin/console workerman:build:bin --unsafe-no-checksum
+```
+
 ### `build.sfx.allow_insecure`
 
 Disables TLS peer verification (`verify_peer`, `verify_peer_name`) when downloading the SFX
@@ -102,7 +117,7 @@ The `--insecure` CLI flag enables the same behavior.
 
 Security implications when enabled:
 - The connection is vulnerable to man-in-the-middle attacks
-- Redirects across schemes (HTTPS → HTTP) are followed, which can downgrade the download to plaintext
+- Cross-scheme redirects (HTTPS → HTTP) are **blocked** with a hard error
 - Always pair with `build.sfx.sha256` to verify the binary after download
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:310-313`.
@@ -166,11 +181,14 @@ Options:
 php bin/console workerman:build:bin [options]
 
 Options:
-  -o, --output-dir=DIR     Output directory
-      --filename=NAME      Output filename (default: config build.bin_filename)
-      --sfx-file=PATH      Local path to phpmicro.sfx
-      --sfx-url=URL        URL to download phpmicro.sfx
-      --php-version=VER    PHP version for static binary (e.g., 8.3)
+  -o, --output-dir=DIR         Output directory
+      --filename=NAME          Output filename (default: config build.bin_filename)
+      --sfx-file=PATH          Local path to phpmicro.sfx
+      --sfx-url=URL            URL to download phpmicro.sfx
+      --sfx-checksum=HASH      Expected SHA-256 hex digest (mandatory unless --unsafe-no-checksum)
+      --php-version=VER        PHP version for static binary (e.g., 8.3)
+      --insecure               Disable TLS peer verification (not recommended)
+      --unsafe-no-checksum     Skip SHA-256 verification (not recommended)
 ```
 
 ## References

@@ -8,6 +8,10 @@ use CrazyGoat\WorkermanBundle\Exception\SfxExtractionException;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * @group network
+ */
+
 final class SfxDownloaderTest extends TestCase
 {
     private string $tempDir;
@@ -273,5 +277,99 @@ final class SfxDownloaderTest extends TestCase
 
         self::assertFileExists($result);
         self::assertStringEqualsFile($result, 'fallback-entry-content');
+    }
+
+    public function testBuildContextReturnsNullForHttpUrl(): void
+    {
+        $result = $this->invokeBuildContext('http://example.com/file.sfx', false);
+
+        self::assertNull($result);
+    }
+
+    public function testBuildContextReturnsNullForHttpUrlEvenWhenInsecure(): void
+    {
+        $result = $this->invokeBuildContext('http://example.com/file.sfx', true);
+
+        self::assertNull($result);
+    }
+
+    public function testBuildContextDisablesFollowLocationWhenInsecure(): void
+    {
+        $context = $this->invokeBuildContext('https://example.com/file.sfx', true);
+        self::assertNotNull($context);
+
+        $options = stream_context_get_options($context);
+        self::assertArrayHasKey('http', $options);
+        self::assertSame(0, $options['http']['follow_location']);
+        self::assertFalse($options['ssl']['verify_peer']);
+        self::assertFalse($options['ssl']['verify_peer_name']);
+    }
+
+    public function testBuildContextEnablesFollowLocationWhenSecure(): void
+    {
+        $context = $this->invokeBuildContext('https://example.com/file.sfx', false);
+        self::assertNotNull($context);
+
+        $options = stream_context_get_options($context);
+        self::assertArrayHasKey('http', $options);
+        self::assertSame(1, $options['http']['follow_location']);
+        self::assertTrue($options['ssl']['verify_peer']);
+        self::assertTrue($options['ssl']['verify_peer_name']);
+    }
+
+    public function testResolveRedirectUrlAbsolute(): void
+    {
+        $result = $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com/a/b/c.sfx', 'https://other.com/d.sfx');
+
+        self::assertSame('https://other.com/d.sfx', $result);
+    }
+
+    public function testResolveRedirectUrlRelativePath(): void
+    {
+        $result = $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com/a/b/c.sfx', 'd.sfx');
+
+        self::assertSame('https://example.com/a/b/d.sfx', $result);
+    }
+
+    public function testResolveRedirectUrlAbsolutePath(): void
+    {
+        $result = $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com/a/b/c.sfx', '/d.sfx');
+
+        self::assertSame('https://example.com/d.sfx', $result);
+    }
+
+    public function testResolveRedirectUrlWithPort(): void
+    {
+        $result = $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com:8443/a/b/c.sfx', '/d.sfx');
+
+        self::assertSame('https://example.com:8443/d.sfx', $result);
+    }
+
+    public function testDownloadWithRedirectCheckExtractsSfxFilename(): void
+    {
+        $tempFile = $this->tempDir . '/downloaded.sfx';
+        file_put_contents($tempFile, 'sfx-content');
+
+        $result = (new SfxDownloader())->fetch(
+            'file://' . $tempFile,
+            $this->tempDir . '/out',
+            null,
+            true,
+        );
+
+        self::assertFileExists($result);
+        self::assertStringEqualsFile($result, 'sfx-content');
+    }
+
+    private function invokeBuildContext(string $url, bool $allowInsecure): mixed
+    {
+        return $this->invokePrivateSfxMethod('buildContext', $url, $allowInsecure);
+    }
+
+    private function invokePrivateSfxMethod(string $methodName, mixed ...$args): mixed
+    {
+        $method = new \ReflectionMethod(SfxDownloader::class, $methodName);
+
+        return $method->invoke(new SfxDownloader(), ...$args);
     }
 }

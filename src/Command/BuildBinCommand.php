@@ -44,6 +44,7 @@ final class BuildBinCommand extends Command
             ->addOption('sfx-checksum', null, InputOption::VALUE_REQUIRED, 'Expected SHA-256 of the SFX binary (hex)')
             ->addOption('php-version', null, InputOption::VALUE_REQUIRED, 'PHP version for the static binary (e.g. 8.3)')
             ->addOption('insecure', null, InputOption::VALUE_NONE, 'Disable TLS peer verification when downloading the SFX (not recommended)')
+            ->addOption('unsafe-no-checksum', null, InputOption::VALUE_NONE, 'Skip SHA-256 checksum verification (not recommended; use only with a trusted mirror)')
         ;
     }
 
@@ -122,6 +123,12 @@ final class BuildBinCommand extends Command
             $io->warning('Downloading SFX with TLS peer verification disabled. This is unsafe — provide --sfx-checksum or use a trusted mirror.');
         }
         if ($source->checksum === null) {
+            if (!$input->getOption('unsafe-no-checksum')) {
+                throw new \RuntimeException(
+                    'No SFX SHA-256 checksum configured. Use --sfx-checksum to provide one, '
+                    . 'or --unsafe-no-checksum to skip verification (not recommended).',
+                );
+            }
             $io->warning('No SFX SHA-256 configured. The downloaded binary is not verified. Set build.sfx.sha256 (or pass --sfx-checksum) to enable verification.');
         }
 
