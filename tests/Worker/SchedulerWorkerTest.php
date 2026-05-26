@@ -257,6 +257,21 @@ final class SchedulerWorkerTest extends TestCase
         $this->runIsolatedTest('pid_lifecycle');
     }
 
+    public function testSymlinkUnlinkDoesNotRemoveTarget(): void
+    {
+        $this->runIsolatedTest('symlink_unlink_safety');
+    }
+
+    public function testExistingSymlinkIsRejected(): void
+    {
+        $this->runIsolatedTest('symlink_rejection');
+    }
+
+    public function testInodeMismatchDetectionCatchesFileSwap(): void
+    {
+        $this->runIsolatedTest('inode_mismatch_detection');
+    }
+
     /**
      * @param array<string, array<string, mixed>> $config
      */
