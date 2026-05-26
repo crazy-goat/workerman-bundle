@@ -76,16 +76,18 @@ workerman:
 
 ### `build.sfx.sha256`
 
-The SHA-256 hex digest of the expected phpmicro.sfx binary. When configured, the downloaded
-SFX file is verified against this checksum before extraction, protecting against supply-chain
-attacks (corrupted download, man-in-the-middle substitution). **Strongly recommended** for all
-production builds.
+The SHA-256 hex digest of the expected phpmicro.sfx binary. When configured, the SFX binary
+is verified against this checksum after download (and after zip extraction, if applicable),
+protecting against supply-chain attacks (corrupted download, man-in-the-middle substitution).
+**Strongly recommended** for all production builds.
+
+The `--sfx-checksum` CLI option overrides this config value when provided.
 
 ```bash
 # Obtain the checksum for a specific PHP version
 curl -sL "https://download.workerman.net/php/php8.3.micro.sfx" | sha256sum
-# Or after a successful download, verify inline:
-php bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/downloaded.sfx | cut -d' ' -f1)"
+# After obtaining a trusted copy, use its checksum in a subsequent build:
+php bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted.sfx | cut -d' ' -f1)"
 ```
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
@@ -95,6 +97,8 @@ Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
 Disables TLS peer verification (`verify_peer`, `verify_peer_name`) when downloading the SFX
 binary. **Off by default** — keep it off unless you are serving phpmicro.sfx from a local
 mirror with a self-signed certificate.
+
+The `--insecure` CLI flag enables the same behavior.
 
 Security implications when enabled:
 - The connection is vulnerable to man-in-the-middle attacks
