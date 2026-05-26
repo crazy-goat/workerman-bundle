@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
+use CrazyGoat\WorkermanBundle\Exception\SfxExtractionException;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use PHPUnit\Framework\TestCase;
 
@@ -219,5 +220,58 @@ final class SfxDownloaderTest extends TestCase
 
         self::assertFileExists($result);
         self::assertStringEqualsFile($result, 'static-php-binary-content');
+    }
+
+    public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void
+    {
+        $zipPath = $this->tempDir . '/orphan.sfx.zip';
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        $zip->addEmptyDir('subdir');
+        $zip->close();
+
+        $this->expectException(SfxExtractionException::class);
+        $this->expectExceptionMessage('Could not locate extracted SFX file');
+
+        (new SfxDownloader())->fetch(
+            'https://example.invalid/orphan.sfx.zip',
+            $this->tempDir,
+        );
+    }
+
+    public function testExtractZipPrimaryRuleMatchesZipBasename(): void
+    {
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'phpmicro.sfx' => 'primary-rule-match',
+            'other.bin' => 'should-not-be-picked',
+        ]);
+
+        $result = (new SfxDownloader())->fetch(
+            'https://example.invalid/phpmicro.sfx.zip',
+            $this->tempDir,
+        );
+
+        self::assertStringEndsWith('phpmicro.sfx', $result);
+        self::assertStringEqualsFile($result, 'primary-rule-match');
+    }
+
+    public function testExtractZipFallbackPicksFirstFileEntry(): void
+    {
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'release.sfx' => 'fallback-entry-content',
+        ]);
+
+        $result = (new SfxDownloader())->fetch(
+            'https://example.invalid/phpmicro.sfx.zip',
+            $this->tempDir,
+        );
+
+        self::assertFileExists($result);
+        self::assertStringEqualsFile($result, 'fallback-entry-content');
     }
 }
