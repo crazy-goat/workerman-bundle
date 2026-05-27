@@ -50,68 +50,115 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         return $this;
     }
 
-    public function __invoke(TcpConnection $connection, Request $request): void
+    /**
+     * Build the middleware dispatch chain.
+     *
+     * Composes middlewares around the controller into a single callable.
+     * The chain is built on each invocation so middlewares can be reconfigured
+     * between requests (e.g. via withRootDirectory).
+     *
+     * @return callable(Request): Http\Response
+     */
+    private function buildMiddlewareChain(TcpConnection $connection): callable
     {
-        \memory_reset_peak_usage();
-        $shouldCloseConnection = $request->protocolVersion() === '1.0' || $request->header('Connection', '') === 'close';
-
         $next = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
         foreach (array_reverse($this->middlewares) as $middleware) {
             $next = fn(Request $input): Http\Response => $middleware($input, $next);
         }
 
-        $response = $next($request);
+        return $next;
+    }
 
+    /**
+     * Send the response to the connection, unless already sent by a middleware.
+     */
+    private function sendResponse(TcpConnection $connection, Http\Response $response): void
+    {
         $responseAlreadySent = $connection->context instanceof \stdClass
             && isset($connection->context->responseSentDirectly);
         if ($responseAlreadySent) {
             unset($connection->context->responseSentDirectly);
+
+            return;
         }
 
-        if (!$responseAlreadySent) {
-            $connection->send(Http::encode($response, $connection), true);
-        }
+        $connection->send(Http::encode($response, $connection), true);
+    }
 
-        // Cancel any pending terminate timer from previous request (safety)
+    /**
+     * Execute kernel termination with error logging.
+     *
+     * This is the single location where terminateIfNeeded() is called,
+     * ensuring consistent error handling whether invoked deferred or synchronously.
+     */
+    private function doTerminate(string $errorPrefix = 'Kernel termination failed'): void
+    {
+        try {
+            $this->controller->terminateIfNeeded();
+        } catch (\Throwable $e) {
+            error_log(sprintf(
+                '%s: %s in %s:%d',
+                $errorPrefix,
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine(),
+            ));
+        }
+    }
+
+    /**
+     * Schedule kernel termination on the next event-loop tick.
+     *
+     * Cancels any previously pending terminate timer as a safety guard
+     * against stale timers from prior requests.
+     */
+    private function scheduleTerminate(): void
+    {
         if ($this->terminateTimerId !== null) {
             Timer::del($this->terminateTimerId);
             $this->terminateTimerId = null;
         }
 
-        // Defer terminate() to next event loop tick - non-blocking
-        $timerId = Timer::add(0, function (): void {
-            try {
-                $this->controller->terminateIfNeeded();
-            } catch (\Throwable $e) {
-                error_log(sprintf(
-                    'Kernel termination failed: %s in %s:%d',
-                    $e->getMessage(),
-                    $e->getFile(),
-                    $e->getLine(),
-                ));
-            }
+        $this->terminateTimerId = Timer::add(0, function (): void {
+            $this->doTerminate();
         }, persistent: false);
-        $this->terminateTimerId = $timerId;
+    }
 
-        if ($shouldCloseConnection) {
+    /**
+     * Determine if the connection should be closed after the response is sent.
+     */
+    private function shouldCloseConnection(Request $request): bool
+    {
+        return $request->protocolVersion() === '1.0'
+            || $request->header('Connection', '') === 'close';
+    }
+
+    public function __invoke(TcpConnection $connection, Request $request): void
+    {
+        \memory_reset_peak_usage();
+
+        // 1. Dispatch through middleware chain → controller
+        $chain = $this->buildMiddlewareChain($connection);
+        $response = $chain($request);
+
+        // 2. Send response
+        $this->sendResponse($connection, $response);
+
+        // 3. Schedule deferred terminate on next event-loop tick
+        $this->scheduleTerminate();
+
+        // 4. Close connection if protocol demands it
+        if ($this->shouldCloseConnection($request)) {
             $connection->close();
         }
 
-        // Ensure terminate completes before reload to avoid race conditions
+        // 5. Reload if strategy signals — terminates synchronously before reload
         if ($this->rebootStrategy->shouldReboot()) {
-            Timer::del($timerId);
-            $this->terminateTimerId = null;
-            // Call terminate synchronously before reload
-            try {
-                $this->controller->terminateIfNeeded();
-            } catch (\Throwable $e) {
-                error_log(sprintf(
-                    'Kernel termination failed during reload: %s in %s:%d',
-                    $e->getMessage(),
-                    $e->getFile(),
-                    $e->getLine(),
-                ));
+            if ($this->terminateTimerId !== null) {
+                Timer::del($this->terminateTimerId);
+                $this->terminateTimerId = null;
             }
+            $this->doTerminate('Kernel termination failed during reload');
             Utils::reload();
         }
     }
