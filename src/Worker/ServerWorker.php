@@ -29,20 +29,11 @@ final readonly class ServerWorker
     ) {
         $listen = $serverConfig['listen'] ?? '';
         assert(is_string($listen));
-        $transport = 'tcp';
-        $context = [];
 
-        if (str_starts_with($listen, 'https://')) {
-            $listen = str_replace('https://', 'http://', $listen);
-            $transport = 'ssl';
-            $context = $this->createSslContext($serverConfig);
-        } elseif (str_starts_with($listen, 'ws://')) {
-            $listen = str_replace('ws://', 'websocket://', $listen);
-        } elseif (str_starts_with($listen, 'wss://')) {
-            $listen = str_replace('wss://', 'websocket://', $listen);
-            $transport = 'ssl';
-            $context = $this->createSslContext($serverConfig);
-        }
+        $scheme = ListenScheme::fromListen($listen);
+        $listen = str_replace($scheme->value . '://', $scheme->workermanPrefix(), $listen);
+        $transport = $scheme->transport();
+        $context = $scheme->requiresSslContext() ? $this->createSslContext($serverConfig) : [];
 
         $worker = new Worker($listen, $context);
         $worker->name = sprintf('%s %s', self::PROCESS_TITLE, $serverConfig['name']);
