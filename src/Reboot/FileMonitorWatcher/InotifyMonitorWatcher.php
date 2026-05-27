@@ -23,8 +23,11 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             stream_set_blocking($this->fd, false);
 
             foreach ($this->sourceDir as $dir) {
-                $dirIterator = new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS);
-                $iterator = new \RecursiveIteratorIterator($dirIterator, \RecursiveIteratorIterator::SELF_FIRST);
+                $iterator = $this->createRecursiveIterator(
+                    $dir,
+                    \FilesystemIterator::SKIP_DOTS,
+                    \RecursiveIteratorIterator::SELF_FIRST,
+                );
 
                 $this->watchDir($dir);
 

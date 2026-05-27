@@ -46,6 +46,24 @@ abstract class FileMonitorWatcher
         return false;
     }
 
+    /**
+     * Create a recursive directory iterator with the given flags and mode.
+     *
+     * Both PollingMonitorWatcher and InotifyMonitorWatcher need this same
+     * boilerplate; centralising it here means traversal behaviour (skip
+     * dot-dirs, follow symlinks, etc.) can be changed in one place.
+     *
+     * @param positive-int $flags  FilesystemIterator flags (e.g. SKIP_DOTS | UNIX_PATHS)
+     * @param positive-int $mode   RecursiveIteratorIterator mode (e.g. LEAVES_ONLY, SELF_FIRST)
+     */
+    final protected function createRecursiveIterator(string $dir, int $flags, int $mode): \RecursiveIteratorIterator
+    {
+        return new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, $flags),
+            $mode,
+        );
+    }
+
     final protected function reload(): void
     {
         Utils::reload(reloadAllWorkers: true);
