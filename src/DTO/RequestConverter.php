@@ -61,8 +61,14 @@ final class RequestConverter
         $files = $rawRequest->file() ?? [];
         $post = $rawRequest->post();
 
-        FileUploadValidator::validate($files);
-        $files = self::processFiles($files);
+        // Fast-path: skip file validation and recursive UploadedFile construction
+        // when no files are present — the most common case for HTTP requests.
+        // This avoids function call overhead for the empty-files traversal
+        // and keeps the hot path as lean as possible.
+        if ($files !== []) {
+            FileUploadValidator::validate($files);
+            $files = self::processFiles($files);
+        }
 
         $uri = $rawRequest->uri();
         $method = $rawRequest->method();
