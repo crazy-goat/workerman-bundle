@@ -128,11 +128,12 @@ final class FileMonitorWatcherTest extends TestCase
         return $reflection->invoke($watcher, $filename);
     }
 
+    /** @return \RecursiveIteratorIterator<\RecursiveDirectoryIterator> */
     private function invokeCreateRecursiveIterator(FileMonitorWatcher $watcher, string $dir, int $flags, int $mode): \RecursiveIteratorIterator
     {
         $reflection = new \ReflectionMethod(FileMonitorWatcher::class, 'createRecursiveIterator');
 
-        /** @var \RecursiveIteratorIterator */
+        /** @var \RecursiveIteratorIterator<\RecursiveDirectoryIterator> */
         return $reflection->invoke($watcher, $dir, $flags, $mode);
     }
 

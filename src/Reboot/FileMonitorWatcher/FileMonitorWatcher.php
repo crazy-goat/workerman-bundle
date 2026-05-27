@@ -53,8 +53,10 @@ abstract class FileMonitorWatcher
      * boilerplate; centralising it here means traversal behaviour (skip
      * dot-dirs, follow symlinks, etc.) can be changed in one place.
      *
-     * @param positive-int $flags  FilesystemIterator flags (e.g. SKIP_DOTS | UNIX_PATHS)
-     * @param positive-int $mode   RecursiveIteratorIterator mode (e.g. LEAVES_ONLY, SELF_FIRST)
+     * @param int<0, max> $flags FilesystemIterator flags (e.g. SKIP_DOTS | UNIX_PATHS)
+     * @param 0|1|2       $mode  RecursiveIteratorIterator mode (LEAVES_ONLY=0, SELF_FIRST=1, CHILD_FIRST=2)
+     *
+     * @return \RecursiveIteratorIterator<\RecursiveDirectoryIterator>
      */
     final protected function createRecursiveIterator(string $dir, int $flags, int $mode): \RecursiveIteratorIterator
     {
