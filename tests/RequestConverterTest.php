@@ -826,6 +826,125 @@ final class RequestConverterTest extends TestCase
         };
     }
 
+    public function testDetectFormDataWithMultipartContentType(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['multipart/form-data; boundary=xyz']);
+
+        $this->assertTrue($result['isMultipart']);
+        $this->assertTrue($result['isFormData']);
+    }
+
+    public function testDetectFormDataWithFormUrlEncoded(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['application/x-www-form-urlencoded']);
+
+        $this->assertFalse($result['isMultipart']);
+        $this->assertTrue($result['isFormData']);
+    }
+
+    public function testDetectFormDataWithJsonContentType(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['application/json']);
+
+        $this->assertFalse($result['isMultipart']);
+        $this->assertFalse($result['isFormData']);
+    }
+
+    public function testDetectFormDataWithEmptyContentType(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['']);
+
+        $this->assertFalse($result['isMultipart']);
+        $this->assertFalse($result['isFormData']);
+    }
+
+    public function testDetectFormDataIsCaseInsensitive(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['MULTIPART/FORM-DATA; boundary=test']);
+
+        $this->assertTrue($result['isMultipart']);
+        $this->assertTrue($result['isFormData']);
+    }
+
+    public function testBuildServerBagWithConnection(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(8080);
+
+        $server = $this->callPrivateStaticMethod('buildServerBag', [
+            $rawRequest,
+            '/test',
+            'GET',
+            false,
+            1234567890.123,
+        ]);
+
+        $this->assertSame('/test', $server['REQUEST_URI']);
+        $this->assertSame('GET', $server['REQUEST_METHOD']);
+        $this->assertSame('HTTP/1.1', $server['SERVER_PROTOCOL']);
+        $this->assertSame('192.168.1.1', $server['REMOTE_ADDR']);
+        $this->assertSame(12345, $server['REMOTE_PORT']);
+        $this->assertSame(8080, $server['SERVER_PORT']);
+        $this->assertSame('0.0.0.0', $server['SERVER_NAME']);
+        $this->assertSame('', $server['QUERY_STRING']);
+        $this->assertSame(1234567890, $server['REQUEST_TIME']);
+        $this->assertSame(1234567890.123, $server['REQUEST_TIME_FLOAT']);
+        $this->assertArrayNotHasKey('HTTPS', $server);
+    }
+
+    public function testBuildServerBagWithoutConnection(): void
+    {
+        $buffer = "GET /test?foo=bar HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = null;
+
+        $server = $this->callPrivateStaticMethod('buildServerBag', [
+            $rawRequest,
+            '/test?foo=bar',
+            'GET',
+            false,
+            1234567890.456,
+        ]);
+
+        $this->assertSame('127.0.0.1', $server['REMOTE_ADDR']);
+        $this->assertSame(0, $server['REMOTE_PORT']);
+        $this->assertSame(80, $server['SERVER_PORT']);
+        $this->assertSame('localhost', $server['SERVER_NAME']);
+        $this->assertSame('foo=bar', $server['QUERY_STRING']);
+        $this->assertArrayNotHasKey('HTTPS', $server);
+    }
+
+    public function testBuildServerBagWithHttps(): void
+    {
+        $buffer = "GET /secure HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        $rawRequest = new Request($buffer);
+        $rawRequest->connection = $this->createMockConnection(443, 'ssl');
+
+        $server = $this->callPrivateStaticMethod('buildServerBag', [
+            $rawRequest,
+            '/secure',
+            'GET',
+            true,
+            1234567890.789,
+        ]);
+
+        $this->assertSame('on', $server['HTTPS']);
+        $this->assertSame(443, $server['SERVER_PORT']);
+    }
+
+    /**
+     * Call a private static method via reflection for unit testing.
+     *
+     * @param array<int, mixed> $args
+     */
+    private function callPrivateStaticMethod(string $methodName, array $args): mixed
+    {
+        $reflection = new \ReflectionMethod(RequestConverter::class, $methodName);
+
+        return $reflection->invokeArgs(null, $args);
+    }
+
     /**
      * @param array<int, array{name: string, filename: string, content: string}> $fields
      */
