@@ -704,8 +704,13 @@ final class HttpRequestHandlerTest extends TestCase
         $reflection = new \ReflectionClass($handler);
         $method = $reflection->getMethod('doTerminate');
 
-        // Should not throw — exceptions from terminateIfNeeded are caught internally
-        $method->invoke($handler);
+        // Suppress expected error_log output from the caught exception
+        ini_set('error_log', '/dev/null');
+        try {
+            $method->invoke($handler);
+        } finally {
+            ini_restore('error_log');
+        }
 
         // The kernel's terminate was called but threw — that's OK, we verified no uncaught exception
         $this->addToAssertionCount(1);
