@@ -87,7 +87,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      * Execute kernel termination with error logging.
      *
      * This is the single location where terminateIfNeeded() is called,
-     * ensuring consistent error handling whether invoked deferred or synchronously.
+     * ensuring consistent error handling on every request.
      */
     private function doTerminate(string $errorPrefix = 'Kernel termination failed'): void
     {
@@ -127,12 +127,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         // 3. Terminate synchronously (send() is non-blocking, no timer needed)
         $this->doTerminate();
 
-        // 5. Close connection if protocol demands it
+        // 4. Close connection if protocol demands it
         if ($this->shouldCloseConnection($request)) {
             $connection->close();
         }
 
-        // 6. Reload if strategy signals — terminates synchronously before reload
+        // 5. Reload if strategy signals — terminates synchronously before reload
         if ($this->rebootStrategy->shouldReboot()) {
             Utils::reload();
         }
