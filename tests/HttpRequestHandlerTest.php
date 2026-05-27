@@ -511,34 +511,52 @@ final class HttpRequestHandlerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    // ScheduleTerminate schedules a deferred timer
+    // Terminate is called synchronously after send
     // ──────────────────────────────────────────────
 
-    public function testInvokeSchedulesDeferredTerminate(): void
+    public function testInvokeCallsTerminateSynchronously(): void
     {
         $connection = new MockTcpConnection();
         $request = new Request(self::HTTP11);
 
         ($this->handler)($connection, $request);
 
-        $this->assertCount(1, $this->timerEvent->delayed, 'A deferred timer should be scheduled for terminate');
-        $this->assertSame(0.0, $this->timerEvent->delayed[0]['delay'], 'Deferred timer should have zero delay');
+        // Terminate is called synchronously after send(), no timer needed
+        $this->assertTrue(
+            $this->kernel->terminateCalled,
+            'Kernel terminate should be called synchronously after response is sent',
+        );
+        $this->assertSame(1, $this->kernel->terminateCount, 'Terminate should be called exactly once');
     }
 
-    public function testInvokeCancelsPreviousTimerOnSubsequentRequest(): void
+    public function testInvokeCallsTerminateBeforeClosingConnection(): void
+    {
+        $connection = new MockTcpConnection();
+        $request = new Request(self::HTTP10);
+
+        $this->kernel->terminateCalled = false;
+        $this->kernel->terminateCount = 0;
+
+        ($this->handler)($connection, $request);
+
+        // HTTP/1.0 closes connection, but terminate was already called synchronously
+        $this->assertTrue($this->kernel->terminateCalled, 'Terminate called before close');
+        $this->assertTrue($connection->closed, 'Connection closed after terminate');
+    }
+
+    public function testInvokeNoTimerAllocations(): void
     {
         $connection = new MockTcpConnection();
         $request = new Request(self::HTTP11);
 
-        // First request schedules a timer
         ($this->handler)($connection, $request);
-        $firstTimerCount = \count($this->timerEvent->delayed);
 
-        // Second request should cancel the first timer and schedule a new one
-        ($this->handler)($connection, $request);
-        $secondTimerCount = \count($this->timerEvent->delayed);
-
-        $this->assertSame($firstTimerCount + 1, $secondTimerCount, 'Each request should schedule exactly one new timer');
+        // No timers should have been scheduled for terminate
+        $this->assertCount(
+            0,
+            $this->timerEvent->delayed,
+            'No deferred timers should be scheduled — terminate is synchronous',
+        );
     }
 
     // ──────────────────────────────────────────────
@@ -567,17 +585,17 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $this->kernel->terminateCount);
     }
 
-    public function testInvokeRebootPathDoesNotAffectNonRebootRequests(): void
+    public function testInvokeRebootPathCalledOnEveryRequest(): void
     {
         $connection = new MockTcpConnection();
         $request = new Request(self::HTTP11);
 
         ($this->handler)($connection, $request);
 
-        // terminate should NOT have been called during normal request (it's deferred via timer)
-        $this->assertFalse(
+        // terminate IS called synchronously on every request now
+        $this->assertTrue(
             $this->kernel->terminateCalled,
-            'Kernel terminate should NOT be called during normal request handling',
+            'Kernel terminate should be called on every request (no more timer deferral)',
         );
     }
 
@@ -587,23 +605,15 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testDoTerminateCallsControllerTerminateIfNeeded(): void
     {
-        // First, invoke the controller so it has a stored request/response for terminateIfNeeded
+        // __invoke now calls doTerminate synchronously — verify terminate is called through the normal path
         $tempConn = new MockTcpConnection();
         ($this->handler)($tempConn, new Request(self::HTTP11));
 
-        $reflection = new \ReflectionClass($this->handler);
-        $method = $reflection->getMethod('doTerminate');
-
-        // Reset terminate tracking from the invoke above
-        $this->kernel->terminateCalled = false;
-        $this->kernel->terminateCount = 0;
-
-        $method->invoke($this->handler);
-
         $this->assertTrue(
             $this->kernel->terminateCalled,
-            'doTerminate() should call controller->terminateIfNeeded()',
+            'doTerminate() should call controller->terminateIfNeeded() via __invoke',
         );
+        $this->assertSame(1, $this->kernel->terminateCount);
     }
 
     public function testDoTerminateDoesNotThrowOnControllerException(): void

@@ -11,7 +11,6 @@ use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
-use Workerman\Timer;
 
 final class HttpRequestHandler implements StaticFileHandlerInterface, MiddlewareDispatchInterface
 {
@@ -19,7 +18,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     private array $middlewares = [];
     /** @var array<string, mixed> */
     private array $staticFileConfig = [];
-    private ?int $terminateTimerId = null;
 
     public function __construct(
         private readonly SymfonyController         $controller,
@@ -89,7 +87,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      * Execute kernel termination with error logging.
      *
      * This is the single location where terminateIfNeeded() is called,
-     * ensuring consistent error handling whether invoked deferred or synchronously.
+     * ensuring consistent error handling on every request.
      */
     private function doTerminate(string $errorPrefix = 'Kernel termination failed'): void
     {
@@ -104,24 +102,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
                 $e->getLine(),
             ));
         }
-    }
-
-    /**
-     * Schedule kernel termination on the next event-loop tick.
-     *
-     * Cancels any previously pending terminate timer as a safety guard
-     * against stale timers from prior requests.
-     */
-    private function scheduleTerminate(): void
-    {
-        if ($this->terminateTimerId !== null) {
-            Timer::del($this->terminateTimerId);
-            $this->terminateTimerId = null;
-        }
-
-        $this->terminateTimerId = Timer::add(0, function (): void {
-            $this->doTerminate();
-        }, persistent: false);
     }
 
     /**
@@ -144,8 +124,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         // 2. Send response
         $this->sendResponse($connection, $response);
 
-        // 3. Schedule deferred terminate on next event-loop tick
-        $this->scheduleTerminate();
+        // 3. Terminate synchronously (send() is non-blocking, no timer needed)
+        $this->doTerminate();
 
         // 4. Close connection if protocol demands it
         if ($this->shouldCloseConnection($request)) {
@@ -154,11 +134,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
         // 5. Reload if strategy signals — terminates synchronously before reload
         if ($this->rebootStrategy->shouldReboot()) {
-            if ($this->terminateTimerId !== null) {
-                Timer::del($this->terminateTimerId);
-                $this->terminateTimerId = null;
-            }
-            $this->doTerminate('Kernel termination failed during reload');
             Utils::reload();
         }
     }
