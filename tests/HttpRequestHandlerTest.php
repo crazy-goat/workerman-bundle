@@ -174,12 +174,13 @@ final class TestRebootStrategy implements RebootStrategyInterface
  */
 final class TestTimerEvent implements EventInterface
 {
-    /** @var list<array{delay: float, func: callable, args: array}> */
+    /** @var list<array{delay: float, func: callable, args: array<mixed>}> */
     public array $delayed = [];
-    /** @var list<array{interval: float, func: callable, args: array}> */
+    /** @var list<array{interval: float, func: callable, args: array<mixed>}> */
     public array $repeated = [];
     private int $timerId = 0;
 
+    /** @param array<mixed> $args */
     public function delay(float $delay, callable $func, array $args = []): int
     {
         $this->delayed[] = ['delay' => $delay, 'func' => $func, 'args' => $args];
@@ -191,6 +192,7 @@ final class TestTimerEvent implements EventInterface
         return true;
     }
 
+    /** @param array<mixed> $args */
     public function repeat(float $interval, callable $func, array $args = []): int
     {
         $this->repeated[] = ['interval' => $interval, 'func' => $func, 'args' => $args];
@@ -692,10 +694,11 @@ final class HttpRequestHandlerTest extends TestCase
         $reflection = new \ReflectionClass($handler);
         $method = $reflection->getMethod('doTerminate');
 
-        // Should not throw
+        // Should not throw — exceptions from terminateIfNeeded are caught internally
         $method->invoke($handler);
 
-        $this->assertTrue(true, 'doTerminate() should catch exceptions from terminateIfNeeded');
+        // The kernel's terminate was called but threw — that's OK, we verified no uncaught exception
+        $this->addToAssertionCount(1);
     }
 
     // ──────────────────────────────────────────────
