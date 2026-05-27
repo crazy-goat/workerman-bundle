@@ -716,6 +716,8 @@ final class HttpRequestHandlerTest extends TestCase
         $logContent = file_get_contents($logFile);
         unlink($logFile);
 
+        $this->assertIsString($logContent, 'Failed to read error_log capture file');
+
         $this->assertStringContainsString(
             'Kernel termination failed: Terminate failed',
             $logContent,
