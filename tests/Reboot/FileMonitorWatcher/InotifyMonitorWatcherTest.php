@@ -115,6 +115,10 @@ final class InotifyMonitorWatcherTest extends TestCase
 
     public function testOnNotifyIsNoOpWhenInotifyReadNotAvailable(): void
     {
+        if (function_exists('inotify_read')) {
+            $this->markTestSkipped('Inotify is available on this system; this test checks the no-extension path');
+        }
+
         $watcher = $this->createWatcherInstance();
 
         $this->invokeOnNotify($watcher, null);

@@ -88,7 +88,7 @@ final class TestNamespaceConventionTest extends TestCase
      */
     public function testClassIsAutoloadableWithCorrectNamespace(string $path, string $content): void
     {
-        if (!preg_match('/^(?:final\s+)?(?:abstract\s+)?(?:class|interface|trait|enum)\s+(\w+)/m', $content, $classMatch)) {
+        if (!preg_match('/^(?:final\s+)?(?:readonly\s+)?(?:abstract\s+)?(?:class|interface|trait|enum)\s+(\w+)/m', $content, $classMatch)) {
             $this->markTestSkipped(sprintf('File %s has no class, interface, trait, or enum declaration', $path));
         }
 

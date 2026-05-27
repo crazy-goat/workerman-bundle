@@ -704,8 +704,25 @@ final class HttpRequestHandlerTest extends TestCase
         $reflection = new \ReflectionClass($handler);
         $method = $reflection->getMethod('doTerminate');
 
-        // Should not throw — exceptions from terminateIfNeeded are caught internally
-        $method->invoke($handler);
+        // Capture error_log output and verify it contains the expected message
+        $logFile = tempnam(sys_get_temp_dir(), 'test_terminate_');
+        ini_set('error_log', $logFile);
+        try {
+            $method->invoke($handler);
+        } finally {
+            ini_restore('error_log');
+        }
+
+        $logContent = file_get_contents($logFile);
+        unlink($logFile);
+
+        $this->assertIsString($logContent, 'Failed to read error_log capture file');
+
+        $this->assertStringContainsString(
+            'Kernel termination failed: Terminate failed',
+            $logContent,
+            'The error_log should contain the terminate failure message',
+        );
 
         // The kernel's terminate was called but threw — that's OK, we verified no uncaught exception
         $this->addToAssertionCount(1);

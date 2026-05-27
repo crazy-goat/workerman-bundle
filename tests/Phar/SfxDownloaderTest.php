@@ -143,6 +143,7 @@ final class SfxDownloaderTest extends TestCase
 
     /**
      * @dataProvider maliciousEntryProvider
+     * @requires extension zip
      */
     public function testExtractZipRejectsMaliciousEntry(string $entryName, string $expectedMessage): void
     {
@@ -160,6 +161,9 @@ final class SfxDownloaderTest extends TestCase
         );
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipRejectsEntryWithSubdirectoryTraversal(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -176,6 +180,9 @@ final class SfxDownloaderTest extends TestCase
         );
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipSucceedsWithLegitimateArchive(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -193,6 +200,9 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipSucceedsWithEntryInSubdirectory(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -210,6 +220,9 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipDoesNotRejectDotsInFilename(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -226,6 +239,9 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void
     {
         $zipPath = $this->tempDir . '/orphan.sfx.zip';
@@ -246,6 +262,9 @@ final class SfxDownloaderTest extends TestCase
         );
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipPrimaryRuleMatchesZipBasename(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -263,6 +282,9 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'primary-rule-match');
     }
 
+    /**
+     * @requires extension zip
+     */
     public function testExtractZipFallbackPicksFirstFileEntry(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
