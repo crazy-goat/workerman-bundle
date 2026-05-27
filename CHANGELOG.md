@@ -7,9 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-05-26
+
+### Security
+
+- Add extension denylist + allowlist filtering for static file serving in `StaticFilesMiddleware` ([#235](https://github.com/crazy-goat/workerman-bundle/issues/235))
+- Fix TOCTOU race in `SchedulerWorker` PID file handling — uses exclusive flock with strict permissions ([#240](https://github.com/crazy-goat/workerman-bundle/issues/240))
+- Add zip-slip protection to `SfxDownloader::extractZip` — validates entry paths against destination ([#252](https://github.com/crazy-goat/workerman-bundle/issues/252))
+- Block cross-scheme redirects and require SHA-256 checksum for SFX downloads ([#433](https://github.com/crazy-goat/workerman-bundle/issues/433))
+
+### Performance
+
+- Add LRU cache and conditional `If-Modified-Since` / `If-None-Match` support to `StaticFilesMiddleware` — reduces redundant file reads and 304 responses ([#254](https://github.com/crazy-goat/workerman-bundle/issues/254))
+- Shard `PollingMonitorWatcher` directory scan across ticks with `MAX_FILES_PER_TICK` — prevents event-loop starvation on large source trees ([#246](https://github.com/crazy-goat/workerman-bundle/issues/246))
+- Defer `gc_collect_cycles` and call `memory_get_usage()` once instead of twice in `MemoryRebootStrategy` ([#250](https://github.com/crazy-goat/workerman-bundle/issues/250), [#272](https://github.com/crazy-goat/workerman-bundle/issues/272))
+- Replace 10-year `DatePeriod` construction with O(1) `DateTime::add()` in `PeriodicalTrigger::getNextRunDate` ([#239](https://github.com/crazy-goat/workerman-bundle/issues/239))
+
+### Added
+
+- New `ListenScheme` enum for type-safe listen scheme configuration, replacing stringly-typed switch ([#305](https://github.com/crazy-goat/workerman-bundle/issues/305))
+- New `BuildPathResolver` class consolidating duplicated `resolveXxxPath` helpers across build commands ([#242](https://github.com/crazy-goat/workerman-bundle/issues/242))
+- New `ServiceMethod` value object replacing stringly-typed `"service::method"` concatenation ([#258](https://github.com/crazy-goat/workerman-bundle/issues/258))
+- New `SfxSourceResolver` class extracted from `BuildBinCommand::resolveSfx` ([#238](https://github.com/crazy-goat/workerman-bundle/issues/238))
+- New `e2e/README.md` explaining e2e directory purpose and contributor guidance
+
+### Changed
+
+- Moved PHAR stub from inline HEREDOC to `resources/phar-stub.tpl` template file ([#234](https://github.com/crazy-goat/workerman-bundle/issues/234))
+- Split `ServicesConfigurator::configure()` into per-domain private methods ([#249](https://github.com/crazy-goat/workerman-bundle/issues/249))
+- Split `SfxDownloader::extractZip` into staged methods with typed exception ([#251](https://github.com/crazy-goat/workerman-bundle/issues/251))
+- Replaced stringly-typed listen-scheme switch with `ListenScheme` enum ([#305](https://github.com/crazy-goat/workerman-bundle/issues/305))
+- `SchedulerWorker::$handler` is now readonly on a final class — prevents latent read-before-init bug ([#262](https://github.com/crazy-goat/workerman-bundle/issues/262))
+- `SupervisorWorker` is now `final` (consistent with other workers) ([#265](https://github.com/crazy-goat/workerman-bundle/issues/265))
+
 ### Fixed
 
 - Symfony version matrix badge in README now includes `^8.0` to match `composer.json` constraint ([#257](https://github.com/crazy-goat/workerman-bundle/issues/257))
+
+### Tests
+
+- Add `KernelFactoryTest` covering factory creation, boot, and shutdown ([#224](https://github.com/crazy-goat/workerman-bundle/issues/224))
+- Add `RuntimeTest` covering runtime path resolution and environment handling ([#228](https://github.com/crazy-goat/workerman-bundle/issues/228))
+- Add `ResolverTest` covering `resolve()` tuple shape, closure invocation, and error propagation ([#230](https://github.com/crazy-goat/workerman-bundle/issues/230))
+- Add `ByteFormatterTest` covering all unit boundaries and fractional values ([#241](https://github.com/crazy-goat/workerman-bundle/issues/241))
+- Add `TaskErrorListenerTest` and `ProcessErrorListenerTest` covering error dispatch and logging ([#237](https://github.com/crazy-goat/workerman-bundle/issues/237))
+
+### Docs
+
+- Add `UPGRADE.md` covering breaking changes from 0.12 through 0.17 ([#256](https://github.com/crazy-goat/workerman-bundle/issues/256))
+- Document `build.sfx.sha256` and `build.sfx.allow_insecure` configuration options ([#267](https://github.com/crazy-goat/workerman-bundle/issues/267))
+- Document `workerman:server` connections output columns ([#269](https://github.com/crazy-goat/workerman-bundle/issues/269))
+- Clean up stale "What's new in this fork" section in README — no longer advertises deprecated `serve_files` ([#268](https://github.com/crazy-goat/workerman-bundle/issues/268))
+- Add `e2e/README.md` explaining e2e directory purpose and contributor guidance
 
 ## [0.19.0] - 2026-05-25
 
