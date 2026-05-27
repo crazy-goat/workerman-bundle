@@ -3,6 +3,7 @@ composer.lock
 vendor/
 var/
 .vscode/
+.reasonix/
 /e2e/build/
 /e2e/vendor/
 /e2e/composer.lock

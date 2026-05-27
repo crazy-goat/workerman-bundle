@@ -58,34 +58,74 @@ final class RequestConverter
     public static function toSymfonyRequest(\Workerman\Protocols\Http\Request $rawRequest): Request
     {
         $query = $rawRequest->get();
-        // IMPORTANT: Get files BEFORE post() because parsePost() clears the files array
         $files = $rawRequest->file() ?? [];
         $post = $rawRequest->post();
 
-        // Validate file structure to provide clearer error messages
         FileUploadValidator::validate($files);
-
-        // Convert Workerman's $_FILES-style arrays to UploadedFile objects
         $files = self::processFiles($files);
 
-        // Only populate POST bag for form-encoded content types
-        // JSON and other content types should leave POST bag empty (like PHP-FPM)
-        $contentType = strtolower((string) $rawRequest->header('content-type', ''));
-        $isFormUrlEncoded = str_starts_with($contentType, 'application/x-www-form-urlencoded');
-        $isMultipart = str_starts_with($contentType, 'multipart/form-data');
-        $isFormData = $isFormUrlEncoded || $isMultipart;
-
-        // Detect HTTPS from Workerman's SSL transport (configured via https:// listen address)
-        $isHttps = isset($rawRequest->connection) && $rawRequest->connection->transport === 'ssl';
-
-        $requestTimeFloat = microtime(true);
-
-        // Validate URI and method before propagating to Symfony
         $uri = $rawRequest->uri();
         $method = $rawRequest->method();
         self::validateUri($uri);
         self::validateMethod($method);
 
+        $requestTimeFloat = microtime(true);
+        $isHttps = isset($rawRequest->connection) && $rawRequest->connection->transport === 'ssl';
+        $formData = self::detectFormData((string) $rawRequest->header('content-type', ''));
+
+        $server = self::buildServerBag($rawRequest, $uri, $method, $isHttps, $requestTimeFloat);
+        $server = self::buildServerHeaders($rawRequest, $server);
+
+        $content = $formData['isMultipart'] ? '' : $rawRequest->rawBody();
+
+        return new Request(
+            is_array($query) ? $query : [],
+            $formData['isFormData'] && is_array($post) ? $post : [],
+            [],
+            self::parseCookiesFromServerBag($server),
+            $files,
+            $server,
+            $content,
+        );
+    }
+
+    /**
+     * Detect form-data content type characteristics from the Content-Type header.
+     *
+     * Determines whether the request body is form-urlencoded and/or multipart,
+     * which controls POST bag population and raw body consumption.
+     *
+     * @return array{isMultipart: bool, isFormData: bool}
+     */
+    private static function detectFormData(string $contentType): array
+    {
+        $contentType = strtolower($contentType);
+        $isFormUrlEncoded = str_starts_with($contentType, 'application/x-www-form-urlencoded');
+        $isMultipart = str_starts_with($contentType, 'multipart/form-data');
+
+        return [
+            'isMultipart' => $isMultipart,
+            'isFormData' => $isFormUrlEncoded || $isMultipart,
+        ];
+    }
+
+    /**
+     * Build the $_SERVER-style array from a Workerman request.
+     *
+     * Constructs the base server bag with REQUEST_URI, REQUEST_METHOD,
+     * SERVER_PROTOCOL, connection metadata, QUERY_STRING, request timing,
+     * and HTTPS detection.
+     *
+     *
+     * @return array<string, float|int|string>
+     */
+    private static function buildServerBag(
+        \Workerman\Protocols\Http\Request $rawRequest,
+        string $uri,
+        string $method,
+        bool $isHttps,
+        float $requestTimeFloat,
+    ): array {
         $server = [
             'REQUEST_URI' => $uri,
             'REQUEST_METHOD' => $method,
@@ -103,22 +143,7 @@ final class RequestConverter
             $server['HTTPS'] = 'on';
         }
 
-        // Build server headers from raw HTTP with security hardening
-        $server = self::buildServerHeaders($rawRequest, $server);
-
-        // For multipart requests, pass empty content to match PHP-FPM behavior
-        // (php://input is not available for multipart - body is consumed during $_POST/$_FILES parsing)
-        $content = $isMultipart ? '' : $rawRequest->rawBody();
-
-        return new Request(
-            is_array($query) ? $query : [],
-            $isFormData && is_array($post) ? $post : [],
-            [],
-            self::parseCookiesFromServerBag($server),
-            $files,
-            $server,
-            $content,
-        );
+        return $server;
     }
 
     /**
