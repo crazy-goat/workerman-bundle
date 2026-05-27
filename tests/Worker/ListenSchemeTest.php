@@ -36,7 +36,10 @@ final class ListenSchemeTest extends TestCase
     public function testFromListenThrowsForUnsupportedScheme(string $listen): void
     {
         $this->expectException(UnsupportedListenSchemeException::class);
-        $this->expectExceptionMessageMatches('/Unsupported listen scheme.*' . preg_quote($listen, '/') . '/');
+        $this->expectExceptionMessage(sprintf(
+            'Unsupported listen scheme in "%s". Supported schemes: http://, https://, ws://, wss://',
+            $listen,
+        ));
 
         ListenScheme::fromListen($listen);
     }

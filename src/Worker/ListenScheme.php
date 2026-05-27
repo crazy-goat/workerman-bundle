@@ -33,6 +33,8 @@ enum ListenScheme: string
      */
     public static function fromListen(string $listen): self
     {
+        // Order matters: longer prefixes (https, wss) must be checked before
+        // shorter ones (http, ws) to avoid false-positive prefix matches.
         return match (true) {
             str_starts_with($listen, 'https://') => self::Https,
             str_starts_with($listen, 'wss://')   => self::Wss,
