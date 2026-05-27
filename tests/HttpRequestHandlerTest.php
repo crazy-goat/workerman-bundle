@@ -805,33 +805,32 @@ final class HttpRequestHandlerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    // Private method: buildMiddlewareChain (via reflection)
+    // Pipeline caching — getPipeline (via reflection)
     // ──────────────────────────────────────────────
 
-    public function testBuildMiddlewareChainReturnsCallable(): void
+    public function testGetPipelineReturnsClosure(): void
     {
         $reflection = new \ReflectionClass($this->handler);
-        $method = $reflection->getMethod('buildMiddlewareChain');
+        $method = $reflection->getMethod('getPipeline');
 
-        $connection = new MockTcpConnection();
-        $chain = $method->invoke($this->handler, $connection);
+        $pipeline = $method->invoke($this->handler);
 
-        $this->assertIsCallable($chain, 'buildMiddlewareChain should return a callable');
+        $this->assertInstanceOf(\Closure::class, $pipeline, 'getPipeline should return a Closure');
     }
 
-    public function testBuildMiddlewareChainExecutesChain(): void
+    public function testGetPipelineExecutesMiddlewares(): void
     {
         $middleware = new TestMiddleware('X-Chain-Test', 'works');
         $this->handler->withMiddlewares($middleware);
 
         $reflection = new \ReflectionClass($this->handler);
-        $method = $reflection->getMethod('buildMiddlewareChain');
+        $method = $reflection->getMethod('getPipeline');
 
-        $connection = new MockTcpConnection();
-        $chain = $method->invoke($this->handler, $connection);
+        $pipeline = $method->invoke($this->handler);
+        $controllerCall = fn(Request $input): \Workerman\Protocols\Http\Response => new \Workerman\Protocols\Http\Response(200, [], 'from-controller');
 
         $request = new Request(self::HTTP11);
-        $response = $chain($request);
+        $response = $pipeline($request, $controllerCall);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
 
@@ -840,6 +839,50 @@ final class HttpRequestHandlerTest extends TestCase
         $headers = $headerProp->getValue($response);
         $this->assertArrayHasKey('X-Chain-Test', $headers);
         $this->assertSame('works', $headers['X-Chain-Test']);
+    }
+
+    public function testPipelineIsCachedAcrossInvocations(): void
+    {
+        $this->handler->withMiddlewares(new TestMiddleware('X-Cache', 'test'));
+
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('getPipeline');
+
+        $pipeline1 = $method->invoke($this->handler);
+        $pipeline2 = $method->invoke($this->handler);
+
+        $this->assertSame($pipeline1, $pipeline2, 'getPipeline should return the same Closure instance when middlewares have not changed');
+    }
+
+    public function testPipelineRecreatedAfterWithMiddlewares(): void
+    {
+        $this->handler->withMiddlewares(new TestMiddleware('X-A', '1'));
+
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('getPipeline');
+
+        $pipelineBefore = $method->invoke($this->handler);
+
+        // Change middlewares
+        $this->handler->withMiddlewares(new TestMiddleware('X-B', '2'));
+
+        $pipelineAfter = $method->invoke($this->handler);
+
+        $this->assertNotSame($pipelineBefore, $pipelineAfter, 'getPipeline should return a new Closure after withMiddlewares()');
+    }
+
+    public function testPipelineRecreatedAfterWithRootDirectory(): void
+    {
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('getPipeline');
+
+        $pipelineBefore = $method->invoke($this->handler);
+
+        $this->handler->withRootDirectory(sys_get_temp_dir());
+
+        $pipelineAfter = $method->invoke($this->handler);
+
+        $this->assertNotSame($pipelineBefore, $pipelineAfter, 'getPipeline should return a new Closure after withRootDirectory()');
     }
 
     // ──────────────────────────────────────────────

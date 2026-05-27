@@ -19,6 +19,17 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     /** @var array<string, mixed> */
     private array $staticFileConfig = [];
 
+    /**
+     * Pre-composed middleware dispatch pipeline.
+     *
+     * Built once and cached across requests to eliminate per-request
+     * array_reverse + closure allocations. Invalidated whenever
+     * the middleware set changes (withMiddlewares / withRootDirectory).
+     *
+     * Signature: fn(Request $request, callable $controller): Http\Response
+     */
+    private ?\Closure $pipeline = null;
+
     public function __construct(
         private readonly SymfonyController         $controller,
         private readonly RebootStrategyInterface   $rebootStrategy,
@@ -28,6 +39,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self
     {
         $this->middlewares = $middlewares;
+        $this->pipeline = null; // invalidate cached pipeline
 
         return $this;
     }
@@ -39,6 +51,8 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         }
         $allowedExtensions = $this->staticFileConfig['allowed_extensions'] ?? [];
         $this->middlewares[] = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
+        $this->pipeline = null; // invalidate cached pipeline
+
         return $this;
     }
 
@@ -49,22 +63,33 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     }
 
     /**
-     * Build the middleware dispatch chain.
+     * Get or build the cached middleware dispatch pipeline.
      *
-     * Composes middlewares around the controller into a single callable.
-     * The chain is built on each invocation so middlewares can be reconfigured
-     * between requests (e.g. via withRootDirectory).
+     * The pipeline is a closure: fn(Request, callable $controller): Http\Response
+     * that runs the request through all middlewares and finally the controller.
+     * It is composed ONCE and reused across requests, eliminating per-request
+     * array_reverse and closure allocation churn documented in issue #266.
      *
-     * @return callable(Request): Http\Response
+     * Only the controller callable (which captures the per-request TcpConnection)
+     * is created fresh on each invocation.
      */
-    private function buildMiddlewareChain(TcpConnection $connection): callable
+    private function getPipeline(): \Closure
     {
-        $next = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
-        foreach (array_reverse($this->middlewares) as $middleware) {
-            $next = fn(Request $input): Http\Response => $middleware($input, $next);
+        if ($this->pipeline instanceof \Closure) {
+            return $this->pipeline;
         }
 
-        return $next;
+        // Build from the innermost (controller) outward
+        $pipeline = (fn(Request $request, callable $controller): Http\Response => $controller($request));
+
+        foreach (array_reverse($this->middlewares) as $mw) {
+            $previous = $pipeline;
+            $pipeline = (fn(Request $request, callable $controller): Http\Response => $mw($request, fn(Request $req): Http\Response => $previous($req, $controller)));
+        }
+
+        $this->pipeline = $pipeline;
+
+        return $pipeline;
     }
 
     /**
@@ -118,8 +143,9 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         \memory_reset_peak_usage();
 
         // 1. Dispatch through middleware chain → controller
-        $chain = $this->buildMiddlewareChain($connection);
-        $response = $chain($request);
+        $controllerCall = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
+        $pipeline = $this->getPipeline();
+        $response = $pipeline($request, $controllerCall);
 
         // 2. Send response
         $this->sendResponse($connection, $response);
