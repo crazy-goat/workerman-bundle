@@ -61,10 +61,8 @@ final class RequestConverter
         $files = $rawRequest->file() ?? [];
         $post = $rawRequest->post();
 
-        // Fast-path: skip file validation and recursive UploadedFile construction
-        // when no files are present — the most common case for HTTP requests.
-        // This avoids function call overhead for the empty-files traversal
-        // and keeps the hot path as lean as possible.
+        // Fast-path: most requests carry no files — skip validation
+        // and processing to keep the hot path lean.
         if ($files !== []) {
             FileUploadValidator::validate($files);
             $files = self::processFiles($files);
