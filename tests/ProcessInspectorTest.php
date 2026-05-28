@@ -71,36 +71,59 @@ final class ProcessInspectorTest extends TestCase
         $this->assertLessThan(1, $elapsed, 'Should return immediately for non-existent PID');
     }
 
+    public function testTimeoutConstantsExist(): void
+    {
+        $reflection = new ReflectionClass(ProcessInspector::class);
+
+        $this->assertTrue(
+            $reflection->hasConstant('GRACEFUL_TIMEOUT_MULTIPLIER'),
+            'GRACEFUL_TIMEOUT_MULTIPLIER constant must exist',
+        );
+        $this->assertTrue(
+            $reflection->hasConstant('TIMEOUT_BUFFER'),
+            'TIMEOUT_BUFFER constant must exist',
+        );
+
+        $multiplierRef = $reflection->getReflectionConstant('GRACEFUL_TIMEOUT_MULTIPLIER');
+        $bufferRef = $reflection->getReflectionConstant('TIMEOUT_BUFFER');
+
+        $this->assertInstanceOf(\ReflectionClassConstant::class, $multiplierRef);
+        $this->assertInstanceOf(\ReflectionClassConstant::class, $bufferRef);
+
+        $this->assertTrue($multiplierRef->isPrivate(), 'GRACEFUL_TIMEOUT_MULTIPLIER should be private');
+        $this->assertTrue($bufferRef->isPrivate(), 'TIMEOUT_BUFFER should be private');
+
+        $this->assertSame(3, $multiplierRef->getValue(), 'GRACEFUL_TIMEOUT_MULTIPLIER must be 3');
+        $this->assertSame(3, $bufferRef->getValue(), 'TIMEOUT_BUFFER must be 3');
+    }
+
     /**
      * Test that graceful timeout is always longer than regular timeout.
      *
-     * This verifies the fix for the asymmetric timeout formula issue.
-     * The formula is: graceful = stopTimeout * 3 + 3, regular = stopTimeout + 3
+     * Reads the actual constant values from ProcessInspector so this test
+     * stays in sync if the constants change — no magic-number duplication.
      */
     public function testGracefulTimeoutIsAlwaysLongerThanRegular(): void
     {
+        $reflection = new ReflectionClass(ProcessInspector::class);
+        $multiplierRef = $reflection->getReflectionConstant('GRACEFUL_TIMEOUT_MULTIPLIER');
+        $bufferRef = $reflection->getReflectionConstant('TIMEOUT_BUFFER');
+        /** @var int $multiplier */
+        $multiplier = $multiplierRef instanceof \ReflectionClassConstant ? $multiplierRef->getValue() : 3;
+        /** @var int $buffer */
+        $buffer = $bufferRef instanceof \ReflectionClassConstant ? $bufferRef->getValue() : 3;
+
         $testCases = [
-            ['stopTimeout' => 1, 'expectedGraceful' => 6, 'expectedRegular' => 4],
-            ['stopTimeout' => 2, 'expectedGraceful' => 9, 'expectedRegular' => 5],
-            ['stopTimeout' => 5, 'expectedGraceful' => 18, 'expectedRegular' => 8],
-            ['stopTimeout' => 10, 'expectedGraceful' => 33, 'expectedRegular' => 13],
+            ['stopTimeout' => 1],
+            ['stopTimeout' => 2],
+            ['stopTimeout' => 5],
+            ['stopTimeout' => 10],
         ];
 
         foreach ($testCases as $case) {
             $stopTimeout = $case['stopTimeout'];
-            $gracefulTimeout = $stopTimeout * 3 + 3;
-            $regularTimeout = $stopTimeout + 3;
-
-            $this->assertSame(
-                $case['expectedGraceful'],
-                $gracefulTimeout,
-                "Graceful timeout calculation incorrect for stopTimeout={$stopTimeout}",
-            );
-            $this->assertSame(
-                $case['expectedRegular'],
-                $regularTimeout,
-                "Regular timeout calculation incorrect for stopTimeout={$stopTimeout}",
-            );
+            $gracefulTimeout = $stopTimeout * $multiplier + $buffer;
+            $regularTimeout = $stopTimeout + $buffer;
 
             $this->assertGreaterThan(
                 $regularTimeout,
