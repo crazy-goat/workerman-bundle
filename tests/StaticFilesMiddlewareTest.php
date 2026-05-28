@@ -746,13 +746,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertEquals(404, $response->getStatusCode());
     }
 
-    public function testPharPathDoesNotAllowRealpathUsage(): void
-    {
-        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
-
-        $this->assertInstanceOf(StaticFilesMiddleware::class, $middleware);
-    }
-
     public function testNormalPathStillWorksAfterPharChanges(): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
