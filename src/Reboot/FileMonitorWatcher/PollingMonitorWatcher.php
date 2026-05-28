@@ -25,11 +25,11 @@ final class PollingMonitorWatcher extends FileMonitorWatcher
         $filesProcessed = 0;
 
         foreach ($this->sourceDir as $dirIdx => $dir) {
-            $dirIterator = new \RecursiveDirectoryIterator(
+            $iterator = $this->createRecursiveIterator(
                 $dir,
                 \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::UNIX_PATHS,
+                \RecursiveIteratorIterator::LEAVES_ONLY,
             );
-            $iterator = new \RecursiveIteratorIterator($dirIterator, \RecursiveIteratorIterator::LEAVES_ONLY);
 
             $resumeFrom = $this->resumePaths[$dirIdx] ?? null;
             $resuming = ($resumeFrom !== null);

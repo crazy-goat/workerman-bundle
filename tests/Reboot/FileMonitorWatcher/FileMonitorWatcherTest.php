@@ -81,11 +81,60 @@ final class FileMonitorWatcherTest extends TestCase
         $this->assertFalse($this->invokeCheckPattern($this->watcher, 'file.php.bak'));
     }
 
+    public function testCreateRecursiveIteratorWithDefaultFlags(): void
+    {
+        $iterator = $this->invokeCreateRecursiveIterator(
+            $this->watcher,
+            '/tmp',
+            \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::UNIX_PATHS,
+            \RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+
+        $this->assertInstanceOf(\RecursiveIteratorIterator::class, $iterator);
+        $this->assertInstanceOf(\RecursiveDirectoryIterator::class, $iterator->getInnerIterator());
+    }
+
+    public function testCreateRecursiveIteratorWithSelfFirstMode(): void
+    {
+        $iterator = $this->invokeCreateRecursiveIterator(
+            $this->watcher,
+            '/tmp',
+            \FilesystemIterator::SKIP_DOTS,
+            \RecursiveIteratorIterator::SELF_FIRST,
+        );
+
+        $this->assertInstanceOf(\RecursiveIteratorIterator::class, $iterator);
+        /* Verifying the mode indirectly: SELF_FIRST yields directories too,
+           while LEAVES_ONLY skips them — both constructors accept the flag. */
+        $this->assertInstanceOf(\RecursiveDirectoryIterator::class, $iterator->getInnerIterator());
+    }
+
+    public function testCreateRecursiveIteratorThrowsForNonExistentDirectory(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+
+        $this->invokeCreateRecursiveIterator(
+            $this->watcher,
+            '/non/existent/path/xyz',
+            \FilesystemIterator::SKIP_DOTS,
+            \RecursiveIteratorIterator::LEAVES_ONLY,
+        );
+    }
+
     private function invokeCheckPattern(FileMonitorWatcher $watcher, string $filename): bool
     {
         $reflection = new \ReflectionMethod(FileMonitorWatcher::class, 'checkPattern');
 
         return $reflection->invoke($watcher, $filename);
+    }
+
+    /** @return \RecursiveIteratorIterator<\RecursiveDirectoryIterator> */
+    private function invokeCreateRecursiveIterator(FileMonitorWatcher $watcher, string $dir, int $flags, int $mode): \RecursiveIteratorIterator
+    {
+        $reflection = new \ReflectionMethod(FileMonitorWatcher::class, 'createRecursiveIterator');
+
+        /** @var \RecursiveIteratorIterator<\RecursiveDirectoryIterator> */
+        return $reflection->invoke($watcher, $dir, $flags, $mode);
     }
 
     /** @param string[] $filePattern */
