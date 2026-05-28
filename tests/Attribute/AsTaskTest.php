@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Attribute;
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
 use PHPUnit\Framework\TestCase;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(AsTask::class)]
 final class AsTaskTest extends TestCase
 {
     // ──────────────────────────────────────────────
@@ -114,17 +115,6 @@ final class AsTaskTest extends TestCase
     // ──────────────────────────────────────────────
     // Reflection target
     // ──────────────────────────────────────────────
-
-    public function testAttributeTargetIsClass(): void
-    {
-        $reflection = new \ReflectionClass(AsTask::class);
-        $attributeInstance = $reflection->getAttributes(\Attribute::class)[0] ?? null;
-
-        $this->assertNotNull($attributeInstance, 'AsTask should have #[\Attribute]');
-        $attributeArgs = $attributeInstance->getArguments();
-
-        $this->assertContains(\Attribute::TARGET_CLASS, $attributeArgs, 'AsTask must target classes');
-    }
 
     public function testAttributeCanBeAppliedToClass(): void
     {

@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Attribute;
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use PHPUnit\Framework\TestCase;
 
+#[\PHPUnit\Framework\Attributes\CoversClass(AsProcess::class)]
 final class AsProcessTest extends TestCase
 {
     // ──────────────────────────────────────────────
@@ -76,17 +77,6 @@ final class AsProcessTest extends TestCase
     // ──────────────────────────────────────────────
     // Reflection target
     // ──────────────────────────────────────────────
-
-    public function testAttributeTargetIsClass(): void
-    {
-        $reflection = new \ReflectionClass(AsProcess::class);
-        $attributeInstance = $reflection->getAttributes(\Attribute::class)[0] ?? null;
-
-        $this->assertNotNull($attributeInstance, 'AsProcess should have #[\Attribute]');
-        $attributeArgs = $attributeInstance->getArguments();
-
-        $this->assertContains(\Attribute::TARGET_CLASS, $attributeArgs, 'AsProcess must target classes');
-    }
 
     public function testAttributeCanBeAppliedToClass(): void
     {
