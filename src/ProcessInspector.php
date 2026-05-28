@@ -6,6 +6,19 @@ namespace CrazyGoat\WorkermanBundle;
 
 final readonly class ProcessInspector
 {
+    /**
+     * Graceful stop timeout is multiplied by this factor to give long-running
+     * workers extra time to finish their current request before being forced off.
+     */
+    private const GRACEFUL_TIMEOUT_MULTIPLIER = 3;
+
+    /**
+     * Additional seconds added to both graceful and regular stop timeouts
+     * to account for scheduling granularity, signal delivery latency, and
+     * process-reap overhead.
+     */
+    private const TIMEOUT_BUFFER = 3;
+
     public function isProcessAlive(int $pid): bool
     {
         if ($pid <= 0 || !posix_kill($pid, 0)) {
@@ -74,7 +87,9 @@ final readonly class ProcessInspector
 
     public function waitForProcessToStop(int $pid, int $stopTimeout, bool $graceful): bool
     {
-        $timeout = $graceful ? $stopTimeout * 3 + 3 : $stopTimeout + 3;
+        $timeout = $graceful
+            ? $stopTimeout * self::GRACEFUL_TIMEOUT_MULTIPLIER + self::TIMEOUT_BUFFER
+            : $stopTimeout + self::TIMEOUT_BUFFER;
         $startTime = time();
         $sleepMs = 10;
 
