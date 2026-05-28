@@ -172,6 +172,15 @@ final class PharBuilderTest extends TestCase
     }
 
     /** @dataProvider provideValidAliases */
+    public function testGenerateStubRejectsEmptyAlias(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('must not be empty');
+
+        (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], '');
+    }
+
+    /** @dataProvider provideValidAliases */
     public function testGenerateStubAcceptsValidAliases(string $alias): void
     {
         $stub = (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], $alias);
