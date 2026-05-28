@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Supervisor;
 
 use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
+use CrazyGoat\WorkermanBundle\Handler\ServiceErrorListenerTrait;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 final readonly class ProcessErrorListener implements EventSubscriberInterface
 {
+    use ServiceErrorListenerTrait;
+
     public function __construct(private LoggerInterface $logger)
     {
     }
@@ -23,10 +26,12 @@ final readonly class ProcessErrorListener implements EventSubscriberInterface
 
     public function onException(ProcessErrorEvent $event): void
     {
-        $this->logger->critical('Error thrown while executing process "{process}". Message: "{message}"', [
-            'exception' => $event->getError(),
-            'process' => $event->getProcessName(),
-            'message' => $event->getError()->getMessage(),
-        ]);
+        $this->logServiceError(
+            'Error thrown while executing process "{process}". Message: "{message}"',
+            'process',
+            $event->getProcessName(),
+            $event->getError()->getMessage(),
+            $event->getError(),
+        );
     }
 }
