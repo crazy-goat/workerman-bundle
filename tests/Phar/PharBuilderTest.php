@@ -171,7 +171,6 @@ final class PharBuilderTest extends TestCase
         yield 'null byte' => ["foo\0bar.phar"];
     }
 
-    /** @dataProvider provideValidAliases */
     public function testGenerateStubRejectsEmptyAlias(): void
     {
         $this->expectException(\RuntimeException::class);
