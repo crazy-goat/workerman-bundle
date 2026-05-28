@@ -61,6 +61,8 @@ final readonly class ServerWorker
     /**
      * Boot kernel, resolve the request handler and middlewares, and configure the handler.
      *
+     * @param mixed[] $serverConfig
+     *
      * @return callable The fully configured request handler
      */
     private function configureHandler(

@@ -344,6 +344,9 @@ final class ServerWorkerTest extends TestCase
         $this->assertSame($handler, $result);
     }
 
+    /**
+     * @param mixed[] $serverConfig
+     */
     private function invokeConfigureHandler(ServerWorker $serverWorker, KernelInterface $kernel, array $serverConfig, ?string $rootDir): mixed
     {
         $reflection = new \ReflectionMethod(ServerWorker::class, 'configureHandler');
