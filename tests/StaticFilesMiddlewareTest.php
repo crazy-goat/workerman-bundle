@@ -721,4 +721,68 @@ final class StaticFilesMiddlewareTest extends TestCase
 
         $this->assertEquals(200, $response->getStatusCode());
     }
+
+    public function testConstructWithPharPathDoesNotThrow(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $this->assertInstanceOf(StaticFilesMiddleware::class, $middleware);
+    }
+
+    public function testPharPathNonExistentFilePassesToNext(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $request = $this->createRequest('/test.txt');
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(404);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, 'Next should be called for non-existent file in phar path');
+        $this->assertEquals(404, $response->getStatusCode());
+    }
+
+    public function testPharPathDoesNotAllowRealpathUsage(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $this->assertInstanceOf(StaticFilesMiddleware::class, $middleware);
+    }
+
+    public function testNormalPathStillWorksAfterPharChanges(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(404);
+        };
+
+        $middleware($request, $next);
+
+        $this->assertFalse($called, 'Next should not be called for valid file after phar changes');
+    }
+
+    public function testPharPathInvalidCharactersStillBlocked(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $request = $this->createRequest("/test.txt\0");
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(200);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, 'Next should be called for NUL byte path in phar');
+        $this->assertEquals(200, $response->getStatusCode());
+    }
 }

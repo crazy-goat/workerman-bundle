@@ -34,13 +34,17 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
      */
     public function __construct(string $rootDirectory, array $allowedExtensions = [])
     {
-        $resolved = realpath($rootDirectory);
-        if ($resolved === false) {
-            throw new StaticFileMiddlewareException(
-                sprintf('Root directory does not exist: %s', $rootDirectory),
-            );
+        if ($this->isPharPath($rootDirectory)) {
+            $this->rootRealPath = $rootDirectory;
+        } else {
+            $resolved = realpath($rootDirectory);
+            if ($resolved === false) {
+                throw new StaticFileMiddlewareException(
+                    sprintf('Root directory does not exist: %s', $rootDirectory),
+                );
+            }
+            $this->rootRealPath = $resolved;
         }
-        $this->rootRealPath = $resolved;
         $this->allowedExtensions = array_map(strtolower(...), $allowedExtensions);
     }
 
@@ -183,7 +187,14 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             unset($cache[$cacheKey]);
         }
 
-        $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/'));
+        if ($this->isPharPath($this->rootRealPath)) {
+            $resolved = $this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/');
+            if (!file_exists($resolved)) {
+                $resolved = false;
+            }
+        } else {
+            $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/'));
+        }
 
         $cache[$cacheKey] = [
             'path' => $resolved,
@@ -195,6 +206,11 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         return $resolved;
+    }
+
+    private function isPharPath(string $path): bool
+    {
+        return str_starts_with($path, 'phar://');
     }
 
     /**
