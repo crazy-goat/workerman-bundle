@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidMiddlewareException;
+use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
+use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 final class ServerWorkerTest extends TestCase
@@ -198,6 +203,155 @@ final class ServerWorkerTest extends TestCase
         );
 
         $this->assertInstanceOf(ServerWorker::class, $serverWorker);
+    }
+
+    public function testConfigureHandlerReturnsCallable(): void
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            ['name' => 'test', 'listen' => 'http://127.0.0.1:8080'],
+        );
+
+        $result = $this->invokeConfigureHandler($serverWorker, $kernel, [], null);
+
+        $this->assertSame($handler, $result);
+    }
+
+    public function testConfigureHandlerResolvesMiddlewares(): void
+    {
+        $middleware = $this->createMock(MiddlewareInterface::class);
+
+        $handler = $this->getMockBuilder(MiddlewareDispatchInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withMiddlewares'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->expects($this->once())->method('withMiddlewares')->with($middleware);
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects($this->exactly(2))->method('get')->willReturnMap([
+            ['workerman.http_request_handler', $handler],
+            ['app.middleware.foo', $middleware],
+        ]);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            ['name' => 'test', 'listen' => 'http://127.0.0.1:8080'],
+        );
+
+        $result = $this->invokeConfigureHandler(
+            $serverWorker,
+            $kernel,
+            ['middlewares' => ['app.middleware.foo']],
+            null,
+        );
+
+        $this->assertSame($handler, $result);
+    }
+
+    public function testConfigureHandlerThrowsForInvalidMiddleware(): void
+    {
+        $this->expectException(InvalidMiddlewareException::class);
+        $this->expectExceptionMessage('Service "app.middleware.invalid" must implement');
+
+        $invalidService = new \stdClass();
+
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects($this->exactly(2))->method('get')->willReturnMap([
+            ['workerman.http_request_handler', $handler],
+            ['app.middleware.invalid', $invalidService],
+        ]);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            ['name' => 'test', 'listen' => 'http://127.0.0.1:8080'],
+        );
+
+        $this->invokeConfigureHandler(
+            $serverWorker,
+            $kernel,
+            ['middlewares' => ['app.middleware.invalid']],
+            null,
+        );
+    }
+
+    public function testConfigureHandlerConfiguresStaticFiles(): void
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->expects($this->once())->method('withStaticFileConfig')
+            ->with(['allowed_extensions' => ['css', 'js']])
+            ->willReturnSelf();
+        $handler->expects($this->once())->method('withRootDirectory')
+            ->with('/path/to/public')
+            ->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $serverWorker = new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            ['name' => 'test', 'listen' => 'http://127.0.0.1:8080'],
+        );
+
+        $result = $this->invokeConfigureHandler(
+            $serverWorker,
+            $kernel,
+            ['static_files' => ['allowed_extensions' => ['css', 'js']]],
+            '/path/to/public',
+        );
+
+        $this->assertSame($handler, $result);
+    }
+
+    /**
+     * @param mixed[] $serverConfig
+     */
+    private function invokeConfigureHandler(ServerWorker $serverWorker, KernelInterface $kernel, array $serverConfig, ?string $rootDir): mixed
+    {
+        $reflection = new \ReflectionMethod(ServerWorker::class, 'configureHandler');
+
+        return $reflection->invoke($serverWorker, $kernel, $serverConfig, $rootDir);
     }
 
     private function generateSelfSignedCert(string $certFile, string $keyFile): void

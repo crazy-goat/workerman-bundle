@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Utils;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Protocols\Http;
 use Workerman\Worker;
 
@@ -52,24 +53,45 @@ final readonly class ServerWorker
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
-            $callable = $kernel->getContainer()->get('workerman.http_request_handler');
-            $middlewares = array_map(function (string $middleware) use ($kernel): MiddlewareInterface {
-                $service = $kernel->getContainer()->get($middleware);
-                if (!$service instanceof MiddlewareInterface) {
-                    throw new InvalidMiddlewareException(sprintf('Service "%s" must implement "%s"', $middleware, MiddlewareInterface::class));
-                }
-                return $service;
-            }, $serverConfig['middlewares'] ?? []);
-            assert(is_callable($callable));
-            if ($callable instanceof StaticFileHandlerInterface) {
-                $callable->withStaticFileConfig($serverConfig['static_files'] ?? []);
-                $callable->withRootDirectory($rootDir);
-            }
-            if ($callable instanceof MiddlewareDispatchInterface && $middlewares !== []) {
-                $callable->withMiddlewares(...$middlewares);
-            }
-            $worker->onMessage = $callable;
+
+            $worker->onMessage = $this->configureHandler($kernel, $serverConfig, $rootDir);
         };
+    }
+
+    /**
+     * Boot kernel, resolve the request handler and middlewares, and configure the handler.
+     *
+     * @param mixed[] $serverConfig
+     *
+     * @return callable The fully configured request handler
+     */
+    private function configureHandler(
+        KernelInterface $kernel,
+        array           $serverConfig,
+        ?string         $rootDir,
+    ): callable {
+        $callable = $kernel->getContainer()->get('workerman.http_request_handler');
+        assert(is_callable($callable));
+
+        $middlewares = array_map(function (string $middleware) use ($kernel): MiddlewareInterface {
+            $service = $kernel->getContainer()->get($middleware);
+            if (!$service instanceof MiddlewareInterface) {
+                throw new InvalidMiddlewareException(sprintf('Service "%s" must implement "%s"', $middleware, MiddlewareInterface::class));
+            }
+
+            return $service;
+        }, $serverConfig['middlewares'] ?? []);
+
+        if ($callable instanceof StaticFileHandlerInterface) {
+            $callable->withStaticFileConfig($serverConfig['static_files'] ?? []);
+            $callable->withRootDirectory($rootDir);
+        }
+
+        if ($callable instanceof MiddlewareDispatchInterface && $middlewares !== []) {
+            $callable->withMiddlewares(...$middlewares);
+        }
+
+        return $callable;
     }
 
     /**
