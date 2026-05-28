@@ -11,8 +11,8 @@ use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Utils;
-use Workerman\Protocols\Http;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Protocols\Http;
 use Workerman\Worker;
 
 final readonly class ServerWorker
