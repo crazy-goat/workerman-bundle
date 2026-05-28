@@ -149,8 +149,15 @@ final readonly class PharBuilder
      *   __RUNTIME_CLASS__ — Workerman Runtime class FQCN
      *   __APP_ENV__       — default environment name
      */
+    /**
+     * Valid characters for PHAR aliases: alphanumeric, dot, underscore, hyphen.
+     */
+    private const ALLOWED_ALIAS_PATTERN = '/^[A-Za-z0-9._-]+$/';
+
     public function generateStub(array $buildConfig, string $pharAlias = 'app.phar'): string
     {
+        $this->validatePharAlias($pharAlias);
+
         $runtimeEnv = \CrazyGoat\WorkermanBundle\Runtime::class;
         $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
             ? $buildConfig['kernel_class']
@@ -169,5 +176,20 @@ final readonly class PharBuilder
             '__RUNTIME_CLASS__' => $runtimeEnv,
             '__APP_ENV__'       => $this->environment,
         ]);
+    }
+
+    /**
+     * Validate that the PHAR alias contains only safe characters.
+     *
+     * @throws \RuntimeException if the alias contains invalid characters
+     */
+    private function validatePharAlias(string $pharAlias): void
+    {
+        if (preg_match(self::ALLOWED_ALIAS_PATTERN, $pharAlias) !== 1) {
+            throw new \RuntimeException(sprintf(
+                'PHAR alias "%s" contains invalid characters. Allowed: A-Z, a-z, 0-9, dot, underscore, hyphen.',
+                $pharAlias,
+            ));
+        }
     }
 }
