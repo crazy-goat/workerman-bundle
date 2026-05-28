@@ -145,4 +145,74 @@ final class PharBuilderTest extends TestCase
         self::assertStringContainsString('__HALT_COMPILER();', $stub);
         self::assertStringNotContainsString('@mkdir', $stub);
     }
+
+    /** @return iterable<array{string}> */
+    public static function provideValidAliases(): iterable
+    {
+        yield 'simple name' => ['app.phar'];
+        yield 'with version' => ['my-app-1.2.3.phar'];
+        yield 'underscores' => ['my_app_v2.phar'];
+        yield 'just name' => ['app'];
+        yield 'numeric' => ['123.phar'];
+        yield 'mixed' => ['Release_2.0-beta.phar'];
+    }
+
+    /** @return iterable<array{string}> */
+    public static function provideInvalidAliases(): iterable
+    {
+        yield 'single quote' => ["foo'bar.phar"];
+        yield 'backtick' => ['foo`bar.phar'];
+        yield 'space' => ['foo bar.phar'];
+        yield 'dollar brace' => ['foo${bar}.phar'];
+        yield 'semicolon' => ['foo;bar.phar'];
+        yield 'double quote' => ['foo"bar.phar'];
+        yield 'parenthesis' => ['foo(bar).phar'];
+        yield 'newline' => ["foo\nbar.phar"];
+        yield 'null byte' => ["foo\0bar.phar"];
+    }
+
+    public function testGenerateStubRejectsEmptyAlias(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('must not be empty');
+
+        (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], '');
+    }
+
+    /** @dataProvider provideValidAliases */
+    public function testGenerateStubAcceptsValidAliases(string $alias): void
+    {
+        $stub = (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], $alias);
+
+        self::assertStringContainsString("Phar::mapPhar('{$alias}')", $stub);
+        self::assertStringContainsString("phar://{$alias}/vendor/autoload.php", $stub);
+    }
+
+    /** @dataProvider provideInvalidAliases */
+    public function testGenerateStubRejectsInvalidAliases(string $alias): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('contains invalid characters');
+
+        (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], $alias);
+    }
+
+    /** @dataProvider provideInvalidAliases */
+    public function testBuildRejectsInvalidAliases(string $alias): void
+    {
+        if ((bool) ini_get('phar.readonly')) {
+            self::markTestSkipped('phar.readonly is On — cannot build PHARs.');
+        }
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('contains invalid characters');
+
+        // Path whose basename contains invalid chars; build() derives alias from it
+        $badPath = $this->tempDir . '/build/' . $alias;
+        (new PharBuilder($this->tempDir, 'test'))->build([
+            'kernel_class' => 'App\\Kernel',
+            'exclude_patterns' => [],
+            'exclude_files' => [],
+        ], $badPath);
+    }
 }
