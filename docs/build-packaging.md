@@ -31,8 +31,10 @@ php bin/console workerman:build:bin
 ```yaml
 # config/packages/workerman.yaml
 workerman:
-    # Writable runtime directory (defaults to project_dir)
-    # In PHAR mode, automatically set to directory containing the PHAR
+    # Writable runtime directory (defaults to project_dir).
+    # In PHAR mode, automatically set to directory containing the PHAR.
+    # Runtime directories are created with restrictive permissions (0700)
+    # to protect process-control artifacts on multi-user systems.
     runtime_dir: '%kernel.project_dir%'
 
     build:
@@ -130,7 +132,7 @@ The build command creates a PHAR archive containing your entire Symfony applicat
 
 1. Detects the runtime directory (outside the PHAR)
 2. Sets `APP_CACHE_DIR` and `APP_LOG_DIR` to writable paths
-3. Creates `var/cache`, `var/log`, `var/run` directories
+3. Creates `var/cache`, `var/log`, `var/run` directories with restrictive permissions (0700)
 4. Loads `.env` from outside the PHAR (if present)
 5. Boots Symfony Console for full CLI access
 

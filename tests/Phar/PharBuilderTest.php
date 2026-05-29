@@ -144,6 +144,8 @@ final class PharBuilderTest extends TestCase
         self::assertStringContainsString('phar://app.phar/vendor/autoload.php', $stub);
         self::assertStringContainsString('__HALT_COMPILER();', $stub);
         self::assertStringNotContainsString('@mkdir', $stub);
+        self::assertStringContainsString('mkdir($dir, 0700, true)', $stub);
+        self::assertStringNotContainsString('mkdir($dir, 0755', $stub);
     }
 
     /** @return iterable<array{string}> */
