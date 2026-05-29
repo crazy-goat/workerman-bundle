@@ -80,4 +80,38 @@ final class ComposerConfigTest extends TestCase
             'Known advisory for symfony/runtime 7.2.* must be in audit ignore list',
         );
     }
+
+    public function testDescriptionMentionsMajorCapabilities(): void
+    {
+        self::assertArrayHasKey('description', $this->composerConfig);
+
+        $description = $this->composerConfig['description'];
+        self::assertIsString($description);
+
+        $requiredTerms = ['workerman', 'symfony', 'bundle', 'http', 'long-running'];
+        foreach ($requiredTerms as $term) {
+            self::assertStringContainsStringIgnoringCase(
+                $term,
+                $description,
+                sprintf('Description must mention "%s"', $term),
+            );
+        }
+    }
+
+    public function testKeywordsContainRequiredTerms(): void
+    {
+        self::assertArrayHasKey('keywords', $this->composerConfig);
+        self::assertIsArray($this->composerConfig['keywords']);
+
+        $keywords = $this->composerConfig['keywords'];
+        $requiredKeywords = ['workerman', 'symfony', 'bundle', 'http server', 'long-running', 'scheduler', 'supervisor', 'phar', 'event loop'];
+
+        foreach ($requiredKeywords as $keyword) {
+            self::assertContains(
+                $keyword,
+                $keywords,
+                sprintf('keywords must contain "%s"', $keyword),
+            );
+        }
+    }
 }

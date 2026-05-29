@@ -1,10 +1,17 @@
 {
     "name": "crazy-goat/workerman-bundle",
-    "description": "Workerman runtime for symfony applications",
+    "description": "Symfony bundle providing a Workerman runtime for high-performance long-running HTTP servers, with built-in task scheduler, process supervisor, PHAR packaging, and event-loop integration.",
     "keywords": [
         "workerman",
         "symfony",
+        "bundle",
         "runtime",
+        "http server",
+        "long-running",
+        "scheduler",
+        "supervisor",
+        "phar",
+        "event loop",
         "php-runtime"
     ],
     "homepage": "https://github.com/crazy-goat/workerman-bundle",
