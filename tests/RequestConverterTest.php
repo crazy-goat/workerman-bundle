@@ -283,6 +283,52 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
+    public function testMixedFileArrayWithNonArrayLeaf(): void
+    {
+        $tmpFile = $this->createTempFile('avatar content');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/expected array, got string/');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'avatar' => [
+                'name' => 'avatar.png',
+                'tmp_name' => $tmpFile,
+                'type' => 'image/png',
+                'size' => 14,
+                'error' => \UPLOAD_ERR_OK,
+            ],
+            'logo' => 'not an array',
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    public function testDeeplyNestedNonArrayFileEntry(): void
+    {
+        $tmpFile = $this->createTempFile('avatar content');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/expected array, got string/');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'user' => [
+                'avatar' => [
+                    'name' => 'avatar.png',
+                    'tmp_name' => $tmpFile,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                'logo' => 'string',
+            ],
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
     public function testHeadersAreAvailableInServerBag(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
