@@ -14,7 +14,7 @@ $_ENV['APP_LOG_DIR'] = $runtimeDir . '/var/log';
 
 foreach (['/var/cache', '/var/log', '/var/run'] as $sub) {
     $dir = $runtimeDir . $sub;
-    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+    if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
         fwrite(STDERR, sprintf('Unable to create runtime directory "%s". Set WORKERMAN_RUNTIME_DIR to a writable path.' . PHP_EOL, $dir));
         exit(1);
     }
