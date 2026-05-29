@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 /**
- * @internal
+ * Utility methods for Workerman bundle runtime operations.
+ *
+ * This class is not intended to be instantiated (private constructor, final).
+ * All methods are static helpers for process introspection and signalling.
  */
 final class Utils
 {
@@ -45,6 +48,19 @@ final class Utils
         return \DIRECTORY_SEPARATOR !== '/';
     }
 
+    /**
+     * Gracefully reload worker processes by sending SIGUSR1.
+     *
+     * Call this method from application code to trigger a hot reload of all
+     * worker processes. This is useful after deploying new code or when a
+     * runtime condition (e.g., memory pressure, config change) requires a
+     * clean worker state.
+     *
+     * @param bool $reloadAllWorkers When true, SIGUSR1 is sent to the parent
+     *                               process, which reloads all workers. When
+     *                               false (default), only the current process
+     *                               is signalled.
+     */
     public static function reload(bool $reloadAllWorkers = false): void
     {
         posix_kill($reloadAllWorkers ? posix_getppid() : posix_getpid(), SIGUSR1);
