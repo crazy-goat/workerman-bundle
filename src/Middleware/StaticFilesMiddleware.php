@@ -31,6 +31,8 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     /**
      * @param string[] $allowedExtensions
+     * @param bool     $followSymlinks When false (default), symlinks under the root directory are not followed.
+     *                                 Set to true to allow serving files through symlinks.
      */
     public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false)
     {
