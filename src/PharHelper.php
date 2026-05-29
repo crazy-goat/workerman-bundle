@@ -43,16 +43,6 @@ final class PharHelper
     }
 
     /**
-     * Returns the project directory (always inside the PHAR in PHAR mode).
-     *
-     * @param string $projectDir The project root directory (kernel.project_dir)
-     */
-    public static function getProjectDir(string $projectDir): string
-    {
-        return rtrim($projectDir, '/');
-    }
-
-    /**
      * Resolve a path relative to project_dir, replacing the project_dir
      * prefix with runtime_dir when in PHAR mode.
      *
@@ -61,7 +51,7 @@ final class PharHelper
      */
     public static function resolveRuntimePath(string $path, string $projectDir): string
     {
-        $projectDir = self::getProjectDir($projectDir);
+        $projectDir = rtrim($projectDir, '/');
         $runtimeDir = self::getRuntimeDir($projectDir);
 
         if ($runtimeDir !== $projectDir && str_starts_with($path, $projectDir)) {
