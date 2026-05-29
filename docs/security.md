@@ -149,6 +149,25 @@ to plain HTTP via a redirect:
 This defense is always active when `allow_insecure` is enabled, regardless of whether a checksum
 is configured.
 
+## Runtime Directory Permissions
+
+Runtime directories (PID file, log files, stdout files) are created with mode `0700` (owner-only access). This prevents other users on multi-user systems from reading process-control artifacts such as PID files and status files.
+
+### When this matters
+
+- **Multi-user hosts**: Shared CI runners, containers with multiple service accounts, or any environment where the process user should not be able to read another user's runtime files.
+- **PID file protection**: An attacker who can read the PID file can signal the workerman master process.
+- **Status file protection**: Status files contain internal process state that should not be visible to other users.
+
+### Behaviour
+
+- Runtime directories are created automatically with `0700` permissions when they do not exist.
+- If the directory already exists, its permissions are not modified — ensure it was created with appropriate restrictive permissions if it was pre-created.
+- To verify permissions on a running system:
+  ```bash
+  stat -c '%a %n' var/run/ var/log/
+  ```
+
 ## SFX Checksum Requirement
 
 The build **fails** if no SHA-256 checksum is configured, unless `--unsafe-no-checksum` is explicitly
