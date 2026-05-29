@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Cache PID file handles in `SchedulerWorker` to avoid `fopen`/`fclose` blocking syscalls in the event loop on every scheduled task fire — handles are opened once per PID file and reused across the worker's lifetime ([#297](https://github.com/crazy-goat/workerman-bundle/issues/297))
+
 ## [0.21.0] - 2026-05-29
 
 ### Security

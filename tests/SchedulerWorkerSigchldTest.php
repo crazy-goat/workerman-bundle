@@ -130,6 +130,80 @@ final class SchedulerWorkerSigchldTest extends TestCase
         );
     }
 
+    // --- PID file handle caching structural tests (Issue #297) ---
+
+    /**
+     * Structural test: verify SchedulerWorker caches PID file handles
+     * to avoid fopen/fclose on every task fire.
+     *
+     * The $pidFileHandles property should exist and openPidFile should
+     * check it before opening a new handle.
+     */
+    public function testPidFileHandleCachingIsImplemented(): void
+    {
+        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
+        $this->assertFileExists($sourceFile);
+
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        // Verify the caching property exists
+        $this->assertStringContainsString(
+            'pidFileHandles',
+            $content,
+            'PID file handle cache array must exist for caching (Issue #297)',
+        );
+
+        // Verify openPidFile checks the cache before opening
+        $this->assertStringContainsString(
+            '$this->pidFileHandles[$pidFile]',
+            $content,
+            'openPidFile must check the cache before opening a new handle (Issue #297)',
+        );
+
+        // Verify handleParent uses releaseLock (unlock only, no fclose)
+        $this->assertStringContainsString(
+            "\$this->releaseLock(\$fp)",
+            $content,
+            'handleParent must call releaseLock (unlock without close) to keep handle cached (Issue #297)',
+        );
+
+        // Verify handleForkError uses releaseLock (unlock only, no fclose)
+        $this->assertStringContainsString(
+            "\$this->releaseLock(\$fp)",
+            $content,
+            'handleForkError must call releaseLock (unlock without close) to keep handle cached (Issue #297)',
+        );
+
+    }
+
+    /**
+     * Structural test: verify SchedulerWorker is no longer readonly
+     * and allows the mutable $pidFileHandles cache property.
+     */
+    public function testSchedulerWorkerHasMutableStateForHandleCache(): void
+    {
+        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
+        $this->assertFileExists($sourceFile);
+
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        // Class should not be readonly (to allow mutable cache state)
+        $this->assertStringContainsString(
+            'final class SchedulerWorker',
+            $content,
+            'SchedulerWorker class must not be readonly to support mutable handle cache (Issue #297)',
+        );
+
+        // The Worker property should still be explicitly readonly for safety
+        $this->assertStringContainsString(
+            'private readonly Worker $worker;',
+            $content,
+            'Worker property must stay readonly even though class-level readonly was removed (Issue #297)',
+        );
+    }
+
     /**
      * Run a SIGCHLD test in an isolated PHP process to avoid PHPUnit
      * state inheritance issues with pcntl_fork().

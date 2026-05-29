@@ -427,4 +427,76 @@ final class SchedulerWorkerTest extends TestCase
 
         return $ref->getValue();
     }
+
+    // --- PID file handle caching tests ---
+
+    public function testOpenPidFileReturnsSameResourceOnSubsequentCalls(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/workerman_cache_test_' . uniqid();
+        mkdir($tempDir, 0755, true);
+
+        try {
+            $pidFile = $tempDir . '/test.pid';
+            touch($pidFile);
+
+            $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+
+            $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'openPidFile');
+
+            $fp1 = $refMethod->invoke($scheduler, $pidFile, 'testTask');
+            $this->assertIsResource($fp1, 'First call should return a valid resource');
+
+            $fp2 = $refMethod->invoke($scheduler, $pidFile, 'testTask');
+            $this->assertIsResource($fp2, 'Second call should return a valid resource');
+
+            $this->assertSame(
+                $fp1,
+                $fp2,
+                'Second call to openPidFile should return the same cached resource',
+            );
+        } finally {
+            @unlink($tempDir . '/test.pid');
+            @rmdir($tempDir);
+        }
+    }
+
+    public function testReleaseLockUnlocksWithoutClosingHandle(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/workerman_lock_test_' . uniqid();
+        mkdir($tempDir, 0755, true);
+
+        try {
+            $pidFile = $tempDir . '/test.pid';
+            touch($pidFile);
+
+            $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+
+            $refOpen = new \ReflectionMethod(SchedulerWorker::class, 'openPidFile');
+
+            $refAcquire = new \ReflectionMethod(SchedulerWorker::class, 'acquireLock');
+
+            $refRelease = new \ReflectionMethod(SchedulerWorker::class, 'releaseLock');
+
+            $fp = $refOpen->invoke($scheduler, $pidFile, 'testTask');
+            $this->assertIsResource($fp);
+
+            // Acquire lock
+            $this->assertTrue($refAcquire->invoke($scheduler, $fp));
+
+            // Release without closing
+            $refRelease->invoke($scheduler, $fp);
+
+            // Handle should still be valid — re-acquire lock
+            $this->assertTrue(
+                $refAcquire->invoke($scheduler, $fp),
+                'Should be able to re-acquire lock after releaseLock without re-opening',
+            );
+
+            // Release again
+            $refRelease->invoke($scheduler, $fp);
+        } finally {
+            @unlink($tempDir . '/test.pid');
+            @rmdir($tempDir);
+        }
+    }
 }
