@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Route exception logging in `HttpRequestHandler` through the injected PSR-3 logger instead of `error_log()` to prevent sensitive data leaking to stderr; `error_log()` retained as fallback when no logger is available ([#296](https://github.com/crazy-goat/workerman-bundle/issues/296))
+
 ### Performance
 
 - Cache PID file handles in `SchedulerWorker` to avoid `fopen`/`fclose` blocking syscalls in the event loop on every scheduled task fire — handles are opened once per PID file and reused across the worker's lifetime ([#297](https://github.com/crazy-goat/workerman-bundle/issues/297))

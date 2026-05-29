@@ -12,6 +12,7 @@ use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Test\App\TestMiddleware;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
@@ -616,7 +617,7 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertSame(1, $this->kernel->terminateCount);
     }
 
-    public function testDoTerminateDoesNotThrowOnControllerException(): void
+    public function testDoTerminateLogsThroughLoggerWhenAvailable(): void
     {
         $throwingKernel = new class implements KernelInterface, TerminableInterface {
             public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
@@ -695,7 +696,109 @@ final class HttpRequestHandlerTest extends TestCase
         };
 
         $controller = new SymfonyController($throwingKernel, $this->responseConverter);
-        // Perform one invocation so terminateIfNeeded has a request/response to work with
+        $tempConn = new MockTcpConnection();
+        $controller(new Request(self::HTTP11), $tempConn);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with(
+                'Kernel termination failed',
+                $this->callback(fn(array $context): bool => isset($context['exception'])
+                    && $context['exception']->getMessage() === 'Terminate failed'
+                    && isset($context['message'])
+                    && isset($context['file'])
+                    && isset($context['line'])),
+            );
+
+        $handler = new HttpRequestHandler($controller, $this->rebootStrategy, $logger);
+
+        $reflection = new \ReflectionClass($handler);
+        $method = $reflection->getMethod('doTerminate');
+        $method->invoke($handler);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDoTerminateFallsBackToErrorLogWhenNoLogger(): void
+    {
+        $throwingKernel = new class implements KernelInterface, TerminableInterface {
+            public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
+            {
+                throw new \RuntimeException('Terminate failed');
+            }
+            public function boot(): void
+            {
+            }
+            public function shutdown(): void
+            {
+            }
+            public function registerBundles(): iterable
+            {
+                return [];
+            }
+            public function registerContainerConfiguration(\Symfony\Component\Config\Loader\LoaderInterface $loader): void
+            {
+            }
+            public function handle(\Symfony\Component\HttpFoundation\Request $request, int $type = 1, bool $catch = true): \Symfony\Component\HttpFoundation\Response
+            {
+                return new SymfonyResponse('OK');
+            }
+            public function getBundles(): array
+            {
+                return [];
+            }
+            public function getBundle(string $name): \Symfony\Component\HttpKernel\Bundle\BundleInterface
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+            public function locateResource(string $name): string
+            {
+                return '';
+            }
+            public function getEnvironment(): string
+            {
+                return 'test';
+            }
+            public function isDebug(): bool
+            {
+                return true;
+            }
+            public function getProjectDir(): string
+            {
+                return '/tmp';
+            }
+            public function getCacheDir(): string
+            {
+                return '/tmp/cache';
+            }
+            public function getBuildDir(): string
+            {
+                return '/tmp/build';
+            }
+            public function getShareDir(): ?string
+            {
+                return null;
+            }
+            public function getLogDir(): string
+            {
+                return '/tmp/log';
+            }
+            public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
+            {
+                throw new \RuntimeException('Not implemented');
+            }
+            public function getStartTime(): float
+            {
+                return 0.0;
+            }
+            public function getCharset(): string
+            {
+                return 'UTF-8';
+            }
+        };
+
+        $controller = new SymfonyController($throwingKernel, $this->responseConverter);
         $tempConn = new MockTcpConnection();
         $controller(new Request(self::HTTP11), $tempConn);
 
@@ -704,7 +807,7 @@ final class HttpRequestHandlerTest extends TestCase
         $reflection = new \ReflectionClass($handler);
         $method = $reflection->getMethod('doTerminate');
 
-        // Capture error_log output and verify it contains the expected message
+        // Capture error_log output and verify fallback
         $logFile = tempnam(sys_get_temp_dir(), 'test_terminate_');
         ini_set('error_log', $logFile);
         try {
@@ -721,11 +824,8 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString(
             'Kernel termination failed: Terminate failed',
             $logContent,
-            'The error_log should contain the terminate failure message',
+            'The error_log should contain the terminate failure message when no logger is provided',
         );
-
-        // The kernel's terminate was called but threw — that's OK, we verified no uncaught exception
-        $this->addToAssertionCount(1);
     }
 
     // ──────────────────────────────────────────────
