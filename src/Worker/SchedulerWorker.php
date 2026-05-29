@@ -90,11 +90,17 @@ final class SchedulerWorker
 
     private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
+        static $tickCallbacks = [];
+
         $currentDate = new \DateTimeImmutable();
         $nextRunDate = $trigger->getNextRunDate($currentDate);
         if ($nextRunDate instanceof \DateTimeImmutable) {
             $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
-            $this->worker::$globalEvent?->delay($interval, fn() => $this->runCallback($trigger, $service, $taskName, $handler));
+            $key = $service->toString();
+            if (!isset($tickCallbacks[$key])) {
+                $tickCallbacks[$key] = fn() => $this->runCallback($trigger, $service, $taskName, $handler);
+            }
+            $this->worker::$globalEvent?->delay($interval, $tickCallbacks[$key]);
         }
     }
 
