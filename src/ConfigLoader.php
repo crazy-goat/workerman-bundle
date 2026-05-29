@@ -111,6 +111,12 @@ final class ConfigLoader implements CacheWarmerInterface
         $this->config[ConfigSection::SCHEDULER->value] = $config;
     }
 
+    /** @param mixed[] $config */
+    public function setBuildConfig(array $config): void
+    {
+        $this->config[ConfigSection::BUILD->value] = $config;
+    }
+
     /** @return mixed[] */
     public function getWorkermanConfig(): array
     {
@@ -121,12 +127,6 @@ final class ConfigLoader implements CacheWarmerInterface
     public function getProcessConfig(): array
     {
         return $this->getConfig()[ConfigSection::PROCESS->value];
-    }
-
-    /** @param mixed[] $config */
-    public function setBuildConfig(array $config): void
-    {
-        $this->config[ConfigSection::BUILD->value] = $config;
     }
 
     /** @return mixed[] */
