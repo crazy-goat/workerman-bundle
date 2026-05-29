@@ -9,7 +9,7 @@ use Symfony\Contracts\EventDispatcher\Event;
 final class TaskErrorEvent extends Event
 {
     public function __construct(
-        private \Throwable $error,
+        private readonly \Throwable $error,
         private readonly string $serviceClass,
         private readonly string $taskName,
     ) {
@@ -28,10 +28,5 @@ final class TaskErrorEvent extends Event
     public function getError(): \Throwable
     {
         return $this->error;
-    }
-
-    public function setError(\Throwable $error): void
-    {
-        $this->error = $error;
     }
 }
