@@ -512,8 +512,10 @@ final class ServerManagerTest extends TestCase
 
         if ($pid === 0) {
             pcntl_async_signals(true);
-            pcntl_signal(SIGINT, static function (): void {});
-            pcntl_signal(SIGQUIT, static function (): void {});
+            pcntl_signal(SIGINT, static function (): void {
+            });
+            pcntl_signal(SIGQUIT, static function (): void {
+            });
             while (true) {
                 usleep(100_000);
             }
@@ -536,7 +538,8 @@ final class ServerManagerTest extends TestCase
 
         if ($pid === 0) {
             pcntl_async_signals(true);
-            pcntl_signal($signal, static function (): void {});
+            pcntl_signal($signal, static function (): void {
+            });
             while (true) {
                 usleep(100_000);
             }
