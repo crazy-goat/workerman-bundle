@@ -385,3 +385,5 @@ See [docs/build-packaging.md](docs/build-packaging.md) for full documentation, b
 For an overview of all documentation files, see [docs/](docs/).
 
 For security-related documentation including Host-header protection and trusted hosts configuration, see [docs/security.md](docs/security.md).
+
+For long-running worker gotchas, state pollution, stale DB connections, blocking IO, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
