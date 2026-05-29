@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Runner;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Connection\TcpConnection;
+use Workerman\Worker;
 
 /**
  * Tests for Runner fork error handling.
@@ -210,6 +216,685 @@ final class RunnerTest extends TestCase
     public function testTimeoutKillsChild(): void
     {
         $this->runIsolatedTest('timeout_kills_child');
+    }
+
+    /**
+     * @return array{workers: array, pidMap: array, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
+     */
+    private function saveWorkerState(): array
+    {
+        $workersRef = new \ReflectionProperty(Worker::class, 'workers');
+        $pidMapRef = new \ReflectionProperty(Worker::class, 'pidMap');
+
+        return [
+            'workers' => $workersRef->getValue(),
+            'pidMap' => $pidMapRef->getValue(),
+            'globalEvent' => Worker::$globalEvent,
+            'outputStream' => Worker::$outputStream,
+            'logFile' => Worker::$logFile,
+            'defaultMaxPackageSize' => TcpConnection::$defaultMaxPackageSize,
+        ];
+    }
+
+    private function restoreWorkerState(array $state): void
+    {
+        $workersRef = new \ReflectionProperty(Worker::class, 'workers');
+        $workersRef->setValue(null, $state['workers']);
+
+        $pidMapRef = new \ReflectionProperty(Worker::class, 'pidMap');
+        $pidMapRef->setValue(null, $state['pidMap']);
+
+        Worker::$globalEvent = $state['globalEvent'];
+        Worker::$outputStream = $state['outputStream'];
+        Worker::$logFile = $state['logFile'];
+        TcpConnection::$defaultMaxPackageSize = $state['defaultMaxPackageSize'];
+    }
+
+    private function invokeRunnerMethod(Runner $runner, string $methodName, mixed ...$args): mixed
+    {
+        $ref = new \ReflectionMethod(Runner::class, $methodName);
+
+        return $ref->invoke($runner, ...$args);
+    }
+
+    public function testGetCacheWarmupTimeoutDefaultsTo30Seconds(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+
+            $this->assertSame(30, $timeout);
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testGetCacheWarmupTimeoutWithEnvVarOverride(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '15';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+
+            $this->assertSame(15, $timeout);
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testGetCacheWarmupTimeoutWithEmptyEnvVarFallsBackToDefault(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+
+            $this->assertSame(30, $timeout);
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testGetCacheWarmupTimeoutRejectsNonNumericValue(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = 'not-a-number';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testGetCacheWarmupTimeoutRejectsZero(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '0';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testGetCacheWarmupTimeoutRejectsNegative(): void
+    {
+        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '-5';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
+            } else {
+                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+            }
+        }
+    }
+
+    public function testApplyWorkermanConfigSetsWorkerStaticProperties(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/var/run/workerman.pid',
+                'log_file' => $tmpDir . '/var/log/workerman.log',
+                'stdout_file' => $tmpDir . '/var/log/workerman.stdout.log',
+                'stop_timeout' => 5,
+                'max_package_size' => 2048,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+
+            $this->assertSame($config['pid_file'], Worker::$pidFile);
+            $this->assertSame($config['log_file'], Worker::$logFile);
+            $this->assertSame($config['stdout_file'], Worker::$stdoutFile);
+            $this->assertSame($config['stop_timeout'], Worker::$stopTimeout);
+            $this->assertSame($config['max_package_size'], TcpConnection::$defaultMaxPackageSize);
+            $this->assertTrue(is_dir($tmpDir . '/var/run'));
+            $this->assertTrue(is_dir($tmpDir . '/var/log'));
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testApplyWorkermanConfigSetsStatusFileFromPidFile(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/var/run/workerman.pid',
+                'log_file' => $tmpDir . '/var/log/workerman.log',
+                'stdout_file' => $tmpDir . '/var/log/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 10 * 1024 * 1024,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+
+            $this->assertSame($tmpDir . '/var/run/workerman.status', Worker::$statusFile);
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testApplyWorkermanConfigSetsOnMasterReloadToClearOpcache(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/var/run/workerman.pid',
+                'log_file' => $tmpDir . '/var/log/workerman.log',
+                'stdout_file' => $tmpDir . '/var/log/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 10 * 1024 * 1024,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+
+            $this->assertNotNull(Worker::$onMasterReload);
+            $this->assertInstanceOf(\Closure::class, Worker::$onMasterReload);
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testApplyWorkermanConfigThrowsOnMkdirFailure(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+        touch($tmpDir . '/var');
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/var/run/workerman.pid',
+                'log_file' => $tmpDir . '/var/log/workerman.log',
+                'stdout_file' => $tmpDir . '/var/log/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 10 * 1024 * 1024,
+            ];
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Unable to create directory');
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testCreateWorkersWithMultipleServersCreatesServerWorkers(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernel->method('getProjectDir')->willReturn('/tmp');
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [
+                    ['name' => 'api', 'listen' => 'http://0.0.0.0:8080'],
+                    ['name' => 'admin', 'listen' => 'http://0.0.0.0:8081'],
+                ],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount + 2, $afterCount, 'Should create exactly 2 ServerWorkers (one per server config)');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithSchedulerCreatesSchedulerWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+            $schedulerConfig = ['task1' => ['schedule' => '* * * * *', 'name' => 'test-task']];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, $schedulerConfig, []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount + 1, $afterCount, 'Should create SchedulerWorker when scheduler config is non-empty');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithoutSchedulerDoesNotCreateSchedulerWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount, $afterCount, 'Should not create SchedulerWorker when scheduler config is empty');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithSupervisorCreatesSupervisorWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+            $processConfig = ['process1' => ['processes' => 1]];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], $processConfig);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount + 1, $afterCount, 'Should create SupervisorWorker when process config is non-empty');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithoutSupervisorDoesNotCreateSupervisorWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount, $afterCount, 'Should not create SupervisorWorker when process config is empty');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithFileMonitorCreatesFileMonitorWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => [
+                        'active' => true,
+                        'source_dir' => ['/src'],
+                        'file_pattern' => ['*.php'],
+                    ],
+                ],
+            ];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount + 1, $afterCount, 'Should create FileMonitorWorker when file_monitor is active');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithFileMonitorInactiveDoesNotCreateFileMonitorWorker(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => [
+                        'active' => false,
+                        'source_dir' => ['/src'],
+                        'file_pattern' => ['*.php'],
+                    ],
+                ],
+            ];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount, $afterCount, 'Should not create FileMonitorWorker when file_monitor is inactive');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersWithAllConfigsCreatesCorrectWorkerCount(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [
+                    ['name' => 'api', 'listen' => 'http://0.0.0.0:8080'],
+                    ['name' => 'admin', 'listen' => 'http://0.0.0.0:8081'],
+                ],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => [
+                        'active' => true,
+                        'source_dir' => ['/src'],
+                        'file_pattern' => ['*.php'],
+                    ],
+                ],
+            ];
+            $schedulerConfig = ['task1' => ['schedule' => '* * * * *', 'name' => 'test']];
+            $processConfig = ['process1' => ['processes' => 1]];
+
+            $beforeCount = count($this->getWorkersProperty());
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, $schedulerConfig, $processConfig);
+            $afterCount = count($this->getWorkersProperty());
+
+            $this->assertSame($beforeCount + 5, $afterCount, 'Should create 2 servers + 1 scheduler + 1 file monitor + 1 supervisor = 5 new Worker instances');
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testCreateWorkersStructuralPharGuardExists(): void
+    {
+        $sourceFile = self::RUNNER_SOURCE;
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        $this->assertStringContainsString(
+            '$this->kernelFactory->isPhar()',
+            $content,
+            'Must check isPhar() before deciding to create FileMonitorWorker',
+        );
+
+        $this->assertStringContainsString(
+            'File monitor is disabled in PHAR mode',
+            $content,
+            'Must log a message when file monitor is skipped due to PHAR mode',
+        );
+    }
+
+    public function testCreateConfigLoader(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/tmp/project');
+        $kernel->method('getCacheDir')->willReturn('/tmp/project/var/cache/test');
+        $kernel->method('getEnvironment')->willReturn('test');
+        $kernel->method('isDebug')->willReturn(false);
+
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+        $runner = new Runner($kernelFactory);
+
+        $loader = $this->invokeRunnerMethod($runner, 'createConfigLoader');
+
+        $this->assertInstanceOf(ConfigLoader::class, $loader);
+    }
+
+    public function testGetCacheDirUsesDefaultFromKernel(): void
+    {
+        $savedEnv = $_SERVER['APP_CACHE_DIR'] ?? null;
+        unset($_SERVER['APP_CACHE_DIR']);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('getProjectDir')->willReturn('/tmp/project');
+            $kernel->method('getCacheDir')->willReturn('/tmp/project/var/cache');
+            $kernel->method('getEnvironment')->willReturn('test');
+            $kernel->method('isDebug')->willReturn(false);
+
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $cacheDir = $this->invokeRunnerMethod($runner, 'getCacheDir');
+
+            $this->assertSame('/tmp/project/var/cache/test', $cacheDir);
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['APP_CACHE_DIR'] = $savedEnv;
+            } else {
+                unset($_SERVER['APP_CACHE_DIR']);
+            }
+        }
+    }
+
+    public function testGetCacheDirUsesEnvOverride(): void
+    {
+        $savedEnv = $_SERVER['APP_CACHE_DIR'] ?? null;
+        $_SERVER['APP_CACHE_DIR'] = '/custom/cache';
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('getProjectDir')->willReturn('/tmp/project');
+            $kernel->method('getCacheDir')->willReturn('/tmp/project/var/cache');
+            $kernel->method('getEnvironment')->willReturn('prod');
+
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $cacheDir = $this->invokeRunnerMethod($runner, 'getCacheDir');
+
+            $this->assertSame('/custom/cache/prod', $cacheDir);
+        } finally {
+            if ($savedEnv !== null) {
+                $_SERVER['APP_CACHE_DIR'] = $savedEnv;
+            } else {
+                unset($_SERVER['APP_CACHE_DIR']);
+            }
+        }
+    }
+
+    public function testResolveRuntimePathStructuralPharRewritingExists(): void
+    {
+        $sourceFile = self::RUNNER_SOURCE;
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        $this->assertStringContainsString(
+            'PharHelper::resolveRuntimePath',
+            $content,
+            'Must delegate runtime path resolution to PharHelper for PHAR-friendly path rewriting',
+        );
+    }
+
+    /**
+     * @return array<string, Worker>
+     */
+    private function getWorkersProperty(): array
+    {
+        $ref = new \ReflectionProperty(Worker::class, 'workers');
+
+        return $ref->getValue();
+    }
+
+    private function removeDir(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($files as $file) {
+            if ($file->isDir()) {
+                rmdir($file->getRealPath());
+            } else {
+                unlink($file->getRealPath());
+            }
+        }
+
+        rmdir($path);
     }
 
     /**
