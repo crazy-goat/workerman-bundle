@@ -92,6 +92,12 @@ final class ServerWorkerTest extends TestCase
 
     public function testUnreadableCertThrowsException(): void
     {
+        $certFile = $this->tempDir . '/unreadable_cert.pem';
+        touch($certFile);
+        chmod($certFile, 0000);
+        $keyFile = $this->tempDir . '/key.pem';
+        touch($keyFile);
+
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('not readable');
 
@@ -102,14 +108,20 @@ final class ServerWorkerTest extends TestCase
             [
                 'name' => 'test-server',
                 'listen' => 'https://0.0.0.0:8443',
-                'local_cert' => '/nonexistent/cert.pem',
-                'local_pk' => $this->tempDir . '/key.pem',
+                'local_cert' => $certFile,
+                'local_pk' => $keyFile,
             ],
         );
     }
 
     public function testUnreadableKeyThrowsException(): void
     {
+        $certFile = $this->tempDir . '/cert.pem';
+        touch($certFile);
+        $keyFile = $this->tempDir . '/unreadable_key.pem';
+        touch($keyFile);
+        chmod($keyFile, 0000);
+
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('not readable');
 
@@ -120,8 +132,8 @@ final class ServerWorkerTest extends TestCase
             [
                 'name' => 'test-server',
                 'listen' => 'https://0.0.0.0:8443',
-                'local_cert' => $this->tempDir . '/cert.pem',
-                'local_pk' => '/nonexistent/key.pem',
+                'local_cert' => $certFile,
+                'local_pk' => $keyFile,
             ],
         );
     }
@@ -171,6 +183,93 @@ final class ServerWorkerTest extends TestCase
         );
 
         $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should work without reuse_port key');
+    }
+
+    public function testNonRegularCertPathThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be a regular file');
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $this->tempDir,
+                'local_pk' => $this->tempDir . '/key.pem',
+            ],
+        );
+    }
+
+    public function testNonRegularKeyPathThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be a regular file');
+
+        $certFile = $this->tempDir . '/cert.pem';
+        touch($certFile);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $certFile,
+                'local_pk' => $this->tempDir,
+            ],
+        );
+    }
+
+    public function testSymlinkedCertPathThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be a symlink');
+
+        $certFile = $this->tempDir . '/cert.pem';
+        touch($certFile);
+        $symlink = $this->tempDir . '/cert-symlink.pem';
+        symlink($certFile, $symlink);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $symlink,
+                'local_pk' => $this->tempDir . '/key.pem',
+            ],
+        );
+    }
+
+    public function testSymlinkedKeyPathThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be a symlink');
+
+        $certFile = $this->tempDir . '/cert.pem';
+        touch($certFile);
+        $keyFile = $this->tempDir . '/key.pem';
+        touch($keyFile);
+        $symlink = $this->tempDir . '/key-symlink.pem';
+        symlink($keyFile, $symlink);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $certFile,
+                'local_pk' => $symlink,
+            ],
+        );
     }
 
     public function testCorrectSslConfigurationDoesNotThrow(): void

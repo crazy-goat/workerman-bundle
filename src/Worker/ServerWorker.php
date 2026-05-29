@@ -115,6 +115,30 @@ final readonly class ServerWorker
             );
         }
 
+        if (is_link($cert)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate path must not be a symlink: %s', $cert),
+            );
+        }
+
+        if (is_link($key)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL private key path must not be a symlink: %s', $key),
+            );
+        }
+
+        if (!is_file($cert)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate path must be a regular file: %s', $cert),
+            );
+        }
+
+        if (!is_file($key)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL private key path must be a regular file: %s', $key),
+            );
+        }
+
         if (!is_readable($cert)) {
             throw new \InvalidArgumentException(
                 sprintf('SSL certificate file is not readable: %s', $cert),
