@@ -49,6 +49,13 @@ final readonly class PharBuilder
         }
 
         $pharFilename = basename($pharPath);
+        $this->validatePharAlias($pharFilename);
+
+        $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
+            ? $buildConfig['kernel_class']
+            : 'App\\Kernel';
+        $this->validateKernelClass($kernelClass);
+
         $phar = new \Phar($pharPath, 0, $pharFilename);
         $phar->startBuffering();
 
