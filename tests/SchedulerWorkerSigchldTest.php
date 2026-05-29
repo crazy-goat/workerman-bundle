@@ -15,8 +15,9 @@ use PHPUnit\Framework\TestCase;
  * inheriting PHPUnit's output buffers and shutdown functions, which interfere
  * with pcntl_fork() + exit() behavior.
  *
- * The structural test verifies the SchedulerWorker source code uses the
- * correct signal handling pattern as a regression safety net.
+ * The signal-pattern test uses reflection to invoke the actual
+ * SchedulerWorker::handleSigchld method, providing regression protection
+ * if the handler implementation changes (replaces old source-grep test).
  */
 final class SchedulerWorkerSigchldTest extends TestCase
 {
@@ -56,35 +57,15 @@ final class SchedulerWorkerSigchldTest extends TestCase
     }
 
     /**
-     * Structural test: verify SchedulerWorker source uses correct signal pattern.
-     * This is a regression safety net — if someone reverts to SIG_IGN or removes
-     * pcntl_wifsignaled, this test catches it immediately.
+     * Behavioral test: verify SchedulerWorker's actual handleSigchld method
+     * correctly reaps children and logs appropriate messages via real fork + SIGCHLD.
+     *
+     * Uses reflection to invoke the private method on the real SchedulerWorker class,
+     * providing regression protection if the handler implementation changes.
      */
     public function testSchedulerWorkerUsesCorrectSignalPattern(): void
     {
-        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
-        $this->assertFileExists($sourceFile);
-
-        $content = file_get_contents($sourceFile);
-        $this->assertNotFalse($content);
-
-        $this->assertStringNotContainsString(
-            'pcntl_signal(SIGCHLD, SIG_IGN)',
-            $content,
-            'SIGCHLD must not be ignored — this was the original bug (Issue #41)',
-        );
-
-        $this->assertStringContainsString(
-            'pcntl_wifsignaled',
-            $content,
-            'Handler must detect signal-killed child processes',
-        );
-
-        $this->assertStringContainsString(
-            'pcntl_wifexited',
-            $content,
-            'Handler must check if child exited normally before reading exit code',
-        );
+        $this->runIsolatedTest('scheduler_worker_handler');
     }
 
     /**

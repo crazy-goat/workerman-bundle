@@ -126,6 +126,7 @@ match ($testName) {
     'zero_exit' => testZeroExit(),
     'signal_kill' => testSignalKill(),
     'multiple_children' => testMultipleChildren(),
+    'scheduler_worker_handler' => testSchedulerWorkerHandler(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -248,4 +249,178 @@ function testMultipleChildren(): void
 
     fwrite(STDOUT, "PASS\n");
     exit(0);
+}
+
+// --- SchedulerWorker-specific behavioral tests ---
+// These tests use reflection to invoke the actual SchedulerWorker::handleSigchld
+// method, providing regression protection if the handler implementation changes.
+
+function testSchedulerWorkerHandler(): void
+{
+    requireAutoloader();
+
+    // Capture Worker log output via logFile + outputStream
+    $logFilePath = tempnam(sys_get_temp_dir(), 'test_sigchld_');
+    if ($logFilePath === false) {
+        fail('Failed to create temp log file');
+    }
+    $logStream = fopen($logFilePath, 'w+');
+    if ($logStream === false) {
+        fail('Failed to open temp log stream');
+    }
+    \Workerman\Worker::$outputStream = $logStream;
+    \Workerman\Worker::$logFile = $logFilePath;
+
+    $schedulerWorker = createSchedulerWorkerInstance();
+
+    $handleSigchld = (new \ReflectionMethod(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'handleSigchld',
+    ))->getClosure($schedulerWorker);
+
+    if (!$handleSigchld instanceof \Closure) {
+        fail('handleSigchld must be accessible via reflection');
+    }
+
+    pcntl_signal(SIGCHLD, $handleSigchld);
+
+    $readLogs = function () use ($logFilePath): array {
+        $content = file_get_contents($logFilePath) ?: '';
+        return array_values(array_filter(
+            explode("\n", $content),
+            fn(string $l): bool => $l !== '',
+        ));
+    };
+
+    // Test 1: Non-zero exit code triggers warning log
+    $pid1 = pcntl_fork();
+    if ($pid1 === 0) {
+        exit(42);
+    }
+    if ($pid1 === -1) {
+        fail('Fork failed for non-zero exit test');
+    }
+
+    $deadline = microtime(true) + 5;
+    $foundNonZero = false;
+    while (microtime(true) < $deadline && !$foundNonZero) {
+        pcntl_signal_dispatch();
+        foreach ($readLogs() as $log) {
+            if (str_contains($log, 'exited with code 42')) {
+                $foundNonZero = true;
+                break;
+            }
+        }
+        usleep(10_000);
+    }
+    if (!$foundNonZero) {
+        fail('Should have logged non-zero exit (expected "exited with code 42")');
+    }
+
+    // Verify handler reaped the child
+    $reapResult = pcntl_waitpid(-1, $status, WNOHANG);
+    if ($reapResult > 0) {
+        fail(sprintf('Child should have been reaped by handler (waitpid returned %d)', $reapResult));
+    }
+
+    // Test 2: Zero exit code produces no warning log
+    $logCountBefore = count($readLogs());
+    $pid2 = pcntl_fork();
+    if ($pid2 === 0) {
+        exit(0);
+    }
+    if ($pid2 === -1) {
+        fail('Fork failed for zero exit test');
+    }
+
+    $deadline = microtime(true) + 5;
+    $foundZeroExit = false;
+    while (microtime(true) < $deadline && !$foundZeroExit) {
+        $r = pcntl_waitpid($pid2, $ws, WNOHANG);
+        if ($r === $pid2 || $r === -1) {
+            $foundZeroExit = true;
+        }
+        usleep(10_000);
+    }
+    pcntl_signal_dispatch();
+
+    // Check that no warning log was produced for zero exit
+    $newLogs = array_slice($readLogs(), $logCountBefore);
+    foreach ($newLogs as $log) {
+        if (str_contains($log, 'exited with code')) {
+            fail('Should not have logged any exit warning for zero exit code');
+        }
+    }
+
+    // Test 3: Signal-killed child triggers warning log
+    $logCountBefore = count($readLogs());
+    $pid3 = pcntl_fork();
+    if ($pid3 === 0) {
+        sleep(60);
+        exit(0);
+    }
+    if ($pid3 === -1) {
+        fail('Fork failed for signal kill test');
+    }
+
+    usleep(50_000);
+    posix_kill($pid3, SIGTERM);
+
+    $deadline = microtime(true) + 5;
+    $foundKill = false;
+    while (microtime(true) < $deadline && !$foundKill) {
+        pcntl_signal_dispatch();
+        $newLogs = array_slice($readLogs(), $logCountBefore);
+        foreach ($newLogs as $log) {
+            if (str_contains($log, 'was killed by signal')) {
+                $foundKill = true;
+                break;
+            }
+        }
+        usleep(10_000);
+    }
+    if (!$foundKill) {
+        fail('Should have logged signal kill message (expected "was killed by signal")');
+    }
+
+    // Verify handler reaped the killed child
+    $reapResult2 = pcntl_waitpid(-1, $status, WNOHANG);
+    if ($reapResult2 > 0) {
+        fail(sprintf('Killed child should have been reaped by handler (waitpid returned %d)', $reapResult2));
+    }
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+function requireAutoloader(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $autoloadPath = __DIR__ . '/../../vendor/autoload.php';
+    if (!file_exists($autoloadPath)) {
+        fail("Autoloader not found at $autoloadPath");
+    }
+    require $autoloadPath;
+    $loaded = true;
+}
+
+function createSchedulerWorkerInstance(): \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker
+{
+    $schedulerWorker = (new \ReflectionClass(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+    ))->newInstanceWithoutConstructor();
+
+    $mockWorker = new \Workerman\Worker();
+    $mockWorker->name = '[Test]';
+
+    $workerProp = new \ReflectionProperty(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'worker',
+    );
+    $workerProp->setValue($schedulerWorker, $mockWorker);
+
+    return $schedulerWorker;
 }
