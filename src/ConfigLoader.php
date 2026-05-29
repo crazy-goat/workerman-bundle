@@ -10,7 +10,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
 final class ConfigLoader implements CacheWarmerInterface
 {
-    /** @var mixed[] */
+    /** @var array<string, mixed[]> */
     private array $config;
     private readonly ConfigCache $cache;
     private readonly string $yamlConfigFilePath;
@@ -59,28 +59,38 @@ final class ConfigLoader implements CacheWarmerInterface
     /** @return array<string, mixed[]> */
     private function getConfig(): array
     {
-        // If config was set directly via setters, return it without filesystem access.
-        if (isset($this->config)) {
-            return $this->config;
-        }
+        return $this->loadFromMemory()
+            ?? $this->loadFromCache()
+            ?? $this->loadFresh();
+    }
 
-        // Config not set in memory — load from cache file.
+    /** @return array<string, mixed[]>|null */
+    private function loadFromMemory(): ?array
+    {
+        return $this->config ?? null;
+    }
+
+    /** @return array<string, mixed[]>|null */
+    private function loadFromCache(): ?array
+    {
         $cachePath = $this->cache->getPath();
-        if (is_file($cachePath)) {
-            return $this->config = require $cachePath;
+        if (!is_file($cachePath)) {
+            return null;
         }
 
-        // Cache not available and config not injected. This is reachable when a fresh
-        // ConfigLoader is constructed outside the DI container and no cache has been
-        // warmed up yet. Returning empty sections is intentional so downstream getters
-        // do not error; the caller is responsible for treating "empty config" as
-        // "no Workerman configuration".
-        return $this->config = [
-            ConfigSection::WORKERMAN->value => [],
-            ConfigSection::PROCESS->value => [],
-            ConfigSection::SCHEDULER->value => [],
-            ConfigSection::BUILD->value => [],
-        ];
+        /** @var array<string, mixed[]> $cached */
+        $cached = require $cachePath;
+
+        return $this->config = $cached;
+    }
+
+    /** @return array<string, mixed[]> */
+    private function loadFresh(): array
+    {
+        throw new \LogicException(
+            'Configuration not available: no config has been set via setters and no cached '
+            . 'config file exists. Ensure the cache has been warmed up before accessing config.',
+        );
     }
 
     /** @param mixed[] $config */
