@@ -89,11 +89,13 @@ All top-level `workerman` configuration options:
 
 ### Start application
 
-Using the Symfony console command:
+Using the Symfony console command (the `bin/console` below refers to **your application's** Symfony console, **not** the `bin/` directory shipped by this bundle):
 ```bash
 $ bin/console workerman:server start
 $ bin/console workerman:server start -d   # daemon mode
 ```
+
+> **Note:** All `bin/console workerman:*` commands throughout this document refer to your application's Symfony console, not the scripts in this bundle's `bin/` directory. See [`bin/README.md`](bin/README.md) for the bundle's own development scripts.
 
 Or using the runtime directly:
 ```bash

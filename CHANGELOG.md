@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 
 - Resolve `@internal` vs public-API contradiction in `Utils` class — `Utils::reload()` is now explicitly documented as a public API for programmatic graceful worker reload. Removed `@internal` annotation, added PHPDoc, and documented usage in README ([#290](https://github.com/crazy-goat/workerman-bundle/issues/290))
+- Disambiguate `bin/console` in README — clarify it refers to the application's console, not the bundle's `bin/` directory; add `bin/README.md` documenting the bundle's development scripts ([#282](https://github.com/crazy-goat/workerman-bundle/issues/282))
 
 ## [0.20.0] - 2026-05-26
 
