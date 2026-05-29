@@ -40,6 +40,82 @@ final class MiddlewarePipelineTest extends TestCase
         self::assertSame('value-2', $tracker->get('m3_header2'));
     }
 
+    public function testShortCircuitMiddlewareReturnsEarly(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $shortCircuitResponse = new WorkermanResponse(200, ['X-Short' => 'true'], 'Short');
+        $shortCircuit = new ShortCircuitMiddleware($shortCircuitResponse);
+        $trackingMw = new OrderTrackingMiddleware('should-not-run', $tracker);
+
+        $this->executeMiddlewarePipeline([$shortCircuit, $trackingMw]);
+
+        self::assertSame([], $tracker->getInvocationOrder(), 'Tracking middleware after short-circuit should never be invoked');
+    }
+
+    public function testShortCircuitOnlyRunsMiddlewaresBeforeIt(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $shortCircuitResponse = new WorkermanResponse(200, ['X-Short' => 'true'], 'Short');
+        $shortCircuit = new ShortCircuitMiddleware($shortCircuitResponse);
+        $before = new OrderTrackingMiddleware('before', $tracker);
+        $after = new OrderTrackingMiddleware('after', $tracker);
+
+        $this->executeMiddlewarePipeline([$before, $shortCircuit, $after]);
+
+        self::assertSame(['before'], $tracker->getInvocationOrder(), 'Only "before" should run; "after" is after short-circuit');
+    }
+
+    public function testThrowingMiddlewarePropagatesException(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $throwing = new ThrowingMiddleware(new \RuntimeException('Middleware failure'));
+        $trackingMw = new OrderTrackingMiddleware('should-not-run', $tracker);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Middleware failure');
+
+        $this->executeMiddlewarePipeline([$throwing, $trackingMw]);
+    }
+
+    public function testExceptionInMiddlewareSkipsSubsequentMiddlewares(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $throwing = new ThrowingMiddleware(new \RuntimeException('fail'));
+        $before = new OrderTrackingMiddleware('before', $tracker);
+        $after = new OrderTrackingMiddleware('after', $tracker);
+
+        try {
+            $this->executeMiddlewarePipeline([$before, $throwing, $after]);
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        self::assertSame(['before'], $tracker->getInvocationOrder(), 'Only "before" should run; "after" is skipped due to exception');
+    }
+
+    public function testMiddlewareInvocationOrder(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $first = new OrderTrackingMiddleware('outer', $tracker);
+        $second = new OrderTrackingMiddleware('inner', $tracker);
+
+        $this->executeMiddlewarePipeline([$first, $second]);
+
+        self::assertSame(['outer', 'inner'], $tracker->getInvocationOrder(), 'Outer middleware runs first, then inner');
+    }
+
+    public function testThreeMiddlewareInvocationOrder(): void
+    {
+        $tracker = new MiddlewareTracker();
+        $a = new OrderTrackingMiddleware('a', $tracker);
+        $b = new OrderTrackingMiddleware('b', $tracker);
+        $c = new OrderTrackingMiddleware('c', $tracker);
+
+        $this->executeMiddlewarePipeline([$a, $b, $c]);
+
+        self::assertSame(['a', 'b', 'c'], $tracker->getInvocationOrder());
+    }
+
     /**
      * @param MiddlewareInterface[] $middlewares
      */
@@ -61,6 +137,8 @@ final class MiddlewareTracker
 {
     /** @var array<string, mixed> */
     private array $data = [];
+    /** @var list<string> */
+    private array $invocationOrder = [];
 
     public function set(string $key, mixed $value): void
     {
@@ -70,6 +148,58 @@ final class MiddlewareTracker
     public function get(string $key): mixed
     {
         return $this->data[$key] ?? null;
+    }
+
+    public function recordInvocation(string $name): void
+    {
+        $this->invocationOrder[] = $name;
+    }
+
+    /** @return list<string> */
+    public function getInvocationOrder(): array
+    {
+        return $this->invocationOrder;
+    }
+}
+
+final readonly class ShortCircuitMiddleware implements MiddlewareInterface
+{
+    public function __construct(
+        private WorkermanResponse $response,
+    ) {
+    }
+
+    public function __invoke(Request $request, callable $next): WorkermanResponse
+    {
+        return $this->response;
+    }
+}
+
+final readonly class ThrowingMiddleware implements MiddlewareInterface
+{
+    public function __construct(
+        private \RuntimeException $exception,
+    ) {
+    }
+
+    public function __invoke(Request $request, callable $next): WorkermanResponse
+    {
+        throw $this->exception;
+    }
+}
+
+final readonly class OrderTrackingMiddleware implements MiddlewareInterface
+{
+    public function __construct(
+        private string $name,
+        private MiddlewareTracker $tracker,
+    ) {
+    }
+
+    public function __invoke(Request $request, callable $next): WorkermanResponse
+    {
+        $this->tracker->recordInvocation($this->name);
+        return $next($request);
     }
 }
 
