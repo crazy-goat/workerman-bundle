@@ -6,11 +6,14 @@ namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Events\EventInterface;
 use Workerman\Worker;
 
 /**
@@ -498,5 +501,48 @@ final class SchedulerWorkerTest extends TestCase
             @unlink($tempDir . '/test.pid');
             @rmdir($tempDir);
         }
+    }
+
+    // --- Tick callback caching tests (Issue #293) ---
+
+    /**
+     * Test that scheduleCallback reuses the same closure object across
+     * subsequent ticks for the same task, avoiding per-tick allocation.
+     */
+    public function testScheduleCallbackReusesClosureOnSubsequentTicks(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedCallables = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay, callable $func) use (&$capturedCallables): int {
+                $capturedCallables[] = $func;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+
+        $trigger = $this->createMock(TriggerInterface::class);
+        $trigger->method('getNextRunDate')
+            ->willReturn(new \DateTimeImmutable('+1 second'));
+
+        $service = new ServiceMethod('test_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler);
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler);
+
+        $this->assertCount(2, $capturedCallables, 'delay should have been called twice');
+        $this->assertSame(
+            $capturedCallables[0],
+            $capturedCallables[1],
+            'The same closure instance must be reused across ticks to avoid per-tick allocation (Issue #293)',
+        );
     }
 }
