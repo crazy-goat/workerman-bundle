@@ -211,4 +211,42 @@ final class ConfigLoaderTest extends TestCase
 
         $this->assertSame($buildConfig, $loader->getBuildConfig());
     }
+
+    public function testLoadFromCacheReturnsConfigWhenCacheFileExists(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $config = [
+            'server' => ['listen' => 'http://0.0.0.0:8080'],
+        ];
+        $loaderA->setWorkermanConfig($config);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        // Create loader B (no config set via setters) — should load from cache
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertSame($config, $loaderB->getWorkermanConfig());
+    }
+
+    public function testLoadFreshThrowsWhenNoConfigAndNoCache(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Configuration not available');
+
+        $loader->getWorkermanConfig();
+    }
+
+    public function testLoadFreshThrowsForAnyGetterWhenNoConfigAndNoCache(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Configuration not available');
+
+        $loader->getProcessConfig();
+    }
 }
