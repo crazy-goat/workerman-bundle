@@ -118,10 +118,30 @@ workerman:
 
 When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
 
+### Symlink Protection
+
+By default, `StaticFilesMiddleware` refuses to serve files that are accessed through a symlink under the static root directory (`follow_symlinks: false`). This prevents an attacker or a compromised tool from creating a symlink inside the public directory to expose files outside the intended root.
+
+To restore the previous behaviour and allow symlinks to be followed, set `follow_symlinks: true`:
+
+```yaml
+workerman:
+    servers:
+        - name: 'Web'
+          listen: 'http://0.0.0.0:80'
+          serve_files: true
+          root_dir: '%kernel.project_dir%/public'
+          static_files:
+              follow_symlinks: true
+```
+
+When `follow_symlinks` is `false` (default), any path component inside the root directory that is a symlink will cause the request to be treated as a non-existent file, passing control to the next middleware.
+
 ### Security Considerations
 
 - **Keep `root_dir` isolated**: Point `root_dir` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
 - **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
+- **Disable symlinks**: Keep `follow_symlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
 
 ## SFX Download Protection (Zip-Slip)

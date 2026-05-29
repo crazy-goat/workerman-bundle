@@ -133,7 +133,47 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    public function testSymlinkInsideRootAllowed(): void
+    public function testSymlinkInsideRootAllowedWhenFollowSymlinksEnabled(): void
+    {
+        $linkPath = $this->rootDirectory . '/linked';
+        $subDir = $this->rootDirectory . '/subdir';
+
+        try {
+            if (!is_dir($subDir)) {
+                mkdir($subDir, 0777, true);
+            }
+            file_put_contents($subDir . '/linked_file.txt', 'linked content');
+
+            if (!file_exists($linkPath)) {
+                symlink($subDir, $linkPath);
+            }
+
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], true);
+
+            $request = $this->createRequest('/linked/linked_file.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should not be called for symlink inside root when follow_symlinks enabled');
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (file_exists($subDir . '/linked_file.txt')) {
+                unlink($subDir . '/linked_file.txt');
+            }
+            if (is_dir($subDir)) {
+                rmdir($subDir);
+            }
+        }
+    }
+
+    public function testSymlinkInsideRootBlockedByDefault(): void
     {
         $linkPath = $this->rootDirectory . '/linked';
         $subDir = $this->rootDirectory . '/subdir';
@@ -157,9 +197,10 @@ final class StaticFilesMiddlewareTest extends TestCase
                 return new Response(404);
             };
 
-            $middleware($request, $next);
+            $response = $middleware($request, $next);
 
-            $this->assertFalse($called, 'Next should not be called for symlink inside root');
+            $this->assertTrue($called, 'Next should be called for symlink when follow_symlinks is disabled');
+            $this->assertEquals(404, $response->getStatusCode());
         } finally {
             if (file_exists($linkPath)) {
                 unlink($linkPath);
@@ -169,6 +210,63 @@ final class StaticFilesMiddlewareTest extends TestCase
             }
             if (is_dir($subDir)) {
                 rmdir($subDir);
+            }
+        }
+    }
+
+    public function testRegularFileStillServedWithFollowSymlinksDisabled(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(404);
+        };
+
+        $middleware($request, $next);
+
+        $this->assertFalse($called, 'Next should not be called for regular file with follow_symlinks disabled');
+    }
+
+    public function testSymlinkEscapingBlockedWithFollowSymlinksEnabled(): void
+    {
+        $targetDir = __DIR__ . '/data/outside';
+        $linkPath = $this->rootDirectory . '/escape_link';
+
+        try {
+            if (!is_dir($targetDir)) {
+                mkdir($targetDir, 0777, true);
+            }
+            file_put_contents($targetDir . '/secret.txt', 'secret content');
+
+            if (!file_exists($linkPath)) {
+                symlink($targetDir, $linkPath);
+            }
+
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], true);
+
+            $request = $this->createRequest('/escape_link/secret.txt');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(200);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertTrue($called, 'Next should be called for symlink escaping path even with follow_symlinks enabled');
+            $this->assertEquals(200, $response->getStatusCode());
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (file_exists($targetDir . '/secret.txt')) {
+                unlink($targetDir . '/secret.txt');
+            }
+            if (is_dir($targetDir)) {
+                rmdir($targetDir);
             }
         }
     }
