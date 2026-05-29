@@ -491,7 +491,7 @@ final class ServerManagerTest extends TestCase
         }
 
         if ($pid === 0) {
-            while (true) {
+            for (;;) {
                 sleep(1);
             }
         }
@@ -516,7 +516,7 @@ final class ServerManagerTest extends TestCase
             });
             pcntl_signal(SIGQUIT, static function (): void {
             });
-            while (true) {
+            for (;;) {
                 usleep(100_000);
             }
         }
@@ -540,7 +540,7 @@ final class ServerManagerTest extends TestCase
             pcntl_async_signals(true);
             pcntl_signal($signal, static function (): void {
             });
-            while (true) {
+            for (;;) {
                 usleep(100_000);
             }
         }
@@ -579,7 +579,7 @@ final class ServerManagerTest extends TestCase
                 file_put_contents($signalFile, $content ?? 'received');
             });
 
-            while (true) {
+            for (;;) {
                 usleep(100_000);
             }
         }
