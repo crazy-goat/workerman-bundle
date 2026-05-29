@@ -192,6 +192,8 @@ final readonly class Runner implements RunnerInterface
                 user: $config['user'],
                 group: $config['group'],
                 serverConfig: $serverConfig,
+                connectionTimeout: $config['connection_timeout'] ?? 120,
+                keepaliveTimeout: $config['keepalive_timeout'] ?? 30,
             );
         }
 

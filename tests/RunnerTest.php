@@ -521,6 +521,50 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testConfigSetsConnectionTimeouts(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernel->method('getProjectDir')->willReturn('/tmp');
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [
+                    ['name' => 'timeout-test', 'listen' => 'http://0.0.0.0:8085'],
+                ],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+                'connection_timeout' => 30,
+                'keepalive_timeout' => 10,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+
+            $workers = $this->getWorkersProperty();
+            $found = false;
+            foreach ($workers as $w) {
+                if ($w->name === '[Server] timeout-test') {
+                    $this->assertNotNull($w->onConnect, 'onConnect should be set for timeout handling');
+                    $found = true;
+                    break;
+                }
+            }
+            $this->assertTrue($found, 'Worker with timeout config should exist');
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
     public function testCreateWorkersWithSchedulerCreatesSchedulerWorker(): void
     {
         $saved = $this->saveWorkerState();
