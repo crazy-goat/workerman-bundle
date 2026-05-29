@@ -144,6 +144,59 @@ When `follow_symlinks` is `false` (default), any path component inside the root 
 - **Disable symlinks**: Keep `follow_symlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
 
+## Connection Timeouts (Slowloris Protection)
+
+The HTTP server exposes configurable timeouts to protect against slowloris-style denial-of-service attacks, where a small number of clients exhaust worker concurrency by sending data very slowly or keeping connections idle indefinitely.
+
+### connection_timeout
+
+The maximum time (in seconds) to wait for a complete request (headers + body) on a newly established connection. If the client does not send the complete request within this window, the connection is closed. This prevents slow-read attacks where an attacker sends headers or body data byte-by-byte.
+
+Default: `120` seconds.
+
+### keepalive_timeout
+
+The maximum idle time (in seconds) to keep a keep-alive connection open after the previous request has been fully processed. If no new request arrives within this window, the connection is closed. This prevents idle connections from consuming worker capacity indefinitely.
+
+Default: `30` seconds.
+
+### body_size_cap (per-server)
+
+In addition to the global `max_package_size`, each server can be configured with a per-server `body_size_cap` that overrides the global limit for that specific server. This allows tightening limits on public-facing endpoints while keeping larger limits for internal endpoints.
+
+```yaml
+workerman:
+    max_package_size: 10485760  # 10 MB global default
+
+    servers:
+        - name: 'Api'
+          listen: 'http://0.0.0.0:80'
+          body_size_cap: 1048576  # 1 MB for this server (overrides global)
+
+        - name: 'Upload'
+          listen: 'http://0.0.0.0:8080'
+          body_size_cap: 52428800  # 50 MB for file uploads
+```
+
+### Example Configuration
+
+```yaml
+workerman:
+    connection_timeout: 60
+    keepalive_timeout: 15
+
+    servers:
+        - name: 'Web'
+          listen: 'http://0.0.0.0:80'
+```
+
+### Security Considerations
+
+- **connection_timeout protects against slowloris**: Without this timeout, an attacker can open many connections and send data extremely slowly, holding each worker process indefinitely. Setting this to a reasonable value (e.g., 30-120 seconds) limits the window of exposure.
+- **keepalive_timeout limits idle connections**: Long-lived idle keep-alive connections reduce the number of available worker slots. A short keepalive timeout (e.g., 15-30 seconds) frees capacity quickly.
+- **body_size_cap for defense-in-depth**: Even with a global `max_package_size`, setting tighter per-server limits on endpoints that expect small payloads (e.g., API endpoints) provides an additional layer of protection against oversized payloads.
+- **Timers are per-connection**: Each connection's timers are independent. A slowloris attack on one connection does not affect timing on others.
+
 ## SSL Certificate and Key Validation
 
 When configuring HTTPS or WSS servers, the `local_cert` and `local_pk` options specify the paths to the SSL certificate and private key files. These paths are validated before being passed to the TLS stream context:

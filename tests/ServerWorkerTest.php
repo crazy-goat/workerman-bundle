@@ -492,7 +492,7 @@ final class ServerWorkerTest extends TestCase
         $onWorkerStart($worker);
 
         $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
-        $this->assertSame($handler, $worker->onMessage);
+        $this->assertInstanceOf(\Closure::class, $worker->onMessage, 'onMessage should be a closure that wraps the handler');
     }
 
     public function testOnWorkerStartResolvesMiddlewares(): void
@@ -629,6 +629,109 @@ final class ServerWorkerTest extends TestCase
         $onWorkerStart = $worker->onWorkerStart;
         $this->assertNotNull($onWorkerStart);
         $onWorkerStart($worker);
+    }
+
+    public function testOnConnectSetsBodySizeCap(): void
+    {
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            [
+                'name' => 'ows-body-cap',
+                'listen' => 'http://127.0.0.1:8096',
+                'body_size_cap' => 8192,
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-body-cap');
+        $this->assertNotNull($worker);
+        $this->assertNotNull($worker->onConnect, 'onConnect should be set when body_size_cap is configured');
+    }
+
+    public function testOnConnectWithoutBodySizeCapDoesNotCrash(): void
+    {
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-no-body-cap', 'listen' => 'http://127.0.0.1:8097'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-no-body-cap');
+        $this->assertNotNull($worker);
+        $this->assertNotNull($worker->onConnect, 'onConnect should always be set for timeout handling');
+    }
+
+    public function testOnConnectClosureCapturesBodySizeCap(): void
+    {
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            [
+                'name' => 'ows-closure-cap',
+                'listen' => 'http://127.0.0.1:8098',
+                'body_size_cap' => 16384,
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-closure-cap');
+        $this->assertNotNull($worker);
+
+        assert($worker->onConnect instanceof \Closure);
+        $ref = new \ReflectionFunction($worker->onConnect);
+        $vars = $ref->getStaticVariables();
+
+        $this->assertArrayHasKey('bodySizeCap', $vars);
+        $this->assertSame(16384, $vars['bodySizeCap']);
+    }
+
+    public function testOnWorkerStartWrapsOnMessageWithKeepaliveTimeout(): void
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('boot');
+        $kernel->method('getContainer')->willReturn($container);
+
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $kernel,
+            [],
+        );
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-keepalive', 'listen' => 'http://127.0.0.1:8099'],
+            connectionTimeout: 60,
+            keepaliveTimeout: 15,
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-keepalive');
+        $this->assertNotNull($worker);
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+
+        $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
     }
 
     private function findWorkerByName(string $name): ?Worker

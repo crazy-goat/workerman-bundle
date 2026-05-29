@@ -80,11 +80,63 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(2, $config['stop_timeout']);
         self::assertSame(30, $config['cache_warmup_timeout']);
         self::assertSame(5, $config['status_timeout']);
+        self::assertSame(120, $config['connection_timeout']);
+        self::assertSame(30, $config['keepalive_timeout']);
         self::assertFalse($config['reload_strategy']['max_requests']['active']);
         self::assertTrue($config['reload_strategy']['exception']['active']);
         self::assertFalse($config['reload_strategy']['file_monitor']['active']);
         self::assertFalse($config['reload_strategy']['always']['active']);
         self::assertFalse($config['reload_strategy']['memory']['active']);
+    }
+
+    public function testConfiguredTreeParsesConnectionTimeouts(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'connection_timeout' => 60,
+            'keepalive_timeout' => 15,
+        ]]);
+
+        self::assertSame(60, $config['connection_timeout']);
+        self::assertSame(15, $config['keepalive_timeout']);
+    }
+
+    public function testConfiguredTreeParsesServerBodySizeCap(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'servers' => [
+                [
+                    'name' => 'api',
+                    'listen' => 'http://0.0.0.0:80',
+                    'body_size_cap' => 1048576,
+                ],
+                [
+                    'name' => 'upload',
+                    'listen' => 'http://0.0.0.0:8080',
+                ],
+            ],
+        ]]);
+
+        self::assertCount(2, $config['servers']);
+        self::assertSame(1048576, $config['servers'][0]['body_size_cap']);
+        self::assertNull($config['servers'][1]['body_size_cap']);
     }
 
     public function testConfiguredTreeValidatesRequiredServerName(): void

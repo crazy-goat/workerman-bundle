@@ -12,7 +12,9 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Utils;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
+use Workerman\Timer;
 use Workerman\Worker;
 
 final readonly class ServerWorker
@@ -27,6 +29,8 @@ final readonly class ServerWorker
         ?string       $user,
         ?string       $group,
         array         $serverConfig,
+        int           $connectionTimeout = 120,
+        int           $keepaliveTimeout = 30,
     ) {
         $listen = $serverConfig['listen'] ?? '';
         assert(is_string($listen));
@@ -44,7 +48,25 @@ final readonly class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = (bool) ($serverConfig['reuse_port'] ?? false);
 
-        $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig): void {
+        $bodySizeCap = $serverConfig['body_size_cap'] ?? null;
+
+        $worker->onConnect = function (TcpConnection $connection) use ($connectionTimeout, $bodySizeCap): void {
+            if ($bodySizeCap !== null) {
+                $connection->maxPackageSize = $bodySizeCap;
+            }
+
+            $connection->context ??= new \stdClass();
+            $connection->context->connectionTimerId = Timer::add(
+                $connectionTimeout,
+                static function () use ($connection): void {
+                    $connection->close();
+                },
+                [],
+                false,
+            );
+        };
+
+        $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig, $keepaliveTimeout): void {
             Http::requestClass(Request::class);
 
             $serveFiles = $serverConfig['serve_files'] ?? false;
@@ -54,7 +76,33 @@ final readonly class ServerWorker
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
 
-            $worker->onMessage = $this->configureHandler($kernel, $serverConfig, $rootDir);
+            $handler = $this->configureHandler($kernel, $serverConfig, $rootDir);
+
+            $worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler, $keepaliveTimeout): void {
+                if (isset($connection->context->connectionTimerId)) {
+                    Timer::del($connection->context->connectionTimerId);
+                    unset($connection->context->connectionTimerId);
+                }
+
+                if (isset($connection->context->keepaliveTimerId)) {
+                    Timer::del($connection->context->keepaliveTimerId);
+                    unset($connection->context->keepaliveTimerId);
+                }
+
+                $handler($connection, $request);
+
+                if ($keepaliveTimeout > 0) {
+                    $connection->context ??= new \stdClass();
+                    $connection->context->keepaliveTimerId = Timer::add(
+                        $keepaliveTimeout,
+                        static function () use ($connection): void {
+                            $connection->close();
+                        },
+                        [],
+                        false,
+                    );
+                }
+            };
         };
     }
 
