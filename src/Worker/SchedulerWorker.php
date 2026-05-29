@@ -11,11 +11,14 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Workerman\Worker;
 
-final readonly class SchedulerWorker
+final class SchedulerWorker
 {
     private const PROCESS_TITLE = '[Scheduler]';
 
-    private Worker $worker;
+    private readonly Worker $worker;
+
+    /** @var array<string, resource> */
+    private array $pidFileHandles = [];
 
     /**
      * @param mixed[] $schedulerConfig
@@ -105,7 +108,6 @@ final readonly class SchedulerWorker
         }
 
         if (!$this->acquireLock($fp)) {
-            fclose($fp);
             $this->scheduleCallback($trigger, $service, $taskName, $handler);
             return;
         }
@@ -125,6 +127,10 @@ final readonly class SchedulerWorker
      */
     private function openPidFile(string $pidFile, string $taskName): mixed
     {
+        if (isset($this->pidFileHandles[$pidFile]) && is_resource($this->pidFileHandles[$pidFile])) {
+            return $this->pidFileHandles[$pidFile];
+        }
+
         if ($this->isPidFileSymlink($pidFile)) {
             $this->worker->log(sprintf('%s Task "%s" PID file is a symlink, rejecting: %s', $this->worker->name, $taskName, $pidFile));
             return null;
@@ -140,6 +146,8 @@ final readonly class SchedulerWorker
             $this->worker->log(sprintf('%s Task "%s" PID file inode mismatch, rejecting: %s', $this->worker->name, $taskName, $pidFile));
             return null;
         }
+
+        $this->pidFileHandles[$pidFile] = $fp;
 
         return $fp;
     }
@@ -186,6 +194,11 @@ final readonly class SchedulerWorker
         return flock($fp, LOCK_EX | LOCK_NB);
     }
 
+    private function releaseLock(mixed $fp): void
+    {
+        flock($fp, LOCK_UN);
+    }
+
     private function releaseLockAndClose(mixed $fp): void
     {
         flock($fp, LOCK_UN);
@@ -194,14 +207,14 @@ final readonly class SchedulerWorker
 
     private function handleForkError(mixed $fp, TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
-        $this->releaseLockAndClose($fp);
+        $this->releaseLock($fp);
         $this->worker->log(sprintf('%s Task "%s" call error!', $this->worker->name, $taskName));
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
     private function handleParent(mixed $fp, TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
     {
-        $this->releaseLockAndClose($fp);
+        $this->releaseLock($fp);
         $this->worker->log(sprintf('%s Task "%s" called', $this->worker->name, $taskName));
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
