@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Supervisor;
 use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\Test\EventDispatcher\RecordingEventDispatcher;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -64,7 +65,6 @@ final class ProcessHandlerTest extends TestCase
 
         $handler = new ProcessHandler($locator, $eventDispatcher);
         $handler->__invoke(new ServiceMethod('my_service', 'nonexistent'), 'test_process');
-        // Should not throw - error is caught by try-catch and dispatched as event
     }
 
     public function testInvokeDispatchesErrorEventWhenServiceMethodThrowsException(): void
@@ -98,5 +98,72 @@ final class ProcessHandlerTest extends TestCase
 
         $handler = new ProcessHandler($locator, $eventDispatcher);
         $handler->__invoke(new ServiceMethod('my_service', 'run'), 'test_process');
+    }
+
+    public function testInvokeCallsMagicInvokeMethod(): void
+    {
+        $service = new class {
+            public bool $called = false;
+
+            public function __invoke(): void
+            {
+                $this->called = true;
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_invokable_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new ProcessHandler($locator, $eventDispatcher);
+        $handler->__invoke(new ServiceMethod('my_invokable_service', '__invoke'), 'test_process');
+
+        $this->assertTrue($service->called);
+        $this->assertCount(1, $eventDispatcher->events);
+        $this->assertInstanceOf(ProcessStartEvent::class, $eventDispatcher->events[0]);
+    }
+
+    public function testEventOrderingWhenServiceMethodThrowsException(): void
+    {
+        $service = new class {
+            public function run(): never
+            {
+                throw new \RuntimeException('Something went wrong');
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new ProcessHandler($locator, $eventDispatcher);
+        $handler->__invoke(new ServiceMethod('my_service', 'run'), 'test_process');
+
+        $this->assertCount(2, $eventDispatcher->events);
+        $this->assertInstanceOf(ProcessStartEvent::class, $eventDispatcher->events[0]);
+        $this->assertInstanceOf(ProcessErrorEvent::class, $eventDispatcher->events[1]);
+        $this->assertInstanceOf(\RuntimeException::class, $eventDispatcher->events[1]->getError());
+        $this->assertSame('Something went wrong', $eventDispatcher->events[1]->getError()->getMessage());
+    }
+
+    public function testEventOrderingWhenMethodDoesNotExist(): void
+    {
+        $service = new class {
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new ProcessHandler($locator, $eventDispatcher);
+        $handler->__invoke(new ServiceMethod('my_service', 'nonexistent'), 'test_process');
+
+        $this->assertCount(2, $eventDispatcher->events);
+        $this->assertInstanceOf(ProcessStartEvent::class, $eventDispatcher->events[0]);
+        $this->assertInstanceOf(ProcessErrorEvent::class, $eventDispatcher->events[1]);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $eventDispatcher->events[1]->getError());
     }
 }
