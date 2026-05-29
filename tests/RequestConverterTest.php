@@ -288,7 +288,7 @@ final class RequestConverterTest extends TestCase
         $tmpFile = $this->createTempFile('avatar content');
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/expected array, got string/');
+        $this->expectExceptionMessage('expected array, got string');
 
         $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = $this->createRequestWithFiles($buffer, [
@@ -310,7 +310,7 @@ final class RequestConverterTest extends TestCase
         $tmpFile = $this->createTempFile('avatar content');
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/expected array, got string/');
+        $this->expectExceptionMessage('expected array, got string');
 
         $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = $this->createRequestWithFiles($buffer, [
