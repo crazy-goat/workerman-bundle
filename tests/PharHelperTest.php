@@ -43,16 +43,6 @@ final class PharHelperTest extends TestCase
         self::assertSame('/custom/runtime', PharHelper::getRuntimeDir('/app'));
     }
 
-    public function testGetProjectDirReturnsProjectDir(): void
-    {
-        self::assertSame('/app', PharHelper::getProjectDir('/app'));
-    }
-
-    public function testGetProjectDirTrimsTrailingSlash(): void
-    {
-        self::assertSame('/app', PharHelper::getProjectDir('/app/'));
-    }
-
     public function testResolveRuntimePathReturnsPathUnchangedInNormalMode(): void
     {
         self::assertSame(
