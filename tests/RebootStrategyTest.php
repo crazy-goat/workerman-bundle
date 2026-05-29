@@ -269,6 +269,46 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($strategy->shouldReboot());
     }
 
+    public function testMemoryRebootStrategyGcCollectsCyclesWhenTriggered(): void
+    {
+        gc_collect_cycles();
+
+        $garbage = [];
+        for ($i = 0; $i < 10000; ++$i) {
+            $a = new \stdClass();
+            $b = new \stdClass();
+            $a->self = $b;
+            $b->self = $a;
+            $garbage[] = $a;
+        }
+        unset($garbage, $a, $b);
+
+        $collected = 0;
+        $scheduler = static function () use (&$collected): void {
+            $collected += gc_collect_cycles();
+        };
+
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1, 60, $scheduler);
+        $strategy->shouldReboot();
+
+        $this->assertGreaterThan(0, $collected, 'gc_collect_cycles() should collect cyclic garbage');
+    }
+
+    public function testMemoryRebootStrategyGcNotTriggeredBelowGcLimit(): void
+    {
+        $schedulerCalled = false;
+        $scheduler = static function () use (&$schedulerCalled): void {
+            $schedulerCalled = true;
+        };
+
+        $gcLimit = memory_get_usage() + 1024 * 1024;
+
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, $gcLimit, 60, $scheduler);
+        $strategy->shouldReboot();
+
+        $this->assertFalse($schedulerCalled, 'GC scheduler should not be called when memory is below gcLimit');
+    }
+
     public function testStackRebootStrategyReturnsFalseWithEmptyStack(): void
     {
         $strategy = new StackRebootStrategy([]);
