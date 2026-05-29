@@ -219,7 +219,7 @@ final class RunnerTest extends TestCase
     }
 
     /**
-     * @return array{workers: array, pidMap: array, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
+     * @return array{workers: array<string, Worker>, pidMap: array<string, array<int, int>>, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
      */
     private function saveWorkerState(): array
     {
@@ -236,6 +236,9 @@ final class RunnerTest extends TestCase
         ];
     }
 
+    /**
+     * @param array{workers: array<string, Worker>, pidMap: array<string, array<int, int>>, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int} $state
+     */
     private function restoreWorkerState(array $state): void
     {
         $workersRef = new \ReflectionProperty(Worker::class, 'workers');
@@ -260,7 +263,7 @@ final class RunnerTest extends TestCase
     public function testGetCacheWarmupTimeoutDefaultsTo30Seconds(): void
     {
         $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = null;
 
         try {
             $kernel = $this->createMock(KernelInterface::class);
@@ -271,11 +274,7 @@ final class RunnerTest extends TestCase
 
             $this->assertSame(30, $timeout);
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -293,11 +292,7 @@ final class RunnerTest extends TestCase
 
             $this->assertSame(15, $timeout);
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -315,11 +310,7 @@ final class RunnerTest extends TestCase
 
             $this->assertSame(30, $timeout);
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -337,11 +328,7 @@ final class RunnerTest extends TestCase
             $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
             $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -359,11 +346,7 @@ final class RunnerTest extends TestCase
             $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
             $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -381,11 +364,7 @@ final class RunnerTest extends TestCase
             $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
             $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-            } else {
-                unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
-            }
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
         }
     }
 
@@ -802,7 +781,7 @@ final class RunnerTest extends TestCase
     public function testGetCacheDirUsesDefaultFromKernel(): void
     {
         $savedEnv = $_SERVER['APP_CACHE_DIR'] ?? null;
-        unset($_SERVER['APP_CACHE_DIR']);
+        $_SERVER['APP_CACHE_DIR'] = null;
 
         try {
             $kernel = $this->createMock(KernelInterface::class);
@@ -818,11 +797,7 @@ final class RunnerTest extends TestCase
 
             $this->assertSame('/tmp/project/var/cache/test', $cacheDir);
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['APP_CACHE_DIR'] = $savedEnv;
-            } else {
-                unset($_SERVER['APP_CACHE_DIR']);
-            }
+            $_SERVER['APP_CACHE_DIR'] = $savedEnv;
         }
     }
 
@@ -844,11 +819,7 @@ final class RunnerTest extends TestCase
 
             $this->assertSame('/custom/cache/prod', $cacheDir);
         } finally {
-            if ($savedEnv !== null) {
-                $_SERVER['APP_CACHE_DIR'] = $savedEnv;
-            } else {
-                unset($_SERVER['APP_CACHE_DIR']);
-            }
+            $_SERVER['APP_CACHE_DIR'] = $savedEnv;
         }
     }
 
