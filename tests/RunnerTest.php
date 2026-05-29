@@ -823,6 +823,56 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testApplyWorkermanConfigCreatesDirectoriesWithMode0700(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        if (!is_dir($tmpDir)) {
+            mkdir($tmpDir, 0700, true);
+        }
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/run/workerman.pid',
+                'log_file' => $tmpDir . '/log/workerman.log',
+                'stdout_file' => $tmpDir . '/log/workerman.stdout.log',
+                'stop_timeout' => 5,
+                'max_package_size' => 10 * 1024 * 1024,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+
+            $this->assertTrue(is_dir($tmpDir . '/run'), 'PID directory must exist');
+            $this->assertTrue(is_dir($tmpDir . '/log'), 'Log directory must exist');
+
+            $pidDirPerms = fileperms($tmpDir . '/run') & 0777;
+            $logDirPerms = fileperms($tmpDir . '/log') & 0777;
+
+            $this->assertSame(0700, $pidDirPerms, 'PID directory must have mode 0700');
+            $this->assertSame(0700, $logDirPerms, 'Log directory must have mode 0700');
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testApplyWorkermanConfigUsesExplicitMode0700(): void
+    {
+        $sourceFile = self::RUNNER_SOURCE;
+        $content = file_get_contents($sourceFile);
+        $this->assertNotFalse($content);
+
+        $this->assertStringContainsString(
+            'permissions: 0700',
+            $content,
+            'All mkdir calls must use explicit permissions 0700 to prevent overly permissive runtime directories',
+        );
+    }
+
     public function testResolveRuntimePathStructuralPharRewritingExists(): void
     {
         $sourceFile = self::RUNNER_SOURCE;

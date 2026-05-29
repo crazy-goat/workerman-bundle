@@ -151,18 +151,15 @@ final readonly class Runner implements RunnerInterface
         assert(is_int($maxPackageSize));
 
         $pidDir = dirname($pidFile);
-        if (!is_dir($pidDir)) {
-            if (!mkdir(directory: $pidDir, recursive: true) && !is_dir($pidDir)) {
-                throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $pidDir));
-            }
-            chmod($pidDir, 0700);
+        if (!is_dir($pidDir) && (!mkdir(directory: $pidDir, permissions: 0700, recursive: true) && !is_dir($pidDir))) {
+            throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $pidDir));
         }
 
         foreach ([
             dirname($logFile),
             dirname($stdoutFile),
         ] as $runtimeDir) {
-            if (!is_dir($runtimeDir) && !mkdir(directory: $runtimeDir, recursive: true) && !is_dir($runtimeDir)) {
+            if (!is_dir($runtimeDir) && !mkdir(directory: $runtimeDir, permissions: 0700, recursive: true) && !is_dir($runtimeDir)) {
                 throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $runtimeDir));
             }
         }
