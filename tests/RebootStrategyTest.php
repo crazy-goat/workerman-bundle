@@ -281,7 +281,7 @@ final class RebootStrategyTest extends TestCase
             $b->self = $a;
             $garbage[] = $a;
         }
-        unset($garbage);
+        unset($garbage, $a, $b);
 
         $collected = 0;
         $scheduler = static function () use (&$collected): void {
@@ -301,8 +301,7 @@ final class RebootStrategyTest extends TestCase
             $schedulerCalled = true;
         };
 
-        $currentUsage = memory_get_usage();
-        $gcLimit = $currentUsage + 1024;
+        $gcLimit = memory_get_usage() + 1024 * 1024;
 
         $strategy = new MemoryRebootStrategy(PHP_INT_MAX, $gcLimit, 60, $scheduler);
         $strategy->shouldReboot();
