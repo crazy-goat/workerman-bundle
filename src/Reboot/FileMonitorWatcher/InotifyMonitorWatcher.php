@@ -48,46 +48,42 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
      */
     private function onNotify(mixed $inotifyFd): void
     {
-        if (function_exists('inotify_read')) {
-            $events = \inotify_read($inotifyFd) ?: [];
+        $events = \inotify_read($inotifyFd) ?: [];
 
-            if ($this->reloadCallback instanceof \Closure) {
-                return;
+        if ($this->reloadCallback instanceof \Closure) {
+            return;
+        }
+
+        foreach ($events as $event) {
+            if ($this->isFlagSet($event['mask'], IN_IGNORED)) {
+                unset($this->pathByWd[$event['wd']]);
+                continue;
             }
 
-            foreach ($events as $event) {
-                if ($this->isFlagSet($event['mask'], IN_IGNORED)) {
-                    unset($this->pathByWd[$event['wd']]);
-                    continue;
-                }
-
-                if ($this->isFlagSet($event['mask'], IN_CREATE | IN_ISDIR)) {
-                    $this->watchDir($this->pathByWd[$event['wd']] . '/' . $event['name']);
-                    continue;
-                }
-
-                if (!$this->checkPattern($event['name'])) {
-                    continue;
-                }
-
-                $this->reloadCallback = function (): void {
-                    $this->reloadCallback = null;
-                    $this->reload();
-                };
-
-                $this->worker::$globalEvent?->delay(self::RELOAD_DELAY, $this->reloadCallback);
-
-                return;
+            if ($this->isFlagSet($event['mask'], IN_CREATE | IN_ISDIR)) {
+                $this->watchDir($this->pathByWd[$event['wd']] . '/' . $event['name']);
+                continue;
             }
+
+            if (!$this->checkPattern($event['name'])) {
+                continue;
+            }
+
+            $this->reloadCallback = function (): void {
+                $this->reloadCallback = null;
+                $this->reload();
+            };
+
+            $this->worker::$globalEvent?->delay(self::RELOAD_DELAY, $this->reloadCallback);
+
+            return;
         }
     }
 
     private function watchDir(string $path): void
     {
-        if (function_exists('inotify_add_watch')) {
-            $wd = \inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO);
-            $this->pathByWd[$wd] = $path;
-        }
+        $wd = \inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO);
+        $this->pathByWd[$wd] = $path;
     }
 
     private function isFlagSet(int $check, int $flag): bool

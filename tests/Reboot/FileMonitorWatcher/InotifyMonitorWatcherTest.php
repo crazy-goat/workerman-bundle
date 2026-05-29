@@ -113,20 +113,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertCount(0, $pathByWd, 'pathByWd should be empty when inotify is not available');
     }
 
-    public function testOnNotifyIsNoOpWhenInotifyReadNotAvailable(): void
-    {
-        if (function_exists('inotify_read')) {
-            $this->markTestSkipped('Inotify is available on this system; this test checks the no-extension path');
-        }
-
-        $watcher = $this->createWatcherInstance();
-
-        $this->invokeOnNotify($watcher, null);
-
-        $reloadCallback = $this->getPrivateProperty($watcher, 'reloadCallback');
-        $this->assertNull($reloadCallback, 'reloadCallback should remain null when inotify_read is not available');
-    }
-
     // ---- Tests that require inotify extension (skipped on macOS) ----
 
     /**
