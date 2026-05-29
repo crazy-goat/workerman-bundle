@@ -503,19 +503,19 @@ final class SchedulerWorkerTest extends TestCase
         }
     }
 
-    // --- Tick callback caching tests (Issue #293) ---
+    // --- Tick callback args test (Issue #293) ---
 
     /**
-     * Test that scheduleCallback reuses the same closure object across
-     * subsequent ticks for the same task, avoiding per-tick allocation.
+     * Test that scheduleCallback passes task parameters as $args to delay()
+     * instead of capturing them in a closure, avoiding per-tick allocations.
      */
-    public function testScheduleCallbackReusesClosureOnSubsequentTicks(): void
+    public function testScheduleCallbackPassesArgsToDelay(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
-        $capturedCallables = [];
+        $capturedArgs = [];
         $eventMock->method('delay')
-            ->willReturnCallback(function (float $delay, callable $func) use (&$capturedCallables): int {
-                $capturedCallables[] = $func;
+            ->willReturnCallback(function (float $delay, callable $func, array $args = []) use (&$capturedArgs): int {
+                $capturedArgs[] = $args;
 
                 return 1;
             });
@@ -536,13 +536,52 @@ final class SchedulerWorkerTest extends TestCase
         $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
 
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler);
+
+        $this->assertCount(1, $capturedArgs);
+        $this->assertCount(4, $capturedArgs[0]);
+        $this->assertSame($trigger, $capturedArgs[0][0]);
+        $this->assertSame($service, $capturedArgs[0][1]);
+        $this->assertSame('test_task', $capturedArgs[0][2]);
+        $this->assertSame($handler, $capturedArgs[0][3]);
+    }
+
+    /**
+     * Test that scheduleCallback does not create a closure (uses first-class callable).
+     */
+    public function testScheduleCallbackUsesFirstClassCallable(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedCallable = null;
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay, callable $func, array $args = []) use (&$capturedCallable): int {
+                $capturedCallable = $func;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+
+        $trigger = $this->createMock(TriggerInterface::class);
+        $trigger->method('getNextRunDate')
+            ->willReturn(new \DateTimeImmutable('+1 second'));
+
+        $service = new ServiceMethod('test_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler);
 
-        $this->assertCount(2, $capturedCallables, 'delay should have been called twice');
-        $this->assertSame(
-            $capturedCallables[0],
-            $capturedCallables[1],
-            'The same closure instance must be reused across ticks to avoid per-tick allocation (Issue #293)',
-        );
+        $this->assertNotNull($capturedCallable);
+        $this->assertInstanceOf(\Closure::class, $capturedCallable);
+
+        $refl = new \ReflectionFunction($capturedCallable);
+        $staticVars = $refl->getStaticVariables();
+
+        $this->assertEmpty($staticVars, 'First-class callable must not capture any static variables');
     }
 }
