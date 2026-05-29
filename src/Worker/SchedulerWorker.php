@@ -98,10 +98,18 @@ final class SchedulerWorker
             $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
             $key = $service->toString();
             if (!isset($tickCallbacks[$key])) {
-                $tickCallbacks[$key] = fn() => $this->runCallback($trigger, $service, $taskName, $handler);
+                $tickCallbacks[$key] = [
+                    $this->onTickTimer(...),
+                    [$trigger, $service, $taskName, $handler],
+                ];
             }
-            $this->worker::$globalEvent?->delay($interval, $tickCallbacks[$key]);
+            $this->worker::$globalEvent?->delay($interval, $tickCallbacks[$key][0], $tickCallbacks[$key][1]);
         }
+    }
+
+    private function onTickTimer(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
+    {
+        $this->runCallback($trigger, $service, $taskName, $handler);
     }
 
     private function runCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
