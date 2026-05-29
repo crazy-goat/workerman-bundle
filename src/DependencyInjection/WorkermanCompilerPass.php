@@ -70,6 +70,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->setArguments([
                 new Reference('workerman.symfony_controller'),
                 new Reference('workerman.reboot_strategy'),
+                new Reference('logger'),
             ]);
 
         $container

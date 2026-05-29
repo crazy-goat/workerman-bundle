@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
+use Psr\Log\LoggerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 
@@ -33,6 +34,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     public function __construct(
         private readonly SymfonyController         $controller,
         private readonly RebootStrategyInterface   $rebootStrategy,
+        private readonly ?LoggerInterface          $logger = null,
     ) {
     }
 
@@ -119,13 +121,22 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         try {
             $this->controller->terminateIfNeeded();
         } catch (\Throwable $e) {
-            error_log(sprintf(
-                '%s: %s in %s:%d',
-                $errorPrefix,
-                $e->getMessage(),
-                $e->getFile(),
-                $e->getLine(),
-            ));
+            if ($this->logger instanceof LoggerInterface) {
+                $this->logger->error($errorPrefix, [
+                    'exception' => $e,
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ]);
+            } else {
+                error_log(sprintf(
+                    '%s: %s in %s:%d',
+                    $errorPrefix,
+                    $e->getMessage(),
+                    $e->getFile(),
+                    $e->getLine(),
+                ));
+            }
         }
     }
 
