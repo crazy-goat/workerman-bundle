@@ -144,6 +144,34 @@ When `follow_symlinks` is `false` (default), any path component inside the root 
 - **Disable symlinks**: Keep `follow_symlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
 
+## SSL Certificate and Key Validation
+
+When configuring HTTPS or WSS servers, the `local_cert` and `local_pk` options specify the paths to the SSL certificate and private key files. These paths are validated before being passed to the TLS stream context:
+
+### Regular File Check
+
+Both paths must point to **regular files**. Configuration pointing to:
+- **Directories** are rejected with a clear error message.
+- **FIFO/named pipes** are rejected.
+- **Device files** (e.g., `/dev/zero`, `/dev/random`) are rejected.
+
+This prevents an attacker or misconfiguration from causing the TLS stack to read unbounded bytes from a device file or hang on a FIFO.
+
+### Symlink Protection
+
+Symlinked certificate and key paths are **rejected by default**. This prevents:
+- **Symlink-based file disclosure**: An attacker who controls a compromised tool or deployment process cannot create a symlink pointing the cert/key to a different file.
+- **Unintended key material exposure**: A symlink swapped at runtime would load different credentials than expected.
+
+### Error Messages
+
+- `SSL certificate path must not be a symlink: <path>`
+- `SSL private key path must not be a symlink: <path>`
+- `SSL certificate path must be a regular file: <path>`
+- `SSL private key path must be a regular file: <path>`
+
+These checks are applied in addition to the existing `is_readable()` validation, which catches non-existent files and permission issues.
+
 ## SFX Download Protection (Zip-Slip)
 
 The `SfxDownloader` downloads and extracts `phpmicro.sfx` from upstream HTTPS mirrors. Before extracting a downloaded ZIP archive, each entry name is validated against path traversal attacks (zip-slip):
