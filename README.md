@@ -146,6 +146,26 @@ PID      Worker          CID       Trans   Protocol        ipv4   ipv6   Recv-Q 
 
 > **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The grpc extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details.
 
+### Programmatic reload
+
+You can trigger a worker reload from your application code using `Utils::reload()`:
+
+```php
+<?php
+
+use CrazyGoat\WorkermanBundle\Utils;
+
+// Reload only the current worker process
+Utils::reload();
+
+// Reload all worker processes
+Utils::reload(reloadAllWorkers: true);
+```
+
+This sends a `SIGUSR1` signal to the worker (or parent) process. It is equivalent to running `bin/console workerman:server reload` but can be called from any context — controllers, services, scheduled tasks, or deploy hooks.
+
+> **Note:** `Utils::reload()` requires the `pcntl` and `posix` PHP extensions. Both are always available in the Workerman runtime process.
+
 ## Reload strategies
 Because of the asynchronous nature of the server, the workers reuse loaded resources on each request. This means that in some cases we need to restart workers.  
 For example, after an exception is thrown, to prevent services from being in an unrecoverable state. Or every time you change the code in the IDE.  
