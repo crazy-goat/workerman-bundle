@@ -125,10 +125,12 @@ This also affects Doctrine's `EntityManager` which holds a reference to the conn
   ```
   A more robust approach is to register an event listener that calls `EntityManager::getConnection()->ping()` before each request.
 - **Set `wait_timeout` appropriately** on your MySQL server (at least higher than your `max_requests` × average request duration).
-- **Use a middleware** that calls `EntityManager::clear()` and reconnects if the connection is closed:
+  - **Use a middleware** that calls `EntityManager::clear()` and reconnects if the connection is closed:
   ```php
+  use CrazyGoat\WorkermanBundle\Http\Request;
   use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
   use Doctrine\ORM\EntityManagerInterface;
+  use Workerman\Protocols\Http\Response;
 
   final readonly class DoctrinePingMiddleware implements MiddlewareInterface
   {
