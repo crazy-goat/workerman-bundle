@@ -113,4 +113,87 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('', $workermanResponse->rawBody());
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
+
+    public function testConvertNormalizesIrregularHeaderNames(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'etag' => '"abc123"',
+            'content-md5' => 'deadbeef',
+            'www-authenticate' => 'Bearer',
+            'dnt' => '1',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $this->assertSame(['"abc123"'], $workermanResponse->getHeader('ETag'));
+        $this->assertSame(['deadbeef'], $workermanResponse->getHeader('Content-MD5'));
+        $this->assertSame(['Bearer'], $workermanResponse->getHeader('WWW-Authenticate'));
+        $this->assertSame(['1'], $workermanResponse->getHeader('DNT'));
+    }
+
+    public function testConvertNormalizesIrregularHeadersConsistentlyOnRepeatedCalls(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response1 = new Response('a', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'etag' => '"v1"',
+        ]);
+        $response2 = new Response('b', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'etag' => '"v2"',
+        ]);
+
+        $r1 = $converter->convert($response1, $this->connection);
+        $r2 = $converter->convert($response2, $this->connection);
+
+        // Both calls hit the static cache on the second invocation
+        $this->assertSame(['"v1"'], $r1->getHeader('ETag'));
+        $this->assertSame(['"v2"'], $r2->getHeader('ETag'));
+    }
+
+    public function testConvertPreservesRegularHeaderCasingAfterCaching(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        // First call populates the cache
+        $response1 = new Response('a', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'content-type' => 'text/html',
+            'x-custom-one' => 'first',
+        ]);
+        $converter->convert($response1, $this->connection);
+
+        // Second call on same instance hits cache entries
+        $response2 = new Response('b', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'content-type' => 'application/json',
+            'x-custom-two' => 'second',
+        ]);
+        $workermanResponse = $converter->convert($response2, $this->connection);
+
+        $this->assertSame(['application/json'], $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame(['second'], $workermanResponse->getHeader('X-Custom-Two'));
+    }
+
+    public function testConvertNormalizesMixedRegularAndIrregularHeaders(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'content-type' => 'text/plain',
+            'etag' => '"abc"',
+            'x-custom' => 'value',
+            'dnt' => '0',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $this->assertSame(['text/plain'], $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame(['"abc"'], $workermanResponse->getHeader('ETag'));
+        $this->assertSame(['value'], $workermanResponse->getHeader('X-Custom'));
+        $this->assertSame(['0'], $workermanResponse->getHeader('DNT'));
+    }
 }
