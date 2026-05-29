@@ -64,11 +64,12 @@ final class FileUploadValidatorTest extends TestCase
         $this->assertFalse(FileUploadValidator::isFileList(['a', 'b', 'c']));
     }
 
-    public function testEmptyFilesArrayIsAccepted(): void
+    public function testEmptyFilesArrayReturnsEarly(): void
     {
-        // Validation passes when no exception is thrown
+        // Zero-iteration fast path: validate skips traversal when no files present.
+        // This is the common case for read-heavy apps and must be a no-op.
         FileUploadValidator::validate([]);
-        $this->addToAssertionCount(1); // No exception means validation passed
+        $this->addToAssertionCount(1);
     }
 
     public function testValidSingleFileIsAccepted(): void

@@ -61,6 +61,10 @@ final class FileUploadValidator
      */
     public static function validate(array $files): void
     {
+        if ($files === []) {
+            return;
+        }
+
         foreach ($files as $fieldName => $fileData) {
             self::validateFileEntry($fieldName, $fileData);
         }
