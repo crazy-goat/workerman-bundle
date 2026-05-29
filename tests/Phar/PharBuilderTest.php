@@ -215,4 +215,82 @@ final class PharBuilderTest extends TestCase
             'exclude_files' => [],
         ], $badPath);
     }
+
+    /** @return iterable<array{string}> */
+    public static function provideValidKernelClasses(): iterable
+    {
+        yield 'simple class' => ['App\\Kernel'];
+        yield 'with leading backslash' => ['\\App\\Kernel'];
+        yield 'multi-level namespace' => ['App\\Http\\Kernel'];
+        yield 'single class name' => ['Kernel'];
+        yield 'with underscores' => ['My_App\\Kernel_V2'];
+        yield 'numeric suffix' => ['App\\Kernel2024'];
+        yield 'root namespace single' => ['\\Kernel'];
+    }
+
+    /** @return iterable<array{string}> */
+    public static function provideInvalidKernelClasses(): iterable
+    {
+        yield 'semicolon' => ['App\\Kernel;'];
+        yield 'single quote' => ["App\\Ker'nel"];
+        yield 'double quote' => ['App\\Ker"nel'];
+        yield 'parenthesis' => ['App\\Kernel()'];
+        yield 'space' => ['App\\ Kernel'];
+        yield 'dollar brace' => ['App\\${Kernel}'];
+        yield 'backtick' => ['App\\Ker`nel'];
+        yield 'angle brackets' => ['App\\Ker<nel>'];
+        yield 'pipe' => ['App\\Ker|nel'];
+        yield 'question mark' => ['App\\Ker?nel'];
+        yield 'leading digit' => ['1App\\Kernel'];
+    }
+
+    /** @dataProvider provideValidKernelClasses */
+    public function testGenerateStubAcceptsValidKernelClasses(string $kernelClass): void
+    {
+        $stub = (new PharBuilder('/p', 'test'))->generateStub([
+            'kernel_class' => $kernelClass,
+        ]);
+
+        self::assertStringContainsString('new ' . $kernelClass . '(', $stub);
+    }
+
+    /** @dataProvider provideInvalidKernelClasses */
+    public function testGenerateStubRejectsInvalidKernelClasses(string $kernelClass): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('is not a valid PHP class name');
+
+        (new PharBuilder('/p', 'test'))->generateStub([
+            'kernel_class' => $kernelClass,
+        ]);
+    }
+
+    /** @dataProvider provideInvalidKernelClasses */
+    public function testBuildRejectsInvalidKernelClasses(string $kernelClass): void
+    {
+        if ((bool) ini_get('phar.readonly')) {
+            self::markTestSkipped('phar.readonly is On — cannot build PHARs.');
+        }
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Kernel class');
+
+        mkdir($this->tempDir . '/src', 0755, true);
+        mkdir($this->tempDir . '/vendor', 0755, true);
+        file_put_contents($this->tempDir . '/vendor/autoload.php', '<?php');
+
+        $pharPath = $this->tempDir . '/build/test.phar';
+        (new PharBuilder($this->tempDir, 'test'))->build([
+            'kernel_class' => $kernelClass,
+            'exclude_patterns' => [],
+            'exclude_files' => [],
+        ], $pharPath);
+    }
+
+    public function testGenerateStubUsesDefaultKernelClassWhenNotConfigured(): void
+    {
+        $stub = (new PharBuilder('/p', 'test'))->generateStub([]);
+
+        self::assertStringContainsString('new App\\Kernel(', $stub);
+    }
 }

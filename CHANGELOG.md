@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Validate `kernel_class` in PHAR stub generation — reject invalid PHP class names to prevent code injection ([#263](https://github.com/crazy-goat/workerman-bundle/issues/263))
+
 ### Fixed
 
 - Fix `README.md` RebootStrategyInterface example — wrong FQCN caused copy-paste to fail ([#289](https://github.com/crazy-goat/workerman-bundle/issues/289))
