@@ -49,6 +49,13 @@ final readonly class PharBuilder
         }
 
         $pharFilename = basename($pharPath);
+        $this->validatePharAlias($pharFilename);
+
+        $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
+            ? $buildConfig['kernel_class']
+            : 'App\\Kernel';
+        $this->validateKernelClass($kernelClass);
+
         $phar = new \Phar($pharPath, 0, $pharFilename);
         $phar->startBuffering();
 
@@ -146,6 +153,11 @@ final readonly class PharBuilder
     private const ALLOWED_ALIAS_PATTERN = '/^[A-Za-z0-9._-]+$/';
 
     /**
+     * Valid PHP fully-qualified class name pattern.
+     */
+    private const ALLOWED_KERNEL_CLASS_PATTERN = '/^(\\\\?[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)+(\\\\[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)*$/';
+
+    /**
      * @param mixed[] $buildConfig
      *
      * Placeholders replaced in the stub template:
@@ -162,6 +174,8 @@ final readonly class PharBuilder
         $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
             ? $buildConfig['kernel_class']
             : 'App\\Kernel';
+
+        $this->validateKernelClass($kernelClass);
 
         $templatePath = __DIR__ . '/../../resources/phar-stub.tpl';
         $template = file_get_contents($templatePath);
@@ -193,6 +207,25 @@ final readonly class PharBuilder
             throw new \RuntimeException(sprintf(
                 'PHAR alias "%s" contains invalid characters. Allowed: A-Z, a-z, 0-9, dot, underscore, hyphen.',
                 $pharAlias,
+            ));
+        }
+    }
+
+    /**
+     * Validate that the kernel class is a syntactically valid PHP FQCN.
+     *
+     * @throws \RuntimeException if the class name contains invalid characters
+     */
+    private function validateKernelClass(string $kernelClass): void
+    {
+        if ($kernelClass === '') {
+            throw new \RuntimeException('Kernel class must not be empty.');
+        }
+
+        if (preg_match(self::ALLOWED_KERNEL_CLASS_PATTERN, $kernelClass) !== 1) {
+            throw new \RuntimeException(sprintf(
+                'Kernel class "%s" is not a valid PHP class name. Only letters, numbers, underscores, backslashes, and bytes 0x80-0xff are allowed.',
+                $kernelClass,
             ));
         }
     }
