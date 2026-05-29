@@ -31,8 +31,10 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     /**
      * @param string[] $allowedExtensions
+     * @param bool     $followSymlinks When false (default), symlinks under the root directory are not followed.
+     *                                 Set to true to allow serving files through symlinks.
      */
-    public function __construct(string $rootDirectory, array $allowedExtensions = [])
+    public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false)
     {
         if ($this->isPharPath($rootDirectory)) {
             $this->rootRealPath = $rootDirectory;
@@ -175,16 +177,18 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
         $cache = &$this->getRealPathCache();
 
-        if (isset($cache[$cacheKey])) {
-            $cached = $cache[$cacheKey];
+        $cacheIndex = $cacheKey . "\0" . ($this->followSymlinks ? '1' : '0') . "\0" . $this->rootRealPath;
+
+        if (isset($cache[$cacheIndex])) {
+            $cached = $cache[$cacheIndex];
             $ttl = $cached['path'] === false ? self::CACHE_NEGATIVE_TTL : self::CACHE_TTL;
             if ($now - $cached['time'] < $ttl) {
-                unset($cache[$cacheKey]);
-                $cache[$cacheKey] = $cached;
+                unset($cache[$cacheIndex]);
+                $cache[$cacheIndex] = $cached;
 
                 return $cached['path'];
             }
-            unset($cache[$cacheKey]);
+            unset($cache[$cacheIndex]);
         }
 
         if ($this->isPharPath($this->rootRealPath)) {
@@ -193,10 +197,31 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
                 $resolved = false;
             }
         } else {
-            $resolved = realpath($this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/'));
+            $path = $this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/');
+
+            if (!$this->followSymlinks) {
+                $components = explode('/', ltrim($cacheKey, '/'));
+                $checkPath = $this->rootRealPath;
+                foreach ($components as $component) {
+                    if ($component === '' || $component === '.') {
+                        continue;
+                    }
+                    $checkPath .= DIRECTORY_SEPARATOR . $component;
+                    if (is_link($checkPath)) {
+                        $cache[$cacheIndex] = [
+                            'path' => false,
+                            'time' => $now,
+                        ];
+
+                        return false;
+                    }
+                }
+            }
+
+            $resolved = realpath($path);
         }
 
-        $cache[$cacheKey] = [
+        $cache[$cacheIndex] = [
             'path' => $resolved,
             'time' => $now,
         ];
