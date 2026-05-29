@@ -13,6 +13,7 @@ use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Worker;
 
 final class ServerWorkerTest extends TestCase
 {
@@ -22,6 +23,17 @@ final class ServerWorkerTest extends TestCase
     {
         $this->tempDir = sys_get_temp_dir() . '/workerman-test-' . uniqid();
         mkdir($this->tempDir, 0755, true);
+
+        if (Worker::$outputStream === null) {
+            $stream = fopen('php://memory', 'w');
+            if ($stream === false) {
+                throw new \RuntimeException('Failed to open memory stream');
+            }
+            Worker::$outputStream = $stream;
+        }
+
+        $logFile = new \ReflectionProperty(Worker::class, 'logFile');
+        $logFile->setValue(null, $this->tempDir . '/workerman.log');
     }
 
     protected function tearDown(): void
@@ -32,7 +44,7 @@ final class ServerWorkerTest extends TestCase
                 unlink($file);
             }
         }
-        rmdir($this->tempDir);
+        @rmdir($this->tempDir);
     }
 
     private function createKernelFactory(): KernelFactory
@@ -342,6 +354,193 @@ final class ServerWorkerTest extends TestCase
         );
 
         $this->assertSame($handler, $result);
+    }
+
+    public function testOnWorkerStartBootsKernelAndSetsOnMessage(): void
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->once())->method('boot');
+        $kernel->method('getContainer')->willReturn($container);
+
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $kernel,
+            [],
+        );
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-boot-test', 'listen' => 'http://127.0.0.1:8091'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-boot-test');
+        $this->assertNotNull($worker, 'Worker should have been created by ServerWorker');
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+
+        $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
+        $this->assertSame($handler, $worker->onMessage);
+    }
+
+    public function testOnWorkerStartResolvesMiddlewares(): void
+    {
+        $middleware = $this->createMock(MiddlewareInterface::class);
+
+        $handler = $this->getMockBuilder(MiddlewareDispatchInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withMiddlewares'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->expects($this->once())->method('withMiddlewares')->with($middleware);
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects($this->exactly(2))->method('get')->willReturnMap([
+            ['workerman.http_request_handler', $handler],
+            ['app.middleware.bar', $middleware],
+        ]);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $kernel,
+            [],
+        );
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            [
+                'name' => 'ows-middleware-test',
+                'listen' => 'http://127.0.0.1:8092',
+                'middlewares' => ['app.middleware.bar'],
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-middleware-test');
+        $this->assertNotNull($worker);
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+    }
+
+    public function testOnWorkerStartThrowsForInvalidMiddleware(): void
+    {
+        $this->expectException(InvalidMiddlewareException::class);
+        $this->expectExceptionMessage('Service "app.middleware.invalid" must implement');
+
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects($this->exactly(2))->method('get')->willReturnMap([
+            ['workerman.http_request_handler', $handler],
+            ['app.middleware.invalid', new \stdClass()],
+        ]);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $kernel,
+            [],
+        );
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            [
+                'name' => 'ows-invalid-mw',
+                'listen' => 'http://127.0.0.1:8093',
+                'middlewares' => ['app.middleware.invalid'],
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-invalid-mw');
+        $this->assertNotNull($worker);
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+    }
+
+    public function testOnWorkerStartConfiguresStaticFiles(): void
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->expects($this->once())->method('withStaticFileConfig')
+            ->with(['allowed_extensions' => ['css', 'js']])
+            ->willReturnSelf();
+        $handler->expects($this->once())->method('withRootDirectory')
+            ->with('/path/to/public')
+            ->willReturnSelf();
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $kernel,
+            [],
+        );
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            [
+                'name' => 'ows-static-files',
+                'listen' => 'http://127.0.0.1:8094',
+                'serve_files' => true,
+                'root_dir' => '/path/to/public',
+                'static_files' => ['allowed_extensions' => ['css', 'js']],
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-static-files');
+        $this->assertNotNull($worker);
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+    }
+
+    private function findWorkerByName(string $name): ?Worker
+    {
+        foreach (Worker::getAllWorkers() as $worker) {
+            if ($worker->name === $name) {
+                return $worker;
+            }
+        }
+
+        return null;
     }
 
     /**
