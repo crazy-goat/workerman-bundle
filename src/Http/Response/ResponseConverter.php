@@ -51,13 +51,31 @@ final readonly class ResponseConverter
     /**
      * Normalizes a header name to proper case (e.g., "content-type" → "Content-Type").
      *
-     * NOTE: ucfirst-based normalization has known limitations with acronyms:
-     * - "etag" → "Etag" (not "ETag"), "content-md5" → "Content-Md5" (not "Content-MD5")
-     * Per RFC 9110, HTTP header names are case-insensitive, so this is technically valid.
-     * This approach is still strictly better than the old hardcoded 6-header map.
+     * Results are cached in a static lookup table so each unique header name is
+     * normalised at most once per worker lifetime -- the hot path then becomes O(1).
+     *
+     * A corrections table handles irregular acronyms that ucfirst cannot produce:
+     *   "etag"             → "ETag"
+     *   "content-md5"      → "Content-MD5"
+     *   "www-authenticate" → "WWW-Authenticate"
+     *   "dnt"              → "DNT"
+     *
+     * Per RFC 9110, HTTP header names are case-insensitive, so the uncorrected
+     * forms would still be valid; the corrections just match common usage.
      */
     private function normalizeHeaderName(string $name): string
     {
-        return implode('-', array_map(ucfirst(...), explode('-', $name)));
+        static $cache = [];
+        static $corrections = [
+            'etag' => 'ETag',
+            'content-md5' => 'Content-MD5',
+            'www-authenticate' => 'WWW-Authenticate',
+            'dnt' => 'DNT',
+        ];
+
+        $lower = strtolower($name);
+
+        return $cache[$lower] ?? $cache[$lower] = $corrections[$lower]
+            ?? implode('-', array_map(ucfirst(...), explode('-', $name)));
     }
 }
