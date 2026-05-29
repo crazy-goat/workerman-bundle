@@ -183,7 +183,7 @@ You can create reload strategy with your own logic by implementing the RebootStr
 ```php
 <?php
 
-use CrazyGoat\WorkermanBundle\Reboot\RebootStrategyInterface;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 #[AutoconfigureTag('workerman.reboot_strategy')]
