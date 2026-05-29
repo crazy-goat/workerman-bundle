@@ -28,6 +28,8 @@ All pull requests must pass the following checks before merging:
 
 A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` before each push to catch issues early.
 
+See [`bin/README.md`](bin/README.md) for details on the hook script.
+
 **To skip the hook** (for emergency pushes):
 ```bash
 git push --no-verify
