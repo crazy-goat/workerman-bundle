@@ -7,18 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-05-29
+
 ### Security
 
 - Validate `kernel_class` in PHAR stub generation — reject invalid PHP class names to prevent code injection ([#263](https://github.com/crazy-goat/workerman-bundle/issues/263))
+- Validate PHAR alias before stub generation — reject filenames with dangerous characters that could alter generated stub code ([#259](https://github.com/crazy-goat/workerman-bundle/issues/259))
+- Restrict runtime directory creation to explicit `0700` mode — prevents other users on multi-user systems from reading PID/status files ([#270](https://github.com/crazy-goat/workerman-bundle/issues/270), [#274](https://github.com/crazy-goat/workerman-bundle/issues/274), [#453](https://github.com/crazy-goat/workerman-bundle/issues/453))
+
+### Performance
+
+- Pre-compose middleware pipeline once at startup instead of rebuilding on every request ([#266](https://github.com/crazy-goat/workerman-bundle/issues/266))
+- Remove per-request `Timer::add(0, ...)` for terminate scheduling — reduces event-loop timer churn ([#273](https://github.com/crazy-goat/workerman-bundle/issues/273))
+- Skip file processing in `RequestConverter` when no files are present in the request ([#277](https://github.com/crazy-goat/workerman-bundle/issues/277))
+
+### Changed
+
+- Remove `PharHelper::getProjectDir` — thin wrapper that duplicates `rtrim()` with no added value ([#316](https://github.com/crazy-goat/workerman-bundle/issues/316))
+- Make `WorkermanCompilerPass` final — leaf class with no subclasses ([#312](https://github.com/crazy-goat/workerman-bundle/issues/312))
+- Extract `buildServerBag()` and `detectFormData()` from `RequestConverter::toSymfonyRequest()` — reduces a 180-line method to coordinated delegates ([#301](https://github.com/crazy-goat/workerman-bundle/issues/301))
+- Extract helper methods from `HttpRequestHandler::__invoke()` — eliminates duplicate terminate try/catch ([#291](https://github.com/crazy-goat/workerman-bundle/issues/291))
+- Extract magic timeout numbers into named constants in `ServerManager` — replaces opaque formula comment ([#295](https://github.com/crazy-goat/workerman-bundle/issues/295))
+- Extract shared `RecursiveDirectoryIterator` setup into a single method — removes duplicated boilerplate in Polling/Inotify watchers ([#285](https://github.com/crazy-goat/workerman-bundle/issues/285))
+- Extract shared `AbstractErrorListener` and `AbstractHandler` base classes — eliminates near-identical code in Task/Process error listeners and handlers ([#278](https://github.com/crazy-goat/workerman-bundle/issues/278), [#275](https://github.com/crazy-goat/workerman-bundle/issues/275))
+- Extract `configureHandler()` from `ServerWorker::onWorkerStart()` — reduces closure complexity
 
 ### Fixed
 
+- Fix `StaticFilesMiddleware` to work with `phar://` stream wrappers — `realpath()` returns `false` for `phar://` paths, making the middleware unusable when running as PHAR/standalone binary ([#447](https://github.com/crazy-goat/workerman-bundle/issues/447))
 - Fix `README.md` RebootStrategyInterface example — wrong FQCN caused copy-paste to fail ([#289](https://github.com/crazy-goat/workerman-bundle/issues/289))
+- Add `ext-zip` and `ext-inotify` to CI, fix test assertions for missing extensions
+- Fix PHPStan type annotations in test helpers
+
+### Tests
+
+- Add end-to-end tests for `Runner::run()` covering all decomposed entry points and process lifecycle ([#260](https://github.com/crazy-goat/workerman-bundle/issues/260))
+- Cover full `ServerManager` public surface with integration tests ([#264](https://github.com/crazy-goat/workerman-bundle/issues/264))
+- Invoke `HttpRequestHandler` in test instead of only testing construction and inheritance ([#253](https://github.com/crazy-goat/workerman-bundle/issues/253))
+- Add tests for `AsProcess` and `AsTask` attributes covering all configuration options ([#247](https://github.com/crazy-goat/workerman-bundle/issues/247))
+- Verify `gc_collect_cycles()` is actually invoked in `MemoryRebootStrategy` ([#271](https://github.com/crazy-goat/workerman-bundle/issues/271))
 
 ### Docs
 
+- Add troubleshooting guide for long-running worker semantics — covers common pitfalls with stateful services, memory leaks, connection reuse ([#283](https://github.com/crazy-goat/workerman-bundle/issues/283))
 - Resolve `@internal` vs public-API contradiction in `Utils` class — `Utils::reload()` is now explicitly documented as a public API for programmatic graceful worker reload. Removed `@internal` annotation, added PHPDoc, and documented usage in README ([#290](https://github.com/crazy-goat/workerman-bundle/issues/290))
 - Disambiguate `bin/console` in README — clarify it refers to the application's console, not the bundle's `bin/` directory; add `bin/README.md` documenting the bundle's development scripts ([#282](https://github.com/crazy-goat/workerman-bundle/issues/282))
+- Exclude `docs/superpowers/` planning artifacts from Composer package export ([#298](https://github.com/crazy-goat/workerman-bundle/issues/298))
+- Expand `composer.json` keywords and description for Packagist discoverability ([#299](https://github.com/crazy-goat/workerman-bundle/issues/299))
 
 ## [0.20.0] - 2026-05-26
 
