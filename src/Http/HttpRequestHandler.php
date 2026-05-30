@@ -13,6 +13,44 @@ use Psr\Log\LoggerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 
+/**
+ * Handles the per-request lifecycle for the HTTP worker.
+ *
+ * Each incoming Workerman request flows through these stages:
+ *
+ * 1. **Middleware pipeline dispatch** — The Workerman Request runs through a
+ *    pre-composed middleware chain (see getPipeline()). The pipeline is built
+ *    ONCE in reverse middleware order and cached across requests, eliminating
+ *    per-request array_reverse + closure allocation churn. The innermost layer
+ *    is the controller callable that delegates to SymfonyController.
+ *
+ * 2. **Response send** — The Http\Response returned by the pipeline is encoded
+ *    and sent via TcpConnection::send(). If a middleware already sent the
+ *    response directly (e.g. StaticFilesMiddleware for static assets), this
+ *    step is skipped via the responseSentDirectly context flag.
+ *
+ * 3. **Kernel termination** — TerminateIfNeeded() is called synchronously.
+ *    The method is run inline after send() because send() is non-blocking.
+ *    Errors are logged but never propagated.
+ *
+ * 4. **Connection close** — If the request uses HTTP/1.0 or carries a
+ *    Connection: close header, the TCP connection is closed immediately.
+ *
+ * 5. **Reload check** — After the response is fully handled, the reboot
+ *    strategy is consulted. If shouldReboot() returns true, Utils::reload()
+ *    sends SIGUSR1 to trigger a graceful worker restart.
+ *
+ * Middleware composition: middlewares are added via withMiddlewares() /
+ * withRootDirectory(). The pipeline is invalidated on every setter call and
+ * rebuilt lazily on the next request. A middleware that sets
+ * $connection->context->responseSentDirectly = true can fully short-circuit
+ * the response-send step.
+ *
+ * Per-request allocations: the only per-request allocation is the thin
+ * controller closure (fn(Request): Http\Response) which captures the
+ * current TcpConnection. The middleware pipeline closure and all middleware
+ * instances are reused across requests.
+ */
 final class HttpRequestHandler implements StaticFileHandlerInterface, MiddlewareDispatchInterface
 {
     /** @var MiddlewareInterface[] */
@@ -149,6 +187,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             || $request->header('Connection', '') === 'close';
     }
 
+    /**
+     * Handle one Workerman HTTP request through the full lifecycle.
+     *
+     * @param TcpConnection $connection The incoming TCP connection.
+     * @param Request       $request    The Workerman HTTP request (extended by
+     *                                  this bundle with setHeader/withHeader).
+     *                                  Symfony conversion happens inside
+     *                                  SymfonyController.
+     */
     public function __invoke(TcpConnection $connection, Request $request): void
     {
         \memory_reset_peak_usage();
