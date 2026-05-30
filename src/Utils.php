@@ -67,11 +67,11 @@ final class Utils
     }
 
     /**
-     * @deprecated since 0.17.0, use Utils::reload() instead.
+     * @deprecated since 0.17.0, use Utils::reload() instead. Will be removed in the next major release.
      */
     public static function reboot(bool $rebootAllWorkers = false): void
     {
-        trigger_deprecation('crazy-goat/workerman-bundle', '0.17.0', 'Utils::reboot() is deprecated, use Utils::reload() instead.');
+        trigger_deprecation('crazy-goat/workerman-bundle', '0.17.0', 'Utils::reboot() is deprecated since 0.17.0, use Utils::reload() instead. Will be removed in the next major release.');
         self::reload($rebootAllWorkers);
     }
 
