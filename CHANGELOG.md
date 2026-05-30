@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
+- Fix orphaned footnote notation for php-event extension note in README ([#311](https://github.com/crazy-goat/workerman-bundle/issues/311))
 - Add License section and MIT badge to README so users can see the project's license at a glance ([#300](https://github.com/crazy-goat/workerman-bundle/issues/300))
 
 ## [0.21.0] - 2026-05-29
