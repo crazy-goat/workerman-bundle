@@ -2,6 +2,7 @@
 ![PHP ^8.2](https://img.shields.io/badge/PHP-^8.2-777bb3.svg?style=flat)
 ![Symfony ^6.4|^7.0|^8.0](https://img.shields.io/badge/Symfony-^6.4|^7.0|^8.0-374151.svg?style=flat)
 [![Tests Status](https://img.shields.io/github/actions/workflow/status/crazy-goat/workerman-bundle/tests.yaml?branch=master)](../../actions/workflows/tests.yaml)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Workerman](https://github.com/walkor/workerman) is a high-performance, asynchronous event-driven PHP framework written in pure PHP.  
 This bundle provides a Workerman integration in Symfony, allowing you to easily create a http server, scheduler and supervisor all in one place.
@@ -391,3 +392,7 @@ For an overview of all documentation files, see [docs/](docs/).
 For security-related documentation including Host-header protection and trusted hosts configuration, see [docs/security.md](docs/security.md).
 
 For long-running worker gotchas, state pollution, stale DB connections, blocking IO, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## License
+
+This bundle is open-sourced software licensed under the [MIT license](LICENSE).

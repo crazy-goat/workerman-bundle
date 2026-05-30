@@ -51,4 +51,19 @@ final class BinDirectoryTest extends TestCase
         $this->assertNotFalse($content);
         $this->assertStringContainsString('bin/README.md', $content);
     }
+
+    public function testReadmeHasLicenseSection(): void
+    {
+        $content = file_get_contents($this->projectDir . '/README.md');
+        $this->assertNotFalse($content);
+        $this->assertStringContainsString('## License', $content);
+        $this->assertStringContainsString('[MIT license](LICENSE)', $content);
+    }
+
+    public function testReadmeHasLicenseBadge(): void
+    {
+        $content = file_get_contents($this->projectDir . '/README.md');
+        $this->assertNotFalse($content);
+        $this->assertStringContainsString('License-MIT', $content);
+    }
 }
