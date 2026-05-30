@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cache PID file handles in `SchedulerWorker` to avoid `fopen`/`fclose` blocking syscalls in the event loop on every scheduled task fire — handles are opened once per PID file and reused across the worker's lifetime ([#297](https://github.com/crazy-goat/workerman-bundle/issues/297))
 
+### Deprecated
+
+- `Utils::reboot()` is deprecated since 0.17.0 and remains deprecated; `Utils::reload()` is the replacement. `reboot()` is scheduled for removal in the next major release. No internal call sites remain in the bundle ([#318](https://github.com/crazy-goat/workerman-bundle/issues/318))
+
 ## [0.21.0] - 2026-05-29
 
 ### Security
