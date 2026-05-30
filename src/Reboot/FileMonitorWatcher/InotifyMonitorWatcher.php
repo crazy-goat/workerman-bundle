@@ -12,7 +12,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
     private const RELOAD_DELAY = 0.33;
     /** @var resource */
     private $fd;
-    /** @var string[] */
+    /** @var array<int, string> */
     private array $pathByWd = [];
     private \Closure|null $reloadCallback = null;
 
