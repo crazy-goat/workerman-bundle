@@ -181,7 +181,7 @@ There are a few restart strategies that are implemented and can be enabled or di
  - **max_requests**  
    Reload worker on every N request to prevent memory leaks.
  - **file_monitor**  
-   Reload all workers each time you change the files**.
+   Reload all workers each time you change the files.
  - **always**  
    Reload worker after each request.
  - **memory**  
@@ -196,7 +196,7 @@ There are a few restart strategies that are implemented and can be enabled or di
          gc_limit: 201326592    # 192 MB
    ```
  
-** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very cpu and disk intensive for large projects.
+> **Note:** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very cpu and disk intensive for large projects.
 
 See all available options for each strategy in the command output.
 ```bash
@@ -316,9 +316,9 @@ Schedule string can be formatted in several ways:
  - An ISO8601 datetime format. Example: _2023-08-01T01:00:00+08:00_
  - An ISO8601 duration format. Example: _PT1M_
  - A relative date format as supported by DateInterval. Example: _1 minutes_
- - A cron expression**. Example: _*/1 * * * *_
+ - A cron expression. Example: _*/1 * * * *_
 
-** Note that you need to install the [dragonmantank/cron-expression](https://github.com/dragonmantank/cron-expression) package if you want to use cron expressions as schedule strings
+> **Note:** You need to install the [dragonmantank/cron-expression](https://github.com/dragonmantank/cron-expression) package if you want to use cron expressions as schedule strings
 
 ```php
 <?php
