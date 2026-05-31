@@ -7,20 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-05-30
+
 ### Security
 
 - Route exception logging in `HttpRequestHandler` through the injected PSR-3 logger instead of `error_log()` to prevent sensitive data leaking to stderr; `error_log()` retained as fallback when no logger is available ([#296](https://github.com/crazy-goat/workerman-bundle/issues/296))
+- StaticFilesMiddleware: add `follow_symlinks` option (default: `false`) to prevent symlink following under static root ([#292](https://github.com/crazy-goat/workerman-bundle/issues/292))
+- ServerWorker: validate SSL cert/key paths are regular files and not symlinks ([#286](https://github.com/crazy-goat/workerman-bundle/issues/286))
+- Add `connection_timeout`, `keepalive_timeout` and per-server `body_size_cap` for slowloris protection ([#279](https://github.com/crazy-goat/workerman-bundle/issues/279))
 
 ### Performance
 
 - Cache PID file handles in `SchedulerWorker` to avoid `fopen`/`fclose` blocking syscalls in the event loop on every scheduled task fire — handles are opened once per PID file and reused across the worker's lifetime ([#297](https://github.com/crazy-goat/workerman-bundle/issues/297))
+- Replace per-tick closure allocation in `SchedulerWorker` with first-class callable (`$this->onTickTimer(...)`) and pass task parameters via the timer args array ([#293](https://github.com/crazy-goat/workerman-bundle/issues/293))
+- Cache `normalizeHeaderName` results and fix irregular header acronyms (ETag, Content-MD5) ([#287](https://github.com/crazy-goat/workerman-bundle/issues/287))
+- Add early return in `FileUploadValidator::validate` when no uploaded files are present ([#281](https://github.com/crazy-goat/workerman-bundle/issues/281))
+
+### Code Quality
+
+- `ConfigLoader::getConfig`: split into named methods, replace silent empty-fallback with exception ([#325](https://github.com/crazy-goat/workerman-bundle/issues/325))
+- `ConfigLoader`: move `setBuildConfig` into setters block ([#329](https://github.com/crazy-goat/workerman-bundle/issues/329))
+- Make `TaskErrorEvent` immutable by removing unused `setError` mutator ([#338](https://github.com/crazy-goat/workerman-bundle/issues/338))
+- Remove redundant `function_exists` checks in `InotifyMonitorWatcher` ([#341](https://github.com/crazy-goat/workerman-bundle/issues/341))
+- Fix `InotifyMonitorWatcher::$pathByWd` PHPDoc type from `string[]` to `array<int, string>` ([#347](https://github.com/crazy-goat/workerman-bundle/issues/347))
 
 ### Deprecated
 
 - `Utils::reboot()` is deprecated since 0.17.0 and remains deprecated; `Utils::reload()` is the replacement. `reboot()` is scheduled for removal in the next major release. No internal call sites remain in the bundle ([#318](https://github.com/crazy-goat/workerman-bundle/issues/318))
 
+### Tests
+
+- Add event ordering and `__invoke` fallback tests to `TaskHandlerTest` and `ProcessHandlerTest` ([#276](https://github.com/crazy-goat/workerman-bundle/issues/276))
+- Add `onWorkerStart` invocation tests to `ServerWorkerTest` ([#284](https://github.com/crazy-goat/workerman-bundle/issues/284))
+- Add in-process pipeline coverage and gate live-server test in `MiddlewareTest` ([#288](https://github.com/crazy-goat/workerman-bundle/issues/288))
+- Add coverage for `processFiles` non-array drop branch in `RequestConverterTest` ([#294](https://github.com/crazy-goat/workerman-bundle/issues/294))
+- Replace source-grep test in `SchedulerWorkerSigchldTest` with behavioral test using reflection ([#302](https://github.com/crazy-goat/workerman-bundle/issues/302))
+
 ### Docs
 
+- Add class-level and constructor PHPDoc to `AsTask` and `AsProcess` attributes ([#309](https://github.com/crazy-goat/workerman-bundle/issues/309))
+- Add class-level PHPDoc to `HttpRequestHandler` explaining the request lifecycle ([#320](https://github.com/crazy-goat/workerman-bundle/issues/320))
+- Add class-level and method PHPDoc to `Request` class ([#321](https://github.com/crazy-goat/workerman-bundle/issues/321))
+- Add class-level PHPDoc to Start/Error events marking them as extension points ([#335](https://github.com/crazy-goat/workerman-bundle/issues/335))
 - Fix orphaned footnote notation for php-event extension note in README ([#311](https://github.com/crazy-goat/workerman-bundle/issues/311))
 - Add License section and MIT badge to README so users can see the project's license at a glance ([#300](https://github.com/crazy-goat/workerman-bundle/issues/300))
 - Normalise `**` list/emphasis markers to `*` / blockquote format across the README for consistent rendering ([#310](https://github.com/crazy-goat/workerman-bundle/issues/310))
