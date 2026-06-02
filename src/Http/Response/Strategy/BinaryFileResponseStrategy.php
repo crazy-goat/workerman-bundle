@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Workerman\Connection\TcpConnection;
@@ -23,6 +25,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
 {
     public function __construct(
         private BinaryFileResponseReflector $reflector = new BinaryFileResponseReflector(),
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -60,7 +63,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $filePath = $file->getPathname();
 
             $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
-            $connection->onClose = $this->createCleanupCallback($filePath, $connection->onClose);
+            $connection->onClose = $this->createCleanupCallback($filePath, $connection->onClose, $this->logger);
 
             return $workermanResponse;
         }
@@ -74,16 +77,19 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         return $workermanResponse;
     }
 
-    private function createCleanupCallback(string $filePath, mixed $previousOnClose): \Closure
+    private function createCleanupCallback(string $filePath, mixed $previousOnClose, LoggerInterface $logger): \Closure
     {
-        return static function () use ($filePath, $previousOnClose): void {
+        return static function () use ($filePath, $previousOnClose, $logger): void {
             try {
                 if (is_callable($previousOnClose)) {
                     $previousOnClose();
                 }
             } finally {
-                if (is_file($filePath)) {
-                    @unlink($filePath);
+                if (is_file($filePath) && !unlink($filePath)) {
+                    $logger->warning('Failed to delete temporary file after send', [
+                        'path' => $filePath,
+                        'error' => error_get_last()['message'] ?? 'Unknown error',
+                    ]);
                 }
             }
         };

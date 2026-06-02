@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Workerman\Connection\TcpConnection;
@@ -311,5 +312,72 @@ final class BinaryFileResponseStrategyTest extends TestCase
         ], $this->connection);
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
+    }
+
+    public function testConvertLogsWarningWhenUnlinkFails(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                'Failed to delete temporary file after send',
+                $this->callback(fn(array $context): bool => isset($context['path']) && is_string($context['path'])),
+            );
+
+        $strategy = new BinaryFileResponseStrategy(logger: $logger);
+
+        // Create a directory, put a file in it, then make directory read-only
+        $dir = sys_get_temp_dir() . '/unlink_test_' . uniqid();
+        mkdir($dir, 0777);
+        $tempFile = $dir . '/file.txt';
+        file_put_contents($tempFile, 'should fail to unlink');
+        chmod($dir, 0555);
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $strategy->convert($binaryResponse, [], $this->connection);
+
+        $onCloseCallback = $this->connection->onClose;
+        assert(is_callable($onCloseCallback));
+
+        // Suppress PHP warning from unlink() on read-only directory
+        set_error_handler(static fn(): true => true);
+        try {
+            $onCloseCallback();
+        } finally {
+            restore_error_handler();
+        }
+
+        // Restore permissions for cleanup
+        chmod($dir, 0777);
+        @unlink($tempFile);
+        rmdir($dir);
+    }
+
+    public function testConvertDoesNotLogWhenUnlinkSucceeds(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        $strategy = new BinaryFileResponseStrategy(logger: $logger);
+
+        $tempFile = sys_get_temp_dir() . '/unlink_success_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'should unlink fine');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $strategy->convert($binaryResponse, [], $this->connection);
+
+        $onCloseCallback = $this->connection->onClose;
+        assert(is_callable($onCloseCallback));
+        $onCloseCallback();
+
+        $this->assertFileDoesNotExist($tempFile);
     }
 }
