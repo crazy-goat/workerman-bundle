@@ -40,4 +40,9 @@ final class ExceptionRebootStrategy implements RebootStrategyInterface
 
         return $result;
     }
+
+    public function needsPeakMemory(): bool
+    {
+        return false;
+    }
 }

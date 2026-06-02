@@ -22,4 +22,9 @@ final class MaxJobsRebootStrategy implements RebootStrategyInterface
     {
         return ++$this->jobsCount > $this->maxJobs;
     }
+
+    public function needsPeakMemory(): bool
+    {
+        return false;
+    }
 }

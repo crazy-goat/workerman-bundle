@@ -349,6 +349,11 @@ final class RebootStrategyTest extends TestCase
             {
                 return false;
             }
+
+            public function needsPeakMemory(): bool
+            {
+                return false;
+            }
         };
 
         $strategy = new StackRebootStrategy([$neverReboot, $neverReboot]);
@@ -366,6 +371,11 @@ final class RebootStrategyTest extends TestCase
             public function shouldReboot(): bool
             {
                 ++$this->callCount;
+                return false;
+            }
+
+            public function needsPeakMemory(): bool
+            {
                 return false;
             }
 
