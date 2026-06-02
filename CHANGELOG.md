@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace `ExceptionRebootStrategy`'s full `Throwable` storage with a boolean flag to eliminate a memory leak in long-running workers — the previous implementation retained the exception's entire stack trace (including referenced `Request`, controller, and service object graphs) until `shouldReboot()` was consumed ([#307](https://github.com/crazy-goat/workerman-bundle/issues/307))
 - Cache `method_exists()` results per (class, method) pair in `ServiceHandlerTrait` to avoid redundant reflection lookups on every tick/invocation in `TaskHandler` and `ProcessHandler` ([#315](https://github.com/crazy-goat/workerman-bundle/issues/315))
 
+### Code Quality
+
+- `StaticFilesMiddleware`: replace repeated `DIRECTORY_SEPARATOR . ltrim($path, '/')` with a named `joinPaths()` helper that normalises both root and request path separators explicitly, eliminating implicit coupling that would silently produce wrong paths if a future change stripped the leading slash ([#365](https://github.com/crazy-goat/workerman-bundle/issues/365))
+
 ### Docs
 
 - Update README main configuration example to demonstrate `StaticFilesMiddleware` instead of relying on the deprecated `serve_files` option; the replacement was previously only shown in a dedicated subsection ([#342](https://github.com/crazy-goat/workerman-bundle/issues/342))

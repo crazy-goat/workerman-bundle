@@ -37,7 +37,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false)
     {
         if ($this->isPharPath($rootDirectory)) {
-            $this->rootRealPath = $rootDirectory;
+            $this->rootRealPath = rtrim($rootDirectory, '\\/');
         } else {
             $resolved = realpath($rootDirectory);
             if ($resolved === false) {
@@ -191,18 +191,14 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             unset($cache[$cacheIndex]);
         }
 
-        if ($this->isPharPath($this->rootRealPath)) {
-            $resolved = $this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/');
-            if (!file_exists($resolved)) {
-                $resolved = false;
-            }
-        } else {
-            $path = $this->rootRealPath . DIRECTORY_SEPARATOR . ltrim($cacheKey, '/');
+        $path = $this->joinPaths($this->rootRealPath, $cacheKey);
 
+        if ($this->isPharPath($this->rootRealPath)) {
+            $resolved = file_exists($path) ? $path : false;
+        } else {
             if (!$this->followSymlinks) {
-                $components = explode('/', ltrim($cacheKey, '/'));
                 $checkPath = $this->rootRealPath;
-                foreach ($components as $component) {
+                foreach (explode('/', ltrim($cacheKey, '/')) as $component) {
                     if ($component === '' || $component === '.') {
                         continue;
                     }
@@ -231,6 +227,11 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         return $resolved;
+    }
+
+    private function joinPaths(string $root, string $path): string
+    {
+        return rtrim($root, '\\/') . DIRECTORY_SEPARATOR . ltrim($path, '\\/');
     }
 
     private function isPharPath(string $path): bool
