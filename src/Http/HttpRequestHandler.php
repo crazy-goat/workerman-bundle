@@ -69,11 +69,18 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      */
     private ?\Closure $pipeline = null;
 
+    /**
+     * Whether to call memory_reset_peak_usage() on each request.
+     * Determined at construction time by querying the reboot strategy.
+     */
+    private readonly bool $resetPeakUsage;
+
     public function __construct(
         private readonly SymfonyController         $controller,
         private readonly RebootStrategyInterface   $rebootStrategy,
         private readonly ?LoggerInterface          $logger = null,
     ) {
+        $this->resetPeakUsage = $rebootStrategy->needsPeakMemory();
     }
 
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self
@@ -198,7 +205,9 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      */
     public function __invoke(TcpConnection $connection, Request $request): void
     {
-        \memory_reset_peak_usage();
+        if ($this->resetPeakUsage) {
+            \memory_reset_peak_usage();
+        }
 
         // 1. Dispatch through middleware chain → controller
         $controllerCall = fn(Request $input): Http\Response => ($this->controller)($input, $connection);

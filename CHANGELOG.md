@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Gate `memory_reset_peak_usage()` behind a boot-time flag so the per-request syscall is skipped when no reboot strategy needs `memory_get_peak_usage()` — currently no bundled strategy uses peak memory, so the call is eliminated entirely on the hot path ([#317](https://github.com/crazy-goat/workerman-bundle/issues/317))
 - Replace `ExceptionRebootStrategy`'s full `Throwable` storage with a boolean flag to eliminate a memory leak in long-running workers — the previous implementation retained the exception's entire stack trace (including referenced `Request`, controller, and service object graphs) until `shouldReboot()` was consumed ([#307](https://github.com/crazy-goat/workerman-bundle/issues/307))
 - Cache `method_exists()` results per (class, method) pair in `ServiceHandlerTrait` to avoid redundant reflection lookups on every tick/invocation in `TaskHandler` and `ProcessHandler` ([#315](https://github.com/crazy-goat/workerman-bundle/issues/315))
 

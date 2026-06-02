@@ -10,4 +10,9 @@ final class AlwaysRebootStrategy implements RebootStrategyInterface
     {
         return true;
     }
+
+    public function needsPeakMemory(): bool
+    {
+        return false;
+    }
 }
