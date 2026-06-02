@@ -139,6 +139,24 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($strategy->shouldReboot(), 'State should be reset after second check');
     }
 
+    public function testExceptionRebootStrategyDoesNotRetainThrowableAfterOnException(): void
+    {
+        $strategy = new ExceptionRebootStrategy();
+        $kernel = $this->createMock(HttpKernelInterface::class);
+        $request = new Request();
+
+        $exception = new \RuntimeException('Memory leak test');
+        $weakRef = \WeakReference::create($exception);
+
+        $event = new ExceptionEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception);
+        $strategy->onException($event);
+
+        unset($exception, $event);
+
+        $this->assertNull($weakRef->get(), 'ExceptionRebootStrategy must not retain the Throwable after onException()');
+        $this->assertTrue($strategy->shouldReboot());
+    }
+
     public function testExceptionRebootStrategyIgnoresSubRequests(): void
     {
         $strategy = new ExceptionRebootStrategy();
