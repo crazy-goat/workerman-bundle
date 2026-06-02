@@ -26,18 +26,29 @@ trait ServiceHandlerTrait
         string $startEventClass,
         string $errorEventClass,
     ): void {
+        /** @var array<string, bool> $methodExistsCache */
+        static $methodExistsCache = [];
+
         $serviceInstance = $this->locator->get($serviceMethod->serviceId);
         \assert(\is_object($serviceInstance));
 
         $this->eventDispatcher->dispatch(new $startEventClass($serviceInstance::class, $name));
 
         try {
-            if (!\method_exists($serviceInstance, $serviceMethod->method)) {
+            $class = $serviceInstance::class;
+            $method = $serviceMethod->method;
+            $cacheKey = $class . '::' . $method;
+
+            if (!isset($methodExistsCache[$cacheKey])) {
+                $methodExistsCache[$cacheKey] = \method_exists($serviceInstance, $method);
+            }
+
+            if (!$methodExistsCache[$cacheKey]) {
                 throw new \InvalidArgumentException(
-                    \sprintf('Method "%s" does not exist on service "%s" (class "%s").', $serviceMethod->method, $serviceMethod->serviceId, $serviceInstance::class),
+                    \sprintf('Method "%s" does not exist on service "%s" (class "%s").', $method, $serviceMethod->serviceId, $class),
                 );
             }
-            $serviceInstance->{$serviceMethod->method}();
+            $serviceInstance->{$method}();
         } catch (\Throwable $e) {
             $this->eventDispatcher->dispatch(new $errorEventClass($e, $serviceInstance::class, $name));
         }

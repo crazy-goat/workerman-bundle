@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - Replace `ExceptionRebootStrategy`'s full `Throwable` storage with a boolean flag to eliminate a memory leak in long-running workers — the previous implementation retained the exception's entire stack trace (including referenced `Request`, controller, and service object graphs) until `shouldReboot()` was consumed ([#307](https://github.com/crazy-goat/workerman-bundle/issues/307))
+- Cache `method_exists()` results per (class, method) pair in `ServiceHandlerTrait` to avoid redundant reflection lookups on every tick/invocation in `TaskHandler` and `ProcessHandler` ([#315](https://github.com/crazy-goat/workerman-bundle/issues/315))
 
 ## [0.22.0] - 2026-05-30
 
