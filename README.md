@@ -44,13 +44,21 @@ $ bin/console config:dump-reference workerman
 ```
 
 ```yaml
-# config/packages/workerman.yaml
+# config/services.yaml
+services:
+  workerman.middleware.static_files:
+    class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    arguments:
+      $rootDirectory: '%kernel.project_dir%/public'
 
+# config/packages/workerman.yaml
 workerman:
   servers:
     - name: 'Symfony webserver'
       listen: http://127.0.0.1:8080
       processes: 4
+      middlewares:
+        - workerman.middleware.static_files
 
   reload_strategy:
     exception:
