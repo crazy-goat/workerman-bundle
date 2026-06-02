@@ -827,6 +827,72 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertInstanceOf(StaticFilesMiddleware::class, $middleware);
     }
 
+    public function testJoinPathsWithRootTrailingSlash(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $reflection = new \ReflectionMethod($middleware, 'joinPaths');
+        $result = $reflection->invoke($middleware, 'phar:///test/app.phar/public/', '/sub/file.txt');
+
+        $this->assertSame('phar:///test/app.phar/public' . DIRECTORY_SEPARATOR . 'sub/file.txt', $result);
+    }
+
+    public function testJoinPathsWithRequestPathMissingLeadingSlash(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $reflection = new \ReflectionMethod($middleware, 'joinPaths');
+
+        $result = $reflection->invoke($middleware, 'phar:///test/app.phar/public', 'sub/file.txt');
+
+        $this->assertSame('phar:///test/app.phar/public' . DIRECTORY_SEPARATOR . 'sub/file.txt', $result);
+    }
+
+    public function testJoinPathsWithBothRootTrailingSlashAndNoLeadingSlash(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $reflection = new \ReflectionMethod($middleware, 'joinPaths');
+
+        $result = $reflection->invoke($middleware, 'phar:///test/app.phar/public/', 'sub/file.txt');
+
+        $this->assertSame('phar:///test/app.phar/public' . DIRECTORY_SEPARATOR . 'sub/file.txt', $result);
+    }
+
+    public function testJoinPathsWithRootNoTrailingSlashAndLeadingSlash(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
+
+        $reflection = new \ReflectionMethod($middleware, 'joinPaths');
+
+        $result = $reflection->invoke($middleware, 'phar:///test/app.phar/public', '/sub/file.txt');
+
+        $this->assertSame('phar:///test/app.phar/public' . DIRECTORY_SEPARATOR . 'sub/file.txt', $result);
+    }
+
+    public function testJoinPathsWithPharPathHavingTrailingSlashConstructed(): void
+    {
+        $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public/');
+
+        $reflection = new \ReflectionProperty($middleware, 'rootRealPath');
+        $rootRealPath = $reflection->getValue($middleware);
+
+        $this->assertStringEndsNotWith('/', $rootRealPath);
+        $this->assertStringEndsNotWith('\\', $rootRealPath);
+    }
+
+    public function testJoinPathsWithFilesystemRoot(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $reflection = new \ReflectionMethod($middleware, 'joinPaths');
+
+        $root = realpath($this->rootDirectory);
+        $result = $reflection->invoke($middleware, $root . '/', '/test.txt');
+
+        $this->assertSame($root . DIRECTORY_SEPARATOR . 'test.txt', $result);
+    }
+
     public function testPharPathNonExistentFilePassesToNext(): void
     {
         $middleware = new StaticFilesMiddleware('phar:///test/app.phar/public');
