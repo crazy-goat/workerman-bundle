@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Command\BuildPathResolver;
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\Command\WorkermanCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseReflector;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
@@ -254,8 +255,16 @@ final readonly class ServicesConfigurator
     private function configureResponseStrategies(ContainerBuilder $container): void
     {
         $container
+            ->register('workerman.binary_file_response_reflector', BinaryFileResponseReflector::class)
+        ;
+
+        $container
             ->register('workerman.binary_file_response_strategy', BinaryFileResponseStrategy::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 100])
+            ->setArguments([
+                new Reference('workerman.binary_file_response_reflector'),
+                new Reference('logger'),
+            ])
         ;
 
         $container

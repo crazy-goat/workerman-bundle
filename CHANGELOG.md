@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Remove `@unlink` error suppression in `BinaryFileResponseStrategy` cleanup callback; unlink failures are now checked and logged through the injected PSR-3 logger ([#314](https://github.com/crazy-goat/workerman-bundle/issues/314))
+
 ### Performance
 
 - Gate `memory_reset_peak_usage()` behind a boot-time flag so the per-request syscall is skipped when no reboot strategy needs `memory_get_peak_usage()` — currently no bundled strategy uses peak memory, so the call is eliminated entirely on the hot path ([#317](https://github.com/crazy-goat/workerman-bundle/issues/317))
