@@ -166,4 +166,62 @@ final class TaskHandlerTest extends TestCase
         $this->assertInstanceOf(TaskErrorEvent::class, $eventDispatcher->events[1]);
         $this->assertInstanceOf(\InvalidArgumentException::class, $eventDispatcher->events[1]->getError());
     }
+
+    public function testMultipleInvocationsWithSameServiceMethodWorkCorrectly(): void
+    {
+        $service = new class {
+            public int $count = 0;
+
+            public function execute(): void
+            {
+                ++$this->count;
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_task_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new TaskHandler($locator, $eventDispatcher);
+
+        $serviceMethod = new ServiceMethod('my_task_service', 'execute');
+        $handler->__invoke($serviceMethod, 'test_task');
+        $handler->__invoke($serviceMethod, 'test_task');
+        $handler->__invoke($serviceMethod, 'test_task');
+
+        $this->assertSame(3, $service->count);
+        $this->assertCount(3, $eventDispatcher->events);
+    }
+
+    public function testMultipleInvocationsWithDifferentServiceMethodsWorkCorrectly(): void
+    {
+        $service = new class {
+            public int $callCount = 0;
+
+            public function first(): void
+            {
+                ++$this->callCount;
+            }
+
+            public function second(): void
+            {
+                ++$this->callCount;
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_task_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new TaskHandler($locator, $eventDispatcher);
+
+        $handler->__invoke(new ServiceMethod('my_task_service', 'first'), 'test_task');
+        $handler->__invoke(new ServiceMethod('my_task_service', 'second'), 'test_task');
+        $handler->__invoke(new ServiceMethod('my_task_service', 'first'), 'test_task');
+
+        $this->assertSame(3, $service->callCount);
+        $this->assertCount(3, $eventDispatcher->events);
+    }
 }

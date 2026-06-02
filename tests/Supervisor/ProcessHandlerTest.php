@@ -166,4 +166,62 @@ final class ProcessHandlerTest extends TestCase
         $this->assertInstanceOf(ProcessErrorEvent::class, $eventDispatcher->events[1]);
         $this->assertInstanceOf(\InvalidArgumentException::class, $eventDispatcher->events[1]->getError());
     }
+
+    public function testMultipleInvocationsWithSameServiceMethodWorkCorrectly(): void
+    {
+        $service = new class {
+            public int $count = 0;
+
+            public function run(): void
+            {
+                ++$this->count;
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new ProcessHandler($locator, $eventDispatcher);
+
+        $serviceMethod = new ServiceMethod('my_service', 'run');
+        $handler->__invoke($serviceMethod, 'test_process');
+        $handler->__invoke($serviceMethod, 'test_process');
+        $handler->__invoke($serviceMethod, 'test_process');
+
+        $this->assertSame(3, $service->count);
+        $this->assertCount(3, $eventDispatcher->events);
+    }
+
+    public function testMultipleInvocationsWithDifferentServiceMethodsWorkCorrectly(): void
+    {
+        $service = new class {
+            public int $callCount = 0;
+
+            public function first(): void
+            {
+                ++$this->callCount;
+            }
+
+            public function second(): void
+            {
+                ++$this->callCount;
+            }
+        };
+
+        $locator = $this->createMock(ContainerInterface::class);
+        $locator->method('get')->with('my_service')->willReturn($service);
+
+        $eventDispatcher = new RecordingEventDispatcher();
+
+        $handler = new ProcessHandler($locator, $eventDispatcher);
+
+        $handler->__invoke(new ServiceMethod('my_service', 'first'), 'test_process');
+        $handler->__invoke(new ServiceMethod('my_service', 'second'), 'test_process');
+        $handler->__invoke(new ServiceMethod('my_service', 'first'), 'test_process');
+
+        $this->assertSame(3, $service->callCount);
+        $this->assertCount(3, $eventDispatcher->events);
+    }
 }
