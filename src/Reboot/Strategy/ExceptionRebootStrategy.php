@@ -9,7 +9,7 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 final class ExceptionRebootStrategy implements RebootStrategyInterface
 {
-    private \Throwable|null $exception = null;
+    private bool $shouldReboot = false;
 
     /**
      * @param array<class-string> $allowedExceptions
@@ -30,14 +30,14 @@ final class ExceptionRebootStrategy implements RebootStrategyInterface
             }
         }
 
-        $this->exception = $event->getThrowable();
+        $this->shouldReboot = true;
     }
 
     public function shouldReboot(): bool
     {
-        $shouldReboot = $this->exception instanceof \Throwable;
-        $this->exception = null;
+        $result = $this->shouldReboot;
+        $this->shouldReboot = false;
 
-        return $shouldReboot;
+        return $result;
     }
 }
