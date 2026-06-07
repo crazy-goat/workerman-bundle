@@ -567,6 +567,51 @@ final class ServerManagerTest extends TestCase
         );
     }
 
+    /**
+     * Negative test: when the status file is a symlink (attacker swap),
+     * consumeFile reads the symlink target's content but does NOT delete
+     * the target — only the symlink itself (the renamed temp path) is unlinked.
+     *
+     * This verifies the TOCTOU fix prevents a symlink-swap attack from
+     * deleting an arbitrary file.
+     */
+    public function testConsumeFileDoesNotDeleteSymlinkTarget(): void
+    {
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $this->markTestSkipped('Symlink test requires POSIX');
+        }
+
+        // Create a "victim" file
+        $victim = $this->tmpDir . '/victim.txt';
+        file_put_contents($victim, 'sensitive data');
+
+        // Create a symlink at the status file path pointing to the victim
+        $statusFile = $this->tmpDir . '/symlinked.status';
+        symlink($victim, $statusFile);
+
+        $this->assertTrue(is_link($statusFile), 'Status file should be a symlink');
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $result = $method->invoke($this->manager, $statusFile);
+
+        // consumeFile should read through the symlink
+        $this->assertSame('sensitive data', $result);
+
+        // The symlink itself should be gone (renamed + unlinked)
+        clearstatcache(true, $statusFile);
+        $this->assertFileDoesNotExist($statusFile);
+
+        // The victim file must still exist — consumeFile must not have
+        // followed the symlink and deleted the target
+        $this->assertFileExists($victim, 'Symlink target must not be deleted');
+        $this->assertSame('sensitive data', file_get_contents($victim));
+
+        // No orphaned temp files should remain
+        $remaining = glob($this->tmpDir . '/.symlinked.status.*.tmp');
+        $this->assertEmpty($remaining, 'No orphaned temp files should remain after consumeFile');
+    }
+
     // ──────────────────────────────────────────────
     // Helper — fork a child that sleeps forever
     // ──────────────────────────────────────────────

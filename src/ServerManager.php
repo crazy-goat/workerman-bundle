@@ -240,12 +240,14 @@ final readonly class ServerManager
         // than being silently suppressed.
         $this->unlinkSafely($tempPath, $path);
 
-        if (!\is_string($content)) {
-            $this->logger->warning('Failed to read renamed status file', [
-                'path' => $path,
-                'temp_path' => $tempPath,
-                'error' => error_get_last()['message'] ?? 'Unknown error',
-            ]);
+        if (!\is_string($content) || $content === '') {
+            if (!\is_string($content)) {
+                $this->logger->warning('Failed to read renamed status file', [
+                    'path' => $path,
+                    'temp_path' => $tempPath,
+                    'error' => error_get_last()['message'] ?? 'Unknown error',
+                ]);
+            }
             return null;
         }
 
