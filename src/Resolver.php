@@ -19,6 +19,6 @@ final readonly class Resolver implements ResolverInterface
     {
         [$app, $args] = $this->resolver->resolve();
 
-        return [static fn(...$args): KernelFactory => new KernelFactory(...$args), [$app, $args, $this->options]];
+        return [static fn(...$kernelArgs): KernelFactory => new KernelFactory(...$kernelArgs), [$app, $args, $this->options]];
     }
 }
