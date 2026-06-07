@@ -60,7 +60,8 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
         $response->prepare($this->createRequest());
 
-        $this->assertStringContainsString('text/plain', $response->headers->get('Content-Type', ''));
+        $contentType = (string) $response->headers->get('Content-Type', '');
+        $this->assertStringContainsString('text/plain', $contentType);
     }
 
     public function testContentTypeIsAutomaticallyDetectedForHtmlFile(): void
@@ -70,7 +71,8 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
         $response->prepare($this->createRequest());
 
-        $this->assertStringContainsString('text/html', $response->headers->get('Content-Type', ''));
+        $contentType = (string) $response->headers->get('Content-Type', '');
+        $this->assertStringContainsString('text/html', $contentType);
     }
 
     public function testContentTypeIsOctetStreamForUnknownExtension(): void
@@ -178,7 +180,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', 'content');
         $response = new StreamedBinaryFileResponse($testFile);
 
-        $this->assertFalse($response->deleteFileAfterSend);
+        $this->assertFalse($this->getDeleteFileAfterSend($response));
     }
 
     public function testDeleteFileAfterSendCanBeEnabled(): void
@@ -188,7 +190,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
         $response->deleteFileAfterSend(true);
 
-        $this->assertTrue($response->deleteFileAfterSend);
+        $this->assertTrue($this->getDeleteFileAfterSend($response));
     }
 
     public function testDeleteFileAfterSendDeletesFileAfterSendContent(): void
@@ -231,6 +233,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $response->sendContent();
         $output = ob_get_clean();
 
+        $this->assertNotFalse($output);
         $this->assertSame($content, $output);
     }
 
@@ -244,6 +247,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $response->sendContent();
         $output = ob_get_clean();
 
+        $this->assertNotFalse($output);
         $this->assertSame(\strlen($content), \strlen($output));
         $this->assertSame($content, $output);
     }
@@ -366,5 +370,16 @@ final class StreamedBinaryFileResponseTest extends TestCase
     private function createRequest(): \Symfony\Component\HttpFoundation\Request
     {
         return \Symfony\Component\HttpFoundation\Request::create('http://localhost/test');
+    }
+
+    private function getDeleteFileAfterSend(BinaryFileResponse $response): bool
+    {
+        $property = new \ReflectionProperty(BinaryFileResponse::class, 'deleteFileAfterSend');
+        $property->setAccessible(true);
+
+        /** @var bool $value */
+        $value = $property->getValue($response);
+
+        return $value;
     }
 }
