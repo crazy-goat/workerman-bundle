@@ -135,7 +135,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('download.zip', 'ZIP content');
         $response = new StreamedBinaryFileResponse(
             $testFile,
-            200,
+            \Symfony\Component\HttpFoundation\Response::HTTP_OK,
             [],
             true,
             ResponseHeaderBag::DISPOSITION_ATTACHMENT,
@@ -266,15 +266,15 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testStatusCanBeSet(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, 201);
+        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
 
-        $this->assertSame(201, $response->getStatusCode());
+        $this->assertSame(\Symfony\Component\HttpFoundation\Response::HTTP_CREATED, $response->getStatusCode(), (string) $response->getContent());
     }
 
     public function testCustomHeadersCanBeSet(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, 200, ['X-Custom' => 'value']);
+        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, ['X-Custom' => 'value']);
 
         $this->assertSame('value', $response->headers->get('X-Custom'));
     }
@@ -299,7 +299,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
     {
         $content = 'ETag test content';
         $testFile = $this->createFixtureFile('etag_test.txt', $content);
-        $response = new StreamedBinaryFileResponse($testFile, 200, [], true, null, true);
+        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], true, null, true);
 
         $response->prepare($this->createRequest());
 
@@ -319,7 +319,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testAutoLastModifiedCanBeDisabled(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, 200, [], true, null, false, false);
+        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], true, null, false, false);
 
         $response->prepare($this->createRequest());
 
@@ -354,7 +354,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testResponseCanBePrivate(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'private content');
-        $response = new StreamedBinaryFileResponse($testFile, 200, [], false);
+        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], false);
 
         $this->assertNull($response->headers->getCacheControlDirective('public'));
     }
@@ -375,7 +375,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
     private function getDeleteFileAfterSend(BinaryFileResponse $response): bool
     {
         $property = new \ReflectionProperty(BinaryFileResponse::class, 'deleteFileAfterSend');
-        $property->setAccessible(true);
 
         /** @var bool $value */
         $value = $property->getValue($response);
