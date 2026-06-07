@@ -14,10 +14,74 @@ making your application faster with less (or no) code changes.
 
 Please see [CONTRIBUTING.md](https://github.com/crazy-goat/workerman-bundle/blob/master/CONTRIBUTING.md) for information about branch protection rules and development workflow.
 
-## What new in this fork
-* `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
-*  By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
-This `workerman-bundle` will create symfony request without psr7 it increase performance, but it is still experimental. 
+## What's new in this fork
+
+This section documents the differences between [crazy-goat/workerman-bundle](https://github.com/crazy-goat/workerman-bundle) (this fork) and the upstream [luzrain/workerman-bundle](https://github.com/luzrain/workerman-bundle).
+
+### Dependencies & Compatibility
+
+| Aspect | crazy-goat (this fork) | luzrain (upstream) |
+|--------|----------------------|---------------------|
+| PHP | `^8.2` | `>=8.1` |
+| Symfony | `^6.4 \| ^7.0 \| ^8.0` | `^6.4 \| ^7.0` |
+| PSR-7 bridge | **Removed** (not required) | Required (`psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge`) |
+
+### Features
+
+1. **Middleware system** — composable request/response pipeline with `MiddlewareInterface`, `MiddlewareDispatchInterface`, `StaticFilesMiddleware` (ETag, Last-Modified, 304 support, blocked extensions, dot-file blocking, symlink control, path traversal protection, LRU realpath cache with TTL, PHAR-aware path resolution), `SymfonyController` (kernel boot, request conversion, response, termination, service resetter), and a zero per-request allocation pipeline built once and cached.
+
+2. **Console commands** — full server lifecycle management via `ServerManager`: `workerman:server start/stop/restart/reload/status/connections`, plus `workerman:build:phar` and `workerman:build:bin` for packaging.
+
+3. **Slowloris / DoS protection** — configurable `connection_timeout` for incomplete requests (default: 120s), `keepalive_timeout` for idle connections (default: 30s), and per-server `body_size_cap`.
+
+4. **Response conversion with strategy pattern** — `BinaryFileResponseStrategy` (uses Workerman's `withFile()`, supports `SplTempFileObject`, offset/maxlen, `deleteFileAfterSend` cleanup), `StreamedResponseStrategy` (chunked transfer encoding), `DefaultResponseStrategy` (large responses via chunked transfer directly to connection), header name normalization with caching. Upstream buffers everything in memory.
+
+5. **Memory reload strategy** — preemptive `gc_collect_cycles()` before reload check, configurable `limit` (default 128 MB), `gc_limit` (default 96 MB), `gc_cooldown` (default 60s).
+
+6. **Trusted hosts** — `trusted_hosts` config key with regex patterns, rejects non-matching `Host` header via `SuspiciousOperationException` (400).
+
+7. **Service state resetter integration** — calls `services_resetter` after kernel termination to reset stateful services between requests (critical for long-running worker correctness).
+
+8. **SSL validation** — validates cert/key paths, rejects symlinks for security.
+
+9. **Process inspection** — `/proc`-based zombie detection, orphan killing, parent PID tracking.
+
+10. **PHAR/BIN runtime support** — `runtime_dir` config key with `WORKERMAN_RUNTIME_DIR` env var, `PharHelper` for runtime path resolution, automatic runtime directory creation, skips file monitor in PHAR mode, `KernelFactory` with PHAR-aware `getCacheDir()`/`getLogDir()`.
+
+11. **Custom exception hierarchy** — 21 exception classes under `WorkermanExceptionInterface` → `WorkermanException` → category bases (`ServerException`, `KernelException`, `MiddlewareException`, `SchedulerException`, `ValidationException`) with specific exceptions for every error case. Upstream uses only generic PHP exceptions.
+
+12. **`Utils::reload()`** — programmatic worker reload from application code with `reloadAllWorkers: true` param.
+
+13. **File upload validation** — structural validation of uploaded files with clear error messages. Upstream has no validation.
+
+14. **Extended `Request` class** — adds `setHeader()` / `withHeader()` methods to Workerman's Request, required by the middleware system.
+
+15. **`ListenScheme` enum** — type-safe HTTP/HTTPS/WS/WSS scheme parsing. Upstream uses inline `str_starts_with()` checks.
+
+16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
+
+17. **SchedulerWorker improvements** — proper SIGCHLD handler that reaps children and logs exit codes/signals, file-lock based PID management with symlink detection and inode mismatch protection. Upstream uses `SIG_IGN` for SIGCHLD and simple `file_put_contents` for PID.
+
+18. **SupervisorWorker improvements** — handler returns `never` type (process exits with code 1 on unexpected return), logs unexpected finish, skips processes with `processes <= 0`.
+
+19. **Cache warmup improvements** — signal-based success/failure detection (SIGKILL=success, SIGTERM=failure), configurable timeout via `WORKERMAN_CACHE_WARMUP_TIMEOUT` env var. Upstream uses simple `pcntl_wait()` with no timeout or error detection.
+
+20. **Config loader improvements** — `ConfigSection` enum, `warmUp()` validates all sections before writing, `setBuildConfig()` / `getBuildConfig()` for PHAR build config.
+
+### Code quality / DX
+
+- Full custom exception hierarchy (21 classes) instead of generic `\Exception`
+- `readonly` classes where appropriate
+- Extracted `ConfigurationTreeBuilder`, `ServicesConfigurator`, `WorkermanCompilerPass` as separate testable classes (upstream uses anonymous closures/files)
+- `ServerManager` extracted as standalone service (testable)
+- `ServiceMethod` value object with validation (upstream uses raw strings)
+- `ServiceHandlerTrait` / `ServiceErrorListenerTrait` for shared logic
+- Extensive test suite (unit + integration + e2e)
+- PHPStan + Rector in CI pipeline
+
+### What was removed
+
+- **PSR-7 pipeline**: `WorkermanHttpMessageFactory`, `psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge` dependencies — replaced by direct Workerman→Symfony conversion.
 ## Getting started
 ### Install composer packages
 ```bash
