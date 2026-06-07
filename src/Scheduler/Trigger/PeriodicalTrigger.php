@@ -33,8 +33,7 @@ final class PeriodicalTrigger implements TriggerInterface
                 $this->description = sprintf('every %s', $interval);
             } else {
                 $this->interval = $interval;
-                $a = (array) $interval;
-                $this->description = isset($a['from_string']) ? sprintf('every %s', $a['from_string']) : 'DateInterval';
+                $this->description = 'DateInterval';
             }
         } catch (\Throwable $e) {
             $original = $interval instanceof \DateInterval ? 'instance of \DateInterval' : (string) $interval;
