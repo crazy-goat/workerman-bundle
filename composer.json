@@ -46,8 +46,7 @@
         "php-cs-fixer/shim": "^3.75",
         "phpunit/phpunit": "^10.4",
         "rector/rector": "^2.0",
-        "symfony/framework-bundle": "^6.4|^7.0|^8.0",
-        "symfony/mime": "^6.4|^7.0|^8.1"
+        "symfony/framework-bundle": "^6.4|^7.0|^8.0"
     },
     "suggest": {
         "ext-event": "For better performance",

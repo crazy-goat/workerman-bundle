@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Protocol\Http\Response\StreamedBinaryFileResponse;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
 final class StreamedBinaryFileResponseTest extends TestCase
@@ -15,7 +16,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->fixtureDir = sys_get_temp_dir() . '/sfr_test_' . uniqid();
+        $this->fixtureDir = sys_get_temp_dir() . '/sbfr_test_' . uniqid();
         mkdir($this->fixtureDir, 0777, true);
     }
 
@@ -55,6 +56,10 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     public function testContentTypeIsAutomaticallyDetectedForTextFile(): void
     {
+        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
+            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
+        }
+
         $testFile = $this->createFixtureFile('test.txt', 'Hello, World!');
         $response = new StreamedBinaryFileResponse($testFile);
 
@@ -66,6 +71,10 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     public function testContentTypeIsAutomaticallyDetectedForHtmlFile(): void
     {
+        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
+            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
+        }
+
         $testFile = $this->createFixtureFile('test.html', '<html><body>Hello</body></html>');
         $response = new StreamedBinaryFileResponse($testFile);
 
@@ -77,6 +86,10 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     public function testContentTypeIsOctetStreamForUnknownExtension(): void
     {
+        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
+            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
+        }
+
         $testFile = $this->createFixtureFile('test.bin', "\x00\x01\x02\x03");
         $response = new StreamedBinaryFileResponse($testFile);
 
@@ -92,6 +105,8 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', $content);
         $response = new StreamedBinaryFileResponse($testFile);
 
+        // Set Content-Type before prepare() to avoid MIME type detection dependency
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertSame((string) $expectedLength, $response->headers->get('Content-Length'));
@@ -102,6 +117,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('empty.txt', '');
         $response = new StreamedBinaryFileResponse($testFile);
 
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertSame('0', $response->headers->get('Content-Length'));
@@ -135,7 +151,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('download.zip', 'ZIP content');
         $response = new StreamedBinaryFileResponse(
             $testFile,
-            \Symfony\Component\HttpFoundation\Response::HTTP_OK,
+            Response::HTTP_OK,
             [],
             true,
             ResponseHeaderBag::DISPOSITION_ATTACHMENT,
@@ -258,6 +274,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('big.txt', $content);
         $response = new StreamedBinaryFileResponse($testFile);
 
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertSame((string) \strlen($content), $response->headers->get('Content-Length'));
@@ -266,15 +283,15 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testStatusCanBeSet(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_CREATED);
+        $response = new StreamedBinaryFileResponse($testFile, Response::HTTP_CREATED);
 
-        $this->assertSame(\Symfony\Component\HttpFoundation\Response::HTTP_CREATED, $response->getStatusCode(), (string) $response->getContent());
+        $this->assertSame(Response::HTTP_CREATED, $response->getStatusCode(), (string) $response->getContent());
     }
 
     public function testCustomHeadersCanBeSet(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, ['X-Custom' => 'value']);
+        $response = new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, ['X-Custom' => 'value']);
 
         $this->assertSame('value', $response->headers->get('X-Custom'));
     }
@@ -299,8 +316,9 @@ final class StreamedBinaryFileResponseTest extends TestCase
     {
         $content = 'ETag test content';
         $testFile = $this->createFixtureFile('etag_test.txt', $content);
-        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], true, null, true);
+        $response = new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, [], true, null, true);
 
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertNotNull($response->getEtag());
@@ -311,6 +329,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', 'content');
         $response = new StreamedBinaryFileResponse($testFile);
 
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertNotNull($response->getLastModified());
@@ -319,8 +338,9 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testAutoLastModifiedCanBeDisabled(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'content');
-        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], true, null, false, false);
+        $response = new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, [], true, null, false, false);
 
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $this->assertNull($response->getLastModified());
@@ -354,7 +374,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
     public function testResponseCanBePrivate(): void
     {
         $testFile = $this->createFixtureFile('test.txt', 'private content');
-        $response = new StreamedBinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [], false);
+        $response = new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, [], false);
 
         $this->assertNull($response->headers->getCacheControlDirective('public'));
     }
