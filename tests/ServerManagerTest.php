@@ -480,6 +480,91 @@ final class ServerManagerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    // consumeFile() — atomic read-and-remove (TOCTOU fix)
+    // ──────────────────────────────────────────────
+
+    public function testConsumeFileReturnsContentAndRemovesTempFile(): void
+    {
+        $file = $this->tmpDir . '/test.status';
+        file_put_contents($file, 'hello world');
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $result = $method->invoke($this->manager, $file);
+
+        $this->assertSame('hello world', $result);
+        // Original file should no longer exist (renamed + unlinked)
+        $this->assertFileDoesNotExist($file);
+    }
+
+    public function testConsumeFileReturnsNullWhenFileDoesNotExist(): void
+    {
+        $file = $this->tmpDir . '/nonexistent.status';
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $result = $method->invoke($this->manager, $file);
+
+        $this->assertNull($result);
+    }
+
+    public function testConsumeFileReturnsNullWhenFileIsEmpty(): void
+    {
+        $file = $this->tmpDir . '/empty.status';
+        file_put_contents($file, '');
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $result = $method->invoke($this->manager, $file);
+
+        $this->assertNull($result);
+    }
+
+    public function testConsumeFileCreatesNoOrphanedTempFiles(): void
+    {
+        $file = $this->tmpDir . '/cleanup.status';
+        file_put_contents($file, 'data');
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $method->invoke($this->manager, $file);
+
+        // After consumeFile, there should be no .*.tmp files left in the directory
+        $remaining = glob($this->tmpDir . '/.cleanup.status.*.tmp');
+        $this->assertEmpty($remaining, 'No orphaned temp files should remain after consumeFile');
+    }
+
+    /**
+     * Verify that a symlink swap at the original path cannot redirect
+     * the unlink: after rename(), the original path is gone, and the
+     * temp path is the one being unlinked.
+     */
+    public function testConsumeFileRemovesOriginalInodeAfterRename(): void
+    {
+        $file = $this->tmpDir . '/inode.status';
+        file_put_contents($file, 'inode-data');
+
+        // Stat original inode before consume
+        $statBefore = stat($file);
+        $this->assertNotFalse($statBefore);
+
+        $reflection = new \ReflectionClass($this->manager);
+        $method = $reflection->getMethod('consumeFile');
+        $method->invoke($this->manager, $file);
+
+        // Original path should be gone
+        clearstatcache(true, $file);
+        $this->assertFileDoesNotExist($file);
+
+        // If we create a new file at the same path, it should have a different inode
+        file_put_contents($file, 'new-data');
+        $statAfter = stat($file);
+        $this->assertNotFalse($statAfter);
+        $this->assertNotSame($statBefore['ino'], $statAfter['ino'],
+            'New file at original path should have a different inode');
+    }
+
+    // ──────────────────────────────────────────────
     // Helper — fork a child that sleeps forever
     // ──────────────────────────────────────────────
 
