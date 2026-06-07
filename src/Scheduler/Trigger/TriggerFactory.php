@@ -31,7 +31,7 @@ final class TriggerFactory
     {
         if (is_string($expression)) {
             $dateTime = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $expression);
-            if ($dateTime) {
+            if ($dateTime instanceof \DateTimeImmutable) {
                 $expression = $dateTime;
             }
         }

@@ -144,4 +144,13 @@ final class TriggerFactoryTest extends TestCase
 
         TriggerFactory::create('* * * *');
     }
+
+    public function testInvalidIso8601StringFallsThroughToPeriodicalAndThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid interval');
+
+        // A string that is neither valid ISO8601 datetime, nor cron, nor valid interval
+        TriggerFactory::create('not-a-date-or-interval');
+    }
 }
