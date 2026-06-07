@@ -7,7 +7,7 @@
 [Workerman](https://github.com/walkor/workerman) is a high-performance, asynchronous event-driven PHP framework written in pure PHP.  
 This bundle provides a Workerman integration in Symfony, allowing you to easily create an HTTP server, scheduler and supervisor all in one place.
 This bundle allows you to replace a traditional web application stack like php-fpm + nginx + cron + supervisord, all written in pure PHP (no Go, no external binaries).
-The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
+The request handler works in an event loop, which means the Symfony kernel and the dependency injection container are preserved between requests,
 making your application faster with fewer (or no) code changes.
 
 ## Contributing
@@ -58,7 +58,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 15. **`ListenScheme` enum** — type-safe HTTP/HTTPS/WS/WSS scheme parsing. Upstream uses inline `str_starts_with()` checks.
 
-16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
+16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses a fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
 
 17. **SchedulerWorker improvements** — proper SIGCHLD handler that reaps children and logs exit codes/signals, file-lock-based PID management with symlink detection and inode mismatch protection. Upstream uses `SIG_IGN` for SIGCHLD and simple `file_put_contents` for PID.
 
@@ -82,6 +82,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 ### What was removed
 
 - **PSR-7 pipeline**: `WorkermanHttpMessageFactory`, `psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge` dependencies — replaced by direct Workerman→Symfony conversion.
+
 ## Getting started
 ### Install composer packages
 ```bash
@@ -249,7 +250,7 @@ For example, after an exception is thrown, to prevent services from being in an 
 There are a few restart strategies that are implemented and can be enabled or disabled depending on the environment.
 
  - **exception**  
-   Reload worker each time that an exception is thrown during the request handling.
+   Reload worker each time an exception is thrown during the request handling.
  - **max_requests**  
    Reload worker on every Nth request to prevent memory leaks.
  - **file_monitor**  
@@ -380,7 +381,7 @@ Middlewares are executed in reverse registration order (last registered, first e
 Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response
 ```
 
-This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller process the request.
+This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller processes the request.
 
 ## Scheduler
 Periodic tasks can be configured with attributes or with tags in configuration files.  
