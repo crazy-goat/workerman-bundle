@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Code Quality
 
+- `TriggerFactory`: replace falsy object check (`if ($dateTime)`) with explicit `instanceof \DateTimeImmutable` check to clarify that the branch is taken only when ISO-8601 datetime parsing succeeds, and to avoid relying on object truthiness ([#361](https://github.com/crazy-goat/workerman-bundle/issues/361))
 - `StaticFilesMiddleware`: replace repeated `DIRECTORY_SEPARATOR . ltrim($path, '/')` with a named `joinPaths()` helper that normalises both root and request path separators explicitly, eliminating implicit coupling that would silently produce wrong paths if a future change stripped the leading slash ([#365](https://github.com/crazy-goat/workerman-bundle/issues/365))
 - `WorkermanCompilerPass`: standardise tag set ordering — `$responseConverterStrategies` remain sorted by priority (descending) for correct dispatch order in `ResponseConverter::convert()`, while `$tasks`, `$processes`, and `$rebootStrategies` are now sorted by service ID via `ksort` for deterministic ServiceLocator registration and reproducible container builds ([#371](https://github.com/crazy-goat/workerman-bundle/issues/371))
 
