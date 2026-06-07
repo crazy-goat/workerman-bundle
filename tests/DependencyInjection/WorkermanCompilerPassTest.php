@@ -224,4 +224,65 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertArrayHasKey('strategy.a', $references);
         $this->assertArrayHasKey('strategy.b', $references);
     }
+
+    public function testTasksAndProcessesAreSortedDeterministically(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->container->register('z.last', \stdClass::class)->addTag('workerman.task');
+        $this->container->register('a.first', \stdClass::class)->addTag('workerman.task');
+        $this->container->register('m.middle', \stdClass::class)->addTag('workerman.task');
+
+        $this->container->register('p.process.z', \stdClass::class)->addTag('workerman.process');
+        $this->container->register('p.process.a', \stdClass::class)->addTag('workerman.process');
+
+        $this->compilerPass->process($this->container);
+
+        $taskLocator = $this->container->getDefinition('workerman.task_locator');
+        $taskReferences = array_keys($taskLocator->getArguments()[0]);
+        $this->assertSame(['a.first', 'm.middle', 'z.last'], $taskReferences, 'Tasks must be sorted by service ID');
+
+        $processLocator = $this->container->getDefinition('workerman.process_locator');
+        $processReferences = array_keys($processLocator->getArguments()[0]);
+        $this->assertSame(['p.process.a', 'p.process.z'], $processReferences, 'Processes must be sorted by service ID');
+    }
+
+    public function testRebootStrategiesAreSortedDeterministically(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->container->register('strategy.z', \stdClass::class)->addTag('workerman.reboot_strategy');
+        $this->container->register('strategy.a', \stdClass::class)->addTag('workerman.reboot_strategy');
+
+        $this->compilerPass->process($this->container);
+
+        $rebootStrategy = $this->container->getDefinition('workerman.reboot_strategy');
+        $references = array_keys($rebootStrategy->getArguments()[0]);
+        $this->assertSame(['strategy.a', 'strategy.z'], $references, 'Reboot strategies must be sorted by service ID');
+    }
+
+    public function testResponseConverterStrategiesRetainPriorityOrder(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+
+        $this->container->register('strategy.low', \stdClass::class)
+            ->addTag('workerman.response_converter.strategy', ['priority' => 0]);
+        $this->container->register('strategy.high', \stdClass::class)
+            ->addTag('workerman.response_converter.strategy', ['priority' => 100]);
+        $this->container->register('strategy.medium', \stdClass::class)
+            ->addTag('workerman.response_converter.strategy', ['priority' => 50]);
+        // Register another low-priority strategy to verify stable sort behavior
+        $this->container->register('strategy.low.another', \stdClass::class)
+            ->addTag('workerman.response_converter.strategy', ['priority' => 0]);
+
+        $this->compilerPass->process($this->container);
+
+        $responseConverter = $this->container->getDefinition('workerman.response_converter');
+        $references = array_keys($responseConverter->getArguments()[0]);
+
+        // Expected: descending priority (100, 50, 0, 0). For equal priorities,
+        // uasort preserves insertion order (low before low.another).
+        $expected = ['strategy.high', 'strategy.medium', 'strategy.low', 'strategy.low.another'];
+        $this->assertSame($expected, $references, 'Response converter strategies must be sorted by priority descending');
+    }
 }
