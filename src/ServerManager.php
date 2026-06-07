@@ -8,6 +8,8 @@ use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Worker;
 
@@ -18,6 +20,7 @@ final readonly class ServerManager
         private ConfigLoader $configLoader,
         private ProcessInspector $processInspector,
         private StatusFileReader $statusFileReader,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -100,15 +103,14 @@ final readonly class ServerManager
             return null;
         }
 
-        $lines = file($statusFile, \FILE_IGNORE_NEW_LINES);
-        @unlink($statusFile);
-
-        if (!\is_array($lines) || $lines === []) {
+        $content = $this->consumeFile($statusFile);
+        if (!\is_string($content) || $content === '') {
             return null;
         }
 
+        $lines = \explode("\n", $content);
         unset($lines[0]);
-        $output = implode("\n", $lines);
+        $output = \implode("\n", $lines);
 
         return $output !== '' ? $output : null;
     }
@@ -130,8 +132,7 @@ final readonly class ServerManager
             return null;
         }
 
-        $content = file_get_contents($connectionsFile);
-        @unlink($connectionsFile);
+        $content = $this->consumeFile($connectionsFile);
 
         return \is_string($content) && $content !== '' ? $content : null;
     }
@@ -201,5 +202,74 @@ final readonly class ServerManager
             fn(): KernelInterface => $this->kernel,
             [],
         );
+    }
+
+    /**
+     * Atomically read and remove a status/connections file.
+     *
+     * Closes the TOCTOU window between read and unlink: the file at
+     * $path is atomically renamed to a unique temporary path within
+     * the same directory. After the rename, $path no longer refers to
+     * any file (the inode was moved to $tempPath), so a symlink swap
+     * at $path cannot redirect the subsequent read or unlink.
+     *
+     * The unlink always targets the renamed temp file, which is owned
+     * by us and is not subject to symlink swaps at the original path.
+     *
+     * @return string|null The file content, or null if the file was not
+     *                     available, was consumed by a concurrent process,
+     *                     or could not be read.
+     */
+    private function consumeFile(string $path): ?string
+    {
+        $directory = \dirname($path);
+        $tempPath = $directory . '/.' . \basename($path) . '.' . \bin2hex(\random_bytes(8)) . '.tmp';
+
+        // The rename may fail if the file was consumed by a concurrent
+        // process between waitForFile() and rename(); this is a normal
+        // race condition and not an error.
+        if (!@\rename($path, $tempPath)) {
+            return null;
+        }
+
+        $content = @\file_get_contents($tempPath);
+
+        // Best-effort cleanup. The unlink always targets our own temp
+        // path, which is not subject to symlink swaps at the original
+        // $path. Unlink failures are surfaced to the logger rather
+        // than being silently suppressed.
+        $this->unlinkSafely($tempPath, $path);
+
+        if (!\is_string($content) || $content === '') {
+            if (!\is_string($content)) {
+                $this->logger->warning('Failed to read renamed status file', [
+                    'path' => $path,
+                    'temp_path' => $tempPath,
+                    'error' => error_get_last()['message'] ?? 'Unknown error',
+                ]);
+            }
+            return null;
+        }
+
+        return $content;
+    }
+
+    /**
+     * Unlink a file, logging a warning when the unlink fails.
+     *
+     * Used by {@see consumeFile()} to clean up the renamed temp file.
+     * The temp file is always a path we created via rename(), so a
+     * symlink swap at the original status file path cannot affect
+     * this operation.
+     */
+    private function unlinkSafely(string $tempPath, string $originalPath): void
+    {
+        if (!@\unlink($tempPath)) {
+            $this->logger->warning('Failed to unlink renamed status file', [
+                'path' => $originalPath,
+                'temp_path' => $tempPath,
+                'error' => error_get_last()['message'] ?? 'Unknown error',
+            ]);
+        }
     }
 }

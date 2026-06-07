@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Remove `@unlink` error suppression in `BinaryFileResponseStrategy` cleanup callback; unlink failures are now checked and logged through the injected PSR-3 logger ([#314](https://github.com/crazy-goat/workerman-bundle/issues/314))
+- Use atomic rename-before-read (TOCTOU fix) in `ServerManager::consumeFile()` for status and connections files to prevent symlink-swap redirection of the unlink. A failure to unlink the renamed temp file is now logged through the PSR-3 logger instead of being silently suppressed ([#304](https://github.com/crazy-goat/workerman-bundle/issues/304))
 
 ### Performance
 

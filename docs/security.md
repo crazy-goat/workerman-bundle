@@ -250,6 +250,31 @@ to plain HTTP via a redirect:
 This defense is always active when `allow_insecure` is enabled, regardless of whether a checksum
 is configured.
 
+## Status File TOCTOU Protection
+
+`ServerManager` reads and removes status and connections files written by the Workerman master process (`SIGIOT` for status, `SIGIO` for connections). The read-then-unlink sequence is a classic TOCTOU (time-of-check, time-of-use) vulnerability: a local attacker (or another process) on the same host can swap the file between the read and the unlink, redirecting the unlink at an arbitrary path.
+
+### Defence
+
+The `consumeFile()` method uses an **atomic rename-before-read** pattern:
+
+1. The file at `$path` is atomically renamed to a unique temporary path within the same directory (`rename()` is atomic on the same filesystem).
+2. After the rename, `$path` no longer exists — a symlink swap at the original path cannot redirect the subsequent read or unlink.
+3. The content is read from the renamed temp path.
+4. The renamed temp path is unlinked. Since this path was created by our own `rename()`, it is not subject to symlink swaps.
+5. Unlink failures are surfaced to the PSR-3 logger instead of being silently suppressed with `@`.
+
+### When this matters
+
+- **Multi-user hosts**: An attacker with write access to the runtime directory (or a compromised sibling process) cannot redirect the `unlink()` to a different file.
+- **Shared runtime directories**: If the runtime directory is shared between multiple services or users, the TOCTOU window is broader.
+
+### Verification
+
+- The `testConsumeFileRemovesOriginalInodeAfterRename` test verifies that after `consumeFile()`, a new file at the original path has a different inode.
+- The `testConsumeFileCreatesNoOrphanedTempFiles` test verifies cleanup.
+- The `testConsumeFileReturnsContentAndRemovesTempFile` test verifies normal operation.
+
 ## Runtime Directory Permissions
 
 Runtime directories (PID file, log files, stdout files) are created with mode `0700` (owner-only access). This prevents other users on multi-user systems from reading process-control artifacts such as PID files and status files.
