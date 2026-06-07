@@ -25,7 +25,17 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $processesTagged = $container->findTaggedServiceIds('workerman.process');
         $rebootStrategies = $container->findTaggedServiceIds('workerman.reboot_strategy');
         $responseConverterStrategies = $container->findTaggedServiceIds('workerman.response_converter.strategy');
+
+        // Sort response converter strategies by priority (descending) so that
+        // higher-priority strategies are checked first in ResponseConverter::convert().
         uasort($responseConverterStrategies, fn(array $a, array $b): int => ($b[0]['priority'] ?? 0) <=> ($a[0]['priority'] ?? 0));
+
+        // Sort remaining tag sets by service ID for deterministic ordering in
+        // the ServiceLocator registrations. Tasks and processes do not carry a
+        // priority attribute; sorting by ID ensures reproducible container builds.
+        ksort($tasksTagged);
+        ksort($processesTagged);
+        ksort($rebootStrategies);
 
         $tasks = array_map(fn(array $a): array => $a[0], $tasksTagged);
         $processes = array_map(fn(array $a): array => $a[0], $processesTagged);
