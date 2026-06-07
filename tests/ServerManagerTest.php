@@ -560,8 +560,11 @@ final class ServerManagerTest extends TestCase
         file_put_contents($file, 'new-data');
         $statAfter = stat($file);
         $this->assertNotFalse($statAfter);
-        $this->assertNotSame($statBefore['ino'], $statAfter['ino'],
-            'New file at original path should have a different inode');
+        $this->assertNotSame(
+            $statBefore['ino'],
+            $statAfter['ino'],
+            'New file at original path should have a different inode',
+        );
     }
 
     // ──────────────────────────────────────────────
