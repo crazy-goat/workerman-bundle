@@ -57,9 +57,25 @@ rm .git/hooks/pre-push
    composer test
    ```
 
-   Note: `composer test` boots a real Workerman daemon binding ports 8888 and
-   9999 for E2E tests. If you see "Address already in use" errors, ensure
-   those ports are free.
+   Note: `composer test` boots a real Workerman daemon binding ports **8888** and
+   **9999** for end-to-end HTTP tests. The ports are hardcoded in
+   `tests/App/Kernel.php` and cannot be overridden via environment variables.
+
+   > **Troubleshooting "Address already in use"**
+   > - Find the process occupying the port: `lsof -i :8888` or `ss -tlnp | grep 8888`
+   > - Stop the conflicting service or kill the process (e.g. `kill <PID>`)
+   > - If a previous test run was interrupted, a Workerman daemon may still be
+   >   running in the background. Stop it manually:
+   >   ```bash
+   >   php tests/App/index.php stop
+   >   ```
+   > - To run tests without starting the daemon (you are responsible for starting
+   >   it yourself beforehand), run only phpunit:
+   >   ```bash
+   >   vendor/bin/phpunit
+   >   ```
+   > - On macOS, ports below 1024 require root. Ports 8888 and 9999 are above
+   >   that threshold and should work without special privileges.
 
 3. Ensure all checks pass before pushing
 
