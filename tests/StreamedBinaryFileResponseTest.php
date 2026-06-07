@@ -24,7 +24,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
         if (is_dir($this->fixtureDir)) {
             $files = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($this->fixtureDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-                \RecursiveIteratorIterator::CHILD_FIRST
+                \RecursiveIteratorIterator::CHILD_FIRST,
             );
             foreach ($files as $fileinfo) {
                 if ($fileinfo->isDir()) {
@@ -136,7 +136,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
             200,
             [],
             true,
-            ResponseHeaderBag::DISPOSITION_ATTACHMENT
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
         );
 
         $disposition = $response->headers->get('Content-Disposition');
