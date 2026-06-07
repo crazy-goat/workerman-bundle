@@ -1,23 +1,88 @@
-# Workerman runtime for symfony applications
+# Workerman runtime for Symfony applications
 ![PHP ^8.2](https://img.shields.io/badge/PHP-^8.2-777bb3.svg?style=flat)
 ![Symfony ^6.4|^7.0|^8.0](https://img.shields.io/badge/Symfony-^6.4|^7.0|^8.0-374151.svg?style=flat)
 [![Tests Status](https://img.shields.io/github/actions/workflow/status/crazy-goat/workerman-bundle/tests.yaml?branch=master)](../../actions/workflows/tests.yaml)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Workerman](https://github.com/walkor/workerman) is a high-performance, asynchronous event-driven PHP framework written in pure PHP.  
-This bundle provides a Workerman integration in Symfony, allowing you to easily create a http server, scheduler and supervisor all in one place.
+This bundle provides a Workerman integration in Symfony, allowing you to easily create an HTTP server, scheduler and supervisor all in one place.
 This bundle allows you to replace a traditional web application stack like php-fpm + nginx + cron + supervisord, all written in pure PHP (no Go, no external binaries).
-The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
-making your application faster with less (or no) code changes.
+The request handler works in an event loop, which means the Symfony kernel and the dependency injection container are preserved between requests,
+making your application faster with fewer (or no) code changes.
 
 ## Contributing
 
 Please see [CONTRIBUTING.md](https://github.com/crazy-goat/workerman-bundle/blob/master/CONTRIBUTING.md) for information about branch protection rules and development workflow.
 
-## What new in this fork
-* `servers.reuse_port` - on linux machines u can use kernel load balancer if `SO_REUSEPORT` is enabled  
-*  By default `luzrain/workerman-bundle` parse data to `psr7` request and then to symfony `Request`.
-This `workerman-bundle` will create symfony request without psr7 it increase performance, but it is still experimental. 
+## What's new in this fork
+
+This section documents the differences between [crazy-goat/workerman-bundle](https://github.com/crazy-goat/workerman-bundle) (this fork) and the upstream [luzrain/workerman-bundle](https://github.com/luzrain/workerman-bundle).
+
+### Dependencies & Compatibility
+
+| Aspect | crazy-goat (this fork) | luzrain (upstream) |
+|--------|------------------------|---------------------|
+| PHP | `^8.2` | `>=8.1` |
+| Symfony | `^6.4 | ^7.0 | ^8.0` | `^6.4 | ^7.0` |
+| PSR-7 bridge | **Removed** (not required) | Required (`psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge`) |
+
+### Features
+
+1. **Middleware system** — composable request/response pipeline with `MiddlewareInterface`, `MiddlewareDispatchInterface`, `StaticFilesMiddleware` (ETag, Last-Modified, 304 support, blocked extensions, dot-file blocking, symlink control, path traversal protection, LRU realpath cache with TTL, PHAR-aware path resolution), `SymfonyController` (kernel boot, request conversion, response, termination, service resetter), and a zero per-request allocation pipeline built once and cached.
+
+2. **Console commands** — full server lifecycle management via `ServerManager`: `workerman:server start/stop/restart/reload/status/connections`, plus `workerman:build:phar` and `workerman:build:bin` for packaging.
+
+3. **Slowloris / DoS protection** — configurable `connection_timeout` for incomplete requests (default: 120s), `keepalive_timeout` for idle connections (default: 30s), and per-server `body_size_cap`.
+
+4. **Response conversion with strategy pattern** — `BinaryFileResponseStrategy` (uses Workerman's `withFile()`, supports `SplTempFileObject`, offset/maxlen, `deleteFileAfterSend` cleanup), `StreamedResponseStrategy` (chunked transfer encoding), `DefaultResponseStrategy` (large responses via chunked transfer directly to connection), header name normalization with caching. Upstream buffers everything in memory.
+
+5. **Memory reload strategy** — preemptive `gc_collect_cycles()` before reload check, configurable `limit` (default 128 MB), `gc_limit` (default 96 MB), `gc_cooldown` (default 60s).
+
+6. **Trusted hosts** — `trusted_hosts` config key with regex patterns, rejects non-matching `Host` header via `SuspiciousOperationException` (400).
+
+7. **Service state resetter integration** — calls `services_resetter` after kernel termination to reset stateful services between requests (critical for long-running worker correctness).
+
+8. **SSL validation** — validates cert/key paths, rejects symlinks for security.
+
+9. **Process inspection** — `/proc`-based zombie detection, orphan killing, parent PID tracking.
+
+10. **PHAR/BIN runtime support** — `runtime_dir` config key with `WORKERMAN_RUNTIME_DIR` env var, `PharHelper` for runtime path resolution, automatic runtime directory creation, skips file monitor in PHAR mode, `KernelFactory` with PHAR-aware `getCacheDir()`/`getLogDir()`.
+
+11. **Custom exception hierarchy** — 21 exception classes under `WorkermanExceptionInterface` → `WorkermanException` → category bases (`ServerException`, `KernelException`, `MiddlewareException`, `SchedulerException`, `ValidationException`) with specific exceptions for every error case. Upstream uses only generic PHP exceptions.
+
+12. **`Utils::reload()`** — programmatic worker reload from application code with `reloadAllWorkers: true` param.
+
+13. **File upload validation** — structural validation of uploaded files with clear error messages. Upstream has no validation.
+
+14. **Extended `Request` class** — adds `setHeader()` / `withHeader()` methods to Workerman's Request, required by the middleware system.
+
+15. **`ListenScheme` enum** — type-safe HTTP/HTTPS/WS/WSS scheme parsing. Upstream uses inline `str_starts_with()` checks.
+
+16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses a fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
+
+17. **SchedulerWorker improvements** — proper SIGCHLD handler that reaps children and logs exit codes/signals, file-lock-based PID management with symlink detection and inode mismatch protection. Upstream uses `SIG_IGN` for SIGCHLD and simple `file_put_contents` for PID.
+
+18. **SupervisorWorker improvements** — handler returns `never` type (process exits with code 1 on unexpected return), logs unexpected finish, skips processes with `processes <= 0`.
+
+19. **Cache warmup improvements** — signal-based success/failure detection (SIGKILL=success, SIGTERM=failure), configurable timeout via `WORKERMAN_CACHE_WARMUP_TIMEOUT` env var. Upstream uses simple `pcntl_wait()` with no timeout or error detection.
+
+20. **Config loader improvements** — `ConfigSection` enum, `warmUp()` validates all sections before writing, `setBuildConfig()` / `getBuildConfig()` for PHAR build config.
+
+### Code quality / DX
+
+- Full custom exception hierarchy (21 classes) instead of generic `\Exception`
+- `readonly` classes where appropriate
+- Extracted `ConfigurationTreeBuilder`, `ServicesConfigurator`, `WorkermanCompilerPass` as separate testable classes (upstream uses anonymous closures/files)
+- `ServerManager` extracted as standalone service (testable)
+- `ServiceMethod` value object with validation (upstream uses raw strings)
+- `ServiceHandlerTrait` / `ServiceErrorListenerTrait` for shared logic
+- Extensive test suite (unit + integration + e2e)
+- PHPStan + Rector in CI pipeline
+
+### What was removed
+
+- **PSR-7 pipeline**: `WorkermanHttpMessageFactory`, `psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge` dependencies — replaced by direct Workerman→Symfony conversion.
+
 ## Getting started
 ### Install composer packages
 ```bash
@@ -72,9 +137,9 @@ workerman:
 >
 > To bind a port below 1024 (e.g. `80` or `443`) you must run the process as **root** or grant the `CAP_NET_BIND_SERVICE` capability on Linux.
 >
-> In production, consider using the `user` and `group` config keys to drop privileges after binding, or front with a reverse proxy (e.g. nginx, Caddy).
+> In production, consider using the `user` and `group` config keys to drop privileges after binding, or front it with a reverse proxy (e.g. nginx, Caddy).
 
-> **`listen` is effectively required.** Omitting it creates a worker that does not accept connections — no traffic reaches your application.
+> **Note:** `listen` is effectively required. Omitting it creates a worker that does not accept connections — no traffic reaches your application.
 > Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL), `tcp://` (raw TCP).
 
 ## Configuration reference
@@ -155,9 +220,9 @@ PID      Worker          CID       Trans   Protocol        ipv4   ipv6   Recv-Q 
 
 > **Platform note:** Connection introspection relies on Workerman's internal tracking and is available on POSIX-compatible platforms (Linux, macOS). The output is generated by sending `SIGIO` to the master process, which collects data from each worker. Windows is not supported because the command uses `posix_kill()`.
 
-> **Note:** For better performance, Workerman recommends installing the _php-event_ extension.
+> **Note:** For better performance, Workerman recommends installing the `php-event` extension.
 
-> **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The grpc extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details.
+> **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The `grpc` extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details.
 
 ### Programmatic reload
 
@@ -185,9 +250,9 @@ For example, after an exception is thrown, to prevent services from being in an 
 There are a few restart strategies that are implemented and can be enabled or disabled depending on the environment.
 
  - **exception**  
-   Reload worker each time that an exception is thrown during the request handling.
+   Reload worker each time an exception is thrown during the request handling.
  - **max_requests**  
-   Reload worker on every N request to prevent memory leaks.
+   Reload worker on every Nth request to prevent memory leaks.
  - **file_monitor**  
    Reload all workers each time you change the files.
  - **always**  
@@ -195,6 +260,7 @@ There are a few restart strategies that are implemented and can be enabled or di
  - **memory**  
    Reload worker when memory usage reaches a certain threshold. Three options are available:
    `active` (default: `false`) toggles the strategy, `limit` (default: `134217728` — 128 MB) is the RSS threshold in bytes that triggers a worker reload, and `gc_limit` (default: `100663296` — 96 MB) runs `gc_collect_cycles()` preemptively before the reload check.
+
    ```yaml
    workerman:
      reload_strategy:
@@ -204,7 +270,7 @@ There are a few restart strategies that are implemented and can be enabled or di
          gc_limit: 201326592    # 192 MB
    ```
  
-> **Note:** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very cpu and disk intensive for large projects.
+> **Note:** It is highly recommended to install the `php-inotify` extension for file monitoring. Without it, monitoring will work in polling mode, which can be very CPU and disk intensive for large projects.
 
 See all available options for each strategy in the command output.
 ```bash
@@ -212,7 +278,7 @@ $ bin/console config:dump-reference workerman reload_strategy
 ```
 
 ### Implement your own reload strategies
-You can create reload strategy with your own logic by implementing the RebootStrategyInterface and adding the `workerman.reboot_strategy` tag to the service.
+You can create a reload strategy with your own logic by implementing the RebootStrategyInterface and adding the `workerman.reboot_strategy` tag to the service.
 ```php
 <?php
 
@@ -309,24 +375,24 @@ The `StaticFilesMiddleware` resolves requests against the configured root direct
 
 ### Execution order
 
-Middlewares are executed in reverse registration order (last registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
+Middlewares are executed in registration order (first registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
 
 ```
 Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response
 ```
 
-This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller process the request.
+This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller processes the request.
 
 ## Scheduler
 Periodic tasks can be configured with attributes or with tags in configuration files.  
-Schedule string can be formatted in several ways:  
+The schedule string can be formatted in several ways:  
  - An integer to define the frequency as a number of seconds. Example: _60_
  - An ISO8601 datetime format. Example: _2023-08-01T01:00:00+08:00_
  - An ISO8601 duration format. Example: _PT1M_
- - A relative date format as supported by DateInterval. Example: _1 minutes_
+ - A relative date format as supported by DateInterval. Example: _1 minute_
  - A cron expression. Example: _*/1 * * * *_
 
-> **Note:** You need to install the [dragonmantank/cron-expression](https://github.com/dragonmantank/cron-expression) package if you want to use cron expressions as schedule strings
+> **Note:** You need to install the [dragonmantank/cron-expression](https://github.com/dragonmantank/cron-expression) package if you want to use cron expressions as schedule strings.
 
 ```php
 <?php
@@ -340,7 +406,7 @@ use CrazyGoat\WorkermanBundle\Attribute\AsTask;
  * method: method to call, __invoke by default
  * jitter: Maximum jitter in seconds that adds a random time offset to the schedule. Use to prevent multiple tasks from running at the same time
  */
-#[AsTask(name: 'My scheduled task', schedule: '1 minutes')]
+#[AsTask(name: 'My scheduled task', schedule: '1 minute')]
 final class TaskService
 {
     public function __invoke()
@@ -399,7 +465,7 @@ For an overview of all documentation files, see [docs/](docs/).
 
 For security-related documentation including Host-header protection and trusted hosts configuration, see [docs/security.md](docs/security.md).
 
-For long-running worker gotchas, state pollution, stale DB connections, blocking IO, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
+For long-running worker gotchas, state pollution, stale DB connections, blocking I/O, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## License
 
