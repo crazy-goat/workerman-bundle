@@ -8,7 +8,7 @@
 This bundle provides a Workerman integration in Symfony, allowing you to easily create an HTTP server, scheduler and supervisor all in one place.
 This bundle allows you to replace a traditional web application stack like php-fpm + nginx + cron + supervisord, all written in pure PHP (no Go, no external binaries).
 The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
-making your application faster with less (or no) code changes.
+making your application faster with fewer (or no) code changes.
 
 ## Contributing
 
@@ -23,14 +23,14 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 | Aspect | crazy-goat (this fork) | luzrain (upstream) |
 |--------|------------------------|---------------------|
 | PHP | `^8.2` | `>=8.1` |
-| Symfony | `^6.4 \| ^7.0 \| ^8.0` | `^6.4 \| ^7.0` |
+| Symfony | `^6.4 | ^7.0 | ^8.0` | `^6.4 | ^7.0` |
 | PSR-7 bridge | **Removed** (not required) | Required (`psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge`) |
 
 ### Features
 
 1. **Middleware system** — composable request/response pipeline with `MiddlewareInterface`, `MiddlewareDispatchInterface`, `StaticFilesMiddleware` (ETag, Last-Modified, 304 support, blocked extensions, dot-file blocking, symlink control, path traversal protection, LRU realpath cache with TTL, PHAR-aware path resolution), `SymfonyController` (kernel boot, request conversion, response, termination, service resetter), and a zero per-request allocation pipeline built once and cached.
 
-2. **Console commands** — full server lifecycle management via `ServerManager`: `workerman:server start/stop/restart/reload/status/connections`, plus `workerman:build:phar` and `workerman:build:bin` for packaging.
+2. **Console commands** — full server lifecycle management via `ServerManager`: `workerman:server start/stop/restart/reload/status/connections`, plus `workerman:build:phar` and `workerman:build:bin` for packaging..
 
 3. **Slowloris / DoS protection** — configurable `connection_timeout` for incomplete requests (default: 120s), `keepalive_timeout` for idle connections (default: 30s), and per-server `body_size_cap`.
 
@@ -60,13 +60,13 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
 
-17. **SchedulerWorker improvements** — proper SIGCHLD handler that reaps children and logs exit codes/signals, file-lock based PID management with symlink detection and inode mismatch protection. Upstream uses `SIG_IGN` for SIGCHLD and simple `file_put_contents` for PID.
+17. **SchedulerWorker improvements** — proper SIGCHLD handler that reaps children and logs exit codes/signals, file-lock-based PID management with symlink detection and inode mismatch protection. Upstream uses `SIG_IGN` for SIGCHLD and simple `file_put_contents` for PID.
 
 18. **SupervisorWorker improvements** — handler returns `never` type (process exits with code 1 on unexpected return), logs unexpected finish, skips processes with `processes <= 0`.
 
 19. **Cache warmup improvements** — signal-based success/failure detection (SIGKILL=success, SIGTERM=failure), configurable timeout via `WORKERMAN_CACHE_WARMUP_TIMEOUT` env var. Upstream uses simple `pcntl_wait()` with no timeout or error detection.
 
-20. **Config loader improvements** — `ConfigSection` enum, `warmUp()` validates all sections before writing, `setBuildConfig()` / `getBuildConfig()` for PHAR build config.
+20. **Config loader improvements** — `ConfigSection` enum, `warmUp()` validates all sections before writing, `setBuildConfig()` / `getBuildConfig()` for PHAR build config..
 
 ### Code quality / DX
 
@@ -268,7 +268,7 @@ There are a few restart strategies that are implemented and can be enabled or di
          gc_limit: 201326592    # 192 MB
    ```
  
-> **Note:** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very cpu and disk intensive for large projects.
+> **Note:** It is highly recommended to install the _php-inotify_ extension for file monitoring. Without it, monitoring will work in polling mode, which can be very CPU and disk intensive for large projects.
 
 See all available options for each strategy in the command output.
 ```bash
