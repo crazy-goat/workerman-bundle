@@ -278,7 +278,7 @@ $ bin/console config:dump-reference workerman reload_strategy
 ```
 
 ### Implement your own reload strategies
-You can create reload strategy with your own logic by implementing the RebootStrategyInterface and adding the `workerman.reboot_strategy` tag to the service.
+You can create a reload strategy with your own logic by implementing the RebootStrategyInterface and adding the `workerman.reboot_strategy` tag to the service.
 ```php
 <?php
 
@@ -375,7 +375,7 @@ The `StaticFilesMiddleware` resolves requests against the configured root direct
 
 ### Execution order
 
-Middlewares are executed in reverse registration order (last registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
+Middlewares are executed in registration order (first registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
 
 ```
 Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response
@@ -385,7 +385,7 @@ This allows outer middlewares to handle cross-cutting concerns (authentication, 
 
 ## Scheduler
 Periodic tasks can be configured with attributes or with tags in configuration files.  
-Schedule string can be formatted in several ways:  
+The schedule string can be formatted in several ways:  
  - An integer to define the frequency as a number of seconds. Example: _60_
  - An ISO8601 datetime format. Example: _2023-08-01T01:00:00+08:00_
  - An ISO8601 duration format. Example: _PT1M_
@@ -465,7 +465,7 @@ For an overview of all documentation files, see [docs/](docs/).
 
 For security-related documentation including Host-header protection and trusted hosts configuration, see [docs/security.md](docs/security.md).
 
-For long-running worker gotchas, state pollution, stale DB connections, blocking IO, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
+For long-running worker gotchas, state pollution, stale DB connections, blocking I/O, and other common issues, see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## License
 
