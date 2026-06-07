@@ -1,11 +1,11 @@
-# Workerman runtime for symfony applications
+# Workerman runtime for Symfony applications
 ![PHP ^8.2](https://img.shields.io/badge/PHP-^8.2-777bb3.svg?style=flat)
 ![Symfony ^6.4|^7.0|^8.0](https://img.shields.io/badge/Symfony-^6.4|^7.0|^8.0-374151.svg?style=flat)
 [![Tests Status](https://img.shields.io/github/actions/workflow/status/crazy-goat/workerman-bundle/tests.yaml?branch=master)](../../actions/workflows/tests.yaml)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Workerman](https://github.com/walkor/workerman) is a high-performance, asynchronous event-driven PHP framework written in pure PHP.  
-This bundle provides a Workerman integration in Symfony, allowing you to easily create a http server, scheduler and supervisor all in one place.
+This bundle provides a Workerman integration in Symfony, allowing you to easily create an HTTP server, scheduler and supervisor all in one place.
 This bundle allows you to replace a traditional web application stack like php-fpm + nginx + cron + supervisord, all written in pure PHP (no Go, no external binaries).
 The request handler works in an event loop which means the Symfony kernel and the dependency injection container are preserved between requests,
 making your application faster with less (or no) code changes.
@@ -21,7 +21,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 ### Dependencies & Compatibility
 
 | Aspect | crazy-goat (this fork) | luzrain (upstream) |
-|--------|----------------------|---------------------|
+|--------|------------------------|---------------------|
 | PHP | `^8.2` | `>=8.1` |
 | Symfony | `^6.4 \| ^7.0 \| ^8.0` | `^6.4 \| ^7.0` |
 | PSR-7 bridge | **Removed** (not required) | Required (`psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge`) |
@@ -136,9 +136,9 @@ workerman:
 >
 > To bind a port below 1024 (e.g. `80` or `443`) you must run the process as **root** or grant the `CAP_NET_BIND_SERVICE` capability on Linux.
 >
-> In production, consider using the `user` and `group` config keys to drop privileges after binding, or front with a reverse proxy (e.g. nginx, Caddy).
+> In production, consider using the `user` and `group` config keys to drop privileges after binding, or front it with a reverse proxy (e.g. nginx, Caddy).
 
-> **`listen` is effectively required.** Omitting it creates a worker that does not accept connections — no traffic reaches your application.
+> **Note:** `listen` is effectively required. Omitting it creates a worker that does not accept connections — no traffic reaches your application.
 > Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL), `tcp://` (raw TCP).
 
 ## Configuration reference
