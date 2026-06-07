@@ -42,6 +42,17 @@ final class PeriodicalTriggerTest extends TestCase
         $trigger = new PeriodicalTrigger($interval);
 
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
+        $this->assertSame('DateInterval', (string) $trigger);
+    }
+
+    public function testCreateFromRelativeDateStringInterval(): void
+    {
+        $interval = \DateInterval::createFromDateString('+1 hour');
+        \assert($interval instanceof \DateInterval);
+        $trigger = new PeriodicalTrigger($interval);
+
+        $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
+        $this->assertSame('DateInterval', (string) $trigger);
     }
 
     public function testInvalidIntervalThrowsException(): void
