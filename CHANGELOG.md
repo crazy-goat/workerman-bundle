@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StaticFilesMiddleware`: replace repeated `DIRECTORY_SEPARATOR . ltrim($path, '/')` with a named `joinPaths()` helper that normalises both root and request path separators explicitly, eliminating implicit coupling that would silently produce wrong paths if a future change stripped the leading slash ([#365](https://github.com/crazy-goat/workerman-bundle/issues/365))
 - `WorkermanCompilerPass`: standardise tag set ordering — `$responseConverterStrategies` remain sorted by priority (descending) for correct dispatch order in `ResponseConverter::convert()`, while `$tasks`, `$processes`, and `$rebootStrategies` are now sorted by service ID via `ksort` for deterministic ServiceLocator registration and reproducible container builds ([#371](https://github.com/crazy-goat/workerman-bundle/issues/371))
 - `PeriodicalTrigger`: remove fragile `(array)` cast on `\DateInterval` to read the private `from_string` property; replace with a flat `'DateInterval'` description for directly-passed `DateInterval` objects ([#360](https://github.com/crazy-goat/workerman-bundle/issues/360))
+- `ServicesConfigurator`: use `=== true` consistently for all boolean `active` config flags in `configureRebootStrategies()` — previously only `memory.active` used strict comparison, while `always`, `max_requests`, and `exception` used a truthy check ([#370](https://github.com/crazy-goat/workerman-bundle/issues/370))
 
 ### Docs
 
