@@ -16,7 +16,7 @@ All pull requests must pass the following checks before merging:
 ### Pull Request Requirements
 
 **Required:**
-- At least **1 approving review** is required before merge (changed from "no approval count required" since 0.22.0; see 0.15.0 changelog entry for history)
+- No approval count required (solo dev project)
 
 **Recommended:**
 - All conversations should be resolved before merging
