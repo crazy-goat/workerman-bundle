@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Code Quality
 
+- `CronExpressionTrigger`: remove redundant `class_exists(Cron\CronExpression::class)` gate from the constructor — the check is already performed by `TriggerFactory::create()` before instantiation, making the duplicate guard unreachable and misleading ([#355](https://github.com/crazy-goat/workerman-bundle/issues/355))
 - `TriggerFactory`: replace falsy object check (`if ($dateTime)`) with explicit `instanceof \DateTimeImmutable` check to clarify that the branch is taken only when ISO-8601 datetime parsing succeeds, and to avoid relying on object truthiness ([#361](https://github.com/crazy-goat/workerman-bundle/issues/361))
 - `WorkermanCommand`: rename `$allowedActions` local variable to `$invalidActionMessage` so the name accurately reflects that it holds an error message, not a list of allowed actions ([#373](https://github.com/crazy-goat/workerman-bundle/issues/373))
 - `StaticFilesMiddleware`: replace repeated `DIRECTORY_SEPARATOR . ltrim($path, '/')` with a named `joinPaths()` helper that normalises both root and request path separators explicitly, eliminating implicit coupling that would silently produce wrong paths if a future change stripped the leading slash ([#365](https://github.com/crazy-goat/workerman-bundle/issues/365))
