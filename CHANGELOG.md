@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update README main configuration example to demonstrate `StaticFilesMiddleware` instead of relying on the deprecated `serve_files` option; the replacement was previously only shown in a dedicated subsection ([#342](https://github.com/crazy-goat/workerman-bundle/issues/342))
 - Document `--include-tests` and `--kernel-class` CLI options in `docs/build-packaging.md` — these options were already supported by `workerman:build:phar` but omitted from the documentation ([#331](https://github.com/crazy-goat/workerman-bundle/issues/331))
+- Resolve contradiction between `CONTRIBUTING.md` and `CHANGELOG.md` on approval count requirement — `CONTRIBUTING.md` now explicitly states that the policy changed from "no approval count required" (0.15.0) to "at least 1 approving review" since 0.22.0 ([#333](https://github.com/crazy-goat/workerman-bundle/issues/333))
+
 
 ## [0.22.0] - 2026-05-30
 
