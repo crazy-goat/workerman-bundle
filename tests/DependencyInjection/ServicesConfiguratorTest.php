@@ -142,6 +142,30 @@ final class ServicesConfiguratorTest extends TestCase
         self::assertSame([134_217_728, 100_663_296, 60], $definition->getArguments());
     }
 
+    public function testConfigureDisablesMemoryRebootStrategyByDefault(): void
+    {
+        $this->configurator->configure($this->getDefaultConfig(), $this->container);
+
+        self::assertFalse($this->container->hasDefinition('workerman.memory_reboot_strategy'));
+    }
+
+    public function testConfigureDisablesMaxRequestsRebootStrategyByDefault(): void
+    {
+        $this->configurator->configure($this->getDefaultConfig(), $this->container);
+
+        self::assertFalse($this->container->hasDefinition('workerman.max_requests_reboot_strategy'));
+    }
+
+    public function testConfigureDisablesExceptionRebootStrategy(): void
+    {
+        $config = $this->getDefaultConfig();
+        $config['reload_strategy']['exception']['active'] = false;
+
+        $this->configurator->configure($config, $this->container);
+
+        self::assertFalse($this->container->hasDefinition('workerman.exception_reboot_strategy'));
+    }
+
     /**
      * @return array<string, mixed>
      */

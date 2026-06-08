@@ -127,14 +127,14 @@ final readonly class ServicesConfigurator
      */
     private function configureRebootStrategies(array $config, ContainerBuilder $container): void
     {
-        if ($config['reload_strategy']['always']['active']) {
+        if ($config['reload_strategy']['always']['active'] === true) {
             $container
                 ->register('workerman.always_reboot_strategy', AlwaysRebootStrategy::class)
                 ->addTag('workerman.reboot_strategy')
             ;
         }
 
-        if ($config['reload_strategy']['max_requests']['active']) {
+        if ($config['reload_strategy']['max_requests']['active'] === true) {
             $container
                 ->register('workerman.max_requests_reboot_strategy', MaxJobsRebootStrategy::class)
                 ->addTag('workerman.reboot_strategy')
@@ -145,7 +145,7 @@ final readonly class ServicesConfigurator
             ;
         }
 
-        if ($config['reload_strategy']['exception']['active']) {
+        if ($config['reload_strategy']['exception']['active'] === true) {
             $container
                 ->register('workerman.exception_reboot_strategy', ExceptionRebootStrategy::class)
                 ->addTag('workerman.reboot_strategy')
