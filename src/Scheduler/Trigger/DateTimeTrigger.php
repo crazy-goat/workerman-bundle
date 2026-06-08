@@ -12,7 +12,8 @@ final class DateTimeTrigger implements TriggerInterface
 
     public function __construct(string|\DateTimeImmutable $date)
     {
-        if (is_string($date) && $iso8601Date = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $date)) {
+        $iso8601Date = is_string($date) ? \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $date) : false;
+        if ($iso8601Date !== false) {
             $date = $iso8601Date;
         }
 
