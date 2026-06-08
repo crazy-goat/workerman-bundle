@@ -39,7 +39,7 @@ final class BinaryComposerTest extends TestCase
 
         $content = (string) file_get_contents($bin);
         self::assertSame('MOCK_SFXMOCK_PHAR', $content);
-        self::assertStringNotContainsString(self::getMagicBytes(), $content);
+        self::assertStringNotContainsString($this->getMagicBytes(), $content);
     }
 
     public function testComposeWithCustomIni(): void
@@ -55,12 +55,12 @@ final class BinaryComposerTest extends TestCase
         (new BinaryComposer())->compose($sfx, $phar, $bin, $customIni);
 
         $content = (string) file_get_contents($bin);
-        self::assertStringContainsString(self::getMagicBytes(), $content);
+        self::assertStringContainsString($this->getMagicBytes(), $content);
         self::assertStringContainsString(pack('N', strlen($customIni)), $content);
         self::assertStringContainsString($customIni, $content);
 
         $sfxPos = strpos($content, 'SFX');
-        $magicPos = strpos($content, self::getMagicBytes());
+        $magicPos = strpos($content, $this->getMagicBytes());
         $pharPos = strpos($content, 'PHAR');
         self::assertIsInt($sfxPos);
         self::assertIsInt($magicPos);
@@ -81,7 +81,7 @@ final class BinaryComposerTest extends TestCase
         (new BinaryComposer())->compose($sfx, $phar, $bin, '');
 
         $content = (string) file_get_contents($bin);
-        self::assertStringNotContainsString(self::getMagicBytes(), $content);
+        self::assertStringNotContainsString($this->getMagicBytes(), $content);
     }
 
     public function testComposeFailsWhenSfxMissing(): void
@@ -113,7 +113,7 @@ final class BinaryComposerTest extends TestCase
         self::assertStringNotContainsString('STALE', $content);
     }
 
-    private static function getMagicBytes(): string
+    private function getMagicBytes(): string
     {
         return (new \ReflectionClassConstant(BinaryComposer::class, 'MAGIC_BYTES'))->getValue();
     }
