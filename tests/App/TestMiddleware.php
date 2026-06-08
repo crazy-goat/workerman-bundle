@@ -16,8 +16,8 @@ class TestMiddleware implements MiddlewareInterface
 
     public function __invoke(Request $request, callable $next): Response
     {
-        $request->withHeader($this->headerName, $this->headerValue);
-        $request->withHeader('X-Test-Middleware-request-order', $request->header('X-Test-Middleware-request-order') . $this->headerName . '|');
+        $request->setHeader($this->headerName, $this->headerValue);
+        $request->setHeader('X-Test-Middleware-request-order', $request->header('X-Test-Middleware-request-order') . $this->headerName . '|');
         $response = $next($request);
         $response->header($this->headerName, $this->headerValue);
         return $response;
