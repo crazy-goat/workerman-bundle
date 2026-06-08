@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document `composer test` port binding, troubleshooting steps, and workarounds in `CONTRIBUTING.md` to help contributors avoid "Address already in use" errors ([#358](https://github.com/crazy-goat/workerman-bundle/issues/358))
 
 - Update README main configuration example to demonstrate `StaticFilesMiddleware` instead of relying on the deprecated `serve_files` option; the replacement was previously only shown in a dedicated subsection ([#342](https://github.com/crazy-goat/workerman-bundle/issues/342))
+- Document `--include-tests` and `--kernel-class` CLI options in `docs/build-packaging.md` — these options were already supported by `workerman:build:phar` but omitted from the documentation ([#331](https://github.com/crazy-goat/workerman-bundle/issues/331))
 
 ## [0.22.0] - 2026-05-30
 

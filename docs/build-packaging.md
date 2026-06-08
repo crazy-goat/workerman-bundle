@@ -173,8 +173,10 @@ The runtime directory defaults to the directory containing the PHAR/BIN file, an
 php bin/console workerman:build:phar [options]
 
 Options:
-  -o, --output-dir=DIR   Output directory (default: config build.build_dir)
-      --filename=NAME    Output filename (default: config build.phar_filename)
+  -o, --output-dir=DIR       Output directory (default: config build.build_dir)
+      --filename=NAME        Output filename (default: config build.phar_filename)
+      --kernel-class=CLASS   Kernel class to use in the PHAR stub (default: config build.kernel_class)
+      --include-tests        Include tests/ directory in the PHAR (for testing only)
 ```
 
 ### `workerman:build:bin`
