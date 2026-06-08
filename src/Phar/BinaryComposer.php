@@ -14,7 +14,7 @@ namespace CrazyGoat\WorkermanBundle\Phar;
  */
 final class BinaryComposer
 {
-    public const MAGIC_BYTES = "\xfd\xf6\x69\xe6";
+    private const MAGIC_BYTES = "\xfd\xf6\x69\xe6";
 
     /**
      * Compose [SFX][optional INI header][PHAR] into a single executable at $binPath.
