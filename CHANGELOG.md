@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 
 - Update "What's new in this fork" section in `README.md` with a comprehensive comparison against upstream `luzrain/workerman-bundle`, covering 20+ feature additions, dependency differences, and architectural changes ([#491](https://github.com/crazy-goat/workerman-bundle/issues/491))
+- Document `composer test` port binding, troubleshooting steps, and workarounds in `CONTRIBUTING.md` to help contributors avoid "Address already in use" errors ([#358](https://github.com/crazy-goat/workerman-bundle/issues/358))
 
 - Update README main configuration example to demonstrate `StaticFilesMiddleware` instead of relying on the deprecated `serve_files` option; the replacement was previously only shown in a dedicated subsection ([#342](https://github.com/crazy-goat/workerman-bundle/issues/342))
 
