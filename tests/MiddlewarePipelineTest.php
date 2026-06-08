@@ -215,7 +215,7 @@ final readonly class AddHeaderMiddleware implements MiddlewareInterface
 
     public function __invoke(Request $request, callable $next): WorkermanResponse
     {
-        $request->withHeader($this->header, $this->value);
+        $request->setHeader($this->header, $this->value);
         if ($this->trackKey !== null) {
             $this->tracker->set($this->trackKey, $request->header(strtolower($this->header)));
         }
@@ -255,7 +255,7 @@ final readonly class ReadAndAddHeaderMiddleware implements MiddlewareInterface
     public function __invoke(Request $request, callable $next): WorkermanResponse
     {
         $this->tracker->set($this->trackKey, $request->header($this->readHeaderName));
-        $request->withHeader($this->addHeader, $this->addValue);
+        $request->setHeader($this->addHeader, $this->addValue);
         return $next($request);
     }
 }

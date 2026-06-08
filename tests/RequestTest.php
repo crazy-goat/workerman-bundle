@@ -62,29 +62,69 @@ final class RequestTest extends TestCase
     {
         $request = $this->createRequest('GET', '/');
 
-        $result = $request->withHeader('X-New-Header', 'new-value');
+        $result = @$request->withHeader('X-New-Header', 'new-value');
 
         $this->assertSame('new-value', $request->header('x-new-header'));
         $this->assertSame($request, $result);
     }
 
-    public function testWithHeaderOverwritesExistingHeader(): void
+    public function testWithHeaderTriggersDeprecation(): void
+    {
+        $request = $this->createRequest('GET', '/');
+
+        $deprecationMessage = null;
+        set_error_handler(function (int $errno, string $errstr) use (&$deprecationMessage): bool {
+            if ($errno === \E_USER_DEPRECATED) {
+                $deprecationMessage = $errstr;
+                return true;
+            }
+            return false;
+        });
+
+        $request->withHeader('X-Test', 'value');
+
+        restore_error_handler();
+
+        $this->assertNotNull($deprecationMessage, 'Expected E_USER_DEPRECATED to be triggered');
+        $this->assertStringContainsString('withHeader() is deprecated', $deprecationMessage);
+    }
+
+    public function testSetHeaderAddsHeader(): void
+    {
+        $request = $this->createRequest('GET', '/');
+
+        $result = $request->setHeader('X-New-Header', 'new-value');
+
+        $this->assertSame('new-value', $request->header('x-new-header'));
+        $this->assertSame($request, $result);
+    }
+
+    public function testSetHeaderOverwritesExistingHeader(): void
     {
         $request = $this->createRequest('GET', '/', ['X-Test' => 'old-value']);
 
-        $request->withHeader('X-Test', 'new-value');
+        $request->setHeader('X-Test', 'new-value');
 
         $this->assertSame('new-value', $request->header('x-test'));
     }
 
-    public function testWithHeaderIsCaseInsensitive(): void
+    public function testSetHeaderIsCaseInsensitive(): void
     {
         $request = $this->createRequest('GET', '/');
 
-        $request->withHeader('X-Mixed-Case', 'value1');
-        $request->withHeader('x-mixed-case', 'value2');
+        $request->setHeader('X-Mixed-Case', 'value1');
+        $request->setHeader('x-mixed-case', 'value2');
 
         $this->assertSame('value2', $request->header('x-mixed-case'));
+    }
+
+    public function testSetHeaderReturnsSameInstance(): void
+    {
+        $request = $this->createRequest('GET', '/');
+
+        $result = $request->setHeader('X-Test', 'value');
+
+        $this->assertSame($request, $result);
     }
 
     public function testHeaderLookupIsCaseInsensitive(): void
@@ -107,7 +147,7 @@ final class RequestTest extends TestCase
     {
         $request = $this->createRequest('GET', '/');
 
-        $result = $request->withHeader('X-Test', 'value');
+        $result = @$request->withHeader('X-Test', 'value');
 
         $this->assertSame($request, $result);
     }
@@ -116,7 +156,7 @@ final class RequestTest extends TestCase
     {
         $request = $this->createRequest('GET', '/');
 
-        $request->withHeader('X-Test', 'value');
+        @$request->withHeader('X-Test', 'value');
 
         $this->assertSame('value', $request->header('x-test'));
     }

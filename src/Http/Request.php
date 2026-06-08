@@ -11,21 +11,23 @@ namespace CrazyGoat\WorkermanBundle\Http;
  * it decodes the raw HTTP buffer but exposes no public mutators for headers.
  * This subclass adds header-write capability needed by the middleware pipeline:
  *
- *  - {@see setHeader()} writes or overwrites a single header by name.
+ *  - {@see setHeader()} writes or overwrites a single header by name (the primary API).
  *  - {@see withHeader()} is a deprecated alias kept for backward compatibility.
+ *    It emits an `E_USER_DEPRECATED` warning advising use of {@see setHeader()}.
  *
- * Unlike PSR-7's immutable {@see withHeader()}, both methods mutate the request
- * in place and return \$this. This is intentional: the middleware pipeline passes
- * the same Request instance through each layer, and middleware that mutates
- * headers (e.g. trusted-proxy, authentication, routing) needs to affect the
- * instance seen by downstream layers.
+ * **⚠️ PSR-7 semantic mismatch:** Unlike PSR-7's immutable {@see withHeader()},
+ * both methods mutate the request in place and return \$this. The PSR-7 convention
+ * reserves the `with*` prefix for methods that return a **new** instance. This
+ * bundle intentionally deviates because the middleware pipeline passes the same
+ * Request instance through each layer, and middleware that mutates headers
+ * (e.g. trusted-proxy, authentication, routing) needs to affect the instance seen
+ * by downstream layers.
  *
- * **Security caveat:** Because {@see setHeader()}/\{{@see withHeader()} are exposed
- * to every middleware, any middleware can re-inject `X-Forwarded-*` or other
- * hop-by-hop headers after trusted-proxy validation has run. If your application
- * relies on trusted-proxy header filtering, ensure that filtering runs *after*
- * any middleware that calls these methods, or scope-limit which middleware is
- * allowed to set forwarding headers.
+ * **Security caveat:** Because {@see setHeader()} is exposed to every middleware,
+ * any middleware can re-inject `X-Forwarded-*` or other hop-by-hop headers after
+ * trusted-proxy validation has run. If your application relies on trusted-proxy
+ * header filtering, ensure that filtering runs *after* any middleware that calls
+ * these methods, or scope-limit which middleware is allowed to set forwarding headers.
  *
  * @see \Workerman\Protocols\Http\Request The parent read-only request parser.
  * @see \CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface Middleware that receives this request.
@@ -58,16 +60,27 @@ class Request extends \Workerman\Protocols\Http\Request
     }
 
     /**
-     * @deprecated Use setHeader() instead. This method is kept for backward compatibility.
+     * Sets a header value, mutating the current instance.
      *
-     * This method **mutates** the request and returns \$this, mirroring
-     * {@see setHeader()}. This differs from PSR-7's immutable
+     * Alias of {@see setHeader()}. Unlike PSR-7's immutable
      * {@see \Psr\Http\Message\MessageInterface::withHeader()} which returns
-     * a **new** instance. The mutation semantics are intentional for the
-     * middleware pipeline — see the class-level docblock for details.
+     * a **new** instance, this method **mutates** the request in place.
+     *
+     * @deprecated since 0.23.0 Use {@see setHeader()} instead.
+     *             This method will be removed in the next major version.
+     *             The PSR-7 naming is misleading because the mutation semantics
+     *             differ from PSR-7's immutable pattern.
      */
     public function withHeader(string $name, string $value): self
     {
+        trigger_error(
+            \sprintf(
+                'Since crazy-goat/workerman-bundle 0.23.0: %s::withHeader() is deprecated, use setHeader() instead.',
+                self::class,
+            ),
+            \E_USER_DEPRECATED,
+        );
+
         return $this->setHeader($name, $value);
     }
 }
