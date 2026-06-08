@@ -28,6 +28,7 @@ use CrazyGoat\WorkermanBundle\Scheduler\TaskErrorListener;
 use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessErrorListener;
+use CrazyGoat\WorkermanBundle\WaitStrategy;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -177,6 +178,11 @@ final readonly class ServicesConfigurator
     {
         $container
             ->register(ServerManager::class)
+            ->setAutowired(true)
+        ;
+
+        $container
+            ->register(WaitStrategy::class)
             ->setAutowired(true)
         ;
 

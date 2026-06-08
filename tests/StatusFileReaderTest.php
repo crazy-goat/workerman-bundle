@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
+use CrazyGoat\WorkermanBundle\WaitStrategy;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -34,7 +35,7 @@ final class StatusFileReaderTest extends TestCase
 
     private function createReader(ConfigLoader $configLoader): StatusFileReader
     {
-        return new StatusFileReader($configLoader);
+        return new StatusFileReader($configLoader, new WaitStrategy(initialDelayMs: 1, maxDelayMs: 5));
     }
 
     /**

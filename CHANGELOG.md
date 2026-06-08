@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PeriodicalTrigger`: remove fragile `(array)` cast on `\DateInterval` to read the private `from_string` property; replace with a flat `'DateInterval'` description for directly-passed `DateInterval` objects ([#360](https://github.com/crazy-goat/workerman-bundle/issues/360))
 - `ServicesConfigurator`: use `=== true` consistently for all boolean `active` config flags in `configureRebootStrategies()` — previously only `memory.active` used strict comparison, while `always`, `max_requests`, and `exception` used a truthy check ([#370](https://github.com/crazy-goat/workerman-bundle/issues/370))
 - `DateTimeTrigger`: move assignment out of `if` condition to eliminate assignment-in-condition smell and avoid potential `=`/`==` confusion ([#359](https://github.com/crazy-goat/workerman-bundle/issues/359))
+- `StatusFileReader::waitForFile()` and `ProcessInspector::waitForProcessToStop()` now share a consistent exponential-backoff polling strategy via the new `WaitStrategy` class, replacing the fixed 50 ms delay in `waitForFile` with the same backoff used by `waitForProcessToStop` ([#362](https://github.com/crazy-goat/workerman-bundle/issues/362))
 
 ### Docs
 

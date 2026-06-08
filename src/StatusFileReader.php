@@ -8,21 +8,16 @@ final readonly class StatusFileReader
 {
     public function __construct(
         private ConfigLoader $configLoader,
+        private WaitStrategy $waitStrategy = new WaitStrategy(),
     ) {
     }
 
     public function waitForFile(string $filePath, int $timeout): bool
     {
-        $interval = 50_000;
-        $elapsed = 0;
-        $timeoutMicro = $timeout * 1_000_000;
-
-        while (!file_exists($filePath) && $elapsed < $timeoutMicro) {
-            usleep($interval);
-            $elapsed += $interval;
-        }
-
-        return file_exists($filePath);
+        return $this->waitStrategy->waitFor(
+            static fn(): bool => file_exists($filePath),
+            $timeout,
+        );
     }
 
     public function getStatusFilePath(): string

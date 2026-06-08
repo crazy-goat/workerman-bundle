@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ProcessInspector;
+use CrazyGoat\WorkermanBundle\WaitStrategy;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -17,7 +18,7 @@ final class ProcessInspectorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->inspector = new ProcessInspector();
+        $this->inspector = new ProcessInspector(new WaitStrategy(initialDelayMs: 1, maxDelayMs: 5));
     }
 
     /**

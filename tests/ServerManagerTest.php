@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
+use CrazyGoat\WorkermanBundle\WaitStrategy;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -51,8 +52,8 @@ final class ServerManagerTest extends TestCase
             'stop_timeout' => 0,
             'status_timeout' => 3,
         ]);
-        $this->processInspector = new ProcessInspector();
-        $this->statusFileReader = new StatusFileReader($this->configLoader);
+        $this->processInspector = new ProcessInspector(new WaitStrategy(initialDelayMs: 1, maxDelayMs: 5));
+        $this->statusFileReader = new StatusFileReader($this->configLoader, new WaitStrategy(initialDelayMs: 1, maxDelayMs: 5));
 
         $this->manager = new ServerManager(
             $this->kernel,

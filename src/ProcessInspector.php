@@ -19,6 +19,11 @@ final readonly class ProcessInspector
      */
     private const TIMEOUT_BUFFER = 3;
 
+    public function __construct(
+        private WaitStrategy $waitStrategy = new WaitStrategy(),
+    ) {
+    }
+
     public function isProcessAlive(int $pid): bool
     {
         if ($pid <= 0 || !posix_kill($pid, 0)) {
@@ -90,20 +95,10 @@ final readonly class ProcessInspector
         $timeout = $graceful
             ? $stopTimeout * self::GRACEFUL_TIMEOUT_MULTIPLIER + self::TIMEOUT_BUFFER
             : $stopTimeout + self::TIMEOUT_BUFFER;
-        $startTime = time();
-        $sleepMs = 10;
 
-        while (true) {
-            if (!$this->isProcessAlive($pid)) {
-                return true;
-            }
-
-            if ((time() - $startTime) >= $timeout) {
-                return false;
-            }
-
-            usleep($sleepMs * 1000);
-            $sleepMs = min($sleepMs * 2, 250);
-        }
+        return $this->waitStrategy->waitFor(
+            fn(): bool => !$this->isProcessAlive($pid),
+            $timeout,
+        );
     }
 }
