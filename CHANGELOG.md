@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 
+- Add comprehensive interface-level and per-method PHPDoc to `MiddlewareInterface`, `RebootStrategyInterface`, and `TriggerInterface` — every interface now documents its purpose, lifecycle, consumption site, and parameter/return semantics so third-party implementers have a complete contract reference ([#322](https://github.com/crazy-goat/workerman-bundle/issues/322))
 - Update "What's new in this fork" section in `README.md` with a comprehensive comparison against upstream `luzrain/workerman-bundle`, covering 20+ feature additions, dependency differences, and architectural changes ([#491](https://github.com/crazy-goat/workerman-bundle/issues/491))
 - Document `composer test` port binding, troubleshooting steps, and workarounds in `CONTRIBUTING.md` to help contributors avoid "Address already in use" errors ([#358](https://github.com/crazy-goat/workerman-bundle/issues/358))
 
