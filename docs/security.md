@@ -294,6 +294,42 @@ Runtime directories (PID file, log files, stdout files) are created with mode `0
   stat -c '%a %n' var/run/ var/log/
   ```
 
+## Config Cache File Protection
+
+The `ConfigLoader` reads the application configuration from a cached PHP file generated during cache warm-up (`{cacheDir}/workerman/config.cache.php`). This file is loaded via `require` at boot time.
+
+### Trust Requirement
+
+The configuration cache file is a PHP file that gets executed. Any attacker who can write to the cache directory can achieve arbitrary code execution by modifying this file. The bundle relies on the standard Symfony assumption that the **cache directory is not writable by untrusted users**.
+
+### Permission Validation
+
+To mitigate misconfiguration, the bundle validates the cache file permissions before loading it:
+
+- **World-writable check**: If the cache file is world-writable (permissions include `o+w`), loading is **refused** with a clear error message.
+- **Scope**: The check covers POSIX file permissions only. It does not cover ACLs, extended attributes, or filesystems that do not support POSIX permissions.
+
+### When this matters
+
+- **Multi-tenant environments**: Shared hosting or CI runners where the cache directory might be accessible to other users.
+- **Containerised deployments**: Containers with overly permissive `umask` settings (e.g., `umask 0000`) can produce world-writable cache files.
+- **Development setups**: Developers running with `umask 0000` or cache directories created with `0777` permissions.
+
+### Remediation
+
+Ensure the cache directory has restrictive permissions:
+
+```bash
+chmod 0700 var/cache/
+```
+
+Or, if the web server and CLI users differ, use a shared group:
+
+```bash
+chmod 0750 var/cache/
+chgrp <webserver-group> var/cache/
+```
+
 ## SFX Checksum Requirement
 
 The build **fails** if no SHA-256 checksum is configured, unless `--unsafe-no-checksum` is explicitly
