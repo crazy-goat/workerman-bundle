@@ -191,7 +191,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     private function shouldCloseConnection(Request $request): bool
     {
         return $request->protocolVersion() === '1.0'
-            || $request->header('Connection', '') === 'close';
+            || strcasecmp((string) $request->header('Connection', ''), 'close') === 0;
     }
 
     /**
