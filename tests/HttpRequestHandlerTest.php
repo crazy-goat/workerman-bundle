@@ -514,6 +514,36 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertTrue($connection->closed, 'Connection: close header should close the connection');
     }
 
+    public function testInvokeExplicitConnectionCloseCaseInsensitiveClosesConnection(): void
+    {
+        $connection = new MockTcpConnection();
+        $request = new Request("GET / HTTP/1.1\r\nConnection: Close\r\nHost: test\r\n\r\n");
+
+        ($this->handler)($connection, $request);
+
+        $this->assertTrue($connection->closed, 'Connection: Close (mixed case) should close the connection');
+    }
+
+    public function testInvokeExplicitConnectionCloseAllCapsClosesConnection(): void
+    {
+        $connection = new MockTcpConnection();
+        $request = new Request("GET / HTTP/1.1\r\nConnection: CLOSE\r\nHost: test\r\n\r\n");
+
+        ($this->handler)($connection, $request);
+
+        $this->assertTrue($connection->closed, 'Connection: CLOSE (all caps) should close the connection');
+    }
+
+    public function testInvokeConnectionKeepAliveKeepsConnectionOpen(): void
+    {
+        $connection = new MockTcpConnection();
+        $request = new Request("GET / HTTP/1.1\r\nConnection: keep-alive\r\nHost: test\r\n\r\n");
+
+        ($this->handler)($connection, $request);
+
+        $this->assertFalse($connection->closed, 'Connection: keep-alive should keep the connection open');
+    }
+
     // ──────────────────────────────────────────────
     // Response already sent by middleware
     // ──────────────────────────────────────────────
@@ -932,6 +962,42 @@ final class HttpRequestHandlerTest extends TestCase
         $result = $method->invoke($this->handler, $request);
 
         $this->assertTrue($result, 'Connection: close should return true');
+    }
+
+    public function testShouldCloseConnectionConnectionCloseCaseInsensitiveReturnsTrue(): void
+    {
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('shouldCloseConnection');
+
+        $raw = "GET / HTTP/1.1\r\nConnection: Close\r\nHost: test\r\n\r\n";
+        $request = new Request($raw);
+        $result = $method->invoke($this->handler, $request);
+
+        $this->assertTrue($result, 'Connection: Close (mixed case) should return true');
+    }
+
+    public function testShouldCloseConnectionConnectionCloseAllCapsReturnsTrue(): void
+    {
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('shouldCloseConnection');
+
+        $raw = "GET / HTTP/1.1\r\nConnection: CLOSE\r\nHost: test\r\n\r\n";
+        $request = new Request($raw);
+        $result = $method->invoke($this->handler, $request);
+
+        $this->assertTrue($result, 'Connection: CLOSE (all caps) should return true');
+    }
+
+    public function testShouldCloseConnectionConnectionKeepAliveReturnsFalse(): void
+    {
+        $reflection = new \ReflectionClass($this->handler);
+        $method = $reflection->getMethod('shouldCloseConnection');
+
+        $raw = "GET / HTTP/1.1\r\nConnection: keep-alive\r\nHost: test\r\n\r\n";
+        $request = new Request($raw);
+        $result = $method->invoke($this->handler, $request);
+
+        $this->assertFalse($result, 'Connection: keep-alive should return false');
     }
 
     // ──────────────────────────────────────────────

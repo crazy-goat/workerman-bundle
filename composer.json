@@ -67,10 +67,7 @@
         "sort-packages": true,
         "audit": {
             "block-insecure": true,
-            "ignore": [
-                "PKSA-d1rr-z8zb-qnm7",
-                "PKSA-py8y-z9q7-q197"
-            ],
+            "ignore": [],
             "abandoned": "report"
         },
         "allow-plugins": {
