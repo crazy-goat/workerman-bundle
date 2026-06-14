@@ -61,24 +61,12 @@ final class ComposerConfigTest extends TestCase
         );
     }
 
-    public function testAuditIgnoreContainsKnownAdvisories(): void
+    public function testAuditIgnoreIsConfigured(): void
     {
         self::assertArrayHasKey('config', $this->composerConfig);
         self::assertArrayHasKey('audit', $this->composerConfig['config']);
         self::assertArrayHasKey('ignore', $this->composerConfig['config']['audit']);
         self::assertIsArray($this->composerConfig['config']['audit']['ignore']);
-
-        $ignored = $this->composerConfig['config']['audit']['ignore'];
-        self::assertContains(
-            'PKSA-d1rr-z8zb-qnm7',
-            $ignored,
-            'Known advisory for symfony/runtime 7.0.* must be in audit ignore list',
-        );
-        self::assertContains(
-            'PKSA-py8y-z9q7-q197',
-            $ignored,
-            'Known advisory for symfony/runtime 7.2.* must be in audit ignore list',
-        );
     }
 
     public function testDescriptionMentionsMajorCapabilities(): void

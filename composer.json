@@ -67,6 +67,7 @@
         "sort-packages": true,
         "audit": {
             "block-insecure": true,
+            "ignore": [],
             "abandoned": "report"
         },
         "allow-plugins": {
