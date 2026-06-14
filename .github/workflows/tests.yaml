@@ -100,8 +100,6 @@ jobs:
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
-        env:
-          COMPOSER_NO_AUDIT: 1
 
       - name: Run tests
         run: composer test
