@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     strategy:
+      fail-fast: false
       matrix:
         include:
           - php-version: '8.2'
@@ -43,8 +44,6 @@ jobs:
             symfony-version: '6.4.*'
           - php-version: '8.3'
             symfony-version: '7.4.*'
-          - php-version: '8.3'
-            symfony-version: '8.0.*'
 
           - php-version: '8.4'
             symfony-version: '6.4.*'
