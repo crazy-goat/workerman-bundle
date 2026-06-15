@@ -162,6 +162,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         // Simulate buffer drain (primary cleanup path)
         $onBufferDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($onBufferDrain, 'onBufferDrain callback should be registered');
+        assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
         $this->assertFileDoesNotExist($tempFile);
@@ -189,6 +190,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         // Simulate connection close without buffer drain (early disconnect)
         $onCloseCallback = $this->connection->onClose;
         $this->assertNotNull($onCloseCallback, 'onClose fallback callback should be registered');
+        assert(is_callable($onCloseCallback));
         $onCloseCallback($this->connection);
 
         $this->assertFileDoesNotExist($tempFile);
@@ -243,6 +245,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         // Simulate buffer drain (primary path)
         $onBufferDrain = $this->connection->onBufferDrain;
+        assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
         // After buffer drain, onClose should be restored to the original
@@ -298,6 +301,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $onBufferDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($onBufferDrain);
+        assert(is_callable($onBufferDrain));
 
         $onBufferDrain($this->connection);
 
@@ -323,6 +327,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $onCloseCallback = $this->connection->onClose;
         $this->assertNotNull($onCloseCallback);
+        assert(is_callable($onCloseCallback));
 
         $onCloseCallback($this->connection);
 
@@ -346,7 +351,9 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection);
 
+        // Fire buffer drain
         $onBufferDrain = $this->connection->onBufferDrain;
+        assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
         $this->assertNull($this->connection->onBufferDrain);
@@ -371,7 +378,9 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection);
 
+        // Fire onClose (early disconnect)
         $onCloseCallback = $this->connection->onClose;
+        assert(is_callable($onCloseCallback));
         $onCloseCallback($this->connection);
 
         $this->assertNull($this->connection->onClose);
@@ -401,6 +410,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         // Fire buffer drain (deletes file)
         $onBufferDrain = $this->connection->onBufferDrain;
+        assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
         $this->assertFileDoesNotExist($tempFile);
