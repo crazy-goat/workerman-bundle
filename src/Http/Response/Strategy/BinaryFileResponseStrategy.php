@@ -63,7 +63,7 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $filePath = $file->getPathname();
 
             $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
-            $connection->onClose = $this->createCleanupCallback($filePath, $connection->onClose, $this->logger);
+            $this->scheduleFileCleanup($filePath, $connection);
 
             return $workermanResponse;
         }
@@ -77,21 +77,76 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         return $workermanResponse;
     }
 
-    private function createCleanupCallback(string $filePath, mixed $previousOnClose, LoggerInterface $logger): \Closure
+    /**
+     * Schedule file deletion using onBufferDrain (fires when the send buffer
+     * is empty — i.e. the file has been fully sent) with an onClose fallback
+     * for early disconnects. Both callbacks self-remove after firing so they
+     * do not persist across keep-alive requests.
+     */
+    private function scheduleFileCleanup(string $filePath, TcpConnection $connection): void
     {
-        return static function () use ($filePath, $previousOnClose, $logger): void {
-            try {
-                if (is_callable($previousOnClose)) {
-                    $previousOnClose();
-                }
-            } finally {
-                if (is_file($filePath) && !unlink($filePath)) {
-                    $logger->warning('Failed to delete temporary file after send', [
-                        'path' => $filePath,
-                        'error' => error_get_last()['message'] ?? 'Unknown error',
-                    ]);
-                }
+        $previousOnClose = $connection->onClose;
+        $previousOnBufferDrain = $connection->onBufferDrain;
+        $logger = $this->logger;
+
+        $cleanup = static function () use ($filePath, $logger): void {
+            if (is_file($filePath) && !unlink($filePath)) {
+                $logger->warning('Failed to delete temporary file after send', [
+                    'path' => $filePath,
+                    'error' => error_get_last()['message'] ?? 'Unknown error',
+                ]);
             }
         };
+
+        $onBufferDrain = static function (TcpConnection $conn) use (
+            $cleanup,
+            &$onBufferDrain,
+            &$onClose,
+            $previousOnBufferDrain,
+            $previousOnClose,
+        ): void {
+            // Self-remove: this callback must not fire on subsequent requests
+            // over the same keep-alive connection.
+            if ($conn->onBufferDrain === $onBufferDrain) {
+                $conn->onBufferDrain = is_callable($previousOnBufferDrain) ? $previousOnBufferDrain : null;
+            }
+            // Restore original onClose now that the file is deleted.
+            if ($conn->onClose === $onClose) {
+                $conn->onClose = $previousOnClose;
+            }
+
+            $cleanup();
+
+            // Chain to any previous onBufferDrain callback.
+            if (is_callable($previousOnBufferDrain)) {
+                $previousOnBufferDrain($conn);
+            }
+        };
+
+        $onClose = static function (TcpConnection $conn) use (
+            $cleanup,
+            &$onBufferDrain,
+            &$onClose,
+            $previousOnBufferDrain,
+            $previousOnClose,
+        ): void {
+            // Self-remove: prevent double-firing if both drain and close trigger.
+            if ($conn->onClose === $onClose) {
+                $conn->onClose = $previousOnClose;
+            }
+            if ($conn->onBufferDrain === $onBufferDrain) {
+                $conn->onBufferDrain = is_callable($previousOnBufferDrain) ? $previousOnBufferDrain : null;
+            }
+
+            $cleanup();
+
+            // Chain to any previous onClose callback.
+            if (is_callable($previousOnClose)) {
+                $previousOnClose($conn);
+            }
+        };
+
+        $connection->onBufferDrain = $onBufferDrain;
+        $connection->onClose = $onClose;
     }
 }
