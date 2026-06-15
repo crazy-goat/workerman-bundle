@@ -230,6 +230,53 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame($config, $loaderB->getWorkermanConfig());
     }
 
+    public function testLoadFromCacheRejectsWorldWritableCacheFile(): void
+    {
+        // Create loader, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+
+        // Make the cache file world-writable
+        chmod($cachePath, 0666);
+
+        // Create loader B (no config set via setters) — should reject world-writable cache
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('world-writable');
+
+        $loaderB->getWorkermanConfig();
+    }
+
+    public function testLoadFromCacheWithPrivateCacheFileContinuesToWork(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $config = [
+            'server' => ['listen' => 'http://0.0.0.0:8080'],
+        ];
+        $loaderA->setWorkermanConfig($config);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+
+        // Make the cache file owner-only readable/writable
+        chmod($cachePath, 0600);
+
+        // Create loader B (no config set via setters) — should load from cache
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertSame($config, $loaderB->getWorkermanConfig());
+    }
+
     public function testLoadFreshThrowsWhenNoConfigAndNoCache(): void
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
