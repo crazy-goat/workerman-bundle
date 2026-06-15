@@ -29,7 +29,7 @@ final readonly class ConfigurationTreeBuilder
     {
         $node
             ->scalarNode('runtime_dir')
-                ->info('Writable runtime directory for cache, logs, and PID files. In PHAR mode defaults to directory containing the PHAR. Can be overridden with WORKERMAN_RUNTIME_DIR env var.')
+                ->info('Writable directory for cache, logs, and PID files. Must be writable by the workerman process. In PHAR/BIN mode the runtime directory must live outside the archive (the PHAR cannot be written to at runtime); in that case the default is the directory containing the PHAR. Subdirectories are created with restrictive permissions (0700). Can be overridden with the WORKERMAN_RUNTIME_DIR env var.')
                 ->defaultValue('%kernel.project_dir%')
                 ->end()
             ->scalarNode('user')
