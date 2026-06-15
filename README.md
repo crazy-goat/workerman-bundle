@@ -148,7 +148,7 @@ All top-level `workerman` configuration options:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `runtime_dir` | `string` | `%kernel.project_dir%` | Writable runtime directory for cache, logs, and PID files. In PHAR mode defaults to the directory containing the PHAR. Can be overridden with `WORKERMAN_RUNTIME_DIR` env var. See [build-packaging.md](docs/build-packaging.md#writable-paths). |
+| `runtime_dir` | `string` | `%kernel.project_dir%` | Writable directory for cache, logs, and PID files. In PHAR/BIN mode the default is the directory containing the PHAR/BIN file (the archive cannot be written to at runtime), and subdirectories are created with 0700 permissions. Override via the `WORKERMAN_RUNTIME_DIR` env var. See [build-packaging.md](docs/build-packaging.md#writable-paths). |
 | `user` | `string\|null` | `null` (current user) | Unix user of processes. |
 | `group` | `string\|null` | `null` (current group) | Unix group of processes. |
 | `stop_timeout` | `int` | `2` | Max seconds of child process work before force kill. |
