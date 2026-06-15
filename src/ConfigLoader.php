@@ -46,7 +46,13 @@ final class ConfigLoader implements CacheWarmerInterface
         }
 
         $resources = is_file($this->yamlConfigFilePath) ? [new FileResource($this->yamlConfigFilePath)] : [];
-        $this->cache->write(sprintf('<?php return %s;', var_export($this->config, true)), $resources);
+
+        $previousUmask = umask(0077);
+        try {
+            $this->cache->write(sprintf('<?php return %s;', var_export($this->config, true)), $resources);
+        } finally {
+            umask($previousUmask);
+        }
 
         return [];
     }
