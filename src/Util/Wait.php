@@ -13,9 +13,11 @@ namespace CrazyGoat\WorkermanBundle\Util;
  * backoff starts at {@see DEFAULT_INITIAL_DELAY_MS} milliseconds and
  * doubles after each unsuccessful check up to {@see DEFAULT_MAX_DELAY_MS}.
  *
- * The timeout is checked before sleeping, so the total wall time is
- * bounded by {@code $timeoutSeconds} plus the duration of the last
- * condition evaluation (no extra sleep is performed after timeout).
+ * The deadline is checked before each sleep, so no extra sleep is
+ * performed once the timeout has elapsed. The total wall time may
+ * still exceed `$timeoutSeconds` by up to `$maxDelayMs` plus the
+ * runtime of the final condition evaluation, because an in-flight
+ * sleep started just before the deadline runs to completion.
  *
  * @internal
  */

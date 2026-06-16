@@ -133,6 +133,7 @@ final class WaitTest extends TestCase
 
         $this->assertNotNull($constructor);
         $this->assertTrue($constructor->isPrivate(), 'Wait should not be instantiable');
+        $this->assertTrue($reflection->isFinal(), 'Wait must stay final so subclasses cannot bypass the private constructor');
     }
 
     public function testDefaultsExposedAsConstants(): void
