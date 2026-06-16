@@ -58,7 +58,7 @@ abstract class FileMonitorWatcher
      *
      * @return \RecursiveIteratorIterator<\RecursiveDirectoryIterator>
      */
-    final protected function createRecursiveIterator(string $dir, int $flags, int $mode): \RecursiveIteratorIterator
+    protected function createRecursiveIterator(string $dir, int $flags, int $mode): \RecursiveIteratorIterator
     {
         return new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, $flags),

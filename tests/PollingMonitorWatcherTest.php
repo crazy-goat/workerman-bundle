@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\PollingMonitorWatcher;
+use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingPollingMonitorWatcher;
+use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingSplFileInfo;
 use PHPUnit\Framework\TestCase;
 use Workerman\Worker;
 
@@ -16,6 +18,7 @@ final class PollingMonitorWatcherTest extends TestCase
     {
         $this->tempDir = \sys_get_temp_dir() . '/workerman_polling_' . \bin2hex(\random_bytes(4));
         \mkdir($this->tempDir, 0700, true);
+        CountingSplFileInfo::reset();
     }
 
     protected function tearDown(): void
@@ -43,33 +46,51 @@ final class PollingMonitorWatcherTest extends TestCase
     /**
      * @param string[] $sourceDir
      * @param string[] $filePattern
+     * @param class-string<PollingMonitorWatcher>|null $class
      */
     private function createWatcher(
         Worker $worker,
         array $sourceDir,
         array $filePattern = ['*.php'],
+        ?string $class = null,
     ): PollingMonitorWatcher {
-        $reflection = new \ReflectionClass(PollingMonitorWatcher::class);
+        $class ??= PollingMonitorWatcher::class;
+        $reflection = new \ReflectionClass($class);
         $instance = $reflection->newInstanceWithoutConstructor();
 
-        $parentClass = $reflection->getParentClass();
-        if (!$parentClass instanceof \ReflectionClass) {
-            throw new \RuntimeException('Failed to get parent class reflection');
-        }
-
-        $workerProp = $parentClass->getProperty('worker');
-        $workerProp->setValue($instance, $worker);
-
-        $sourceDirProp = $parentClass->getProperty('sourceDir');
-        $sourceDirProp->setValue($instance, $sourceDir);
-
-        $filePatternProp = $parentClass->getProperty('filePattern');
-        $filePatternProp->setValue($instance, $filePattern);
-
-        $lastMTimeProp = $reflection->getProperty('lastMTime');
-        $lastMTimeProp->setValue($instance, \time());
+        $this->findProperty($reflection, 'worker')->setValue($instance, $worker);
+        $this->findProperty($reflection, 'sourceDir')->setValue($instance, $sourceDir);
+        $this->findProperty($reflection, 'filePattern')->setValue($instance, $filePattern);
+        $this->findProperty($reflection, 'lastMTime')->setValue($instance, \time());
 
         return $instance;
+    }
+
+    /**
+     * Walks the hierarchy and returns a ReflectionProperty bound to the
+     * declaring class's scope. Required on PHP 8.2/8.3 because
+     * ReflectionProperty::setValue() on a readonly property checks the
+     * scope of the reflection (where getProperty() was called from), not
+     * the property's actual declaring class. Binding to a subclass scope
+     * makes the readonly initializer throw even when the underlying
+     * property is uninitialized.
+     *
+     * @phpstan-ignore-next-line missingType.generics
+     */
+    private function findProperty(\ReflectionClass $class, string $name): \ReflectionProperty
+    {
+        $className = $class->getName();
+        for ($current = $class; $current !== false; $current = $current->getParentClass()) {
+            if (!$current->hasProperty($name)) {
+                continue;
+            }
+            $prop = $current->getProperty($name);
+            if ($prop->getDeclaringClass()->getName() === $current->getName()) {
+                return $prop;
+            }
+        }
+
+        throw new \RuntimeException("Property {$className}::\${$name} does not exist");
     }
 
     private function invokeCheckFileSystemChanges(PollingMonitorWatcher $watcher): void
@@ -80,15 +101,14 @@ final class PollingMonitorWatcherTest extends TestCase
 
     private function setLastMTime(PollingMonitorWatcher $watcher, int $mtime): void
     {
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'lastMTime');
-        $reflection->setValue($watcher, $mtime);
+        $this->findProperty(new \ReflectionClass($watcher::class), 'lastMTime')->setValue($watcher, $mtime);
     }
 
     private function getLastMTime(PollingMonitorWatcher $watcher): int
     {
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'lastMTime');
+        $prop = $this->findProperty(new \ReflectionClass($watcher::class), 'lastMTime');
 
-        return $reflection->getValue($watcher);
+        return (int) $prop->getValue($watcher);
     }
 
     public function testFileChangeDetectionConditionIsCorrect(): void
@@ -220,15 +240,38 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
-    public function testSourceFileNoLongerContainsGetFileInfo(): void
+    public function testPollUsesSingleStatPerFile(): void
     {
-        $source = \file_get_contents(__DIR__ . '/../src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php');
-        \assert(\is_string($source));
+        $fileCount = 10;
+        for ($i = 0; $i < $fileCount; $i++) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
+        }
+        \clearstatcache();
 
-        $this->assertStringNotContainsString(
-            'getFileInfo',
-            $source,
-            'PollingMonitorWatcher should call getMTime() directly, not via getFileInfo()',
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher(
+            $worker,
+            [$this->tempDir],
+            ['*.php'],
+            CountingPollingMonitorWatcher::class,
+        );
+        // Set lastMTime to the future so no file is treated as modified and
+        // the watcher iterates the full set instead of triggering reload on
+        // the first match.
+        $this->setLastMTime($watcher, \time() + 3600);
+
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        $this->assertSame(
+            $fileCount,
+            CountingSplFileInfo::$statCallCount,
+            \sprintf(
+                'Expected exactly %d stat() calls (one per file), got %d. Reintroducing redundant stat-touching calls (e.g. getFileInfo(), getSize(), or duplicate getMTime()) would inflate this count.',
+                $fileCount,
+                CountingSplFileInfo::$statCallCount,
+            ),
         );
     }
 

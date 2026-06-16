@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
-final class PollingMonitorWatcher extends FileMonitorWatcher
+class PollingMonitorWatcher extends FileMonitorWatcher
 {
     private const POLLING_INTERVAL = 3;
     private const MAX_FILES_PER_TICK = 500;
