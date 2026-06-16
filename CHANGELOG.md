@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Replace `testSourceFileNoLongerContainsGetFileInfo` (which read `PollingMonitorWatcher.php` as a string and asserted on a substring) with `testPollUsesSingleStatPerFile` — a behavioral test that instruments the iterator with `CountingSplFileInfo` and asserts exactly one `stat()` call per file. The new test catches any redundant stat-touching call (`getFileInfo()`, `getSize()`, `isFile()`, duplicate `getMTime()`, etc.) under any name, not just `getFileInfo()` ([#330](https://github.com/crazy-goat/workerman-bundle/issues/330))
 - Expand `StreamedBinaryFileResponseTest` with comprehensive test coverage: content type detection, Content-Length verification, Content-Disposition, offset/maxlen behavior, `deleteFileAfterSend` cleanup, output correctness for small and large files, chunk size validation, auto ETag/Last-Modified headers, and edge cases (empty file, non-readable file, private responses) ([#353](https://github.com/crazy-goat/workerman-bundle/issues/353))
 
 ### Security
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Code Quality
 
+- `PollingMonitorWatcher`: relax `final` on the class and on `FileMonitorWatcher::createRecursiveIterator()` so a test-only subclass can inject a counting `RecursiveDirectoryIterator`. The behavioral test in `PollingMonitorWatcherTest` requires this extension point to verify the watcher makes exactly one `stat()` call per file; without it, the test would be limited to flaky wall-time heuristics ([#330](https://github.com/crazy-goat/workerman-bundle/issues/330))
 - `CronExpressionTrigger`: remove redundant `class_exists(Cron\CronExpression::class)` gate from the constructor — the check is already performed by `TriggerFactory::create()` before instantiation, making the duplicate guard unreachable and misleading ([#355](https://github.com/crazy-goat/workerman-bundle/issues/355))
 - `TriggerFactory`: replace falsy object check (`if ($dateTime)`) with explicit `instanceof \DateTimeImmutable` check to clarify that the branch is taken only when ISO-8601 datetime parsing succeeds, and to avoid relying on object truthiness ([#361](https://github.com/crazy-goat/workerman-bundle/issues/361))
 - `WorkermanCommand`: rename `$allowedActions` local variable to `$invalidActionMessage` so the name accurately reflects that it holds an error message, not a list of allowed actions ([#373](https://github.com/crazy-goat/workerman-bundle/issues/373))
