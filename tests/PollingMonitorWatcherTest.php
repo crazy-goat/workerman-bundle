@@ -67,20 +67,26 @@ final class PollingMonitorWatcherTest extends TestCase
     }
 
     /**
-     * Walks up to the declaring class because ReflectionClass::getProperty()
-     * only looks at the given class, not its hierarchy. This is needed when
-     * the property is declared on a parent (e.g. worker, sourceDir,
-     * filePattern on FileMonitorWatcher).
-     */
-    /**
+     * Walks the hierarchy and returns a ReflectionProperty bound to the
+     * declaring class's scope. Required on PHP 8.2/8.3 because
+     * ReflectionProperty::setValue() on a readonly property checks the
+     * scope of the reflection (where getProperty() was called from), not
+     * the property's actual declaring class. Binding to a subclass scope
+     * makes the readonly initializer throw even when the underlying
+     * property is uninitialized.
+     *
      * @phpstan-ignore-next-line missingType.generics
      */
     private function findProperty(\ReflectionClass $class, string $name): \ReflectionProperty
     {
         $className = $class->getName();
         for ($current = $class; $current !== false; $current = $current->getParentClass()) {
-            if ($current->hasProperty($name)) {
-                return $current->getProperty($name);
+            if (!$current->hasProperty($name)) {
+                continue;
+            }
+            $prop = $current->getProperty($name);
+            if ($prop->getDeclaringClass()->getName() === $current->getName()) {
+                return $prop;
             }
         }
 
