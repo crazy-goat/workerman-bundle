@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\Wait;
+
 final readonly class ProcessInspector
 {
     /**
@@ -90,20 +92,7 @@ final readonly class ProcessInspector
         $timeout = $graceful
             ? $stopTimeout * self::GRACEFUL_TIMEOUT_MULTIPLIER + self::TIMEOUT_BUFFER
             : $stopTimeout + self::TIMEOUT_BUFFER;
-        $startTime = time();
-        $sleepMs = 10;
 
-        while (true) {
-            if (!$this->isProcessAlive($pid)) {
-                return true;
-            }
-
-            if ((time() - $startTime) >= $timeout) {
-                return false;
-            }
-
-            usleep($sleepMs * 1000);
-            $sleepMs = min($sleepMs * 2, 250);
-        }
+        return Wait::until(fn(): bool => !$this->isProcessAlive($pid), $timeout);
     }
 }

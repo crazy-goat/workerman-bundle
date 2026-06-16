@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\Wait;
+
 final readonly class StatusFileReader
 {
     public function __construct(
@@ -13,16 +15,7 @@ final readonly class StatusFileReader
 
     public function waitForFile(string $filePath, int $timeout): bool
     {
-        $interval = 50_000;
-        $elapsed = 0;
-        $timeoutMicro = $timeout * 1_000_000;
-
-        while (!file_exists($filePath) && $elapsed < $timeoutMicro) {
-            usleep($interval);
-            $elapsed += $interval;
-        }
-
-        return file_exists($filePath);
+        return Wait::until(static fn(): bool => file_exists($filePath), $timeout);
     }
 
     public function getStatusFilePath(): string
