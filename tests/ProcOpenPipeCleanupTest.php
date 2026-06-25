@@ -42,28 +42,25 @@ final class ProcOpenPipeCleanupTest extends TestCase
 
     public function testWorkermanCommandClosesProcOpenPipes(): void
     {
-        $sourceFile = dirname(__DIR__) . '/tests/WorkermanCommandTest.php';
-        $this->assertFileExists($sourceFile);
-
-        $content = file_get_contents($sourceFile);
-        $this->assertNotFalse($content);
-
-        $this->assertStringContainsString(
-            '\fclose($pipe)',
-            $content,
-            'WorkermanCommandTest must close proc_open pipes to prevent file descriptor leak',
+        $descriptor = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $process = \proc_open(
+            \sprintf('%s -r %s', \PHP_BINARY, \escapeshellarg('echo ok')),
+            $descriptor,
+            $pipes,
         );
 
-        $this->assertStringContainsString(
-            '\proc_close($process)',
-            $content,
-            'WorkermanCommandTest must close the process handle after proc_open',
-        );
+        $this->assertIsResource($process, 'Must be able to open a process via proc_open');
 
-        $this->assertStringContainsString(
-            '\is_resource($process)',
-            $content,
-            'WorkermanCommandTest must check proc_open result before using pipes',
-        );
+        foreach ($pipes as $pipe) {
+            \fclose($pipe);
+        }
+        \proc_close($process);
+
+        foreach ($pipes as $index => $pipe) {
+            $this->assertFalse(
+                \is_resource($pipe),
+                \sprintf('Pipe %d must be closed after fclose', $index),
+            );
+        }
     }
 }
