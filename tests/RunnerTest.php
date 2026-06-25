@@ -21,102 +21,38 @@ use Workerman\Worker;
  * inheriting PHPUnit's output buffers and shutdown functions, which interfere
  * with pcntl_fork() + exit() behavior.
  *
- * The structural test verifies the Runner source code uses the correct
- * error handling pattern as a regression safety net.
+ * Fork-failure (pcntl_fork returning -1) is tested behaviorally via a
+ * readonly anonymous subclass that overrides the fork() method.
  */
 final class RunnerTest extends TestCase
 {
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/runner_test_runner.php';
     private const RUNNER_SOURCE = __DIR__ . '/../src/Runner.php';
 
-    /**
-     * Structural test: verify Runner source uses correct error handling pattern.
-     */
-    public function testRunnerUsesCorrectForkErrorHandling(): void
+    public function testForkFailureThrowsRuntimeException(): void
     {
-        $sourceFile = self::RUNNER_SOURCE;
-        $this->assertFileExists($sourceFile);
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $this->createMock(KernelInterface::class),
+            [],
+        );
+        $runner = new readonly class ($kernelFactory) extends Runner {
+            protected function fork(): int
+            {
+                return -1;
+            }
+        };
 
-        $content = file_get_contents($sourceFile);
-        $this->assertNotFalse($content);
-
-        $this->assertStringContainsString(
-            "throw new \RuntimeException('Failed to fork process for cache warmup')",
-            $content,
-            'Must throw when pcntl_fork() returns -1',
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        $configLoader = new ConfigLoader(
+            projectDir: $tmpDir,
+            cacheDir: $tmpDir . '/var/cache/test',
+            isDebug: false,
         );
 
-        $this->assertStringContainsString(
-            'pcntl_wifexited',
-            $content,
-            'Must check pcntl_wifexited() before pcntl_wexitstatus() to detect signal-killed children',
-        );
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to fork process for cache warmup');
 
-        $this->assertStringContainsString(
-            'Cache warmup failed in forked process (exit code',
-            $content,
-            'Must throw with exit code when child exits with non-zero code',
-        );
-
-        $this->assertStringContainsString(
-            'Cache warmup failed in forked process (child signaled failure via SIGTERM)',
-            $content,
-            'Must throw with SIGTERM-specific message when child signals failure',
-        );
-
-        $this->assertStringContainsString(
-            'Cache warmup failed in forked process (killed by unexpected signal',
-            $content,
-            'Must throw with signal number when child is killed by unexpected signal',
-        );
-
-        $this->assertStringContainsString(
-            'Cache warmup failed in forked process (unexpected status',
-            $content,
-            'Must throw with unexpected status when child neither exited nor signaled',
-        );
-
-        $this->assertStringContainsString(
-            'SIGKILL',
-            $content,
-            'Must use SIGKILL for success signal',
-        );
-
-        $this->assertStringContainsString(
-            'SIGTERM',
-            $content,
-            'Must use SIGTERM for error signal',
-        );
-
-        $this->assertStringContainsString(
-            'Cache warmup timed out',
-            $content,
-            'Must have timeout error message',
-        );
-
-        $this->assertStringContainsString(
-            'getCacheWarmupTimeout',
-            $content,
-            'Must have getCacheWarmupTimeout method',
-        );
-
-        $this->assertStringContainsString(
-            'WORKERMAN_CACHE_WARMUP_TIMEOUT',
-            $content,
-            'Must support WORKERMAN_CACHE_WARMUP_TIMEOUT env var override',
-        );
-
-        $this->assertStringContainsString(
-            'return 30;',
-            $content,
-            'Must have 30 second default timeout in getCacheWarmupTimeout',
-        );
-
-        $this->assertStringContainsString(
-            'Unable to create directory',
-            $content,
-            'Must throw when mkdir() fails to create var/run directory',
-        );
+        $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
     }
 
     /**
@@ -991,7 +927,6 @@ final class RunnerTest extends TestCase
                 '-d', 'extension=posix',
                 self::RUNNER_SCRIPT,
                 $testName,
-                self::RUNNER_SOURCE,
             ],
             $descriptors,
             $pipes,
