@@ -23,7 +23,22 @@ final readonly class PharBuilder
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      *
      * @return string Path to the built PHAR
      *
@@ -51,7 +66,7 @@ final readonly class PharBuilder
         $pharFilename = basename($pharPath);
         $this->validatePharAlias($pharFilename);
 
-        $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
+        $kernelClass = ($buildConfig['kernel_class'] ?? '') !== ''
             ? $buildConfig['kernel_class']
             : 'App\\Kernel';
         $this->validateKernelClass($kernelClass);
@@ -86,7 +101,22 @@ final readonly class PharBuilder
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      *
      * @return ExcludePattern[]
      */
@@ -109,7 +139,22 @@ final readonly class PharBuilder
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      *
      * @return string[]
      */
@@ -120,7 +165,7 @@ final readonly class PharBuilder
             return [];
         }
 
-        return array_values(array_filter($raw, static fn($f): bool => is_string($f) && $f !== ''));
+        return array_values(array_filter($raw, static fn(string $f): bool => $f !== ''));
     }
 
     /**
@@ -158,7 +203,22 @@ final readonly class PharBuilder
     private const ALLOWED_KERNEL_CLASS_PATTERN = '/^(\\\\?[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)+(\\\\[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)*$/';
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      *
      * Placeholders replaced in the stub template:
      *   __PHAR_ALIAS__    — PHAR archive alias
@@ -171,7 +231,7 @@ final readonly class PharBuilder
         $this->validatePharAlias($pharAlias);
 
         $runtimeEnv = \CrazyGoat\WorkermanBundle\Runtime::class;
-        $kernelClass = \is_string($buildConfig['kernel_class'] ?? null) && $buildConfig['kernel_class'] !== ''
+        $kernelClass = ($buildConfig['kernel_class'] ?? '') !== ''
             ? $buildConfig['kernel_class']
             : 'App\\Kernel';
 

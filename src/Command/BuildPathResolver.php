@@ -7,7 +7,22 @@ namespace CrazyGoat\WorkermanBundle\Command;
 final class BuildPathResolver
 {
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      */
     public function resolveBuildDir(mixed $cliBuildDir, array $buildConfig, string $projectDir): string
     {
@@ -27,7 +42,22 @@ final class BuildPathResolver
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      */
     public function resolvePharPath(mixed $cliPharFilename, string $buildDir, array $buildConfig): string
     {
@@ -35,7 +65,22 @@ final class BuildPathResolver
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      */
     public function resolveBinPath(mixed $cliBinFilename, string $buildDir, array $buildConfig): string
     {
@@ -43,7 +88,22 @@ final class BuildPathResolver
     }
 
     /**
-     * @param mixed[] $buildConfig
+     * @param array{
+     *     build_dir?: string,
+     *     kernel_class?: string,
+     *     phar_filename?: string,
+     *     bin_filename?: string,
+     *     bin_php_version?: string|null,
+     *     sfx?: array{
+     *         url?: string|null,
+     *         file?: string|null,
+     *         sha256?: string|null,
+     *         allow_insecure?: bool,
+     *     },
+     *     exclude_patterns?: list<string>,
+     *     exclude_files?: list<string>,
+     *     custom_ini?: string|null,
+     * } $buildConfig
      */
     private function resolveFilename(mixed $cliValue, array $buildConfig, string $configKey, string $default): string
     {
