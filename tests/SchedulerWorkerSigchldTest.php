@@ -69,46 +69,18 @@ final class SchedulerWorkerSigchldTest extends TestCase
     }
 
     /**
-     * Structural test: verify SchedulerWorker logs exceptions in child process.
-     * This is a regression safety net for Issue #157 — if someone removes the
-     * exception logging or reverts to silently swallowing exceptions, this test
-     * catches it immediately.
+     * Behavioral test: verify SchedulerWorker logs exceptions in child process
+     * and exits with code 1.
+     *
+     * Forks a child that invokes SchedulerWorker::handleChild via reflection
+     * with a TaskHandler that throws. Asserts the child exits with code 1
+     * and the exception is logged via Worker::log().
+     *
+     * Replaces the old source-grep structural test (Issue #306).
      */
     public function testSchedulerWorkerLogsExceptionsInChildProcess(): void
     {
-        $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
-        $this->assertFileExists($sourceFile);
-
-        $content = file_get_contents($sourceFile);
-        $this->assertNotFalse($content);
-
-        // Verify the catch block captures the exception variable
-        $this->assertStringContainsString(
-            'catch (\Throwable $e)',
-            $content,
-            'Catch block must capture exception variable for logging (Issue #157)',
-        );
-
-        // Verify the exception is logged via Worker::log()
-        $this->assertStringContainsString(
-            '$this->worker->log(sprintf(',
-            $content,
-            'Exception must be logged via Worker::log() in child process (Issue #157)',
-        );
-
-        // Verify the log message includes exception type
-        $this->assertStringContainsString(
-            '$e::class',
-            $content,
-            'Log message must include exception type for quick identification (Issue #157)',
-        );
-
-        // Verify the log message includes stack trace
-        $this->assertStringContainsString(
-            '$e->getTraceAsString()',
-            $content,
-            'Log message must include stack trace for full diagnostic information (Issue #157)',
-        );
+        $this->runIsolatedTest('scheduler_worker_exception_logging');
     }
 
     // --- PID file handle caching structural tests (Issue #297) ---
