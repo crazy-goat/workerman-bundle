@@ -35,12 +35,7 @@ final class RunnerTest extends TestCase
             fn(): KernelInterface => $this->createMock(KernelInterface::class),
             [],
         );
-        $runner = new readonly class ($kernelFactory) extends Runner {
-            protected function fork(): int
-            {
-                return -1;
-            }
-        };
+        $runner = new ForkFailureRunner($kernelFactory);
 
         $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
         $configLoader = new ConfigLoader(
@@ -956,5 +951,13 @@ final class RunnerTest extends TestCase
         );
 
         $this->assertStringContainsString('PASS', $stdout);
+    }
+}
+
+final readonly class ForkFailureRunner extends Runner
+{
+    protected function fork(): int
+    {
+        return -1;
     }
 }
