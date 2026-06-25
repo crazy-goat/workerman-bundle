@@ -7,7 +7,7 @@
  * shutdown functions, and other PHPUnit state that interferes with
  * pcntl_fork() + exit() behavior.
  *
- * Usage: php runner_test_runner.php <test_name> [source_file]
+ * Usage: php runner_test_runner.php <test_name>
  *
  * Exit codes:
  *   0 = test passed
@@ -21,12 +21,11 @@ declare(strict_types=1);
 /** @var list<string> $argv */
 
 if ($argc < 2) {
-    fwrite(STDERR, "Usage: php runner_test_runner.php <test_name> [source_file]\n");
+    fwrite(STDERR, "Usage: php runner_test_runner.php <test_name>\n");
     exit(2);
 }
 
 $testName = $argv[1];
-define('RUNNER_SOURCE_FILE', $argv[2] ?? dirname(__DIR__) . '/src/Runner.php');
 
 function fail(string $message): never
 {
@@ -40,15 +39,7 @@ function pass(): never
     exit(0);
 }
 
-function assertContains(string $needle, string $haystack, string $message): void
-{
-    if (!str_contains($haystack, $needle)) {
-        fail("$message (expected '$needle' in '$haystack')");
-    }
-}
-
 match ($testName) {
-    'fork_failure' => testForkFailure(),
     'child_boot_exception' => testChildBootException(),
     'child_normal_exit' => testChildNormalExit(),
     'child_exit_nonzero' => testChildExitNonzero(),
@@ -61,27 +52,6 @@ match ($testName) {
         exit(2);
     })(),
 };
-
-/**
- * Test: pcntl_fork() returns -1 (fork failure).
- * We cannot actually trigger fork failure in a test, but we can verify
- * the code path exists and would throw RuntimeException.
- */
-function testForkFailure(): void
-{
-    $content = file_get_contents(RUNNER_SOURCE_FILE);
-    if ($content === false) {
-        fail('Cannot read Runner.php');
-    }
-
-    assertContains(
-        "throw new \RuntimeException('Failed to fork process for cache warmup')",
-        $content,
-        'Runner should throw RuntimeException when fork returns -1',
-    );
-
-    pass();
-}
 
 /**
  * Test: Child process throws exception during boot.

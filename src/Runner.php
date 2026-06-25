@@ -12,7 +12,7 @@ use Symfony\Component\Runtime\RunnerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Worker;
 
-final readonly class Runner implements RunnerInterface
+readonly class Runner implements RunnerInterface
 {
     public function __construct(
         private KernelFactory $kernelFactory,
@@ -62,7 +62,7 @@ final readonly class Runner implements RunnerInterface
             return;
         }
 
-        $pid = \pcntl_fork();
+        $pid = $this->fork();
         if ($pid === -1) {
             throw new \RuntimeException('Failed to fork process for cache warmup');
         }
@@ -227,6 +227,11 @@ final readonly class Runner implements RunnerInterface
                 processConfig: $processConfig,
             );
         }
+    }
+
+    protected function fork(): int
+    {
+        return \pcntl_fork();
     }
 
     private function getCacheWarmupTimeout(): int
