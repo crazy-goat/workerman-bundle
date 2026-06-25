@@ -127,6 +127,7 @@ match ($testName) {
     'signal_kill' => testSignalKill(),
     'multiple_children' => testMultipleChildren(),
     'scheduler_worker_handler' => testSchedulerWorkerHandler(),
+    'scheduler_worker_exception_logging' => testSchedulerWorkerExceptionLogging(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -405,6 +406,121 @@ function requireAutoloader(): void
     }
     require $autoloadPath;
     $loaded = true;
+}
+
+function testSchedulerWorkerExceptionLogging(): void
+{
+    requireAutoloader();
+
+    $logFilePath = tempnam(sys_get_temp_dir(), 'test_exc_log_');
+    if ($logFilePath === false) {
+        fail('Failed to create temp log file');
+    }
+    $logStream = fopen($logFilePath, 'w+');
+    if ($logStream === false) {
+        fail('Failed to open temp log stream');
+    }
+    \Workerman\Worker::$outputStream = $logStream;
+    \Workerman\Worker::$logFile = $logFilePath;
+
+    $pidDir = sys_get_temp_dir();
+    \Workerman\Worker::$pidFile = $pidDir . '/workerman_test.pid';
+
+    $schedulerWorker = createSchedulerWorkerInstance();
+
+    $handleChild = (new \ReflectionMethod(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'handleChild',
+    ))->getClosure($schedulerWorker);
+
+    if (!$handleChild instanceof \Closure) {
+        fail('handleChild must be accessible via reflection');
+    }
+
+    $service = new \CrazyGoat\WorkermanBundle\Util\ServiceMethod('test.exception.service', '__invoke');
+    $taskName = 'test_exception_task';
+
+    // Create mocks that cause TaskHandler to throw during dispatchAndInvoke
+    $container = new class implements \Psr\Container\ContainerInterface {
+        public function get(string $id): mixed
+        {
+            throw new \RuntimeException('Simulated container error');
+        }
+
+        public function has(string $id): bool
+        {
+            return true;
+        }
+    };
+
+    $eventDispatcher = new class implements \Symfony\Contracts\EventDispatcher\EventDispatcherInterface {
+        public function dispatch(object $event, ?string $eventName = null): object
+        {
+            throw new \RuntimeException('Simulated event dispatch failure');
+        }
+    };
+
+    $handler = new \CrazyGoat\WorkermanBundle\Scheduler\TaskHandler($container, $eventDispatcher);
+
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+
+    if ($pid === 0) {
+        $pidFile = sprintf(
+            '%s/workerman.task.%s.pid',
+            dirname(\Workerman\Worker::$pidFile),
+            hash('xxh64', $service->toString()),
+        );
+        touch($pidFile);
+
+        try {
+            $handleChild($pidFile, $service, $taskName, $handler);
+        } catch (\Throwable $e) {
+            fwrite(STDERR, 'handleChild did not exit: ' . $e->getMessage() . "\n");
+            exit(255);
+        }
+        exit(255);
+    }
+
+    $status = 0;
+    $deadline = microtime(true) + 10;
+    $reaped = false;
+    while (microtime(true) < $deadline && !$reaped) {
+        $result = pcntl_waitpid($pid, $status, WNOHANG);
+        if ($result === $pid || $result === -1) {
+            $reaped = true;
+        }
+        usleep(10_000);
+    }
+
+    if (!$reaped) {
+        fail('Child process did not terminate within timeout');
+    }
+
+    if (!pcntl_wifexited($status)) {
+        fail('Child should have exited normally');
+    }
+
+    $exitCode = pcntl_wexitstatus($status);
+    if ($exitCode !== 1) {
+        fail("Child should exit with code 1 when handler throws, got $exitCode");
+    }
+
+    $logs = file_get_contents($logFilePath) ?: '';
+    if (!str_contains($logs, 'failed')) {
+        fail('Log must contain failure indicator');
+    }
+    if (!str_contains($logs, $taskName)) {
+        fail('Log must contain task name');
+    }
+
+    fclose($logStream);
+    @unlink($logFilePath);
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
 }
 
 function createSchedulerWorkerInstance(): \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker
