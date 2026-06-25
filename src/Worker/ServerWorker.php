@@ -22,7 +22,19 @@ final readonly class ServerWorker
     private const PROCESS_TITLE = '[Server]';
 
     /**
-     * @param mixed[] $serverConfig
+     * @param array{
+     *     name: string,
+     *     listen?: string|null,
+     *     local_cert?: string|null,
+     *     local_pk?: string|null,
+     *     processes?: int|null,
+     *     reuse_port?: bool,
+     *     body_size_cap?: int|null,
+     *     serve_files?: bool,
+     *     root_dir?: string|null,
+     *     middlewares?: list<string>,
+     *     static_files?: array{allowed_extensions?: list<string>},
+     * } $serverConfig
      */
     public function __construct(
         KernelFactory $kernelFactory,
@@ -109,7 +121,19 @@ final readonly class ServerWorker
     /**
      * Boot kernel, resolve the request handler and middlewares, and configure the handler.
      *
-     * @param mixed[] $serverConfig
+     * @param array{
+     *     name: string,
+     *     listen?: string|null,
+     *     local_cert?: string|null,
+     *     local_pk?: string|null,
+     *     processes?: int|null,
+     *     reuse_port?: bool,
+     *     body_size_cap?: int|null,
+     *     serve_files?: bool,
+     *     root_dir?: string|null,
+     *     middlewares?: list<string>,
+     *     static_files?: array{allowed_extensions?: list<string>},
+     * } $serverConfig
      *
      * @return callable The fully configured request handler
      */
@@ -143,7 +167,19 @@ final readonly class ServerWorker
     }
 
     /**
-     * @param mixed[] $serverConfig
+     * @param array{
+     *     name: string,
+     *     listen?: string|null,
+     *     local_cert?: string|null,
+     *     local_pk?: string|null,
+     *     processes?: int|null,
+     *     reuse_port?: bool,
+     *     body_size_cap?: int|null,
+     *     serve_files?: bool,
+     *     root_dir?: string|null,
+     *     middlewares?: list<string>,
+     *     static_files?: array{allowed_extensions?: list<string>},
+     * } $serverConfig
      * @return array{ssl: array{local_cert: string, local_pk: string}}
      */
     private function createSslContext(array $serverConfig): array
