@@ -36,19 +36,16 @@ final class PeriodicalTriggerBench
 
     public function benchSecondsInterval(): void
     {
-        // @phpstan-ignore method.resultUnused
         $this->secondsTrigger->getNextRunDate($this->now);
     }
 
     public function benchIsoInterval(): void
     {
-        // @phpstan-ignore method.resultUnused
         $this->isoTrigger->getNextRunDate($this->now);
     }
 
     public function benchStringInterval(): void
     {
-        // @phpstan-ignore method.resultUnused
         $this->stringTrigger->getNextRunDate($this->now);
     }
 }

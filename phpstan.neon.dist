@@ -10,3 +10,7 @@ parameters:
 			message: '#never returns string so it can be removed from the return type#'
 			path: tests/
 			reportUnmatched: false
+		-
+			message: '#Call to method.*on a separate line has no effect#'
+			path: benchmarks/
+			reportUnmatched: false
