@@ -91,9 +91,11 @@ final readonly class ServerManager
      */
     public function getStatus(): ?string
     {
-        posix_kill($this->getRunningMasterPid(), \SIGIOT);
-
+        $masterPid = $this->getRunningMasterPid();
         $statusFile = $this->statusFileReader->getStatusFilePath();
+
+        @unlink($statusFile);
+        posix_kill($masterPid, \SIGIOT);
 
         if (!$this->statusFileReader->waitForFile($statusFile, $this->statusFileReader->getStatusTimeout())) {
             return null;
@@ -120,9 +122,11 @@ final readonly class ServerManager
      */
     public function getConnections(): ?string
     {
-        posix_kill($this->getRunningMasterPid(), \SIGIO);
-
+        $masterPid = $this->getRunningMasterPid();
         $connectionsFile = $this->statusFileReader->getStatusFilePath() . '.connection';
+
+        @unlink($connectionsFile);
+        posix_kill($masterPid, \SIGIO);
 
         if (!$this->statusFileReader->waitForFile($connectionsFile, $this->statusFileReader->getStatusTimeout())) {
             return null;

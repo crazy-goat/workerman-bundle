@@ -15,7 +15,11 @@ final readonly class StatusFileReader
 
     public function waitForFile(string $filePath, int $timeout): bool
     {
-        return Wait::until(static fn(): bool => file_exists($filePath), $timeout);
+        return Wait::until(static function () use ($filePath): bool {
+            clearstatcache(true, $filePath);
+
+            return file_exists($filePath) && filesize($filePath) > 0;
+        }, $timeout);
     }
 
     public function getStatusFilePath(): string
