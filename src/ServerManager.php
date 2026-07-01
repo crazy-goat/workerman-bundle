@@ -33,6 +33,7 @@ final readonly class ServerManager
             throw new ServerAlreadyRunningException();
         }
 
+        $this->writeMasterFingerprint();
         $this->prepareWorkerStart(ServerAction::START, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
@@ -47,6 +48,7 @@ final readonly class ServerManager
     {
         $masterPid = $this->getRunningMasterPid();
         $parentPid = $this->processInspector->getParentPid($masterPid);
+        $fingerprint = $this->loadMasterFingerprint();
 
         posix_kill($masterPid, $graceful ? \SIGQUIT : \SIGINT);
 
@@ -54,7 +56,7 @@ final readonly class ServerManager
             return false;
         }
 
-        $this->processInspector->killOrphanedIntermediateFork($parentPid);
+        $this->processInspector->killOrphanedIntermediateFork($parentPid, $fingerprint);
 
         return true;
     }
@@ -73,6 +75,7 @@ final readonly class ServerManager
             }
         }
 
+        $this->writeMasterFingerprint();
         $this->prepareWorkerStart(ServerAction::RESTART, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
@@ -139,7 +142,10 @@ final readonly class ServerManager
 
     public function isRunning(): bool
     {
-        return $this->processInspector->isMasterRunning($this->getMasterPid());
+        $masterPid = $this->getMasterPid();
+        $fingerprint = $this->loadMasterFingerprint();
+
+        return $this->processInspector->isMasterRunning($masterPid, $fingerprint);
     }
 
     private function prepareWorkerStart(ServerAction $action, bool $daemon, bool $graceful): void
@@ -276,5 +282,66 @@ final readonly class ServerManager
                 'error' => error_get_last()['message'] ?? 'Unknown error',
             ]);
         }
+    }
+
+    /**
+     * Write the master process fingerprint to a sidecar file.
+     *
+     * The fingerprint records the PID, start time, and UID of the
+     * current process (which will become the Workerman master after
+     * `Runner::run()` is invoked). {@see ProcessInspector} reads this
+     * fingerprint to verify that a candidate PID really is the master
+     * before sending signals — preventing the `/proc/cmdline`
+     * substring-match vulnerability described in issue #327.
+     *
+     * Failures are logged but do not abort the start sequence: if the
+     * fingerprint cannot be written, the legacy cmdline-based check
+     * is used as a fallback.
+     */
+    private function writeMasterFingerprint(): void
+    {
+        $pidFile = $this->getConfiguredPidFile();
+        if ($pidFile === '') {
+            return;
+        }
+
+        try {
+            $fingerprint = MasterFingerprint::capture();
+            $fingerprint->writeTo($pidFile . '.fingerprint');
+        } catch (\Throwable $e) {
+            $this->logger->warning('Failed to write master fingerprint; falling back to cmdline check', [
+                'pid_file' => $pidFile,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Load the master fingerprint from the sidecar file.
+     *
+     * Returns null if the fingerprint file does not exist, is unreadable,
+     * or contains malformed content. Callers should treat a null result
+     * as "no fingerprint available" and fall back to the legacy
+     * cmdline-based check.
+     */
+    private function loadMasterFingerprint(): ?MasterFingerprint
+    {
+        $pidFile = $this->getConfiguredPidFile();
+        if ($pidFile === '') {
+            return null;
+        }
+
+        return MasterFingerprint::readFrom($pidFile . '.fingerprint');
+    }
+
+    /**
+     * Return the configured PID file path, or an empty string if not set.
+     */
+    private function getConfiguredPidFile(): string
+    {
+        $config = $this->configLoader->getWorkermanConfig();
+        $pidFile = $config['pid_file'] ?? '';
+
+        return \is_string($pidFile) ? $pidFile : '';
     }
 }
