@@ -187,6 +187,12 @@ final readonly class MasterFingerprint
      * prevent other users from reading or tampering with the fingerprint.
      * Existing files are overwritten atomically via temp-file + rename.
      *
+     * Uses `fopen()` with the `'xb'` mode (exclusive create) to atomically
+     * create the temp file, then `chmod()` to set permissions. The
+     * `chmod()` call runs before any content is written, closing the
+     * window where the temp file could be readable by other users under
+     * a permissive umask.
+     *
      * @throws \RuntimeException if the file cannot be written
      */
     public function writeTo(string $path): void
@@ -199,10 +205,33 @@ final readonly class MasterFingerprint
         $tempPath = $directory . '/.' . \basename($path) . '.' . \bin2hex(\random_bytes(8)) . '.tmp';
         $content = $this->toString();
 
-        if (@\file_put_contents($tempPath, $content, \LOCK_EX) === false) {
-            throw new \RuntimeException(\sprintf('Unable to write fingerprint temp file "%s"', $tempPath));
+        // Open with exclusive create mode to atomically create the temp file.
+        $handle = @\fopen($tempPath, 'xb');
+        if ($handle === false) {
+            throw new \RuntimeException(\sprintf('Unable to create fingerprint temp file "%s"', $tempPath));
         }
-        @\chmod($tempPath, 0600);
+
+        try {
+            // Set permissions before writing content. This closes the
+            // window where the temp file could be readable by other users
+            // under a permissive umask (e.g., umask 0000).
+            if (!@\chmod($tempPath, 0600)) {
+                throw new \RuntimeException(\sprintf('Unable to chmod fingerprint temp file "%s" to 0600', $tempPath));
+            }
+
+            $written = @\fwrite($handle, $content);
+            if ($written === false || $written !== \strlen($content)) {
+                throw new \RuntimeException(\sprintf('Unable to write fingerprint temp file "%s"', $tempPath));
+            }
+
+            if (!@\fclose($handle)) {
+                throw new \RuntimeException(\sprintf('Unable to close fingerprint temp file "%s"', $tempPath));
+            }
+        } catch (\Throwable $e) {
+            @\fclose($handle);
+            @\unlink($tempPath);
+            throw $e;
+        }
 
         if (!@\rename($tempPath, $path)) {
             @\unlink($tempPath);

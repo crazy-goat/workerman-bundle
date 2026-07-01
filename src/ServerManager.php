@@ -173,8 +173,9 @@ final readonly class ServerManager
     private function getRunningMasterPid(): int
     {
         $masterPid = $this->getMasterPid();
+        $fingerprint = $this->loadMasterFingerprint();
 
-        if (!$this->processInspector->isMasterRunning($masterPid)) {
+        if (!$this->processInspector->isMasterRunning($masterPid, $fingerprint)) {
             throw new ServerNotRunningException();
         }
 
