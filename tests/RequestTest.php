@@ -188,4 +188,26 @@ final class RequestTest extends TestCase
 
         $this->assertSame($buffer, $request->rawBuffer());
     }
+
+    public function testSetHeaderDocumentsXForwardedSecurityWarning(): void
+    {
+        $reflection = new \ReflectionMethod(Request::class, 'setHeader');
+        $docComment = $reflection->getDocComment();
+
+        $this->assertIsString($docComment, 'setHeader() must have a PHPDoc comment');
+        $this->assertStringContainsString('X-Forwarded', $docComment, 'setHeader() PHPDoc must warn about X-Forwarded-* re-injection');
+        $this->assertStringContainsString('Forwarded', $docComment, 'setHeader() PHPDoc must warn about Forwarded header re-injection');
+        $this->assertStringContainsString('trusted-proxy', $docComment, 'setHeader() PHPDoc must reference the trusted-proxy bypass risk');
+    }
+
+    public function testWithHeaderDocumentsXForwardedSecurityWarning(): void
+    {
+        $reflection = new \ReflectionMethod(Request::class, 'withHeader');
+        $docComment = $reflection->getDocComment();
+
+        $this->assertIsString($docComment, 'withHeader() must have a PHPDoc comment');
+        $this->assertStringContainsString('X-Forwarded', $docComment, 'withHeader() PHPDoc must warn about X-Forwarded-* re-injection');
+        $this->assertStringContainsString('Forwarded', $docComment, 'withHeader() PHPDoc must warn about Forwarded header re-injection');
+        $this->assertStringContainsString('trusted-proxy', $docComment, 'withHeader() PHPDoc must reference the trusted-proxy bypass risk');
+    }
 }
