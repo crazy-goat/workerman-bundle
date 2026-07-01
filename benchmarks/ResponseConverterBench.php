@@ -36,21 +36,7 @@ final class ResponseConverterBench
     public function init(): void
     {
         $this->converter = new ResponseConverter([new DefaultResponseStrategy()]);
-        $this->connection = new class extends TcpConnection {
-            public function __construct()
-            {
-                // Avoid parent constructor socket operations
-            }
-
-            public function send(mixed $sendBuffer, bool $raw = false): bool
-            {
-                return true;
-            }
-
-            public function close(mixed $data = null, bool $raw = false): void
-            {
-            }
-        };
+        $this->connection = new BenchTcpConnection();
 
         $this->simpleResponse = new Response('Hello World', Response::HTTP_OK, [
             'Content-Type' => 'text/plain',

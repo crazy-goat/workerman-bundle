@@ -50,21 +50,7 @@ final class HttpRequestHandlerBench
             );
 
         $this->request = new Request("GET / HTTP/1.1\r\nHost: test\r\n\r\n");
-        $this->connection = new class extends TcpConnection {
-            public function __construct()
-            {
-                // Avoid parent constructor socket operations
-            }
-
-            public function send(mixed $sendBuffer, bool $raw = false): bool
-            {
-                return true;
-            }
-
-            public function close(mixed $data = null, bool $raw = false): void
-            {
-            }
-        };
+        $this->connection = new BenchTcpConnection();
     }
 
     public function benchNoMiddleware(): void
