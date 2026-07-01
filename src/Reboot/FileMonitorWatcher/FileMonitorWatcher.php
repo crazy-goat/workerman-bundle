@@ -12,6 +12,9 @@ abstract class FileMonitorWatcher
     /** @var string[] */
     protected readonly array $sourceDir;
 
+    /** Compiled regex pattern (empty string when no patterns) */
+    private readonly string $filePatternRegex;
+
     /**
      * @param string[] $sourceDir
      * @param string[] $filePattern
@@ -28,22 +31,104 @@ abstract class FileMonitorWatcher
      * @param string[] $sourceDir
      * @param string[] $filePattern
      */
-    protected function __construct(protected readonly Worker $worker, array $sourceDir, private readonly array $filePattern)
+    protected function __construct(protected readonly Worker $worker, array $sourceDir, array $filePattern)
     {
         $this->sourceDir = array_filter($sourceDir, is_dir(...));
+        $this->filePatternRegex = $this->compilePatterns($filePattern);
     }
 
     abstract public function start(): void;
 
     final protected function checkPattern(string $filename): bool
     {
-        foreach ($this->filePattern as $pattern) {
-            if (\fnmatch($pattern, $filename)) {
-                return true;
-            }
+        if ($this->filePatternRegex === '') {
+            return false;
         }
 
-        return false;
+        $result = \preg_match($this->filePatternRegex, $filename);
+        if ($result === false) {
+            throw new \RuntimeException(\preg_last_error_msg());
+        }
+
+        return $result === 1;
+    }
+
+    /**
+     * @param string[] $patterns
+     */
+    private function compilePatterns(array $patterns): string
+    {
+        if ($patterns === []) {
+            return '';
+        }
+
+        $regexes = \array_map($this->globToRegex(...), $patterns);
+
+        return '/^(?:' . \implode('|', $regexes) . ')$/D';
+    }
+
+    private function globToRegex(string $glob): string
+    {
+        $regex = '';
+        $i = 0;
+        $length = \strlen($glob);
+
+        while ($i < $length) {
+            $char = $glob[$i];
+
+            switch ($char) {
+                case '\\':
+                    if ($i + 1 < $length) {
+                        $regex .= \preg_quote($glob[$i + 1], '/');
+                        $i++;
+                    } else {
+                        $regex .= '(?!)';
+                    }
+                    break;
+
+                case '*':
+                    $regex .= '.*';
+                    break;
+
+                case '?':
+                    $regex .= '.';
+                    break;
+
+                case '[':
+                    $class = '';
+                    $j = $i + 1;
+
+                    if ($j < $length && $glob[$j] === '!') {
+                        $class .= '^';
+                        $j++;
+                    }
+
+                    if ($j < $length && $glob[$j] === ']') {
+                        $class .= ']';
+                        $j++;
+                    }
+
+                    while ($j < $length && $glob[$j] !== ']') {
+                        $class .= $glob[$j] === '-' ? '-' : \preg_quote($glob[$j], '/');
+                        $j++;
+                    }
+
+                    if ($j < $length) {
+                        $regex .= '[' . $class . ']';
+                        $i = $j;
+                    } else {
+                        $regex .= \preg_quote($char, '/');
+                    }
+                    break;
+
+                default:
+                    $regex .= \preg_quote($char, '/');
+            }
+
+            $i++;
+        }
+
+        return $regex;
     }
 
     /**

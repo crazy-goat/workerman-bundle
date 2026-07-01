@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Reboot\FileMonitorWatcher;
 
+use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\InotifyMonitorWatcher;
 use PHPUnit\Framework\TestCase;
 use Workerman\Events\EventInterface;
@@ -453,8 +454,9 @@ final class InotifyMonitorWatcherTest extends TestCase
         $sourceDirProp = $parentClass->getProperty('sourceDir');
         $sourceDirProp->setValue($instance, [$sourceDir]);
 
-        $filePatternProp = $parentClass->getProperty('filePattern');
-        $filePatternProp->setValue($instance, $filePattern);
+        $regexProp = $parentClass->getProperty('filePatternRegex');
+        $compilePatterns = new \ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
+        $regexProp->setValue($instance, $compilePatterns->invoke($instance, $filePattern));
 
         return $instance;
     }

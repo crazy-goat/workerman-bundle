@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Optimize `FileMonitorWatcher::checkPattern()` by compiling glob patterns to a single PCRE regex at construction time, reducing per-tick matching from O(files × patterns) to O(files) ([#339](https://github.com/crazy-goat/workerman-bundle/issues/339))
+
 - Extract the side-effectful `phar.readonly` INI probe and `\Phar` extension presence check out of `PharBuilder::build()` into a new `PharCapabilities` collaborator. `PharBuilder` now accepts the capability checker via constructor (defaults to a live `PharCapabilities::probe()`), making the runtime checks individually testable and stubbable. The DI container registers `PharCapabilities` and injects it into the `workerman.phar_builder` service. No behavioural change observable for the `build:phar` flow ([#372](https://github.com/crazy-goat/workerman-bundle/issues/372))
 
 ### Fixed

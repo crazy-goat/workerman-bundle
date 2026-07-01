@@ -28,6 +28,7 @@ if ($tempDir === '' || $autoloadPath === '' || !is_dir($tempDir)) {
 
 require $autoloadPath;
 
+use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\PollingMonitorWatcher;
 
 $watchedFile = $tempDir . '/app.php';
@@ -52,8 +53,9 @@ $workerProp->setValue($watcher, $worker);
 $sourceDirProp = $parentClass->getProperty('sourceDir');
 $sourceDirProp->setValue($watcher, [$tempDir]);
 
-$filePatternProp = $parentClass->getProperty('filePattern');
-$filePatternProp->setValue($watcher, ['*.php']);
+$regexProp = $parentClass->getProperty('filePatternRegex');
+$compilePatterns = new ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
+$regexProp->setValue($watcher, $compilePatterns->invoke($watcher, ['*.php']));
 
 $lastMTimeProp = $watcherClass->getProperty('lastMTime');
 $expectedBefore = time() - 5;
