@@ -584,6 +584,243 @@ final class ServerManagerTest extends TestCase
         $this->assertSame('new-data', file_get_contents($file));
     }
 
+    // ──────────────────────────────────────────────
+    // Master fingerprint integration (issue #327)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Regression test for issue #327: `isRunning()` must use the
+     * fingerprint file when available to verify the master PID.
+     *
+     * Writes a fingerprint file with a matching PID, then asserts
+     * that `isRunning()` returns true.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsRunningUsesFingerprintWhenAvailable(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        // Write a fingerprint matching the child PID.
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+        // Override the PID to match the child.
+        $matchingFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid,
+            startTime: $fingerprint->startTime,
+            uid: $fingerprint->uid,
+        );
+        $matchingFingerprint->writeTo($fingerprintPath);
+
+        try {
+            $this->assertTrue(
+                $this->manager->isRunning(),
+                'isRunning() must return true when fingerprint matches the PID file PID',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+            @unlink($fingerprintPath);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `isRunning()` must reject a PID
+     * whose fingerprint does not match, even if the PID is alive.
+     *
+     * This is the core security test: an unrelated co-located process
+     * whose PID is alive must not be misidentified as the Workerman
+     * master.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsRunningRejectsUnrelatedProcessWithFingerprint(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        // Write a fingerprint with a DIFFERENT PID — the child is alive
+        // but its PID does not match the fingerprint's PID.
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        $mismatchedFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid + 1_000_000, // PID that does not exist
+            startTime: 0,
+            uid: \posix_getuid(),
+        );
+        $mismatchedFingerprint->writeTo($fingerprintPath);
+
+        try {
+            $this->assertFalse(
+                $this->manager->isRunning(),
+                'isRunning() must return false when fingerprint PID does not match the PID file PID',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+            @unlink($fingerprintPath);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `isRunning()` must fall back to
+     * the legacy cmdline check when no fingerprint file is present.
+     *
+     * On Linux, the legacy check requires the cmdline to contain
+     * "WorkerMan" or "php". A forked child's cmdline contains "php",
+     * so the check returns true.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsRunningFallsBackToLegacyCheckWithoutFingerprint(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        // Ensure no fingerprint file exists.
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        @unlink($fingerprintPath);
+
+        try {
+            $this->assertTrue(
+                $this->manager->isRunning(),
+                'isRunning() must use legacy cmdline check when no fingerprint file is present',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `stop()` must refuse to send
+     * SIGINT to a PID whose fingerprint does not match.
+     *
+     * This is the core security test for the master signal path: an
+     * attacker writes a fake PID file pointing to an unrelated process,
+     * then the operator runs `stop`. The fingerprint check must prevent
+     * the signal from being sent.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testStopRefusesToSignalUnrelatedProcessWithFingerprint(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        // Write a fingerprint with a DIFFERENT PID — the child is alive
+        // but its PID does not match the fingerprint's PID.
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        $mismatchedFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid + 1_000_000, // PID that does not exist
+            startTime: 0,
+            uid: \posix_getuid(),
+        );
+        $mismatchedFingerprint->writeTo($fingerprintPath);
+
+        try {
+            $thrown = false;
+            try {
+                $this->manager->stop();
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+                $thrown = true;
+            }
+
+            $this->assertTrue(
+                $thrown,
+                'stop() must throw ServerNotRunningException when fingerprint PID does not match',
+            );
+            $this->assertTrue(
+                $this->isAlive($pid),
+                'Child must still be alive after stop() refused to signal',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+            @unlink($fingerprintPath);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `reload()` must refuse to send
+     * SIGUSR1 to a PID whose fingerprint does not match.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReloadRefusesToSignalUnrelatedProcessWithFingerprint(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        $mismatchedFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid + 1_000_000,
+            startTime: 0,
+            uid: \posix_getuid(),
+        );
+        $mismatchedFingerprint->writeTo($fingerprintPath);
+
+        try {
+            $thrown = false;
+            try {
+                $this->manager->reload();
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+                $thrown = true;
+            }
+
+            $this->assertTrue(
+                $thrown,
+                'reload() must throw ServerNotRunningException when fingerprint PID does not match',
+            );
+            $this->assertTrue(
+                $this->isAlive($pid),
+                'Child must still be alive after reload() refused to signal',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+            @unlink($fingerprintPath);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `stop()` must remove the
+     * fingerprint sidecar file after a successful stop.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testStopRemovesFingerprintFileAfterSuccessfulStop(): void
+    {
+        $pid = $this->forkSleepingChild();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        $fingerprintPath = $this->pidFile . '.fingerprint';
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+        $matchingFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid,
+            startTime: $fingerprint->startTime,
+            uid: $fingerprint->uid,
+        );
+        $matchingFingerprint->writeTo($fingerprintPath);
+
+        $this->assertFileExists($fingerprintPath, 'Fingerprint file should exist before stop()');
+
+        try {
+            $result = $this->manager->stop(false);
+            pcntl_waitpid($pid, $status);
+
+            $this->assertTrue($result, 'stop() should return true when process is stopped');
+            $this->assertFileDoesNotExist(
+                $fingerprintPath,
+                'Fingerprint file should be removed after successful stop()',
+            );
+        } finally {
+            $this->killChildBlocking($pid);
+            @unlink($fingerprintPath);
+        }
+    }
+
     /**
      * Negative test: when the status file is a symlink (attacker swap),
      * consumeFile reads the symlink target's content but does NOT delete

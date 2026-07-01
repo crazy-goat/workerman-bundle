@@ -282,4 +282,366 @@ final class ProcessInspectorTest extends TestCase
             pcntl_waitpid($pid, $status);
         }
     }
+
+    // ──────────────────────────────────────────────
+    // Fingerprint verification (issue #327)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Regression test for issue #327: `matchesFingerprint()` must return
+     * true for the current process when given a fingerprint captured
+     * from the current process.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testMatchesFingerprintReturnsTrueForCurrentProcess(): void
+    {
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+
+        $this->assertTrue(
+            $this->inspector->matchesFingerprint($fingerprint->pid, $fingerprint),
+            'matchesFingerprint() must return true for the current process with its own fingerprint',
+        );
+    }
+
+    /**
+     * Regression test for issue #327: `matchesFingerprint()` must return
+     * false for a PID that does not match the recorded fingerprint PID.
+     *
+     * Uses a forked child as the "wrong" PID — the child is alive but
+     * its PID is different from the fingerprint's PID.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testMatchesFingerprintReturnsFalseForDifferentPid(): void
+    {
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertFalse(
+                $this->inspector->matchesFingerprint($pid, $fingerprint),
+                'matchesFingerprint() must return false for a PID different from the fingerprint PID',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `matchesFingerprint()` must return
+     * false for a non-existent PID.
+     */
+    public function testMatchesFingerprintReturnsFalseForNonExistentPid(): void
+    {
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+
+        $this->assertFalse($this->inspector->matchesFingerprint(0, $fingerprint));
+        $this->assertFalse($this->inspector->matchesFingerprint(-1, $fingerprint));
+        $this->assertFalse($this->inspector->matchesFingerprint(999_999_999, $fingerprint));
+    }
+
+    /**
+     * Regression test for issue #327: `matchesFingerprint()` must return
+     * false when the fingerprint PID is invalid (zero or negative).
+     */
+    public function testMatchesFingerprintReturnsFalseForInvalidFingerprintPid(): void
+    {
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(0, 0, 0);
+        $currentPid = \getmypid();
+        $this->assertIsInt($currentPid);
+
+        $this->assertFalse(
+            $this->inspector->matchesFingerprint($currentPid, $fingerprint),
+            'matchesFingerprint() must return false when fingerprint PID is invalid',
+        );
+    }
+
+    /**
+     * Regression test for issue #327: `isMasterRunning()` with a valid
+     * fingerprint must return true for the current process.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsMasterRunningWithValidFingerprint(): void
+    {
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+
+        $this->assertTrue(
+            $this->inspector->isMasterRunning($fingerprint->pid, $fingerprint),
+            'isMasterRunning() must return true when fingerprint matches the candidate PID',
+        );
+    }
+
+    /**
+     * Regression test for issue #327: `isMasterRunning()` with a valid
+     * fingerprint must return false for a PID different from the
+     * fingerprint PID, even if that PID is alive.
+     *
+     * This is the core security test: an unrelated co-located process
+     * whose PID happens to be alive must not be misidentified as the
+     * Workerman master.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsMasterRunningWithFingerprintRejectsUnrelatedProcess(): void
+    {
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertFalse(
+                $this->inspector->isMasterRunning($pid, $fingerprint),
+                'isMasterRunning() with fingerprint must reject a PID different from the fingerprint PID',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `isMasterRunning()` without a
+     * fingerprint must fall back to the legacy cmdline-based check.
+     *
+     * On non-Linux platforms, the legacy check returns true for any
+     * alive PID. On Linux, it requires the cmdline to contain
+     * "WorkerMan" or "php".
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsMasterRunningWithoutFingerprintFallsBackToLegacyCheck(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            // Without a fingerprint, the legacy check is used.
+            // On Linux, the forked child's cmdline contains "php",
+            // so the check returns true. On non-Linux, the check
+            // returns true for any alive PID.
+            $this->assertTrue(
+                $this->inspector->isMasterRunning($pid),
+                'isMasterRunning() without fingerprint must use legacy cmdline check',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `killOrphanedIntermediateFork()`
+     * with a valid fingerprint must kill the process when the parent
+     * PID matches the fingerprint.
+     *
+     * Forks a child, captures its fingerprint, then calls
+     * `killOrphanedIntermediateFork()` with the child's PID and the
+     * fingerprint. The child must be killed.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithMatchingFingerprintKillsProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        // Capture the fingerprint from the child process by reading
+        // /proc/$pid/stat. We construct a fingerprint manually because
+        // MasterFingerprint::capture() reads the current process.
+        $fingerprint = $this->captureFingerprintForPid($pid);
+
+        try {
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
+
+            // Give the kernel a moment to deliver SIGKILL.
+            usleep(100_000);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() must kill the process when fingerprint matches',
+            );
+        } finally {
+            // Reap if still alive (shouldn't be, but be safe).
+            if ($this->inspector->isProcessAlive($pid)) {
+                posix_kill($pid, SIGKILL);
+            }
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `killOrphanedIntermediateFork()`
+     * with a fingerprint must NOT kill a process whose PID does not
+     * match the fingerprint PID.
+     *
+     * This is the core negative test from the issue: an unrelated
+     * co-located process whose command line contains "WorkerMan" must
+     * not be signaled.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        // Use a fingerprint with a different PID — the child is alive
+        // but its PID does not match the fingerprint's PID.
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+            pid: $pid + 1_000_000, // PID that does not exist
+            startTime: 0,
+            uid: \posix_getuid(),
+        );
+
+        try {
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
+
+            // Give the kernel a moment (in case the kill was sent).
+            usleep(100_000);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() must NOT kill a process whose PID does not match the fingerprint',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #327: `killOrphanedIntermediateFork()`
+     * without a fingerprint must fall back to the legacy cmdline check.
+     *
+     * On Linux, the legacy check kills the process only if its cmdline
+     * contains "WorkerMan". A forked child's cmdline contains "php" but
+     * not "WorkerMan", so the legacy check does NOT kill it.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithoutFingerprintUsesLegacyCheck(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            // Without a fingerprint, the legacy cmdline check is used.
+            // The forked child's cmdline contains "php" but not "WorkerMan",
+            // so the check does NOT kill it.
+            $this->inspector->killOrphanedIntermediateFork($pid);
+
+            usleep(100_000);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() without fingerprint must use legacy cmdline check (no kill for non-WorkerMan cmdline)',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Capture a fingerprint for an arbitrary PID by reading
+     * /proc/$pid/stat and /proc/$pid/status.
+     *
+     * Used by tests that need a fingerprint matching a forked child.
+     *
+     * @requires OS Linux
+     */
+    private function captureFingerprintForPid(int $pid): \CrazyGoat\WorkermanBundle\MasterFingerprint
+    {
+        $startTime = 0;
+        $statFile = "/proc/{$pid}/stat";
+        if (\is_readable($statFile)) {
+            $content = \file_get_contents($statFile);
+            if (\is_string($content)) {
+                $closeParen = \strrpos($content, ')');
+                if ($closeParen !== false) {
+                    $afterParen = \substr($content, $closeParen + 1);
+                    $afterParts = \preg_split('/\s+/', \trim($afterParen));
+                    if (\is_array($afterParts) && \count($afterParts) >= 20) {
+                        $startTime = (int) $afterParts[19];
+                    }
+                }
+            }
+        }
+
+        $uid = \posix_getuid();
+        $statusFile = "/proc/{$pid}/status";
+        if (\is_readable($statusFile)) {
+            $content = \file_get_contents($statusFile);
+            if (\is_string($content) && \preg_match('/^Uid:\s+(\d+)/m', $content, $matches)) {
+                $uid = (int) $matches[1];
+            }
+        }
+
+        return new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $uid);
+    }
 }
