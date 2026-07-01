@@ -44,6 +44,7 @@
         "dragonmantank/cron-expression": "^3.4",
         "guzzlehttp/guzzle": "^7.8",
         "php-cs-fixer/shim": "^3.75",
+        "phpbench/phpbench": "^1.2",
         "phpunit/phpunit": "^10.4",
         "rector/rector": "^2.0",
         "symfony/framework-bundle": "^6.4|^7.0|^8.0"
@@ -102,6 +103,9 @@
         ],
         "test:build:bin": [
             "@php -d phar.readonly=0 vendor/bin/phpunit --filter='BuildBin' tests/Command/"
+        ],
+        "bench": [
+            "vendor/bin/phpbench run --report=aggregate"
         ]
     }
 }

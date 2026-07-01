@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add PHPBench benchmark suite covering the five documented hot paths: `RequestConverter::toSymfonyRequest`, `ResponseConverter::extractHeaders`, `MemoryRebootStrategy::shouldReboot`, `PeriodicalTrigger::getNextRunDate`, and `HttpRequestHandler::__invoke` (composed middleware chain). Run via `composer bench`. CI executes the suite on every PR in advisory mode (results are logged but do not block merge). Documented measurement protocol in `CONTRIBUTING.md` ([#328](https://github.com/crazy-goat/workerman-bundle/issues/328))
+
 ### Fixed
 
 - Make `ProcessInspector::isProcessAlive()` portable across POSIX systems — on macOS and other non-Linux platforms where `/proc` is unavailable, the function now uses `posix_kill($pid, 0)` for the primary liveness check and falls back to a non-blocking `pcntl_waitpid()` to distinguish running processes from zombies. The Linux `/proc/{pid}/status` zombie check is preserved as a Linux-only refinement. `getParentPid()`, `isMasterRunning()`, and `killOrphanedIntermediateFork()` are likewise gated on `PHP_OS_FAMILY === 'Linux'` so they no longer crash on macOS. Fixes `ServerManager::stop()` returning `false` on macOS because `waitForProcessToStop()` never observed the process dying ([#530](https://github.com/crazy-goat/workerman-bundle/issues/530))

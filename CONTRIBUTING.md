@@ -77,9 +77,34 @@ rm .git/hooks/pre-push
    > - On macOS, ports below 1024 require root. Ports 8888 and 9999 are above
    >   that threshold and should work without special privileges.
 
-3. Ensure all checks pass before pushing
+3. Run benchmarks locally (optional but recommended for performance-related changes):
+   ```bash
+   composer bench
+   ```
 
-4. Update CHANGELOG.md:
+   The benchmark suite uses PHPBench and covers the documented hot paths:
+   - `RequestConverter::toSymfonyRequest`
+   - `ResponseConverter::extractHeaders`
+   - `MemoryRebootStrategy::shouldReboot`
+   - `PeriodicalTrigger::getNextRunDate`
+   - `HttpRequestHandler::__invoke` (composed middleware chain)
+
+   Benchmarks run with 1000 revolutions × 5 iterations after a 1-iteration warmup.
+   Results are printed as an aggregate report showing memory peak, mode, and
+   relative standard deviation per subject.
+
+   > **Interpreting results**
+   > - `mode` — the most common execution time (lower is better)
+   > - `mem_peak` — peak memory allocated during the benchmark
+   > - `rstdev` — relative standard deviation (lower means more stable results)
+   >
+   > When making performance changes, compare the before/after mode values for
+   > the relevant benchmark subjects. A regression is suspected when mode
+   > increases by more than 5 % on the same hardware.
+
+4. Ensure all checks pass before pushing
+
+5. Update CHANGELOG.md:
    - Add entry under `[Unreleased]` section
    - Follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
    - Include issue number (e.g., `(#65)`)
@@ -91,6 +116,7 @@ The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
 
 - **Lint job**: Validates `composer.json`, runs security audit, and checks code style
 - **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix
+- **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge)
 
 ## Code Standards
 
