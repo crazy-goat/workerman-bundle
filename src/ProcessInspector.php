@@ -128,13 +128,14 @@ final readonly class ProcessInspector
      * running process from a zombie, attempt a non-blocking `waitpid`:
      * a positive return value means the child was reaped (dead), zero
      * means it is still running, and a negative return means the pid is
-     * not a direct child of this process (in which case we fall back to
-     * the `posix_kill` result, which already passed).
+     * not a direct child of this process — in which case we trust the
+     * `posix_kill` result that already passed at the call site and
+     * treat the process as alive.
      */
     private function isReaped(int $pid): bool
     {
         $result = pcntl_waitpid($pid, $status, \WNOHANG);
 
-        return $result === 0;
+        return $result <= 0;
     }
 }

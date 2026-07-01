@@ -206,8 +206,40 @@ final class ProcessInspectorTest extends TestCase
     }
 
     /**
+     * Regression test for issue #530: `isProcessAlive()` must return true
+     * for a process that is not a direct child of the current process.
+     *
+     * On non-Linux platforms, the zombie-detection fallback uses
+     * `pcntl_waitpid()`, which returns `-1` for PIDs that are not direct
+     * children. The helper must treat that case as "alive" (trusting the
+     * `posix_kill` check that already passed) rather than as "dead".
+     *
+     * Uses the parent process's PID (always non-child) as the test target.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsTrueForNonChildProcess(): void
+    {
+        $parentPid = posix_getppid();
+
+        $this->assertTrue(
+            posix_kill($parentPid, 0),
+            'Parent PID must be signalable for this test to be meaningful',
+        );
+
+        $this->assertTrue(
+            $this->inspector->isProcessAlive($parentPid),
+            'isProcessAlive() must return true for a non-child process on ' . PHP_OS_FAMILY,
+        );
+    }
+
+    /**
      * Regression test for issue #530: `isProcessAlive()` must return false
      * for a non-existent PID on every POSIX platform.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
      */
     public function testIsProcessAliveReturnsFalseForNonExistentPid(): void
     {
@@ -222,15 +254,12 @@ final class ProcessInspectorTest extends TestCase
      * non-Linux platforms where `/proc` is unavailable. It returns 0 as
      * a safe fallback (the caller treats 0 as "no parent").
      *
+     * @requires OS Darwin
      * @requires extension pcntl
      * @requires extension posix
      */
     public function testGetParentPidReturnsZeroOnNonLinux(): void
     {
-        if (PHP_OS_FAMILY === 'Linux') {
-            $this->markTestSkipped('Non-Linux-specific test');
-        }
-
         $pid = pcntl_fork();
         if ($pid === -1) {
             $this->markTestSkipped('pcntl_fork failed');
