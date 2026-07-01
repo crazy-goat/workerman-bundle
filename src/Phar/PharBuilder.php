@@ -16,10 +16,14 @@ namespace CrazyGoat\WorkermanBundle\Phar;
  */
 final readonly class PharBuilder
 {
+    private PharCapabilities $capabilities;
+
     public function __construct(
         private string $projectDir,
         private string $environment,
+        ?PharCapabilities $capabilities = null,
     ) {
+        $this->capabilities = $capabilities ?? PharCapabilities::probe();
     }
 
     /**
@@ -46,13 +50,7 @@ final readonly class PharBuilder
      */
     public function build(array $buildConfig, string $pharPath, bool $includeTests = false): string
     {
-        if ((bool) ini_get('phar.readonly')) {
-            throw new \RuntimeException('phar.readonly must be disabled in php.ini. Set phar.readonly=0 and try again.');
-        }
-
-        if (!class_exists(\Phar::class)) {
-            throw new \RuntimeException('The Phar extension is required to build PHAR archives.');
-        }
+        $this->capabilities->assertCanBuild();
 
         $buildDir = \dirname($pharPath);
         if (!is_dir($buildDir) && !mkdir($buildDir, 0755, true) && !is_dir($buildDir)) {

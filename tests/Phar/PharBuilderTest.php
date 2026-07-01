@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
+use CrazyGoat\WorkermanBundle\Phar\PharCapabilities;
 use PHPUnit\Framework\TestCase;
 
 final class PharBuilderTest extends TestCase
@@ -294,5 +295,60 @@ final class PharBuilderTest extends TestCase
         $stub = (new PharBuilder('/p', 'test'))->generateStub([]);
 
         self::assertStringContainsString('new App\\Kernel(', $stub);
+    }
+
+    public function testBuildUsesInjectedCapabilities(): void
+    {
+        if ((bool) ini_get('phar.readonly')) {
+            self::markTestSkipped('phar.readonly is On — cannot build PHARs.');
+        }
+
+        mkdir($this->tempDir . '/src', 0755, true);
+        mkdir($this->tempDir . '/vendor', 0755, true);
+        file_put_contents($this->tempDir . '/src/App.php', '<?php');
+        file_put_contents($this->tempDir . '/vendor/autoload.php', '<?php');
+
+        $pharPath = $this->tempDir . '/build/test.phar';
+        (new PharBuilder($this->tempDir, 'test', new PharCapabilities(false, true)))->build([
+            'kernel_class' => 'App\\Kernel',
+            'exclude_patterns' => [],
+            'exclude_files' => [],
+        ], $pharPath);
+
+        self::assertFileExists($pharPath);
+
+        $phar = new \Phar($pharPath);
+        self::assertTrue(isset($phar['src/App.php']));
+
+        unset($phar);
+        \Phar::unlinkArchive($pharPath);
+    }
+
+    public function testBuildThrowsWhenInjectedCapabilitiesReportReadOnly(): void
+    {
+        $builder = new PharBuilder($this->tempDir, 'test', new PharCapabilities(true, true));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('phar.readonly must be disabled');
+
+        $builder->build([
+            'kernel_class' => 'App\\Kernel',
+            'exclude_patterns' => [],
+            'exclude_files' => [],
+        ], $this->tempDir . '/build/test.phar');
+    }
+
+    public function testBuildThrowsWhenInjectedCapabilitiesReportMissingExtension(): void
+    {
+        $builder = new PharBuilder($this->tempDir, 'test', new PharCapabilities(false, false));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Phar extension is required');
+
+        $builder->build([
+            'kernel_class' => 'App\\Kernel',
+            'exclude_patterns' => [],
+            'exclude_files' => [],
+        ], $this->tempDir . '/build/test.phar');
     }
 }
