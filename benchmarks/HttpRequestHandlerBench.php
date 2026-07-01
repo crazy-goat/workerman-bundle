@@ -8,18 +8,12 @@ use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
-use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
-use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
 use PhpBench\Benchmark\Metadata\Annotations\Iterations;
 use PhpBench\Benchmark\Metadata\Annotations\Revs;
 use PhpBench\Benchmark\Metadata\Annotations\Warmup;
-use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
-use Symfony\Component\HttpKernel\KernelInterface;
-use Symfony\Component\HttpKernel\TerminableInterface;
 use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 /**
  * Benchmark HttpRequestHandler::__invoke — the composed middleware chain
@@ -81,137 +75,5 @@ final class HttpRequestHandlerBench
     public function benchWithMiddleware(): void
     {
         ($this->handlerWithMiddleware)($this->connection, $this->request);
-    }
-}
-
-/**
- * Minimal kernel implementation for benchmarking.
- */
-final class BenchKernel implements KernelInterface, TerminableInterface
-{
-    public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
-    {
-    }
-
-    public function boot(): void
-    {
-    }
-
-    public function shutdown(): void
-    {
-    }
-
-    public function registerBundles(): iterable
-    {
-        return [];
-    }
-
-    public function registerContainerConfiguration(\Symfony\Component\Config\Loader\LoaderInterface $loader): void
-    {
-    }
-
-    public function handle(\Symfony\Component\HttpFoundation\Request $request, int $type = 1, bool $catch = true): \Symfony\Component\HttpFoundation\Response
-    {
-        return new SymfonyResponse('Bench response');
-    }
-
-    public function getBundles(): array
-    {
-        return [];
-    }
-
-    public function getBundle(string $name): \Symfony\Component\HttpKernel\Bundle\BundleInterface
-    {
-        throw new \RuntimeException('Not implemented');
-    }
-
-    public function locateResource(string $name): string
-    {
-        return '';
-    }
-
-    public function getEnvironment(): string
-    {
-        return 'bench';
-    }
-
-    public function isDebug(): bool
-    {
-        return false;
-    }
-
-    public function getProjectDir(): string
-    {
-        return '/tmp';
-    }
-
-    public function getCacheDir(): string
-    {
-        return '/tmp/cache';
-    }
-
-    public function getBuildDir(): string
-    {
-        return '/tmp/build';
-    }
-
-    public function getShareDir(): ?string
-    {
-        return null;
-    }
-
-    public function getLogDir(): string
-    {
-        return '/tmp/log';
-    }
-
-    public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
-    {
-        throw new \RuntimeException('Not implemented');
-    }
-
-    public function getStartTime(): float
-    {
-        return 0.0;
-    }
-
-    public function getCharset(): string
-    {
-        return 'UTF-8';
-    }
-}
-
-/**
- * No-op reboot strategy for benchmarking.
- */
-final class BenchRebootStrategy implements RebootStrategyInterface
-{
-    public function shouldReboot(): bool
-    {
-        return false;
-    }
-
-    public function needsPeakMemory(): bool
-    {
-        return false;
-    }
-}
-
-/**
- * Simple header-adding middleware for benchmarking.
- */
-final readonly class BenchMiddleware implements MiddlewareInterface
-{
-    public function __construct(
-        private string $header,
-        private string $value,
-    ) {
-    }
-
-    public function __invoke(Request $request, callable $next): WorkermanResponse
-    {
-        $request->setHeader($this->header, $this->value);
-
-        return $next($request);
     }
 }

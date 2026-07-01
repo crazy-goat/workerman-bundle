@@ -61,7 +61,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "CrazyGoat\\WorkermanBundle\\Test\\": "tests/"
+            "CrazyGoat\\WorkermanBundle\\Test\\": "tests/",
+            "CrazyGoat\\WorkermanBundle\\Benchmark\\": "benchmarks/"
         }
     },
     "config": {

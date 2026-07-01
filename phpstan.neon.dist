@@ -4,6 +4,7 @@ parameters:
 	paths:
 		- src
 		- tests
+		- benchmarks
 	ignoreErrors:
 		-
 			message: '#never returns string so it can be removed from the return type#'

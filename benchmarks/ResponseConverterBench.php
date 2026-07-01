@@ -41,6 +41,15 @@ final class ResponseConverterBench
             {
                 // Avoid parent constructor socket operations
             }
+
+            public function send(mixed $sendBuffer, bool $raw = false): bool
+            {
+                return true;
+            }
+
+            public function close(mixed $data = null, bool $raw = false): void
+            {
+            }
         };
 
         $this->simpleResponse = new Response('Hello World', Response::HTTP_OK, [

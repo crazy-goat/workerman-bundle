@@ -84,7 +84,7 @@ rm .git/hooks/pre-push
 
    The benchmark suite uses PHPBench and covers the documented hot paths:
    - `RequestConverter::toSymfonyRequest`
-   - `ResponseConverter::extractHeaders`
+   - `ResponseConverter::convert`
    - `MemoryRebootStrategy::shouldReboot`
    - `PeriodicalTrigger::getNextRunDate`
    - `HttpRequestHandler::__invoke` (composed middleware chain)
