@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make `ProcessInspector::isProcessAlive()` portable across POSIX systems — on macOS and other non-Linux platforms where `/proc` is unavailable, the function now uses `posix_kill($pid, 0)` for the primary liveness check and falls back to a non-blocking `pcntl_waitpid()` to distinguish running processes from zombies. The Linux `/proc/{pid}/status` zombie check is preserved as a Linux-only refinement. `getParentPid()`, `isMasterRunning()`, and `killOrphanedIntermediateFork()` are likewise gated on `PHP_OS_FAMILY === 'Linux'` so they no longer crash on macOS. Fixes `ServerManager::stop()` returning `false` on macOS because `waitForProcessToStop()` never observed the process dying ([#530](https://github.com/crazy-goat/workerman-bundle/issues/530))
+
 ### Tests
 
 - Replace `testRunnerUsesCorrectForkErrorHandling` (which read `Runner.php` as a string) with `testForkFailureThrowsRuntimeException` — a behavioral test that stubs the `fork()` method via a readonly subclass and asserts `RuntimeException` is thrown when `pcntl_fork()` returns `-1`. Removes the dead `fork_failure` case from the isolated test fixture ([#313](https://github.com/crazy-goat/workerman-bundle/issues/313))

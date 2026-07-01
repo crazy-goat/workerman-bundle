@@ -132,4 +132,154 @@ final class ProcessInspectorTest extends TestCase
             );
         }
     }
+
+    /**
+     * Regression test for issue #530: `isProcessAlive()` must return false
+     * for a dead process on every POSIX platform, including macOS where
+     * `/proc` is unavailable.
+     *
+     * Forks a child, kills it (leaving a zombie until reaped), and asserts
+     * that `isProcessAlive()` correctly reports the zombie as dead.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsFalseForDeadProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertTrue($this->inspector->isProcessAlive($pid), 'Child should be alive before kill');
+
+            posix_kill($pid, SIGKILL);
+            // Give the kernel a moment to mark the child as a zombie.
+            usleep(50_000);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($pid),
+                'isProcessAlive() must return false for a dead process on ' . PHP_OS_FAMILY,
+            );
+        } finally {
+            // Reap the zombie so it does not leak into other tests.
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #530: `isProcessAlive()` must return true
+     * for a running child on every POSIX platform.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsTrueForRunningProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($pid),
+                'isProcessAlive() must return true for a running process on ' . PHP_OS_FAMILY,
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #530: `isProcessAlive()` must return true
+     * for a process that is not a direct child of the current process.
+     *
+     * On non-Linux platforms, the zombie-detection fallback uses
+     * `pcntl_waitpid()`, which returns `-1` for PIDs that are not direct
+     * children. The helper must treat that case as "alive" (trusting the
+     * `posix_kill` check that already passed) rather than as "dead".
+     *
+     * Uses the parent process's PID (always non-child) as the test target.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsTrueForNonChildProcess(): void
+    {
+        $parentPid = posix_getppid();
+
+        $this->assertTrue(
+            posix_kill($parentPid, 0),
+            'Parent PID must be signalable for this test to be meaningful',
+        );
+
+        $this->assertTrue(
+            $this->inspector->isProcessAlive($parentPid),
+            'isProcessAlive() must return true for a non-child process on ' . PHP_OS_FAMILY,
+        );
+    }
+
+    /**
+     * Regression test for issue #530: `isProcessAlive()` must return false
+     * for a non-existent PID on every POSIX platform.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsFalseForNonExistentPid(): void
+    {
+        $this->assertFalse($this->inspector->isProcessAlive(0));
+        $this->assertFalse($this->inspector->isProcessAlive(-1));
+        // Use a PID that is extremely unlikely to exist.
+        $this->assertFalse($this->inspector->isProcessAlive(999_999_999));
+    }
+
+    /**
+     * Regression test for issue #530: `getParentPid()` must not crash on
+     * non-Linux platforms where `/proc` is unavailable. It returns 0 as
+     * a safe fallback (the caller treats 0 as "no parent").
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testGetParentPidReturnsZeroOnNonLinux(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertSame(
+                0,
+                $this->inspector->getParentPid($pid),
+                'getParentPid() must return 0 on non-Linux platforms',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
 }
