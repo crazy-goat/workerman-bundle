@@ -151,6 +151,16 @@ final class RunnerTest extends TestCase
     }
 
     /**
+     * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
+     * constructor argument. Verifies that when the child process is stuck,
+     * the parent throws RuntimeException after the configured timeout.
+     */
+    public function testWarmupTimeoutKicksIn(): void
+    {
+        $this->runIsolatedTest('warmup_timeout_kicks_in');
+    }
+
+    /**
      * @return array{workers: array<string, Worker>, pidMap: array<string, array<int, int>>, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
      */
     private function saveWorkerState(): array
