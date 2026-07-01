@@ -8,7 +8,9 @@ parameters:
 	ignoreErrors:
 		-
 			message: '#never returns string so it can be removed from the return type#'
-			path: tests/
+			paths:
+				- tests/
+				- benchmarks/
 			reportUnmatched: false
 		-
 			message: '#Call to method.*on a separate line has no effect#'
