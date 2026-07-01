@@ -97,6 +97,12 @@ final class WorkermanBundle extends AbstractBundle
     {
         $this->servicesConfigurator->configure($config, $builder);
 
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = (string) $config['cache_warmup_timeout'];
+        $timeout = $config['cache_warmup_timeout'];
+        $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        if ($envOverride !== null && $envOverride !== '') {
+            $timeout = (int) $envOverride;
+        }
+
+        CacheWarmupTimeoutConfig::set($timeout);
     }
 }

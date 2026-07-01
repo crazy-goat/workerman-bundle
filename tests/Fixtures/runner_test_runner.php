@@ -47,6 +47,7 @@ match ($testName) {
     'child_success_sigkill' => testChildSuccessSigkill(),
     'child_error_sigterm' => testChildErrorSigterm(),
     'timeout_kills_child' => testTimeoutKillsChild(),
+    'warmup_timeout_kicks_in' => testWarmupTimeoutKicksIn(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -282,6 +283,84 @@ function testTimeoutKillsChild(): void
     }
     if (pcntl_wtermsig($status) !== SIGKILL) {
         fail('Child should have been killed by SIGKILL, got ' . pcntl_wtermsig($status));
+    }
+
+    pass();
+}
+
+/**
+ * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
+ * constructor argument. Verifies that when the child process is stuck
+ * (simulated by sleep), the parent throws RuntimeException with the
+ * expected message after the configured timeout elapses.
+ *
+ * Uses a 1-second timeout to keep the test fast.
+ */
+function testWarmupTimeoutKicksIn(): void
+{
+    require __DIR__ . '/../../vendor/autoload.php';
+
+    $tmpDir = sys_get_temp_dir() . '/workerman_warmup_timeout_' . uniqid();
+    mkdir($tmpDir, 0700, true);
+
+    try {
+        $configLoader = new \CrazyGoat\WorkermanBundle\ConfigLoader(
+            projectDir: $tmpDir,
+            cacheDir: $tmpDir . '/var/cache/test',
+            isDebug: false,
+        );
+
+        if ($configLoader->isFresh()) {
+            fail('ConfigLoader must not be fresh (cache file should not exist)');
+        }
+
+        $kernelFactory = new \CrazyGoat\WorkermanBundle\KernelFactory(
+            static fn(): \Symfony\Component\HttpKernel\KernelInterface => throw new \RuntimeException('not used'),
+            [],
+        );
+
+        $runner = new \CrazyGoat\WorkermanBundle\Test\StuckChildRunner($kernelFactory, 1);
+
+        $start = microtime(true);
+
+        try {
+            $ref = new \ReflectionMethod($runner, 'warmUpCache');
+            $ref->invoke($runner, $configLoader);
+            fail('Expected RuntimeException for cache warmup timeout');
+        } catch (\RuntimeException $e) {
+            $elapsed = microtime(true) - $start;
+
+            if (!str_contains($e->getMessage(), 'Cache warmup timed out after 1 seconds')) {
+                fail('Unexpected exception message: ' . $e->getMessage());
+            }
+
+            // Should fire roughly at the 1s deadline. Allow generous slack
+            // for slow CI but fail loudly if it took way too long.
+            // Note: Runner uses time() (whole seconds) for the deadline, so
+            // the timeout can fire anywhere between ~0.1s and ~1.1s after
+            // start depending on when time() ticks over.
+            if ($elapsed > 3.0) {
+                fail(sprintf('Timeout fired too late: %.2fs (expected ~1s)', $elapsed));
+            }
+            if ($elapsed < 0.05) {
+                fail(sprintf('Timeout fired too early: %.2fs (expected ~0.1-1.1s)', $elapsed));
+            }
+        }
+    } finally {
+        if (is_dir($tmpDir)) {
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($tmpDir, \RecursiveDirectoryIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
+            foreach ($files as $file) {
+                if ($file->isDir()) {
+                    rmdir($file->getRealPath());
+                } else {
+                    unlink($file->getRealPath());
+                }
+            }
+            rmdir($tmpDir);
+        }
     }
 
     pass();

@@ -35,7 +35,7 @@ final readonly class ServerManager
 
         $this->prepareWorkerStart(ServerAction::START, $daemon, $graceful);
 
-        return (new Runner($this->createKernelFactory()))->run();
+        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
     }
 
     /**
@@ -75,7 +75,7 @@ final readonly class ServerManager
 
         $this->prepareWorkerStart(ServerAction::RESTART, $daemon, $graceful);
 
-        return (new Runner($this->createKernelFactory()))->run();
+        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
     }
 
     /**
@@ -202,6 +202,11 @@ final readonly class ServerManager
             fn(): KernelInterface => $this->kernel,
             [],
         );
+    }
+
+    private function resolveCacheWarmupTimeout(): int
+    {
+        return CacheWarmupTimeoutConfig::resolve();
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Runner;
@@ -51,7 +52,7 @@ final class RunnerTest extends TestCase
     }
 
     /**
-     * Structural test: verify getCacheWarmupTimeout defaults to 30 seconds.
+     * Structural test: verify getCacheWarmupTimeout returns the constructor value.
      */
     public function testCacheWarmupTimeoutDefaultsTo30(): void
     {
@@ -68,21 +69,21 @@ final class RunnerTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'return 30;',
+            'CacheWarmupTimeoutConfig::DEFAULT',
             $content,
-            'Default cache warmup timeout must be 30 seconds',
+            'Default cache warmup timeout must come from CacheWarmupTimeoutConfig::DEFAULT',
         );
 
         $this->assertStringContainsString(
-            "\$_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']",
+            'private int $cacheWarmupTimeout = CacheWarmupTimeoutConfig::DEFAULT',
             $content,
-            'Must check WORKERMAN_CACHE_WARMUP_TIMEOUT env var',
+            'Must accept cacheWarmupTimeout as a constructor argument with default',
         );
 
         $this->assertStringContainsString(
-            "throw new \InvalidArgumentException('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer')",
+            'return $this->cacheWarmupTimeout',
             $content,
-            'Must throw InvalidArgumentException for non-positive timeout',
+            'getCacheWarmupTimeout must return the constructor value',
         );
     }
 
@@ -150,6 +151,16 @@ final class RunnerTest extends TestCase
     }
 
     /**
+     * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
+     * constructor argument. Verifies that when the child process is stuck,
+     * the parent throws RuntimeException after the configured timeout.
+     */
+    public function testWarmupTimeoutKicksIn(): void
+    {
+        $this->runIsolatedTest('warmup_timeout_kicks_in');
+    }
+
+    /**
      * @return array{workers: array<string, Worker>, pidMap: array<string, array<int, int>>, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
      */
     private function saveWorkerState(): array
@@ -193,110 +204,44 @@ final class RunnerTest extends TestCase
 
     public function testGetCacheWarmupTimeoutDefaultsTo30Seconds(): void
     {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = null;
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+        $runner = new Runner($kernelFactory);
 
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
+        $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
 
-            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-
-            $this->assertSame(30, $timeout);
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
+        $this->assertSame(CacheWarmupTimeoutConfig::DEFAULT, $timeout);
     }
 
-    public function testGetCacheWarmupTimeoutWithEnvVarOverride(): void
+    public function testGetCacheWarmupTimeoutWithConstructorOverride(): void
     {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '15';
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+        $runner = new Runner($kernelFactory, 15);
 
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
+        $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
 
-            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-
-            $this->assertSame(15, $timeout);
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
+        $this->assertSame(15, $timeout);
     }
 
-    public function testGetCacheWarmupTimeoutWithEmptyEnvVarFallsBackToDefault(): void
+    public function testConstructorRejectsZeroTimeout(): void
     {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '';
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
 
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
-
-            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-
-            $this->assertSame(30, $timeout);
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        new Runner($kernelFactory, 0);
     }
 
-    public function testGetCacheWarmupTimeoutRejectsNonNumericValue(): void
+    public function testConstructorRejectsNegativeTimeout(): void
     {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = 'not-a-number';
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
 
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
-
-            $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
-            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
-    }
-
-    public function testGetCacheWarmupTimeoutRejectsZero(): void
-    {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '0';
-
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
-
-            $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
-            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
-    }
-
-    public function testGetCacheWarmupTimeoutRejectsNegative(): void
-    {
-        $savedEnv = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '-5';
-
-        try {
-            $kernel = $this->createMock(KernelInterface::class);
-            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-            $runner = new Runner($kernelFactory);
-
-            $this->expectException(\InvalidArgumentException::class);
-            $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
-            $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
-        } finally {
-            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedEnv;
-        }
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        new Runner($kernelFactory, -5);
     }
 
     public function testApplyWorkermanConfigSetsWorkerStaticProperties(): void

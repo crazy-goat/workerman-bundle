@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
@@ -60,11 +61,14 @@ final class ServerManagerTest extends TestCase
             $this->processInspector,
             $this->statusFileReader,
         );
+
+        CacheWarmupTimeoutConfig::reset();
     }
 
     protected function tearDown(): void
     {
         $this->removeDir($this->tmpDir);
+        CacheWarmupTimeoutConfig::reset();
     }
 
     // ──────────────────────────────────────────────
@@ -81,6 +85,22 @@ final class ServerManagerTest extends TestCase
         );
 
         $this->assertInstanceOf(ServerManager::class, $manager);
+    }
+
+    public function testResolveCacheWarmupTimeoutDefaultsWhenHolderEmpty(): void
+    {
+        $ref = new \ReflectionMethod($this->manager, 'resolveCacheWarmupTimeout');
+
+        $this->assertSame(CacheWarmupTimeoutConfig::DEFAULT, $ref->invoke($this->manager));
+    }
+
+    public function testResolveCacheWarmupTimeoutUsesHolderValue(): void
+    {
+        CacheWarmupTimeoutConfig::set(77);
+
+        $ref = new \ReflectionMethod($this->manager, 'resolveCacheWarmupTimeout');
+
+        $this->assertSame(77, $ref->invoke($this->manager));
     }
 
     // ──────────────────────────────────────────────
