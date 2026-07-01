@@ -17,6 +17,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Phar\BinaryComposer;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
+use CrazyGoat\WorkermanBundle\Phar\PharCapabilities;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use CrazyGoat\WorkermanBundle\Phar\SfxSourceResolver;
 use CrazyGoat\WorkermanBundle\ProcessInspector;
@@ -200,10 +201,15 @@ final readonly class ServicesConfigurator
     private function configureBuildServices(ContainerBuilder $container): void
     {
         $container
+            ->register(PharCapabilities::class)
+        ;
+
+        $container
             ->register('workerman.phar_builder', PharBuilder::class)
             ->setArguments([
                 $container->getParameter('kernel.project_dir'),
                 $container->getParameter('kernel.environment'),
+                new Reference(PharCapabilities::class),
             ])
         ;
 
