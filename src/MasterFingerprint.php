@@ -20,6 +20,14 @@ namespace CrazyGoat\WorkermanBundle;
  * Without it, any process whose argv contains "WorkerMan" could be
  * misidentified and signaled (potentially SIGKILL), causing a
  * denial-of-service on adjacent services.
+ *
+ * Platform notes:
+ * - On Linux, the start time is read from `/proc/$pid/stat` field 22
+ *   (clock ticks since boot). This is a cross-process comparable value.
+ * - On non-Linux POSIX platforms, `/proc` is unavailable, so the start
+ *   time is recorded as `0` and the start-time check is disabled.
+ *   Fingerprint verification on these platforms relies on PID + UID
+ *   matching only.
  */
 final readonly class MasterFingerprint
 {
@@ -34,11 +42,11 @@ final readonly class MasterFingerprint
      * Capture the fingerprint of the current process.
      *
      * On Linux, the start time is read from `/proc/self/stat` field 22
-     * (clock ticks since boot). On other platforms, `posix_times()` is
-     * used as a fallback — it returns the cumulative clock ticks for
-     * the current process, which is sufficient to distinguish the
-     * current process from any other process started at a different
-     * point in time.
+     * (clock ticks since boot). On non-Linux platforms, the start time
+     * is recorded as `0` — the start-time check is disabled on those
+     * platforms and verification relies on PID + UID matching only.
+     *
+     * @throws \RuntimeException if the current PID cannot be determined
      */
     public static function capture(): self
     {
@@ -48,8 +56,7 @@ final readonly class MasterFingerprint
         }
 
         $uid = \posix_getuid();
-
-        $startTime = self::readStartTime($pid);
+        $startTime = self::readStartTimeForPid($pid);
 
         return new self($pid, $startTime, $uid);
     }
@@ -57,50 +64,74 @@ final readonly class MasterFingerprint
     /**
      * Read the start time of the given PID from `/proc/$pid/stat` field 22.
      *
-     * Falls back to `posix_times()` on non-Linux platforms. The fallback
-     * value is process-local and cannot be compared across processes, so
-     * fingerprint verification on non-Linux platforms relies on PID + UID
-     * matching only.
+     * Returns `0` on non-Linux platforms (where `/proc` is unavailable)
+     * or when the start time cannot be determined. Callers should treat
+     * a `0` start time as "start-time check disabled" and rely on PID +
+     * UID matching only.
      */
-    private static function readStartTime(int $pid): int
+    public static function readStartTimeForPid(int $pid): int
     {
-        if (PHP_OS_FAMILY === 'Linux') {
-            $statFile = "/proc/{$pid}/stat";
-            if (\is_readable($statFile)) {
-                $content = @\file_get_contents($statFile);
-                if (\is_string($content) && $content !== '') {
-                    $parts = \explode(' ', $content);
-                    // Field 22 (1-indexed) is starttime in clock ticks since boot.
-                    // The command name (field 2) can contain spaces and parentheses,
-                    // so we look for the last ')' and parse after it.
-                    $closeParen = \strrpos($content, ')');
-                    if ($closeParen !== false) {
-                        $afterParen = \substr($content, $closeParen + 1);
-                        $afterParts = \preg_split('/\s+/', \trim($afterParen));
-                        // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
-                        // starttime is field 22 overall, which is index 19 after ')'.
-                        if (\is_array($afterParts) && \count($afterParts) >= 20) {
-                            $candidate = (int) $afterParts[19];
-                            if ($candidate > 0) {
-                                return $candidate;
-                            }
-                        }
-                    }
-                    unset($parts);
-                }
-            }
+        if (PHP_OS_FAMILY !== 'Linux' || $pid <= 0) {
+            return 0;
         }
 
-        // Fallback: posix_times() returns an array of clock ticks; we use
-        // the sum as a process-local start-time proxy. This is sufficient
-        // to distinguish the current process from any other process started
-        // at a different point in time on the same host.
-        $times = \posix_times();
-        if (\is_array($times)) {
-            return (int) ($times['ticks'] ?? 0);
+        $statFile = "/proc/{$pid}/stat";
+        if (!\is_readable($statFile)) {
+            return 0;
         }
 
-        return 0;
+        $content = @\file_get_contents($statFile);
+        if (!\is_string($content) || $content === '') {
+            return 0;
+        }
+
+        // The command name (field 2) can contain spaces and parentheses,
+        // so we look for the last ')' and parse after it.
+        $closeParen = \strrpos($content, ')');
+        if ($closeParen === false) {
+            return 0;
+        }
+
+        $afterParen = \substr($content, $closeParen + 1);
+        $afterParts = \preg_split('/\s+/', \trim($afterParen));
+        if (!\is_array($afterParts) || \count($afterParts) < 20) {
+            return 0;
+        }
+
+        // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
+        // starttime is field 22 overall, which is index 19 after ')'.
+        $candidate = (int) $afterParts[19];
+
+        return max($candidate, 0);
+    }
+
+    /**
+     * Read the UID of the given PID from `/proc/$pid/status`.
+     *
+     * Returns `null` if the UID cannot be determined (non-Linux platform,
+     * missing or unreadable status file, malformed content).
+     */
+    public static function readUidForPid(int $pid): ?int
+    {
+        if (PHP_OS_FAMILY !== 'Linux' || $pid <= 0) {
+            return null;
+        }
+
+        $statusFile = "/proc/{$pid}/status";
+        if (!\is_readable($statusFile)) {
+            return null;
+        }
+
+        $content = @\file_get_contents($statusFile);
+        if (!\is_string($content)) {
+            return null;
+        }
+
+        if (\preg_match('/^Uid:\s+(\d+)/m', $content, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 
     /**

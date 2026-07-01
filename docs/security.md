@@ -368,10 +368,10 @@ passed. This ensures supply-chain integrity by default:
 
 ### Defence
 
-When the master is started, `ServerManager` writes a **fingerprint file** alongside the PID file (`<pid_file>.fingerprint`). The fingerprint records:
+When the master is started in **non-daemon mode**, `ServerManager` writes a **fingerprint file** alongside the PID file (`<pid_file>.fingerprint`). The fingerprint records:
 
-- **PID**: the process ID of the master (or the CLI process that will become the master)
-- **Start time**: clock ticks since boot, read from `/proc/$pid/stat` field 22 (Linux) or `posix_times()` (fallback)
+- **PID**: the process ID of the master (the CLI process that becomes the master in non-daemon mode)
+- **Start time**: clock ticks since boot, read from `/proc/$pid/stat` field 22. **Linux only** — on POSIX without `/proc` the value is recorded as `0` and the start-time check is disabled.
 - **UID**: the Unix user ID of the master process
 
 Before sending any signal, `ProcessInspector` reads the fingerprint and verifies that the candidate PID matches **all three** fields:
@@ -382,9 +382,13 @@ Before sending any signal, `ProcessInspector` reads the fingerprint and verifies
 
 The start time check is the strongest defense against PID reuse: even if the original master process died and its PID was reassigned to an unrelated process, the new process will have a different start time and will be rejected.
 
+### Daemon Mode
+
+In daemon mode (`start -d`), `Worker::daemonize()` forks twice and the launcher process exits. The actual master is a grandchild process whose PID differs from the launcher's PID. Since the fingerprint cannot be captured before `Runner::run()` is invoked, the fingerprint is **intentionally not written in daemon mode** and the legacy cmdline-based check is used as a fallback. This is a known limitation: daemon-mode deployments rely on the cmdline substring check, which is weaker than the fingerprint check but still prevents the most obvious misidentification attacks.
+
 ### Fallback Behaviour
 
-If the fingerprint file does not exist (e.g., after upgrading from a version that did not write fingerprints, or if the write failed), `ProcessInspector` falls back to the legacy cmdline-based check. This ensures backward compatibility with existing deployments.
+If the fingerprint file does not exist (e.g., after upgrading from a version that did not write fingerprints, in daemon mode, or if the write failed), `ProcessInspector` falls back to the legacy cmdline-based check. This ensures backward compatibility with existing deployments.
 
 ### When this matters
 
@@ -394,8 +398,8 @@ If the fingerprint file does not exist (e.g., after upgrading from a version tha
 
 ### Verification
 
-- The `testIsRunningRejectsUnrelatedProcessWithFingerprint` test verifies that `isRunning()` returns false when the fingerprint PID does not match the PID file PID.
-- The `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` test verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
-- The `testIsRunningUsesFingerprintWhenAvailable` test verifies that `isRunning()` returns true when the fingerprint matches the PID file PID.
-- The `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` test verifies backward compatibility.
+- `testIsRunningUsesFingerprintWhenAvailable` (in `tests/ServerManagerTest.php`) verifies that `isRunning()` returns true when the fingerprint matches the PID file PID.
+- `testIsRunningRejectsUnrelatedProcessWithFingerprint` (in `tests/ServerManagerTest.php`) verifies that `isRunning()` returns false when the fingerprint PID does not match the PID file PID.
+- `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` (in `tests/ServerManagerTest.php`) verifies backward compatibility.
+- `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
 
