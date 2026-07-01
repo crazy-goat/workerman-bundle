@@ -235,19 +235,6 @@ final readonly class ProcessInspector
                 return;
             }
 
-            // Defense in depth: even with a fingerprint match, require
-            // the cmdline to still contain "WorkerMan" or "php". This
-            // guards against the unlikely case where a fingerprint's
-            // start time is 0 (degraded mode) and the only remaining
-            // check is PID + UID.
-            if (!$this->cmdlineLooksLikeWorkerman($parentPid)) {
-                $this->logger->warning('Refusing to kill orphaned intermediate fork: cmdline does not look like Workerman', [
-                    'pid' => $parentPid,
-                ]);
-
-                return;
-            }
-
             posix_kill($parentPid, \SIGKILL);
 
             return;
@@ -272,35 +259,6 @@ final readonly class ProcessInspector
             : $stopTimeout + self::TIMEOUT_BUFFER;
 
         return Wait::until(fn(): bool => !$this->isProcessAlive($pid), $timeout);
-    }
-
-    /**
-     * Check whether the cmdline of the given PID looks like a Workerman
-     * process (contains "WorkerMan").
-     *
-     * Used as a defense-in-depth check alongside fingerprint verification.
-     * Unlike the legacy `isMasterRunning()` fallback (which accepts "php"
-     * as a marker), this check requires the specific "WorkerMan" marker
-     * because every PHP process has "php" in its cmdline, which would
-     * make the check non-discriminating.
-     */
-    private function cmdlineLooksLikeWorkerman(int $pid): bool
-    {
-        if (!self::isLinux() || $pid <= 0) {
-            return false;
-        }
-
-        $cmdline = "/proc/{$pid}/cmdline";
-        if (!\is_readable($cmdline)) {
-            return false;
-        }
-
-        $content = @\file_get_contents($cmdline);
-        if (!\is_string($content) || $content === '') {
-            return false;
-        }
-
-        return \str_contains($content, 'WorkerMan');
     }
 
     /**
