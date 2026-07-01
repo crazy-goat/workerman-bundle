@@ -73,6 +73,8 @@ final class Kernel extends BaseKernel
             $container->autowire(RequestTestController::class)->setAutoconfigured(true);
             $container->autowire(TestTask::class)->setAutoconfigured(true);
             $container->autowire(TestProcess::class)->setAutoconfigured(true);
+            $container->autowire(TestErrorProcess::class)->setAutoconfigured(true);
+            $container->autowire(ProcessEventRecorder::class)->setAutoconfigured(true)->setPublic(true);
             $container->setDefinition('first_middleware', (new Definition(TestMiddleware::class, ['X-First-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));
             $container->setDefinition('second_middleware', (new Definition(TestMiddleware::class, ['X-Second-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));
             $container->setDefinition('third_middleware', (new Definition(TestMiddleware::class, ['X-Third-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));

@@ -43,4 +43,6 @@ function workerman_stop(): void
 {
     \shell_exec(\workerman_create_command('stop'));
     @unlink(__DIR__ . '/../../var/task_status.log');
+    @unlink(__DIR__ . '/../../var/process_start.marker');
+    @unlink(__DIR__ . '/../../var/process_error.marker');
 }
