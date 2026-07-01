@@ -276,9 +276,13 @@ final readonly class ProcessInspector
 
     /**
      * Check whether the cmdline of the given PID looks like a Workerman
-     * process (contains "WorkerMan" or "php").
+     * process (contains "WorkerMan").
      *
      * Used as a defense-in-depth check alongside fingerprint verification.
+     * Unlike the legacy `isMasterRunning()` fallback (which accepts "php"
+     * as a marker), this check requires the specific "WorkerMan" marker
+     * because every PHP process has "php" in its cmdline, which would
+     * make the check non-discriminating.
      */
     private function cmdlineLooksLikeWorkerman(int $pid): bool
     {
@@ -296,7 +300,7 @@ final readonly class ProcessInspector
             return false;
         }
 
-        return \str_contains($content, 'WorkerMan') || \str_contains($content, 'php');
+        return \str_contains($content, 'WorkerMan');
     }
 
     /**
