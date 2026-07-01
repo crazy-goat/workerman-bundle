@@ -81,6 +81,65 @@ final class FileMonitorWatcherTest extends TestCase
         $this->assertFalse($this->invokeCheckPattern($this->watcher, 'file.php.bak'));
     }
 
+    public function testCheckPatternWithQuestionMark(): void
+    {
+        $qWatcher = $this->createWatcherWithPatterns(['?.php']);
+
+        $this->assertTrue($this->invokeCheckPattern($qWatcher, 'a.php'));
+        $this->assertFalse($this->invokeCheckPattern($qWatcher, 'ab.php'));
+    }
+
+    public function testCheckPatternWithCharacterClass(): void
+    {
+        $classWatcher = $this->createWatcherWithPatterns(['[abc].php']);
+
+        $this->assertTrue($this->invokeCheckPattern($classWatcher, 'a.php'));
+        $this->assertTrue($this->invokeCheckPattern($classWatcher, 'b.php'));
+        $this->assertTrue($this->invokeCheckPattern($classWatcher, 'c.php'));
+        $this->assertFalse($this->invokeCheckPattern($classWatcher, 'd.php'));
+    }
+
+    public function testCheckPatternWithNegatedCharacterClass(): void
+    {
+        $negWatcher = $this->createWatcherWithPatterns(['[!abc].php']);
+
+        $this->assertTrue($this->invokeCheckPattern($negWatcher, 'd.php'));
+        $this->assertFalse($this->invokeCheckPattern($negWatcher, 'a.php'));
+    }
+
+    public function testCheckPatternWithCharacterRange(): void
+    {
+        $rangeWatcher = $this->createWatcherWithPatterns(['[a-z].php']);
+
+        $this->assertTrue($this->invokeCheckPattern($rangeWatcher, 'm.php'));
+        $this->assertFalse($this->invokeCheckPattern($rangeWatcher, 'M.php'));
+    }
+
+    public function testCheckPatternWithEscapedWildcard(): void
+    {
+        $escWatcher = $this->createWatcherWithPatterns(['\\*.php']);
+
+        $this->assertTrue($this->invokeCheckPattern($escWatcher, '*.php'));
+        $this->assertFalse($this->invokeCheckPattern($escWatcher, 'index.php'));
+    }
+
+    public function testCheckPatternWithPureWildcard(): void
+    {
+        $allWatcher = $this->createWatcherWithPatterns(['*']);
+
+        $this->assertTrue($this->invokeCheckPattern($allWatcher, 'anything.txt'));
+        $this->assertTrue($this->invokeCheckPattern($allWatcher, ''));
+    }
+
+    public function testCheckPatternWithMultipleStars(): void
+    {
+        $multiWatcher = $this->createWatcherWithPatterns(['a*b*c']);
+
+        $this->assertTrue($this->invokeCheckPattern($multiWatcher, 'axbyc'));
+        $this->assertTrue($this->invokeCheckPattern($multiWatcher, 'abc'));
+        $this->assertFalse($this->invokeCheckPattern($multiWatcher, 'axby'));
+    }
+
     public function testCreateRecursiveIteratorWithDefaultFlags(): void
     {
         $iterator = $this->invokeCreateRecursiveIterator(
@@ -156,8 +215,9 @@ final class FileMonitorWatcherTest extends TestCase
         $sourceDirProp = $parentClass->getProperty('sourceDir');
         $sourceDirProp->setValue($instance, ['/tmp']);
 
-        $filePatternProp = $parentClass->getProperty('filePattern');
-        $filePatternProp->setValue($instance, $filePattern);
+        $regexProp = $parentClass->getProperty('filePatternRegex');
+        $compilePatterns = new \ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
+        $regexProp->setValue($instance, $compilePatterns->invoke($instance, $filePattern));
 
         return $instance;
     }

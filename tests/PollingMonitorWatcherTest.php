@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\PollingMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingPollingMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingSplFileInfo;
@@ -60,8 +61,11 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->findProperty($reflection, 'worker')->setValue($instance, $worker);
         $this->findProperty($reflection, 'sourceDir')->setValue($instance, $sourceDir);
-        $this->findProperty($reflection, 'filePattern')->setValue($instance, $filePattern);
         $this->findProperty($reflection, 'lastMTime')->setValue($instance, \time());
+
+        $regexProp = $this->findProperty($reflection, 'filePatternRegex');
+        $compilePatterns = new \ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
+        $regexProp->setValue($instance, $compilePatterns->invoke($instance, $filePattern));
 
         return $instance;
     }
