@@ -66,6 +66,7 @@ final class StatusFileReaderTest extends TestCase
         $reader = $this->createReader($this->createEmptyConfigLoader());
 
         $tempFile = tempnam(sys_get_temp_dir(), 'workerman_test_');
+        file_put_contents($tempFile, 'status data');
         register_shutdown_function(static function () use ($tempFile): void {
             @unlink($tempFile);
         });
@@ -74,7 +75,7 @@ final class StatusFileReaderTest extends TestCase
         $result = $this->invokeWaitForFile($reader, $tempFile, 5);
         $elapsed = microtime(true) - $startTime;
 
-        $this->assertTrue($result, 'waitForFile should return true when file already exists');
+        $this->assertTrue($result, 'waitForFile should return true when file already exists and has content');
         $this->assertLessThan(1, $elapsed, 'Should return nearly instantly for existing file');
     }
 
@@ -90,6 +91,24 @@ final class StatusFileReaderTest extends TestCase
 
         $this->assertFalse($result, 'waitForFile should return false when file never appears');
         $this->assertLessThan(1, $elapsed, 'Should time out quickly with timeout=0');
+    }
+
+    public function testWaitForFileReturnsFalseWhenFileEmpty(): void
+    {
+        $reader = $this->createReader($this->createEmptyConfigLoader());
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'workerman_test_empty_');
+        register_shutdown_function(static function () use ($tempFile): void {
+            @unlink($tempFile);
+        });
+
+        $startTime = microtime(true);
+        $result = $this->invokeWaitForFile($reader, $tempFile, 1);
+        $elapsed = microtime(true) - $startTime;
+
+        $this->assertFalse($result, 'waitForFile should return false when file is empty (0 bytes)');
+        $this->assertGreaterThanOrEqual(0.5, $elapsed, 'Should approach the 1s timeout waiting for content');
+        $this->assertLessThan(2, $elapsed, 'Should not exceed timeout by much');
     }
 
     /**
