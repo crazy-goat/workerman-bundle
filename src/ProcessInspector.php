@@ -28,6 +28,9 @@ final readonly class ProcessInspector
     ) {
     }
 
+    /**
+     * @phpstan-impure
+     */
     public function isProcessAlive(int $pid): bool
     {
         if ($pid <= 0 || !posix_kill($pid, 0)) {
@@ -78,10 +81,16 @@ final readonly class ProcessInspector
      * died and its PID was reassigned to an unrelated process, the new
      * process will have a different start time.
      *
-     * On non-Linux platforms, only PID + UID matching is available
-     * (no `/proc/$pid/stat`). The check is still meaningful because
-     * an attacker would need to control a process with the same PID
-     * AND the same UID as the original master.
+     * Platform behavior:
+     * - Linux: full PID + UID + start-time verification.
+     * - Non-Linux POSIX: PID + UID verification only (start time is
+     *   recorded as 0 and the start-time check is skipped). UID is
+     *   verified via `posix_getuid()` of the current process as a
+     *   best-effort match (cross-process UID read requires `/proc`).
+     *
+     * Race handling: if the process dies between the initial liveness
+     * check and the UID/start-time reads, the function fails closed
+     * (returns false).
      */
     public function matchesFingerprint(int $pid, MasterFingerprint $fingerprint): bool
     {
@@ -97,24 +106,70 @@ final readonly class ProcessInspector
             return false;
         }
 
-        $candidateUid = $this->readUid($pid);
-        if ($candidateUid !== null && $candidateUid !== $fingerprint->uid) {
-            $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
-                'pid' => $pid,
-                'expected_uid' => $fingerprint->uid,
-                'actual_uid' => $candidateUid,
-            ]);
-
-            return false;
-        }
-
-        if (self::isLinux() && $fingerprint->startTime > 0) {
-            $candidateStartTime = $this->readStartTime($pid);
-            if ($candidateStartTime !== null && $candidateStartTime !== $fingerprint->startTime) {
-                $this->logger->warning('Process start time does not match master fingerprint; refusing to signal', [
+        if (self::isLinux()) {
+            $candidateUid = MasterFingerprint::readUidForPid($pid);
+            if ($candidateUid === null) {
+                // UID could not be read. If the process is now dead, fail closed.
+                if (!$this->isProcessAlive($pid)) {
+                    return false;
+                }
+                // Process is still alive but UID is unreadable — fail closed
+                // and log a warning so the degraded mode is visible in production.
+                $this->logger->warning('Cannot read UID for fingerprint verification; refusing to signal', [
                     'pid' => $pid,
-                    'expected_start_time' => $fingerprint->startTime,
-                    'actual_start_time' => $candidateStartTime,
+                    'expected_uid' => $fingerprint->uid,
+                ]);
+
+                return false;
+            }
+
+            if ($candidateUid !== $fingerprint->uid) {
+                $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
+                    'pid' => $pid,
+                    'expected_uid' => $fingerprint->uid,
+                    'actual_uid' => $candidateUid,
+                ]);
+
+                return false;
+            }
+
+            if ($fingerprint->startTime > 0) {
+                $candidateStartTime = MasterFingerprint::readStartTimeForPid($pid);
+                if ($candidateStartTime === 0) {
+                    // Start time could not be read. If the process is now dead, fail closed.
+                    if (!$this->isProcessAlive($pid)) {
+                        return false;
+                    }
+                    // Process is still alive but start time is unreadable — fail closed.
+                    $this->logger->warning('Cannot read start time for fingerprint verification; refusing to signal', [
+                        'pid' => $pid,
+                        'expected_start_time' => $fingerprint->startTime,
+                    ]);
+
+                    return false;
+                }
+
+                if ($candidateStartTime !== $fingerprint->startTime) {
+                    $this->logger->warning('Process start time does not match master fingerprint; refusing to signal', [
+                        'pid' => $pid,
+                        'expected_start_time' => $fingerprint->startTime,
+                        'actual_start_time' => $candidateStartTime,
+                    ]);
+
+                    return false;
+                }
+            }
+        } else {
+            // Non-Linux: UID verification via posix_getuid() of the current
+            // process. This is a best-effort match — if the current process
+            // is running as the same user as the master, the check passes.
+            // Cross-process UID read requires /proc which is unavailable.
+            $currentUid = \posix_getuid();
+            if ($currentUid !== $fingerprint->uid) {
+                $this->logger->warning('Current process UID does not match master fingerprint; refusing to signal', [
+                    'pid' => $pid,
+                    'expected_uid' => $fingerprint->uid,
+                    'actual_uid' => $currentUid,
                 ]);
 
                 return false;
@@ -141,7 +196,8 @@ final readonly class ProcessInspector
         // Legacy fallback: cmdline substring check. Kept for backward
         // compatibility with deployments that have an existing PID file
         // but no fingerprint file (e.g., after upgrading from a version
-        // that did not write fingerprints).
+        // that did not write fingerprints, or in daemon mode where the
+        // launcher PID does not match the master PID).
         if (self::isLinux()) {
             $cmdline = "/proc/{$masterPid}/cmdline";
             if (is_readable($cmdline)) {
@@ -179,6 +235,19 @@ final readonly class ProcessInspector
                 return;
             }
 
+            // Defense in depth: even with a fingerprint match, require
+            // the cmdline to still contain "WorkerMan" or "php". This
+            // guards against the unlikely case where a fingerprint's
+            // start time is 0 (degraded mode) and the only remaining
+            // check is PID + UID.
+            if (!$this->cmdlineLooksLikeWorkerman($parentPid)) {
+                $this->logger->warning('Refusing to kill orphaned intermediate fork: cmdline does not look like Workerman', [
+                    'pid' => $parentPid,
+                ]);
+
+                return;
+            }
+
             posix_kill($parentPid, \SIGKILL);
 
             return;
@@ -206,74 +275,28 @@ final readonly class ProcessInspector
     }
 
     /**
-     * Read the UID of the given PID from `/proc/$pid/status`.
+     * Check whether the cmdline of the given PID looks like a Workerman
+     * process (contains "WorkerMan" or "php").
      *
-     * Returns null if the UID cannot be determined (non-Linux platform,
-     * missing or unreadable status file, malformed content).
+     * Used as a defense-in-depth check alongside fingerprint verification.
      */
-    private function readUid(int $pid): ?int
+    private function cmdlineLooksLikeWorkerman(int $pid): bool
     {
         if (!self::isLinux() || $pid <= 0) {
-            return null;
+            return false;
         }
 
-        $statusFile = "/proc/{$pid}/status";
-        if (!\is_readable($statusFile)) {
-            return null;
+        $cmdline = "/proc/{$pid}/cmdline";
+        if (!\is_readable($cmdline)) {
+            return false;
         }
 
-        $content = @\file_get_contents($statusFile);
-        if (!\is_string($content)) {
-            return null;
-        }
-
-        if (\preg_match('/^Uid:\s+(\d+)/m', $content, $matches)) {
-            return (int) $matches[1];
-        }
-
-        return null;
-    }
-
-    /**
-     * Read the start time of the given PID from `/proc/$pid/stat` field 22.
-     *
-     * Returns null if the start time cannot be determined (non-Linux
-     * platform, missing or unreadable stat file, malformed content).
-     */
-    private function readStartTime(int $pid): ?int
-    {
-        if (!self::isLinux() || $pid <= 0) {
-            return null;
-        }
-
-        $statFile = "/proc/{$pid}/stat";
-        if (!\is_readable($statFile)) {
-            return null;
-        }
-
-        $content = @\file_get_contents($statFile);
+        $content = @\file_get_contents($cmdline);
         if (!\is_string($content) || $content === '') {
-            return null;
+            return false;
         }
 
-        // The command name (field 2) can contain spaces and parentheses,
-        // so we look for the last ')' and parse after it.
-        $closeParen = \strrpos($content, ')');
-        if ($closeParen === false) {
-            return null;
-        }
-
-        $afterParen = \substr($content, $closeParen + 1);
-        $afterParts = \preg_split('/\s+/', \trim($afterParen));
-        if (!\is_array($afterParts) || \count($afterParts) < 20) {
-            return null;
-        }
-
-        // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
-        // starttime is field 22 overall, which is index 19 after ')'.
-        $candidate = (int) $afterParts[19];
-
-        return $candidate > 0 ? $candidate : null;
+        return \str_contains($content, 'WorkerMan') || \str_contains($content, 'php');
     }
 
     /**

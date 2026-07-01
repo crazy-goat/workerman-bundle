@@ -33,7 +33,7 @@ final readonly class ServerManager
             throw new ServerAlreadyRunningException();
         }
 
-        $this->writeMasterFingerprint();
+        $this->writeMasterFingerprint($daemon);
         $this->prepareWorkerStart(ServerAction::START, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
@@ -57,6 +57,7 @@ final readonly class ServerManager
         }
 
         $this->processInspector->killOrphanedIntermediateFork($parentPid, $fingerprint);
+        $this->cleanupMasterFingerprint();
 
         return true;
     }
@@ -75,7 +76,7 @@ final readonly class ServerManager
             }
         }
 
-        $this->writeMasterFingerprint();
+        $this->writeMasterFingerprint($daemon);
         $this->prepareWorkerStart(ServerAction::RESTART, $daemon, $graceful);
 
         return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
@@ -294,14 +295,29 @@ final readonly class ServerManager
      * before sending signals — preventing the `/proc/cmdline`
      * substring-match vulnerability described in issue #327.
      *
+     * Daemon mode: in daemon mode, `Worker::daemonize()` forks twice
+     * and the launcher process exits. The actual master is a grandchild
+     * process whose PID differs from the launcher's PID. Since we
+     * cannot capture the grandchild's PID before `Runner::run()` is
+     * invoked, the fingerprint is intentionally NOT written in daemon
+     * mode and the legacy cmdline-based check is used as a fallback.
+     *
      * Failures are logged but do not abort the start sequence: if the
      * fingerprint cannot be written, the legacy cmdline-based check
      * is used as a fallback.
      */
-    private function writeMasterFingerprint(): void
+    private function writeMasterFingerprint(bool $daemon): void
     {
         $pidFile = $this->getConfiguredPidFile();
         if ($pidFile === '') {
+            $this->logger->info('No pid_file configured; skipping master fingerprint');
+
+            return;
+        }
+
+        if ($daemon) {
+            $this->logger->info('Daemon mode: skipping master fingerprint (launcher PID does not match master PID after daemonize)');
+
             return;
         }
 
@@ -312,6 +328,30 @@ final readonly class ServerManager
             $this->logger->warning('Failed to write master fingerprint; falling back to cmdline check', [
                 'pid_file' => $pidFile,
                 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Remove the master fingerprint sidecar file.
+     *
+     * Called after a successful `stop()` to prevent stale fingerprint
+     * data from being used in subsequent `isRunning()` / `stop()` /
+     * `reload()` calls. Unlink failures are logged but do not abort
+     * the stop sequence.
+     */
+    private function cleanupMasterFingerprint(): void
+    {
+        $pidFile = $this->getConfiguredPidFile();
+        if ($pidFile === '') {
+            return;
+        }
+
+        $fingerprintPath = $pidFile . '.fingerprint';
+        if (\is_file($fingerprintPath) && !@\unlink($fingerprintPath)) {
+            $this->logger->warning('Failed to remove master fingerprint file', [
+                'path' => $fingerprintPath,
+                'error' => error_get_last()['message'] ?? 'Unknown error',
             ]);
         }
     }
