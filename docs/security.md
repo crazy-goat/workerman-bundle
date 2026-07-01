@@ -362,3 +362,40 @@ passed. This ensures supply-chain integrity by default:
 - `--unsafe-no-checksum` → no verification (not recommended)
 - Neither → build aborts with an error
 
+## Master Process Fingerprint (PID File Hardening)
+
+`ServerManager` identifies the Workerman master process before sending signals (SIGINT, SIGQUIT, SIGUSR1, SIGUSR2, SIGIOT, SIGIO). Without hardening, the identification relied on a loose `str_contains($cmdline, 'WorkerMan')` check against `/proc/$pid/cmdline` — a substring match that could misidentify any co-located process whose command line happens to contain the word "WorkerMan" (an unrelated binary, a script with that name in its path, a build tool). A misidentification could lead to `SIGKILL` being sent to an unrelated process, causing a denial-of-service on adjacent services.
+
+### Defence
+
+When the master is started, `ServerManager` writes a **fingerprint file** alongside the PID file (`<pid_file>.fingerprint`). The fingerprint records:
+
+- **PID**: the process ID of the master (or the CLI process that will become the master)
+- **Start time**: clock ticks since boot, read from `/proc/$pid/stat` field 22 (Linux) or `posix_times()` (fallback)
+- **UID**: the Unix user ID of the master process
+
+Before sending any signal, `ProcessInspector` reads the fingerprint and verifies that the candidate PID matches **all three** fields:
+
+1. **PID match**: the candidate PID equals the recorded PID
+2. **UID match**: the candidate process is owned by the same Unix user
+3. **Start time match**: the candidate process has the same start time as the recorded fingerprint (Linux only)
+
+The start time check is the strongest defense against PID reuse: even if the original master process died and its PID was reassigned to an unrelated process, the new process will have a different start time and will be rejected.
+
+### Fallback Behaviour
+
+If the fingerprint file does not exist (e.g., after upgrading from a version that did not write fingerprints, or if the write failed), `ProcessInspector` falls back to the legacy cmdline-based check. This ensures backward compatibility with existing deployments.
+
+### When this matters
+
+- **Multi-user hosts**: Shared CI runners, containers with multiple service accounts, or any environment where an attacker could spawn a process whose command line contains "WorkerMan".
+- **Shared runtime directories**: If the PID file directory is shared between multiple services or users, an attacker could write a fake PID file pointing to an unrelated process.
+- **PID reuse**: After a master process dies, its PID may be reassigned to an unrelated process. The start time check prevents the new process from being misidentified as the master.
+
+### Verification
+
+- The `testIsRunningRejectsUnrelatedProcessWithFingerprint` test verifies that `isRunning()` returns false when the fingerprint PID does not match the PID file PID.
+- The `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` test verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
+- The `testIsRunningUsesFingerprintWhenAvailable` test verifies that `isRunning()` returns true when the fingerprint matches the PID file PID.
+- The `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` test verifies backward compatibility.
+
