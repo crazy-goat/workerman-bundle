@@ -6,17 +6,30 @@ repository using `gh` and `git`.
 
 ---
 
-## 1. Browse Open Issues
+## 1. Browse Open Issues via Subagent
+
+Browsing and triaging open issues is token-heavy (titles, bodies, labels,
+comments, related code). Delegate it to a subagent with its own context.
 
 ```bash
-# List open issues (title, number, labels)
-gh issue list --state open --limit 30
-
-# View a specific issue (description, labels, state)
-gh issue view <NUMBER> --json title,body,labels,state
+# The subagent receives a task like:
+# "List the top 5 most impactful open issues in crazy-goat/workerman-bundle.
+#  For each, return: number, title, labels, one-paragraph rationale,
+#  and a recommended branch name (feat/issue-<N>-<kebab> or fix/issue-<N>-<kebab>).
+#  Prioritize: enhancement, code-quality, good-first-issue,
+#  stability/data-correctness/performance, blockers, user-facing (README/API docs)."
 ```
 
-**Criteria for selecting the most impactful issue:**
+The subagent uses `gh issue list --state open --limit 30` and
+`gh issue view <NUMBER> --json title,body,labels,state` to gather data, then
+returns a ranked shortlist. The main session picks one issue from the
+shortlist and proceeds to step 2.
+
+> **Why a subagent:** issue bodies, comments, and related code can easily
+> exceed thousands of tokens. Keeping this in a separate context protects the
+> main session's budget for implementation and review.
+
+**Selection criteria (applied by the subagent):**
 - Issues labeled `enhancement`, `code-quality`, `good-first-issue`
 - Issues about stability, data correctness, performance
 - Issues blocking other tasks
@@ -80,6 +93,10 @@ its own context). The subagent checks:
 #  missing tests, outdated documentation.
 #  List all issues to fix."
 ```
+
+> **Why a subagent:** code review reads the full diff plus surrounding code,
+> runs static analysis, and produces a structured findings list. Delegating
+> keeps the main session focused on fixes and the next workflow step.
 
 ---
 
@@ -260,9 +277,8 @@ Done. Ready to start the next cycle from step 1.
 ## Quick Reference – Full Cycle
 
 ```bash
-# 1. Pick an issue
-gh issue list --state open --limit 30
-gh issue view <NUMBER>
+# 1. Pick an issue (via subagent)
+#    subagent: "List top 5 impactful open issues with rationale + branch name"
 
 # 2. Feature branch
 git checkout master && git pull origin master
@@ -296,6 +312,22 @@ gh issue close <NUMBER>
 # 10. Switch back to master
 git checkout master && git pull origin master
 ```
+
+---
+
+## Subagent Usage Summary
+
+Two steps of this workflow are delegated to subagents to keep the main
+session's context lean:
+
+| Step | Subagent task                              | Why delegate                          |
+| ---- | ------------------------------------------ | ------------------------------------- |
+| 1    | Triage open issues, return ranked shortlist | Issue bodies + comments are token-heavy |
+| 4    | Code review of the implementation diff     | Full diff + surrounding code is token-heavy |
+
+Both subagents have read/write/edit/bash tools and operate on the same
+repository. Give each one a clear, scoped instruction and a defined output
+format (ranked list with rationale / numbered findings list).
 
 ---
 
