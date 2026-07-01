@@ -47,6 +47,29 @@ The `RequestConverter` also validates:
 - **URI**: Control characters in the request URI are rejected (defense against log forging and URI-based access bypass)
 - **Method**: Only uppercase ASCII letters are allowed (stricter than RFC 7230 to minimise routing bypass attacks), with a maximum length of 32 characters
 
+## Middleware Header Re-Injection (Trusted-Proxy Bypass)
+
+The bundle exposes `Request::setHeader()` (and its deprecated alias `withHeader()`) so middleware can mutate request headers in place — for example, to attach authentication tokens, override routing hints, or normalise client-supplied values. These methods are intentionally public to every middleware in the pipeline.
+
+### The risk
+
+Trust-sensitive headers — `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Ssl`, and the standardised `Forwarded` header — communicate **client-supplied network information** that downstream code uses to reconstruct the original request origin. Symfony's `Request::setTrustedProxies()` / `setTrustedHosts()` filtering exists precisely to prevent untrusted clients from spoofing these values.
+
+Because `setHeader()` mutates the request **after** the bundle's own header sanitization has run, any middleware that re-injects these headers from untrusted input re-creates the trusted-proxy bypass class of bugs the bundle works to avoid. The trust boundary is the middleware contract: callers must understand that these methods bypass any earlier sanitization.
+
+### Recommended pattern
+
+- **Run trusted-proxy filtering last.** If your application relies on Symfony's `setTrustedProxies()` / `setTrustedHosts()`, ensure that filtering runs **after** any middleware that calls `setHeader()` / `withHeader()`. The bundle does not enforce an ordering — middleware authors are responsible.
+- **Scope-limit forwarding-header writes.** If a middleware legitimately needs to set `X-Forwarded-*` (e.g. a load-balancer-aware middleware that knows the proxy topology), restrict that capability to a small, audited set of services rather than exposing it to arbitrary middleware.
+- **Treat middleware-supplied values as untrusted.** Even when a middleware is well-behaved, downstream code should treat any header value as attacker-controllable unless the middleware contract explicitly guarantees otherwise.
+- **Prefer Symfony's `Request::setTrustedProxies()`** over re-injecting `X-Forwarded-*` from middleware. Symfony's mechanism is the canonical way to declare which upstream IPs are trusted proxies and which forwarded headers to honour.
+
+### When this matters
+
+- **Reverse-proxy deployments** where the application sits behind nginx, HAProxy, or a cloud load balancer and uses `X-Forwarded-*` to reconstruct the client IP / scheme / host.
+- **Multi-tenant middleware pipelines** where third-party middleware is loaded dynamically and may not be fully audited.
+- **Authentication and rate-limiting middleware** that branches on `X-Forwarded-For` to identify clients — a spoofed value here can bypass IP-based rate limits or impersonate other tenants.
+
 ## Trusted Host Enforcement
 
 Host-header poisoning is a class of attack where an attacker controls the `Host` header sent to the server, potentially affecting password-reset links, cache keys, and routing decisions made by the application.

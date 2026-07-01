@@ -24,10 +24,11 @@ namespace CrazyGoat\WorkermanBundle\Http;
  * by downstream layers.
  *
  * **Security caveat:** Because {@see setHeader()} is exposed to every middleware,
- * any middleware can re-inject `X-Forwarded-*` or other hop-by-hop headers after
- * trusted-proxy validation has run. If your application relies on trusted-proxy
- * header filtering, ensure that filtering runs *after* any middleware that calls
- * these methods, or scope-limit which middleware is allowed to set forwarding headers.
+ * any middleware can re-inject trust-sensitive headers (notably `X-Forwarded-*`
+ * and `Forwarded`) after trusted-proxy validation has run. See the per-method
+ * PHPDoc warnings on {@see setHeader()} / {@see withHeader()} and the dedicated
+ * section in `docs/security.md` for the full trust model and recommended
+ * ordering of middleware vs. trusted-proxy filtering.
  *
  * @see \Workerman\Protocols\Http\Request The parent read-only request parser.
  * @see \CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface Middleware that receives this request.
@@ -46,6 +47,17 @@ class Request extends \Workerman\Protocols\Http\Request
      * that need to modify request headers in place (e.g. adding authentication
      * tokens, overriding routing hints). Use it in preference to the deprecated
      * {@see withHeader()}.
+     *
+     * **⚠️ Security warning — trust-sensitive headers:** This method bypasses any
+     * earlier sanitization of trust-sensitive headers. Middleware that injects
+     * `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`,
+     * `X-Forwarded-Ssl`, or `Forwarded` from untrusted input re-creates the
+     * trusted-proxy bypass class of bugs the bundle works to avoid. If your
+     * application relies on Symfony's `Request::setTrustedProxies()` /
+     * `setTrustedHosts()` filtering, ensure that filtering runs **after** any
+     * middleware that calls this method, or scope-limit which middleware is
+     * allowed to set forwarding headers. See `docs/security.md` for the full
+     * trust model.
      */
     public function setHeader(string $name, string $value): self
     {
@@ -65,6 +77,13 @@ class Request extends \Workerman\Protocols\Http\Request
      * Alias of {@see setHeader()}. Unlike PSR-7's immutable
      * {@see \Psr\Http\Message\MessageInterface::withHeader()} which returns
      * a **new** instance, this method **mutates** the request in place.
+     *
+     * **⚠️ Security warning — trust-sensitive headers:** Inherits the same
+     * trust-sensitive header warning as {@see setHeader()}. Injecting
+     * `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`,
+     * `X-Forwarded-Port`, `X-Forwarded-Ssl`, or `Forwarded` headers from
+     * untrusted input re-creates the trusted-proxy bypass class of bugs.
+     * See `docs/security.md` for the full trust model.
      *
      * @deprecated since 0.23.0 Use {@see setHeader()} instead.
      *             This method will be removed in the next major version.
