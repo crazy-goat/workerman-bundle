@@ -605,12 +605,10 @@ final class ServerManagerTest extends TestCase
 
         // Write a fingerprint matching the child PID.
         $fingerprintPath = $this->pidFile . '.fingerprint';
-        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
-        // Override the PID to match the child.
         $matchingFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
             pid: $pid,
-            startTime: $fingerprint->startTime,
-            uid: $fingerprint->uid,
+            startTime: \CrazyGoat\WorkermanBundle\MasterFingerprint::readStartTimeForPid($pid),
+            uid: \posix_getuid(),
         );
         $matchingFingerprint->writeTo($fingerprintPath);
 
@@ -796,11 +794,10 @@ final class ServerManagerTest extends TestCase
         file_put_contents($this->pidFile, (string) $pid);
 
         $fingerprintPath = $this->pidFile . '.fingerprint';
-        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
         $matchingFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
             pid: $pid,
-            startTime: $fingerprint->startTime,
-            uid: $fingerprint->uid,
+            startTime: \CrazyGoat\WorkermanBundle\MasterFingerprint::readStartTimeForPid($pid),
+            uid: \posix_getuid(),
         );
         $matchingFingerprint->writeTo($fingerprintPath);
 
