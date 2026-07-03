@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Harden `UtilsTest` signal-logic tests: add `pcntl` and `posix` extensions to
+  CI runner, introduce guard test that fails when extensions are missing without
+  explicit opt-out (`WORKERMAN_ALLOW_PCNTL_SKIP=1`). macOS contributors can skip
+  these tests locally by setting the env var
+  ([#346](https://github.com/crazy-goat/workerman-bundle/issues/346))
+
 - Populate `<coverage/>` in `phpunit.xml` with Clover and text report output,
   add `composer test:coverage` and `composer coverage:check` scripts, and
   enforce a line-coverage threshold in CI using `bin/check-coverage.php`. CI

@@ -88,6 +88,18 @@ rm .git/hooks/pre-push
    > - On macOS, ports below 1024 require root. Ports 8888 and 9999 are above
    >   that threshold and should work without special privileges.
 
+   > **Signal-logic tests and pcntl/posix extensions**
+   > Three tests in `UtilsTest` (`testReloadSendsSigusr1`,
+   > `testDeprecatedRebootTriggersDeprecation`, `testDeprecatedRebootDelegatesToReload`)
+   > require the `pcntl` and `posix` PHP extensions. On macOS these extensions are
+   > often disabled by default. To skip them locally, set:
+   > ```bash
+   > export WORKERMAN_ALLOW_PCNTL_SKIP=1
+   > ```
+   > CI always loads `pcntl` and `posix` and these tests are executed there.
+   > A guard test (`testSignalExtensionsAvailable`) will fail if the extensions
+   > are missing and the env var is not set.
+
 3. Run benchmarks locally (optional but recommended for performance-related changes):
    ```bash
    composer bench
