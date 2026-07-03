@@ -24,6 +24,11 @@ final class ProcessTest extends KernelTestCase
      * Regression-protective: the supervised process must keep refreshing its
      * status file. The supervisor restarts the process after it exits, so a
      * recent timestamp proves the start → run → exit → restart cycle works.
+     *
+     * The 10s window accommodates slow macOS hosts where `__invoke()` boot,
+     * shutdown and supervisor respawn can exceed 4s — see #534. The heartbeat
+     * rewrite in {@see TestProcess} keeps the timestamp inside this window on
+     * any platform; the relaxed budget is a secondary safety net.
      */
     public function testProcessIsLive(): void
     {
@@ -31,8 +36,8 @@ final class ProcessTest extends KernelTestCase
             ?? $this->fail('Process status file is not found');
 
         $this->assertTrue(
-            (int) $content > time() - 4,
-            'Process started more than 4 seconds ago — supervisor may not be restarting it',
+            (int) $content > time() - 10,
+            'Process status timestamp is stale — supervisor may not be restarting it',
         );
     }
 
