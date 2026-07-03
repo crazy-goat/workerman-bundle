@@ -81,8 +81,17 @@
         "test": [
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
             "sleep 1",
-            "vendor/bin/phpunit",
+            "vendor/bin/phpunit --no-coverage",
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+        ],
+        "test:coverage": [
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
+            "sleep 1",
+            "vendor/bin/phpunit --coverage-clover var/coverage.xml",
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+        ],
+        "coverage:check": [
+            "php bin/check-coverage.php var/coverage.xml 0.0"
         ],
         "lint-fix": [
             "vendor/bin/php-cs-fixer fix -v",
