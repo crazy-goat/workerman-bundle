@@ -81,8 +81,6 @@ final class UtilsTest extends TestCase
             $this->fail('pcntl and posix extensions are required but not loaded. '
                 . 'Set WORKERMAN_ALLOW_PCNTL_SKIP=1 to allow skipping this on developer machines.');
         }
-
-        $this->assertTrue(true);
     }
 
     public function testReloadSendsSigusr1(): void
