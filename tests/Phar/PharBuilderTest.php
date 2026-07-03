@@ -109,6 +109,30 @@ final class PharBuilderTest extends TestCase
         \Phar::unlinkArchive($pharPath);
     }
 
+    public function testBuildRefusesNestedUnboundedQuantifierPattern(): void
+    {
+        if ((bool) ini_get('phar.readonly')) {
+            self::markTestSkipped('phar.readonly is On.');
+        }
+
+        mkdir($this->tempDir . '/src', 0755, true);
+        file_put_contents($this->tempDir . '/src/keep.php', '<?php');
+
+        $pharPath = $this->tempDir . '/build/test.phar';
+
+        // (a+)+ is the textbook catastrophic-backtracking case. The
+        // ExcludePattern constructor must reject it before the build enters
+        // its tree walk so the build never hangs (issue #334).
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('nested unbounded quantifier');
+
+        (new PharBuilder($this->tempDir, 'test'))->build([
+            'kernel_class' => 'App\\Kernel',
+            'exclude_patterns' => ['(a+)+'],
+            'exclude_files' => [],
+        ], $pharPath);
+    }
+
     public function testBuildHonoursCustomExcludeFiles(): void
     {
         if ((bool) ini_get('phar.readonly')) {
