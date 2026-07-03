@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Optimize `InotifyMonitorWatcher` startup by deferring the recursive directory
+  walk to after the event loop starts. At boot only the top-level source
+  directories are watched; remaining subdirectories are watched lazily via a
+  single deferred pass. This eliminates a synchronous full-directory walk that
+  could delay worker readiness on very large source trees
+  ([#324](https://github.com/crazy-goat/workerman-bundle/issues/324))
+
 ### Tests
 
 - Populate `<coverage/>` in `phpunit.xml` with Clover and text report output,
