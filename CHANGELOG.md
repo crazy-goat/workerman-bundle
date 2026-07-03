@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add PHPBench benchmark suite covering the five documented hot paths: `RequestConverter::toSymfonyRequest`, `ResponseConverter::convert`, `MemoryRebootStrategy::shouldReboot`, `PeriodicalTrigger::getNextRunDate`, and `HttpRequestHandler::__invoke` (composed middleware chain). Run via `composer bench`. CI executes the suite on every PR in advisory mode (results are logged but do not block merge). Documented measurement protocol in `CONTRIBUTING.md` ([#328](https://github.com/crazy-goat/workerman-bundle/issues/328))
 
+- Add a cross-platform middleware dispatch contract test (`MiddlewareDispatchContractTest`). A dedicated test server on port 9991 runs a counting middleware that increments a shared counter file under `flock()` and tags every response with `X-Dispatch-Count`. The contract asserts that exactly one dispatch is observed per incoming HTTP request (single + sequential request cases), so any regression of the issue #533 dispatch-count class — including the macOS-specific triple-dispatch — fails CI immediately and on every supported OS ([#542](https://github.com/crazy-goat/workerman-bundle/issues/542))
+
 ### Changed
 
 - Optimize `FileMonitorWatcher::checkPattern()` by compiling glob patterns to a single PCRE regex at construction time, reducing per-tick matching from O(files × patterns) to O(files) ([#339](https://github.com/crazy-goat/workerman-bundle/issues/339))
