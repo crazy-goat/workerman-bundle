@@ -127,6 +127,10 @@ final class InotifyMonitorWatcherTest extends TestCase
         $eventLoop->expects($this->once())
             ->method('onReadable')
             ->with($this->isType('resource'), $this->isType('callable'));
+        $eventLoop->expects($this->once())
+            ->method('delay')
+            ->with($this->isType('float'), $this->isType('callable'))
+            ->willReturn(1);
 
         Worker::$globalEvent = $eventLoop;
 
@@ -142,7 +146,7 @@ final class InotifyMonitorWatcherTest extends TestCase
     /**
      * @requires extension inotify
      */
-    public function testStartRecursivelyWatchesDirectories(): void
+    public function testStartWatchesOnlyTopLevelDirectories(): void
     {
         $tmpDir = $this->createTempDir();
         mkdir($tmpDir . '/sub1', 0700);
@@ -154,6 +158,33 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->setUpEventLoop();
 
         $watcher->start();
+
+        $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+
+        // After start(), only the root directory should be watched.
+        // Subdirectories are watched lazily via deferredWalk().
+        $this->assertCount(1, $pathByWd, 'pathByWd should contain only the root directory after start()');
+        $this->assertContains($tmpDir, $pathByWd, 'pathByWd should contain the root source directory');
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testDeferredWalkWatchesAllSubdirectories(): void
+    {
+        $tmpDir = $this->createTempDir();
+        mkdir($tmpDir . '/sub1', 0700);
+        mkdir($tmpDir . '/sub1/sub2', 0700);
+        mkdir($tmpDir . '/other', 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+
+        // Invoke the deferred walk explicitly
+        $this->invokeDeferredWalk($watcher);
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
 
@@ -255,6 +286,9 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
+        // Invoke the deferred walk so that subdir is watched
+        $this->invokeDeferredWalk($watcher);
+
         $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
         $this->assertNotEmpty($pathByWdBefore, 'pathByWd should have entries before removal');
 
@@ -348,10 +382,10 @@ final class InotifyMonitorWatcherTest extends TestCase
         $fd = $this->getPrivateProperty($watcher, 'fd');
 
         $this->invokeOnNotify($watcher, $fd);
-        $this->assertSame(1, $delayCount, 'First onNotify should schedule one reload');
+        $this->assertSame(2, $delayCount, 'First onNotify should schedule one reload (total: 1 from start + 1 from onNotify)');
 
         $this->invokeOnNotify($watcher, $fd);
-        $this->assertSame(1, $delayCount, 'Second onNotify should NOT schedule another reload while callback is set');
+        $this->assertSame(2, $delayCount, 'Second onNotify should NOT schedule another reload while callback is set');
     }
 
     /**
@@ -368,6 +402,9 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->setUpEventLoop();
 
         $watcher->start();
+
+        // Invoke the deferred walk to populate all subdirectories
+        $this->invokeDeferredWalk($watcher);
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
 
@@ -388,6 +425,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $eventLoop = $this->createMock(EventInterface::class);
         $eventLoop->method('onReadable')->willReturnCallback(function (): void {
         });
+        $eventLoop->method('delay')->willReturn(1);
         Worker::$globalEvent = $eventLoop;
     }
 
@@ -417,6 +455,12 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         /** @var bool */
         return $reflection->invoke($watcher, $check, $flag);
+    }
+
+    private function invokeDeferredWalk(InotifyMonitorWatcher $watcher): void
+    {
+        $reflection = new \ReflectionMethod(InotifyMonitorWatcher::class, 'deferredWalk');
+        $reflection->invoke($watcher);
     }
 
     private function invokeOnNotify(InotifyMonitorWatcher $watcher, mixed $fd): void

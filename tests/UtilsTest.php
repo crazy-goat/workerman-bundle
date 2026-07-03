@@ -70,6 +70,21 @@ final class UtilsTest extends TestCase
         new Utils();
     }
 
+    public function testSignalExtensionsAvailable(): void
+    {
+        if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
+            $allowSkip = getenv('WORKERMAN_ALLOW_PCNTL_SKIP');
+            if ($allowSkip !== false && $allowSkip !== '') {
+                $this->markTestSkipped('pcntl and posix extensions are required for this test (skipped via WORKERMAN_ALLOW_PCNTL_SKIP).');
+            }
+
+            $this->fail('pcntl and posix extensions are required but not loaded. '
+                . 'Set WORKERMAN_ALLOW_PCNTL_SKIP=1 to allow skipping this on developer machines.');
+        }
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testReloadSendsSigusr1(): void
     {
         if (!extension_loaded('pcntl') || !extension_loaded('posix')) {

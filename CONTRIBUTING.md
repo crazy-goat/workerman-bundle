@@ -61,6 +61,17 @@ rm .git/hooks/pre-push
    **9999** for end-to-end HTTP tests. The ports are hardcoded in
    `tests/App/Kernel.php` and cannot be overridden via environment variables.
 
+   To run the suite with code coverage locally, you need a coverage driver such
+   as PCOV or Xdebug installed and enabled:
+   ```bash
+   composer test:coverage
+   composer coverage:check
+   ```
+
+   The `test:coverage` script writes a Clover report to `var/coverage.xml` and
+   `coverage:check` parses it to enforce the configured line-coverage threshold.
+   CI uses the same scripts with PCOV so the gate is reproducible locally.
+
    > **Troubleshooting "Address already in use"**
    > - Find the process occupying the port: `lsof -i :8888` or `ss -tlnp | grep 8888`
    > - Stop the conflicting service or kill the process (e.g. `kill <PID>`)
@@ -76,6 +87,18 @@ rm .git/hooks/pre-push
    >   ```
    > - On macOS, ports below 1024 require root. Ports 8888 and 9999 are above
    >   that threshold and should work without special privileges.
+
+   > **Signal-logic tests and pcntl/posix extensions**
+   > Three tests in `UtilsTest` (`testReloadSendsSigusr1`,
+   > `testDeprecatedRebootTriggersDeprecation`, `testDeprecatedRebootDelegatesToReload`)
+   > require the `pcntl` and `posix` PHP extensions. On macOS these extensions are
+   > often disabled by default. To skip them locally, set:
+   > ```bash
+   > export WORKERMAN_ALLOW_PCNTL_SKIP=1
+   > ```
+   > CI always loads `pcntl` and `posix` and these tests are executed there.
+   > A guard test (`testSignalExtensionsAvailable`) will fail if the extensions
+   > are missing and the env var is not set.
 
 3. Run benchmarks locally (optional but recommended for performance-related changes):
    ```bash

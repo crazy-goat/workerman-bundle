@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\Command\BuildPathResolver;
 use CrazyGoat\WorkermanBundle\Command\BuildPharCommand;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
+use CrazyGoat\WorkermanBundle\Phar\PharCapabilities;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -137,11 +138,10 @@ final class BuildPharCommandTest extends TestCase
 
     public function testCommandFailsWhenPharReadonlyIsSet(): void
     {
-        if (!(bool) ini_get('phar.readonly')) {
-            self::markTestSkipped('phar.readonly is Off — cannot test readonly error.');
-        }
-
-        $command = $this->createCommand();
+        // Use PharCapabilities with pharReadOnly=true to simulate the error
+        // path without depending on the runtime INI setting.
+        $pharBuilder = new PharBuilder($this->tempDir, 'test', new PharCapabilities(true, true));
+        $command = new BuildPharCommand($this->makeConfigLoader(), $pharBuilder, new BuildPathResolver(), $this->tempDir);
 
         $input = new ArrayInput([]);
         $output = new BufferedOutput();
@@ -205,10 +205,5 @@ final class BuildPharCommandTest extends TestCase
         ]);
 
         return $loader;
-    }
-
-    private function createCommand(): BuildPharCommand
-    {
-        return new BuildPharCommand($this->makeConfigLoader(), new PharBuilder($this->tempDir, 'test'), new BuildPathResolver(), $this->tempDir);
     }
 }

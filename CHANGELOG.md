@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Optimize `InotifyMonitorWatcher` startup by deferring the recursive directory
+  walk to after the event loop starts. At boot only the top-level source
+  directories are watched; remaining subdirectories are watched lazily via a
+  single deferred pass. This eliminates a synchronous full-directory walk that
+  could delay worker readiness on very large source trees
+  ([#324](https://github.com/crazy-goat/workerman-bundle/issues/324))
+
+### Tests
+
+- Harden PHAR-build tests against silent `phar.readonly` skips: add
+  `phar.readonly=0` to `composer test` / `composer test:coverage` scripts and
+  CI workflow ini-values, introduce `PharReadOnlyGuardTest` that fails under CI
+  when `phar.readonly` is set without explicit opt-out
+  (`WORKERMAN_ALLOW_PHAR_READONLY_SKIP=1`), and refactor
+  `testCommandFailsWhenPharReadonlyIsSet` to use injected `PharCapabilities`
+  instead of depending on the runtime INI setting
+  ([#340](https://github.com/crazy-goat/workerman-bundle/issues/340))
+
+- Harden `UtilsTest` signal-logic tests: add `pcntl` and `posix` extensions to
+  CI runner, introduce guard test that fails when extensions are missing without
+  explicit opt-out (`WORKERMAN_ALLOW_PCNTL_SKIP=1`). macOS contributors can skip
+  these tests locally by setting the env var
+  ([#346](https://github.com/crazy-goat/workerman-bundle/issues/346))
+
+- Populate `<coverage/>` in `phpunit.xml` with Clover and text report output,
+  add `composer test:coverage` and `composer coverage:check` scripts, and
+  enforce a line-coverage threshold in CI using `bin/check-coverage.php`. CI
+  enables PCOV, generates `var/coverage.xml`, and uploads it as an artifact per
+  matrix job. A regression test asserts the coverage gate remains present in
+  `.github/workflows/tests.yaml` ([#357](https://github.com/crazy-goat/workerman-bundle/issues/357))
+
 ### Added
 
 - Add PHPBench benchmark suite covering the five documented hot paths: `RequestConverter::toSymfonyRequest`, `ResponseConverter::convert`, `MemoryRebootStrategy::shouldReboot`, `PeriodicalTrigger::getNextRunDate`, and `HttpRequestHandler::__invoke` (composed middleware chain). Run via `composer bench`. CI executes the suite on every PR in advisory mode (results are logged but do not block merge). Documented measurement protocol in `CONTRIBUTING.md` ([#328](https://github.com/crazy-goat/workerman-bundle/issues/328))
+
+- Add a cross-platform middleware dispatch contract test (`MiddlewareDispatchContractTest`). A dedicated test server on port 9991 runs a counting middleware that increments a shared counter file under `flock()` and tags every response with `X-Dispatch-Count`. The contract asserts that exactly one dispatch is observed per incoming HTTP request (single + sequential request cases), so any regression of the issue #533 dispatch-count class — including the macOS-specific triple-dispatch — fails CI immediately and on every supported OS ([#542](https://github.com/crazy-goat/workerman-bundle/issues/542))
 
 ### Changed
 
@@ -23,11 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Make `ProcessInspector::isProcessAlive()` portable across POSIX systems — on macOS and other non-Linux platforms where `/proc` is unavailable, the function now uses `posix_kill($pid, 0)` for the primary liveness check and falls back to a non-blocking `pcntl_waitpid()` to distinguish running processes from zombies. The Linux `/proc/{pid}/status` zombie check is preserved as a Linux-only refinement. `getParentPid()`, `isMasterRunning()`, and `killOrphanedIntermediateFork()` are likewise gated on `PHP_OS_FAMILY === 'Linux'` so they no longer crash on macOS. Fixes `ServerManager::stop()` returning `false` on macOS because `waitForProcessToStop()` never observed the process dying ([#530](https://github.com/crazy-goat/workerman-bundle/issues/530))
 
+- `ProcessTest::testProcessIsLive` failed on macOS because `TestProcess` wrote the status timestamp only once per `__invoke()` invocation, then exited. Once Workerman's boot + shutdown + supervisor respawn cycle exceeded 4 seconds (common on macOS), the persisted timestamp always looked stale. `TestProcess` now refreshes the status file on a 1-second heartbeat inside a loop so the timestamp always stays within the test's recency window; the test's secondary budget is widened from 4 to 10 seconds as a safety net ([#534](https://github.com/crazy-goat/workerman-bundle/issues/534))
+
 - Fix race condition in `ServerManager::getStatus()` / `getConnections()` where PHP's stat cache and stale status files from interrupted runs could cause `waitForFile()` to read an empty or incomplete file written by Workerman's SIGIOT/SIGIO handler. `StatusFileReader::waitForFile()` now calls `clearstatcache()` before each poll and rejects 0-byte files. `ServerManager` deletes the stale status/connections file before signaling, ensuring `waitForFile()` always waits for fresh output from the current signal. Fixes `WorkermanCommandTest` failures on macOS where slower filesystem operations widened the race window ([#535](https://github.com/crazy-goat/workerman-bundle/issues/535))
 
 ### Docs
 
 - Update `docs/security.md` Static Files Protection examples to use the `StaticFilesMiddleware` service approach instead of the deprecated `serve_files` and `root_dir` server options. All YAML examples now show the recommended service registration pattern ([#345](https://github.com/crazy-goat/workerman-bundle/issues/345))
+
+- Add explicit `@api` annotation to `Utils::reload()` to clarify that it is the canonical public API for programmatic worker reload, resolving the remaining ambiguity from the `@internal` removal in 0.21.0 ([#352](https://github.com/crazy-goat/workerman-bundle/issues/352))
 
 ### Tests
 
@@ -40,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Harden `PharBuilder`'s user-supplied `exclude_patterns` against accidental ReDoS at build time. `ExcludePattern` now performs defense-in-depth: (1) a structural lint at construction time that rejects patterns containing nested unbounded quantifiers (`(a+)+`, `(.+)*`, `(a+){2,}`, ...) before the build ever traverses the source tree, (2) a PCRE compile-check against a probe string that surfaces patterns PHP itself rejects with a clear error message, (3) a per-call `pcre.backtrack_limit`/`pcre.recursion_limit` guard inside `matches()` that returns `false` rather than hanging if the limit trips. The temporary ini values are restored on every exit path. Negative regression test (`testBuildRefusesNestedUnboundedQuantifierPattern`) and a behavioural test for the per-call guard prevent future regressions. Documentation in `docs/build-packaging.md` recommends atomic groups (`(?>...)`) as the PCRE-native alternative for matching power that would otherwise require nested quantifiers ([#334](https://github.com/crazy-goat/workerman-bundle/issues/334))
 - Add world-writable permission check to `ConfigLoader::loadFromCache()` before requiring the generated PHP cache file. Cache files with world-writable permissions are now rejected with a clear error message, preventing arbitrary code execution if the cache directory is misconfigured ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
 - Force `umask(0077)` while writing the config cache file in `ConfigLoader::warmUp()` so the generated PHP file is always created with restrictive `0600` permissions, regardless of the surrounding umask ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
 - Document the trust requirement for the config cache directory in `docs/security.md` — the cache directory must not be writable by untrusted users ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
@@ -302,6 +342,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--kernel-class` CLI option for overriding kernel class in PHAR stub
   - File monitor automatically disabled in PHAR mode
   - `ConfigLoader` fallback when cache is missing for PHAR scenarios
+  - See [docs/build-packaging.md](docs/build-packaging.md) for full documentation and examples
 
 ### Changed
 
