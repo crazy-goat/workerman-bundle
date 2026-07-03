@@ -403,8 +403,6 @@ If the fingerprint file does not exist (e.g., after upgrading from a version tha
 - `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` (in `tests/ServerManagerTest.php`) verifies backward compatibility.
 - `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
 
-- `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
-
 ## Composer Audit Advisory Suppression Policy
 
 `composer.json` enables `audit.block-insecure: true`, which prevents Composer
