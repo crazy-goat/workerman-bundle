@@ -69,7 +69,7 @@ jobs:
           php-version: ${{ matrix.php-version }}
           extensions: zip, inotify, pcntl, posix
           coverage: pcov
-          ini-values: pcov.directory=src
+          ini-values: pcov.directory=src,phar.readonly=0
 
       - name: Create var directory
         run: mkdir -p var
