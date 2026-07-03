@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- Populate `<coverage/>` in `phpunit.xml` with Clover and text report output,
+  add `composer test:coverage` and `composer coverage:check` scripts, and
+  enforce a line-coverage threshold in CI using `bin/check-coverage.php`. CI
+  enables PCOV, generates `var/coverage.xml`, and uploads it as an artifact per
+  matrix job. A regression test asserts the coverage gate remains present in
+  `.github/workflows/tests.yaml` ([#357](https://github.com/crazy-goat/workerman-bundle/issues/357))
+
 ### Added
 
 - Add PHPBench benchmark suite covering the five documented hot paths: `RequestConverter::toSymfonyRequest`, `ResponseConverter::convert`, `MemoryRebootStrategy::shouldReboot`, `PeriodicalTrigger::getNextRunDate`, and `HttpRequestHandler::__invoke` (composed middleware chain). Run via `composer bench`. CI executes the suite on every PR in advisory mode (results are logged but do not block merge). Documented measurement protocol in `CONTRIBUTING.md` ([#328](https://github.com/crazy-goat/workerman-bundle/issues/328))

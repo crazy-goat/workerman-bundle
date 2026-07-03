@@ -68,6 +68,8 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           extensions: zip, inotify
+          coverage: pcov
+          ini-values: pcov.directory=src
 
       - name: Create var directory
         run: mkdir -p var
@@ -80,8 +82,28 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Run tests
-        run: composer test
+      - name: Run tests with coverage
+        run: composer test:coverage
+
+      - name: Check coverage threshold
+        run: |
+          composer coverage:check
+          php bin/check-coverage.php var/coverage.xml 0.0
+
+      - name: Sanitize artifact name
+        id: artifact
+        run: |
+          name="coverage-${{ matrix.php-version }}-${{ matrix.symfony-version }}"
+          name="${name//\*/x}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: var/coverage.xml
+          if-no-files-found: ignore
 
   benchmark:
     name: Benchmark
