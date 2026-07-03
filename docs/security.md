@@ -99,7 +99,7 @@ Configure `trusted_hosts` when your application generates absolute URLs based on
 
 ## Static Files Protection
 
-When `serve_files` is enabled on a server, `StaticFilesMiddleware` serves files from the configured root directory. This middleware applies security hardening to prevent accidental exposure of sensitive files:
+`StaticFilesMiddleware` serves files from a configured root directory. Register it as a service and add it to the server's `middlewares` list. This middleware applies security hardening to prevent accidental exposure of sensitive files:
 
 ### Built-in Denylist
 
@@ -115,28 +115,37 @@ The following are **always blocked** (requests return 404):
 To restrict which file types are served, configure an explicit extension allowlist:
 
 ```yaml
+# config/services.yaml
+services:
+    workerman.middleware.static_files:
+        class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+        arguments:
+            $rootDirectory: '%kernel.project_dir%/public'
+            $allowedExtensions:
+                - 'css'
+                - 'js'
+                - 'png'
+                - 'jpg'
+                - 'jpeg'
+                - 'gif'
+                - 'webp'
+                - 'svg'
+                - 'woff'
+                - 'woff2'
+                - 'ico'
+                - 'html'
+                - 'json'
+                - 'txt'
+```
+
+```yaml
+# config/packages/workerman.yaml
 workerman:
     servers:
         - name: 'Web'
           listen: 'http://0.0.0.0:80'
-          serve_files: true
-          root_dir: '%kernel.project_dir%/public'
-          static_files:
-              allowed_extensions:
-                  - 'css'
-                  - 'js'
-                  - 'png'
-                  - 'jpg'
-                  - 'jpeg'
-                  - 'gif'
-                  - 'webp'
-                  - 'svg'
-                  - 'woff'
-                  - 'woff2'
-                  - 'ico'
-                  - 'html'
-                  - 'json'
-                  - 'txt'
+          middlewares:
+              - workerman.middleware.static_files
 ```
 
 When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
@@ -145,26 +154,35 @@ When `allowed_extensions` is set, only files with one of the listed extensions a
 
 By default, `StaticFilesMiddleware` refuses to serve files that are accessed through a symlink under the static root directory (`follow_symlinks: false`). This prevents an attacker or a compromised tool from creating a symlink inside the public directory to expose files outside the intended root.
 
-To restore the previous behaviour and allow symlinks to be followed, set `follow_symlinks: true`:
+To restore the previous behaviour and allow symlinks to be followed, set `$followSymlinks: true`:
 
 ```yaml
+# config/services.yaml
+services:
+    workerman.middleware.static_files:
+        class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+        arguments:
+            $rootDirectory: '%kernel.project_dir%/public'
+            $followSymlinks: true
+```
+
+```yaml
+# config/packages/workerman.yaml
 workerman:
     servers:
         - name: 'Web'
           listen: 'http://0.0.0.0:80'
-          serve_files: true
-          root_dir: '%kernel.project_dir%/public'
-          static_files:
-              follow_symlinks: true
+          middlewares:
+              - workerman.middleware.static_files
 ```
 
 When `follow_symlinks` is `false` (default), any path component inside the root directory that is a symlink will cause the request to be treated as a non-existent file, passing control to the next middleware.
 
 ### Security Considerations
 
-- **Keep `root_dir` isolated**: Point `root_dir` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
+- **Keep `$rootDirectory` isolated**: Point `$rootDirectory` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
 - **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
-- **Disable symlinks**: Keep `follow_symlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
+- **Disable symlinks**: Keep `$followSymlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
 
 ## Connection Timeouts (Slowloris Protection)
