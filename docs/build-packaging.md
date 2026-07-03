@@ -124,6 +124,54 @@ Security implications when enabled:
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:310-313`.
 
+## Security
+
+### `exclude_patterns` regex defence (issue #334)
+
+User-supplied `exclude_patterns` are applied as PCRE regexes against every
+file path during the build. To prevent accidental denial-of-service
+through a pathological pattern (e.g. `(a+)+`, `(.+)*`, `(a|a)+`), the
+build performs defense-in-depth:
+
+1. **Structural lint at compile time.** Every pattern is scanned for
+   nested unbounded quantifiers — a group whose body already contains a
+   quantifier and is itself followed by a quantifier (`+`, `*`, `?`,
+   `{n,m}`). Such patterns are rejected with `InvalidArgumentException`
+   before the build ever traverses the source tree.
+2. **PCRE compile check.** Each compiled regex is dry-run against a
+   short probe string to confirm PCRE accepts it. Patterns that PCRE
+   itself rejects are surfaced with a clear error message.
+3. **Per-call backtrack limit.** Every `preg_match` call wraps the
+   pattern in a temporary `pcre.backtrack_limit` of 1,000,000 (raised
+   from PHP's default) and a `pcre.recursion_limit` of 100,000. Both
+   ini values are restored after the call. If the limit still trips
+   (catastrophic backtracking on a pattern the structural lint allowed
+   through), `matches()` returns `false` instead of hanging the build.
+
+Recommended safe idioms:
+
+```yaml
+workerman:
+    build:
+        exclude_patterns:
+            # Good — simple glob-style, no nested quantifiers
+            - '#\.git/#'
+            - '#/tests/#'
+            - '#^vendor/#'
+```
+
+If you need the matching power that nested quantifiers provide, rewrite
+your pattern with **atomic groups** (`(?>...)`) — PCRE's native solution
+to catastrophic backtracking:
+
+```yaml
+workerman:
+    build:
+        exclude_patterns:
+            # Good — atomic group prevents backtracking
+            - '#(?>src/foo|src/bar)+/#'
+```
+
 ## How It Works
 
 ### PHAR Mode
