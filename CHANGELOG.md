@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update `docs/security.md` Static Files Protection examples to use the `StaticFilesMiddleware` service approach instead of the deprecated `serve_files` and `root_dir` server options. All YAML examples now show the recommended service registration pattern ([#345](https://github.com/crazy-goat/workerman-bundle/issues/345))
 
+- Add explicit `@api` annotation to `Utils::reload()` to clarify that it is the canonical public API for programmatic worker reload, resolving the remaining ambiguity from the `@internal` removal in 0.21.0 ([#352](https://github.com/crazy-goat/workerman-bundle/issues/352))
+
 ### Tests
 
 - Replace `testRunnerUsesCorrectForkErrorHandling` (which read `Runner.php` as a string) with `testForkFailureThrowsRuntimeException` — a behavioral test that stubs the `fork()` method via a readonly subclass and asserts `RuntimeException` is thrown when `pcntl_fork()` returns `-1`. Removes the dead `fork_failure` case from the isolated test fixture ([#313](https://github.com/crazy-goat/workerman-bundle/issues/313))

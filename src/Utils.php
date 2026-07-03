@@ -56,6 +56,8 @@ final class Utils
      * runtime condition (e.g., memory pressure, config change) requires a
      * clean worker state.
      *
+     * @api
+     *
      * @param bool $reloadAllWorkers When true, SIGUSR1 is sent to the parent
      *                               process, which reloads all workers. When
      *                               false (default), only the current process
