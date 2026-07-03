@@ -95,4 +95,16 @@ final class ResponseTestController extends AbstractController
 
         return $response;
     }
+
+    /**
+     * Minimal endpoint used by MiddlewareDispatchContractTest to verify the
+     * middleware pipeline dispatches exactly once per request. The middleware
+     * chain is solely responsible for tagging X-Dispatch-Count on the
+     * response; the controller body is intentionally trivial.
+     */
+    #[Route('/dispatch_count_test', name: 'app_dispatch_count_test')]
+    public function dispatchCountProbe(): Response
+    {
+        return new Response('ok', Response::HTTP_OK, ['Content-Type' => 'text/plain']);
+    }
 }

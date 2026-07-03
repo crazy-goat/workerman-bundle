@@ -55,6 +55,15 @@ final class Kernel extends BaseKernel
                             'first_middleware', 'second_middleware', 'third_middleware',
                         ],
                     ],
+                    [
+                        'name' => 'Test server middleware dispatch contract',
+                        'listen' => 'http://127.0.0.1:9991',
+                        'processes' => 1,
+                        'serve_files' => false,
+                        'middlewares' => [
+                            'dispatch_count_middleware',
+                        ],
+                    ],
                 ],
             ]);
 
@@ -78,6 +87,10 @@ final class Kernel extends BaseKernel
             $container->setDefinition('first_middleware', (new Definition(TestMiddleware::class, ['X-First-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));
             $container->setDefinition('second_middleware', (new Definition(TestMiddleware::class, ['X-Second-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));
             $container->setDefinition('third_middleware', (new Definition(TestMiddleware::class, ['X-Third-Middleware', '1']))->setAutoconfigured(true)->setPublic(true));
+            $container->setDefinition('dispatch_count_middleware', (new Definition(DispatchCountMiddleware::class))
+                ->setArguments(['%kernel.project_dir%/var/dispatch_count'])
+                ->setAutoconfigured(true)
+                ->setPublic(true));
         });
     }
 
