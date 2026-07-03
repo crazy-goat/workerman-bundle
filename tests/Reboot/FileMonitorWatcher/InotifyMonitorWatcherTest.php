@@ -286,6 +286,9 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
+        // Invoke the deferred walk so that subdir is watched
+        $this->invokeDeferredWalk($watcher);
+
         $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
         $this->assertNotEmpty($pathByWdBefore, 'pathByWd should have entries before removal');
 
