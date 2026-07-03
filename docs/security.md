@@ -403,3 +403,68 @@ If the fingerprint file does not exist (e.g., after upgrading from a version tha
 - `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` (in `tests/ServerManagerTest.php`) verifies backward compatibility.
 - `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
 
+- `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
+
+## Composer Audit Advisory Suppression Policy
+
+`composer.json` enables `audit.block-insecure: true`, which prevents Composer
+from installing packages with known security vulnerabilities. The
+`audit.ignore` list is **intentionally empty** — no Composer security
+advisory is suppressed.
+
+### Why the ignore list is empty
+
+Suppressed advisories shadow real risk. The `audit.ignore` field is global:
+an entry hides the advisory regardless of whether the affected package is
+reached via `require` (production) or `require-dev` (development only). If a
+transitive non-dev dependency ever pulls in the affected package, the
+suppression hides the warning, shipping a known vulnerability to production
+users.
+
+### How dev-only advisories are handled
+
+Advisories that affect only `require-dev` dependencies (e.g. PHPUnit,
+development-only Symfony components) are **not suppressed**. Instead, CI and
+production audits run `composer audit --no-dev`, which excludes the entire
+`require-dev` dependency set. This means:
+
+- Development-only advisories do not block CI or production installs.
+- Production-only advisories are never hidden by a global suppression.
+- The `audit.ignore` list stays empty, so no advisory is ever silently
+  hidden from `composer audit` (full, with dev) run by contributors locally.
+
+### Historical context
+
+The `audit.ignore` list previously contained three advisory IDs
+(`PKSA-d1rr-z8zb-qnm7`, `PKSA-py8y-z9q7-q197`, `PKSA-xf5h-y6vg-qj98`),
+all affecting packages reachable only through `require-dev`
+(`phpunit/phpunit` and `symfony/runtime` in development-only Symfony
+versions). These were suppressed to keep CI green when upstream had not yet
+released a patch. After verification that each affected package was dev-only,
+the entries were removed and replaced with the `--no-dev` audit strategy.
+
+### Policy for future suppressions
+
+If an advisory must be suppressed temporarily:
+
+1. **Verify scope**: Run `composer why <package>` and confirm the affected
+   package is only reachable through `require-dev`. If it is reachable via
+   `require`, do not suppress — update the dependency instead.
+2. **Document the justification**: Add an entry in `docs/security.md` under
+   this section, with the advisory ID, affected package, CVE/link, the
+   `composer why` output proving dev-only scope, and the date.
+3. **Remove promptly**: Remove the `audit.ignore` entry as soon as the
+   upstream package releases a patched version.
+4. **Prefer `--no-dev`**: If the advisory only affects dev dependencies,
+   prefer the `--no-dev` audit strategy over suppressing the advisory ID.
+
+### Verification
+
+- `testAuditIgnoreListIsEmpty` (in `tests/ComposerConfigTest.php`) asserts
+  that `audit.ignore` is an empty array, preventing accidental re-introduction
+  of suppressed advisories.
+- `testComposerAuditNoDevIsClean` (in `tests/ComposerConfigTest.php`) runs
+  `composer audit --format=json --no-dev` and asserts that the production
+  dependency set has zero advisories.
+- `testComposerAuditProducesValidJson` (in `tests/ComposerAuditE2ETest.php`)
+  verifies the audit command runs and produces valid JSON output.
