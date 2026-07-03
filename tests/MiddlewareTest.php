@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\HandlerStack;
 
 use function PHPUnit\Framework\assertIsArray;
 
@@ -42,13 +43,41 @@ final class MiddlewareTest extends WebTestCase
     }
 
     /**
+     * Verify middleware-added request headers do not leak across keep-alive requests (closes #533).
+     */
+    public function testMiddlewareRequestHeadersDoNotLeakAcrossRequests(): void
+    {
+        $client = $this->createHttpClient();
+
+        [$firstResponse] = $this->createResponse('GET', [], $client);
+        [$secondResponse] = $this->createResponse('GET', [], $client);
+
+        assertIsArray($firstResponse['headers']);
+        assertIsArray($secondResponse['headers']);
+
+        $expectedOrder = 'X-First-Middleware|X-Second-Middleware|X-Third-Middleware|';
+
+        self::assertSame($expectedOrder, $firstResponse['headers']['x-test-middleware-request-order'][0] ?? '');
+        self::assertSame($expectedOrder, $secondResponse['headers']['x-test-middleware-request-order'][0] ?? '');
+    }
+
+    private function createHttpClient(): Client
+    {
+        return new Client([
+            'http_errors' => false,
+            'handler' => HandlerStack::create(),
+            'headers' => ['Connection' => 'keep-alive'],
+        ]);
+    }
+
+    /**
      * @param mixed[] $options
      *
      * @return mixed[]
      */
-    private function createResponse(string $method, array $options = []): array
+    private function createResponse(string $method, array $options = [], ?Client $client = null): array
     {
-        $client = new Client(['http_errors' => false]);
+        $client ??= $this->createHttpClient();
         $response = $client->request($method, 'http://127.0.0.1:9999/request_test', $options);
 
         $result = json_decode((string) $response->getBody(), true);
