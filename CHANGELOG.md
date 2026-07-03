@@ -307,6 +307,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--kernel-class` CLI option for overriding kernel class in PHAR stub
   - File monitor automatically disabled in PHAR mode
   - `ConfigLoader` fallback when cache is missing for PHAR scenarios
+  - See [docs/build-packaging.md](docs/build-packaging.md) for full documentation and examples
 
 ### Changed
 
