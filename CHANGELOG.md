@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Harden PHAR-build tests against silent `phar.readonly` skips: add
+  `phar.readonly=0` to `composer test` / `composer test:coverage` scripts and
+  CI workflow ini-values, introduce `PharReadOnlyGuardTest` that fails under CI
+  when `phar.readonly` is set without explicit opt-out
+  (`WORKERMAN_ALLOW_PHAR_READONLY_SKIP=1`), and refactor
+  `testCommandFailsWhenPharReadonlyIsSet` to use injected `PharCapabilities`
+  instead of depending on the runtime INI setting
+  ([#340](https://github.com/crazy-goat/workerman-bundle/issues/340))
+
 - Harden `UtilsTest` signal-logic tests: add `pcntl` and `posix` extensions to
   CI runner, introduce guard test that fails when extensions are missing without
   explicit opt-out (`WORKERMAN_ALLOW_PCNTL_SKIP=1`). macOS contributors can skip
