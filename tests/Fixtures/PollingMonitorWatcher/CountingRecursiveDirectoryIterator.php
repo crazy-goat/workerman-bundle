@@ -21,7 +21,7 @@ final class CountingRecursiveDirectoryIterator extends \RecursiveDirectoryIterat
         $this->setInfoClass(CountingSplFileInfo::class);
     }
 
-    public function current(): \SplFileInfo
+    public function current(): CountingSplFileInfo
     {
         $info = parent::current();
         \assert($info instanceof CountingSplFileInfo, 'Iterator must yield CountingSplFileInfo instances; check setInfoClass()');

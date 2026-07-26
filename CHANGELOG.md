@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-26
+
 ### Performance
 
 - Optimize `InotifyMonitorWatcher` startup by deferring the recursive directory
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single deferred pass. This eliminates a synchronous full-directory walk that
   could delay worker readiness on very large source trees
   ([#324](https://github.com/crazy-goat/workerman-bundle/issues/324))
+
+- Optimize `FileMonitorWatcher::checkPattern()` by compiling glob patterns to a single PCRE regex at construction time, reducing per-tick matching from O(files × patterns) to O(files) ([#339](https://github.com/crazy-goat/workerman-bundle/issues/339))
 
 ### Tests
 
@@ -40,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matrix job. A regression test asserts the coverage gate remains present in
   `.github/workflows/tests.yaml` ([#357](https://github.com/crazy-goat/workerman-bundle/issues/357))
 
+- Expand `ProcessTest` from a single PID-file recency check to full process lifecycle coverage: `ProcessStartEvent` dispatch regression check, `ProcessErrorEvent` dispatch on throwable (via new `TestErrorProcess`), no-error-event assertion during normal operation, and SIGTERM-to-worker restart verification (locates the worker PID via `/proc` on Linux or `ps` on macOS). Introduces `ProcessEventRecorder` test listener and `ProcessMarkerPaths` constants class as the shared source of truth for marker file paths ([#348](https://github.com/crazy-goat/workerman-bundle/issues/348))
+
 ### Added
 
 - Add PHPBench benchmark suite covering the five documented hot paths: `RequestConverter::toSymfonyRequest`, `ResponseConverter::convert`, `MemoryRebootStrategy::shouldReboot`, `PeriodicalTrigger::getNextRunDate`, and `HttpRequestHandler::__invoke` (composed middleware chain). Run via `composer bench`. CI executes the suite on every PR in advisory mode (results are logged but do not block merge). Documented measurement protocol in `CONTRIBUTING.md` ([#328](https://github.com/crazy-goat/workerman-bundle/issues/328))
@@ -47,8 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a cross-platform middleware dispatch contract test (`MiddlewareDispatchContractTest`). A dedicated test server on port 9991 runs a counting middleware that increments a shared counter file under `flock()` and tags every response with `X-Dispatch-Count`. The contract asserts that exactly one dispatch is observed per incoming HTTP request (single + sequential request cases), so any regression of the issue #533 dispatch-count class — including the macOS-specific triple-dispatch — fails CI immediately and on every supported OS ([#542](https://github.com/crazy-goat/workerman-bundle/issues/542))
 
 ### Changed
-
-- Optimize `FileMonitorWatcher::checkPattern()` by compiling glob patterns to a single PCRE regex at construction time, reducing per-tick matching from O(files × patterns) to O(files) ([#339](https://github.com/crazy-goat/workerman-bundle/issues/339))
 
 - Extract the side-effectful `phar.readonly` INI probe and `\Phar` extension presence check out of `PharBuilder::build()` into a new `PharCapabilities` collaborator. `PharBuilder` now accepts the capability checker via constructor (defaults to a live `PharCapabilities::probe()`), making the runtime checks individually testable and stubbable. The DI container registers `PharCapabilities` and injects it into the `workerman.phar_builder` service. No behavioural change observable for the `build:phar` flow ([#372](https://github.com/crazy-goat/workerman-bundle/issues/372))
 
@@ -62,11 +66,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix race condition in `ServerManager::getStatus()` / `getConnections()` where PHP's stat cache and stale status files from interrupted runs could cause `waitForFile()` to read an empty or incomplete file written by Workerman's SIGIOT/SIGIO handler. `StatusFileReader::waitForFile()` now calls `clearstatcache()` before each poll and rejects 0-byte files. `ServerManager` deletes the stale status/connections file before signaling, ensuring `waitForFile()` always waits for fresh output from the current signal. Fixes `WorkermanCommandTest` failures on macOS where slower filesystem operations widened the race window ([#535](https://github.com/crazy-goat/workerman-bundle/issues/535))
 
+### Security
+
+- Harden `PharBuilder`'s user-supplied `exclude_patterns` against accidental ReDoS at build time. `ExcludePattern` now performs defense-in-depth: (1) a structural lint at construction time that rejects patterns containing nested unbounded quantifiers (`(a+)+`, `(.+)*`, `(a+){2,}`, ...) before the build ever traverses the source tree, (2) a PCRE compile-check against a probe string that surfaces patterns PHP itself rejects with a clear error message, (3) a per-call `pcre.backtrack_limit`/`pcre.recursion_limit` guard inside `matches()` that returns `false` rather than hanging if the limit trips. The temporary ini values are restored on every exit path. Negative regression test (`testBuildRefusesNestedUnboundedQuantifierPattern`) and a behavioural test for the per-call guard prevent future regressions. Documentation in `docs/build-packaging.md` recommends atomic groups (`(?>...)`) as the PCRE-native alternative for matching power that would otherwise require nested quantifiers ([#334](https://github.com/crazy-goat/workerman-bundle/issues/334))
+- Add explicit PHPDoc security warnings on `Request::setHeader()` and `Request::withHeader()` flagging that re-injecting `X-Forwarded-*` or `Forwarded` headers from untrusted input re-creates the trusted-proxy bypass class of bugs ([#344](https://github.com/crazy-goat/workerman-bundle/issues/344))
+- Document the middleware header re-injection trust model in a new `docs/security.md` section — covers the risk, recommended ordering (run trusted-proxy filtering after middleware that mutates headers), scope-limiting forwarding-header writes, and the canonical Symfony `setTrustedProxies()` / `setTrustedHosts()` alternative ([#344](https://github.com/crazy-goat/workerman-bundle/issues/344))
+- Replace the loose `str_contains('/proc/$pid/cmdline', 'WorkerMan')` check in `ProcessInspector` with a fingerprint-based verification. `ServerManager` now writes a sidecar fingerprint file (`<pid_file>.fingerprint`) at start time, recording the master PID, start time (clock ticks since boot, Linux only), and UID. `ProcessInspector` verifies all three fields before signaling, preventing misidentification of unrelated co-located processes whose command line happens to contain "WorkerMan". The legacy cmdline-based check is retained as a fallback when no fingerprint file is present (backward compatibility and daemon mode). The fingerprint file is created with `0600` permissions and removed on `stop()` ([#327](https://github.com/crazy-goat/workerman-bundle/issues/327))
+- Document the Composer audit advisory suppression policy in `docs/security.md`. The `audit.ignore` list is kept empty — no Composer security advisory is suppressed globally. Dev-only advisories are handled via `composer audit --no-dev` (the CI/production audit mode), so production dependencies are never shielded by a global suppression. Add `testAuditIgnoreListIsEmpty` and `testComposerAuditNoDevIsClean` tests to enforce the policy and prevent accidental re-introduction of suppressed advisories ([#337](https://github.com/crazy-goat/workerman-bundle/issues/337))
+
+### Code Quality
+
+- Replace `$_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']` superglobal mutation with a typed `CacheWarmupTimeoutConfig` static holder that bridges the bundle extension loader (runs during kernel boot) and `Runner` construction (runs later, outside the DI container via `Runtime::getRunner()` or `ServerManager::start()`/`restart()`). The env-var override path is preserved — `WorkermanBundle::loadExtension()` still reads `WORKERMAN_CACHE_WARMUP_TIMEOUT` from `$_SERVER`/`$_ENV` and applies it before storing the resolved value in the holder. `Runner` now accepts the timeout as a constructor argument with a default of 30 seconds, and the validation rule (`>= 1`) lives in one place on the holder ([#368](https://github.com/crazy-goat/workerman-bundle/issues/368), [#367](https://github.com/crazy-goat/workerman-bundle/issues/367))
+
 ### Docs
 
 - Update `docs/security.md` Static Files Protection examples to use the `StaticFilesMiddleware` service approach instead of the deprecated `serve_files` and `root_dir` server options. All YAML examples now show the recommended service registration pattern ([#345](https://github.com/crazy-goat/workerman-bundle/issues/345))
 
 - Add explicit `@api` annotation to `Utils::reload()` to clarify that it is the canonical public API for programmatic worker reload, resolving the remaining ambiguity from the `@internal` removal in 0.21.0 ([#352](https://github.com/crazy-goat/workerman-bundle/issues/352))
+
+- Delegate issue triage and code review steps in `docs/workflow.md` to subagents with their own context, protecting the main session's token budget for implementation and fixes ([#531](https://github.com/crazy-goat/workerman-bundle/pull/531))
+
+## [0.23.0] - 2026-06-25
 
 ### Tests
 
@@ -75,21 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace `testSourceFileNoLongerContainsGetFileInfo` (which read `PollingMonitorWatcher.php` as a string and asserted on a substring) with `testPollUsesSingleStatPerFile` — a behavioral test that instruments the iterator with `CountingSplFileInfo` and asserts exactly one `stat()` call per file. The new test catches any redundant stat-touching call (`getFileInfo()`, `getSize()`, `isFile()`, duplicate `getMTime()`, etc.) under any name, not just `getFileInfo()` ([#330](https://github.com/crazy-goat/workerman-bundle/issues/330))
 - Expand `StreamedBinaryFileResponseTest` with comprehensive test coverage: content type detection, Content-Length verification, Content-Disposition, offset/maxlen behavior, `deleteFileAfterSend` cleanup, output correctness for small and large files, chunk size validation, auto ETag/Last-Modified headers, and edge cases (empty file, non-readable file, private responses) ([#353](https://github.com/crazy-goat/workerman-bundle/issues/353))
 - Replace `testSchedulerWorkerLogsExceptionsInChildProcess` (which read `SchedulerWorker.php` as a string and asserted on substrings) with a behavioral test that forks a child, invokes `SchedulerWorker::handleChild` via reflection with a `TaskHandler` that throws, and asserts the child exits with code 1 and the exception is logged via `Worker::log()` ([#306](https://github.com/crazy-goat/workerman-bundle/issues/306))
-- Expand `ProcessTest` from a single PID-file recency check to full process lifecycle coverage: `ProcessStartEvent` dispatch regression check, `ProcessErrorEvent` dispatch on throwable (via new `TestErrorProcess`), no-error-event assertion during normal operation, and SIGTERM-to-worker restart verification (locates the worker PID via `/proc` on Linux or `ps` on macOS). Introduces `ProcessEventRecorder` test listener and `ProcessMarkerPaths` constants class as the shared source of truth for marker file paths ([#348](https://github.com/crazy-goat/workerman-bundle/issues/348))
 
 ### Security
 
-- Harden `PharBuilder`'s user-supplied `exclude_patterns` against accidental ReDoS at build time. `ExcludePattern` now performs defense-in-depth: (1) a structural lint at construction time that rejects patterns containing nested unbounded quantifiers (`(a+)+`, `(.+)*`, `(a+){2,}`, ...) before the build ever traverses the source tree, (2) a PCRE compile-check against a probe string that surfaces patterns PHP itself rejects with a clear error message, (3) a per-call `pcre.backtrack_limit`/`pcre.recursion_limit` guard inside `matches()` that returns `false` rather than hanging if the limit trips. The temporary ini values are restored on every exit path. Negative regression test (`testBuildRefusesNestedUnboundedQuantifierPattern`) and a behavioural test for the per-call guard prevent future regressions. Documentation in `docs/build-packaging.md` recommends atomic groups (`(?>...)`) as the PCRE-native alternative for matching power that would otherwise require nested quantifiers ([#334](https://github.com/crazy-goat/workerman-bundle/issues/334))
 - Add world-writable permission check to `ConfigLoader::loadFromCache()` before requiring the generated PHP cache file. Cache files with world-writable permissions are now rejected with a clear error message, preventing arbitrary code execution if the cache directory is misconfigured ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
 - Force `umask(0077)` while writing the config cache file in `ConfigLoader::warmUp()` so the generated PHP file is always created with restrictive `0600` permissions, regardless of the surrounding umask ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
 - Document the trust requirement for the config cache directory in `docs/security.md` — the cache directory must not be writable by untrusted users ([#323](https://github.com/crazy-goat/workerman-bundle/issues/323))
 - Remove `@unlink` error suppression in `BinaryFileResponseStrategy` cleanup callback; unlink failures are now checked and logged through the injected PSR-3 logger ([#314](https://github.com/crazy-goat/workerman-bundle/issues/314))
 - Use `onBufferDrain` as the primary cleanup hook in `BinaryFileResponseStrategy` instead of `onClose`, so file deletion runs at the correct lifecycle point (after the send buffer is flushed) and does not persist across keep-alive requests; `onClose` is retained as a fallback for early disconnects; both callbacks self-remove after firing and chain to any previously-set handlers ([#308](https://github.com/crazy-goat/workerman-bundle/issues/308))
 - Use atomic rename-before-read (TOCTOU fix) in `ServerManager::consumeFile()` for status and connections files to prevent symlink-swap redirection of the unlink. A failure to unlink the renamed temp file is now logged through the PSR-3 logger instead of being silently suppressed ([#304](https://github.com/crazy-goat/workerman-bundle/issues/304))
-- Add explicit PHPDoc security warnings on `Request::setHeader()` and `Request::withHeader()` flagging that re-injecting `X-Forwarded-*` or `Forwarded` headers from untrusted input re-creates the trusted-proxy bypass class of bugs ([#344](https://github.com/crazy-goat/workerman-bundle/issues/344))
-- Document the middleware header re-injection trust model in a new `docs/security.md` section — covers the risk, recommended ordering (run trusted-proxy filtering after middleware that mutates headers), scope-limiting forwarding-header writes, and the canonical Symfony `setTrustedProxies()` / `setTrustedHosts()` alternative ([#344](https://github.com/crazy-goat/workerman-bundle/issues/344))
-- Replace the loose `str_contains('/proc/$pid/cmdline', 'WorkerMan')` check in `ProcessInspector` with a fingerprint-based verification. `ServerManager` now writes a sidecar fingerprint file (`<pid_file>.fingerprint`) at start time, recording the master PID, start time (clock ticks since boot, Linux only), and UID. `ProcessInspector` verifies all three fields before signaling, preventing misidentification of unrelated co-located processes whose command line happens to contain "WorkerMan". The legacy cmdline-based check is retained as a fallback when no fingerprint file is present (backward compatibility and daemon mode). The fingerprint file is created with `0600` permissions and removed on `stop()` ([#327](https://github.com/crazy-goat/workerman-bundle/issues/327))
-- Document the Composer audit advisory suppression policy in `docs/security.md`. The `audit.ignore` list is kept empty — no Composer security advisory is suppressed globally. Dev-only advisories are handled via `composer audit --no-dev` (the CI/production audit mode), so production dependencies are never shielded by a global suppression. Add `testAuditIgnoreListIsEmpty` and `testComposerAuditNoDevIsClean` tests to enforce the policy and prevent accidental re-introduction of suppressed advisories ([#337](https://github.com/crazy-goat/workerman-bundle/issues/337))
 
 ### Performance
 
@@ -112,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ServicesConfigurator`: use `=== true` consistently for all boolean `active` config flags in `configureRebootStrategies()` — previously only `memory.active` used strict comparison, while `always`, `max_requests`, and `exception` used a truthy check ([#370](https://github.com/crazy-goat/workerman-bundle/issues/370))
 - `DateTimeTrigger`: move assignment out of `if` condition to eliminate assignment-in-condition smell and avoid potential `=`/`==` confusion ([#359](https://github.com/crazy-goat/workerman-bundle/issues/359))
 - `Http\Request`: add runtime deprecation notice to `withHeader()` warning that the PSR-7-named alias is misleading — it mutates the request in place rather than returning a new instance; users should migrate to `setHeader()` ([#364](https://github.com/crazy-goat/workerman-bundle/issues/364))
-- Replace `$_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']` superglobal mutation with a typed `CacheWarmupTimeoutConfig` static holder that bridges the bundle extension loader (runs during kernel boot) and `Runner` construction (runs later, outside the DI container via `Runtime::getRunner()` or `ServerManager::start()`/`restart()`). The env-var override path is preserved — `WorkermanBundle::loadExtension()` still reads `WORKERMAN_CACHE_WARMUP_TIMEOUT` from `$_SERVER`/`$_ENV` and applies it before storing the resolved value in the holder. `Runner` now accepts the timeout as a constructor argument with a default of 30 seconds, and the validation rule (`>= 1`) lives in one place on the holder ([#368](https://github.com/crazy-goat/workerman-bundle/issues/368), [#367](https://github.com/crazy-goat/workerman-bundle/issues/367))
+- `Resolver`: rename inner closure variadic parameter to `...$kernelArgs` so it no longer shadows the outer `$args` variable destructured from `resolver->resolve()` ([#366](https://github.com/crazy-goat/workerman-bundle/issues/366))
 
 ### Docs
 
@@ -125,7 +139,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolve contradiction between CONTRIBUTING.md and CHANGELOG.md on approval policy: CONTRIBUTING.md now accurately reflects the current "no approval count required (solo dev project)" policy, matching the historical CHANGELOG 0.15.0 entry ([#333](https://github.com/crazy-goat/workerman-bundle/issues/333))
 - Document `runtime_dir` in the `README.md` configuration reference, with full semantics (writable, must live outside the PHAR in PHAR/BIN mode, restrictive 0700 permissions on subdirectories) and a cross-link to `docs/build-packaging.md`; align the `ConfigurationTreeBuilder` info string with the README so `config:dump-reference` matches ([#343](https://github.com/crazy-goat/workerman-bundle/issues/343))
 - Replace `@param mixed[]` with typed `array{...}` shapes on `ServerWorker::__construct()`/`configureHandler()`/`createSslContext()`, `PharBuilder::build()`/`buildExcludePatterns()`/`buildExcludeFiles()`/`generateStub()`, `BuildPathResolver::resolveBuildDir()`/`resolvePharPath()`/`resolveBinPath()`/`resolveFilename()`, and `WorkermanBundle::loadExtension()` — the shapes mirror the `ConfigurationTreeBuilder` definitions so PHPStan can verify config access and IDEs can autocomplete keys ([#332](https://github.com/crazy-goat/workerman-bundle/issues/332))
-
 
 ## [0.22.0] - 2026-05-30
 
