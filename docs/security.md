@@ -55,7 +55,7 @@ The bundle exposes `Request::setHeader()` (and its deprecated alias `withHeader(
 
 Trust-sensitive headers — `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Ssl`, and the standardised `Forwarded` header — communicate **client-supplied network information** that downstream code uses to reconstruct the original request origin. Symfony's `Request::setTrustedProxies()` / `setTrustedHosts()` filtering exists precisely to prevent untrusted clients from spoofing these values.
 
-Because `setHeader()` mutates the request **after** the bundle's own header sanitization has run, any middleware that re-injects these headers from untrusted input re-creates the trusted-proxy bypass class of bugs the bundle works to avoid. The trust boundary is the middleware contract: callers must understand that these methods bypass any earlier sanitization.
+Because `setHeader()` mutates the request **after** the bundle's own header sanitization has run, any middleware that re-injects these headers from untrusted input re-creates the trusted-proxy bypass class of bugs the bundle works to avoid. The trust boundary is the middleware contract: callers must understand that these methods bypass any earlier sanitization. Header mutations are restored after each request dispatch, preventing Workerman's request cache from replaying them to a later request with the same raw buffer.
 
 ### Recommended pattern
 

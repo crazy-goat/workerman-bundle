@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Prevent middleware header mutations from persisting in Workerman's request cache and being replayed to later requests with the same raw buffer. Headers are restored after each request dispatch, preventing cross-request identity, proxy, and tenant-state leakage ([#576](https://github.com/crazy-goat/workerman-bundle/issues/576))
+
 - Fix remote unauthenticated denial-of-service: a single control byte in
   any request header value killed the worker process. The request
   lifecycle in `HttpRequestHandler::__invoke()` is now wrapped in a

@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
+use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
@@ -494,6 +495,63 @@ final class ServerWorkerTest extends TestCase
 
         $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
         $this->assertInstanceOf(\Closure::class, $worker->onMessage, 'onMessage should be a closure that wraps the handler');
+    }
+
+    public function testOnMessageResetsHeadersAfterHandlerReturnsAndThrows(): void
+    {
+        $requests = [];
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+        $handler->method('__invoke')->willReturnCallback(function ($connection, Request $request) use (&$requests): void {
+            $requests[] = $request->header('x-internal');
+            $request->setHeader('X-Internal', 'secret');
+            if (count($requests) === 2) {
+                throw new \RuntimeException('handler failure');
+            }
+        });
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getContainer')->willReturn($container);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-header-reset', 'listen' => 'http://127.0.0.1:8107'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-header-reset');
+        $this->assertNotNull($worker);
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+
+        $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $connection->context = new \stdClass();
+        $connection->context->connectionTimerId = null;
+        $connection->context->keepaliveTimerId = null;
+        $onMessage = $worker->onMessage;
+        $this->assertNotNull($onMessage);
+        $request = new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+        $onMessage($connection, $request);
+        try {
+            $onMessage($connection, $request);
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('handler failure', $exception->getMessage());
+        }
+        $onMessage($connection, $request);
+
+        $this->assertSame([null, null, null], $requests);
+        $this->assertNull($request->header('x-internal'));
     }
 
     public function testOnWorkerStartResolvesMiddlewares(): void

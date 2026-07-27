@@ -133,7 +133,11 @@ final readonly class ServerWorker
                     unset($connection->context->keepaliveTimerId);
                 }
 
-                $handler($connection, $request);
+                try {
+                    $handler($connection, $request);
+                } finally {
+                    $request->resetHeaders();
+                }
 
                 if ($keepaliveTimeout > 0) {
                     $connection->context ??= new \stdClass();
