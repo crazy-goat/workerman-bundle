@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\DTO;
 
 use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
+use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
@@ -28,7 +29,7 @@ final class RequestConverter
     private static function validateUri(string $uri): void
     {
         if (preg_match('/[\x00-\x1F\x7F]/', $uri)) {
-            throw new \InvalidArgumentException(
+            throw new MalformedRequestException(
                 \sprintf('Request URI contains control characters: %s', \addcslashes($uri, "\x00..\x1F\x7F")),
             );
         }
@@ -43,13 +44,13 @@ final class RequestConverter
     private static function validateMethod(string $method): void
     {
         if (\strlen($method) > self::MAX_METHOD_LENGTH) {
-            throw new \InvalidArgumentException(
+            throw new MalformedRequestException(
                 \sprintf('HTTP method exceeds maximum length of %d: %s', self::MAX_METHOD_LENGTH, $method),
             );
         }
 
         if (preg_match(self::METHOD_REGEX, $method) !== 1) {
-            throw new \InvalidArgumentException(
+            throw new MalformedRequestException(
                 \sprintf('HTTP method contains invalid characters: %s', $method),
             );
         }
@@ -178,7 +179,7 @@ final class RequestConverter
             // Validate header value for control characters
             $stringValue = (string) $value;
             if (\preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $stringValue)) {
-                throw new \InvalidArgumentException(
+                throw new MalformedRequestException(
                     \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
                 );
             }

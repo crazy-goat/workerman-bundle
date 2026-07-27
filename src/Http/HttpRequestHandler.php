@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http;
 
-use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
+use CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
@@ -201,32 +201,21 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      *
      * Client errors are caused by malformed input that the bundle rejects
      * during request conversion (control bytes in headers, malformed
-     * multipart uploads, invalid URI/method). They MUST NOT be logged at
-     * error level — otherwise an unauthenticated attacker can flood the
-     * log with a few hundred bytes per request (see issue #577).
+     * multipart uploads, invalid URI/method). They are marked with
+     * ClientInputExceptionInterface and logged at debug level to prevent
+     * log flooding by an unauthenticated attacker (see issue #577).
      *
      * Server faults are everything else: middleware bugs, response
      * conversion failures, misconfiguration, kernel errors that escaped
      * HttpKernel::handle()'s own try block, etc. They are logged at error
-     * level because they indicate a real defect.
+     * level because they indicate a real defect. Notably a middleware
+     * throwing \InvalidArgumentException is a server fault — only
+     * bundle-internal conversion exceptions implement
+     * ClientInputExceptionInterface.
      */
     private function isClientError(\Throwable $e): bool
     {
-        // FileUploadValidationException extends ValidationException
-        // extends \InvalidArgumentException — malformed multipart data.
-        if ($e instanceof FileUploadValidationException) {
-            return true;
-        }
-        // RequestConverter::validateUri()/validateMethod()/buildServerHeaders()
-        // throw \InvalidArgumentException directly for malformed client
-        // input (control bytes, invalid method/URI). Application code that
-        // throws \InvalidArgumentException from inside the kernel is
-        // caught by HttpKernel::handle() and converted to a 500 before we
-        // ever see it, so this branch only fires for pre-handle
-        // conversion failures. NoResponseStrategyException extends
-        // \LogicException (not \InvalidArgumentException), so it naturally
-        // falls through to the server-fault classification below.
-        return $e instanceof \InvalidArgumentException;
+        return $e instanceof ClientInputExceptionInterface;
     }
 
     /**
@@ -312,7 +301,17 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         } catch (\Throwable $e) {
             $clientError = $this->isClientError($e);
             $this->logThrowable($e, $clientError);
-            $this->sendResponse($connection, $this->buildErrorResponse($clientError));
+            try {
+                $this->sendResponse($connection, $this->buildErrorResponse($clientError));
+            } catch (\Throwable $sendError) {
+                // Best-effort: if even the error-response send fails, log
+                // and close. We must not let the throwable escape __invoke()
+                // — otherwise doTerminate() and the reboot check (which
+                // run after this block) would be skipped, regressing #572,
+                // and Workerman's TcpConnection error handler would fire.
+                $this->logThrowable($sendError, false);
+                $connection->close();
+            }
         }
 
         // Terminate synchronously on both success and failure paths.

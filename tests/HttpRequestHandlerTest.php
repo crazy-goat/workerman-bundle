@@ -25,7 +25,7 @@ use Workerman\Timer;
 /**
  * Mock TcpConnection for testing
  */
-final class MockTcpConnection extends TcpConnection
+class MockTcpConnection extends TcpConnection
 {
     /** @var list<string> */
     public array $sentData = [];
@@ -1170,7 +1170,7 @@ final class HttpRequestHandlerTest extends TestCase
         };
     }
 
-    public function testControlByteInHeaderValueReturns400AndKeepsWorkerAlive(): void
+    public function testControlByteInHeaderValueReturns400(): void
     {
         // Reproduces the exact trigger from issue #577: a single 0x01 byte
         // in a header value causes RequestConverter to throw
@@ -1213,7 +1213,7 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString('400', $connection->sentData[0], 'FileUploadValidationException must yield 400');
     }
 
-    public function testThrowingMiddlewareReturns500AndKeepsWorkerAlive(): void
+    public function testThrowingMiddlewareReturns500(): void
     {
         // A middleware that throws a server-side error must produce a 500,
         // not kill the worker. This covers "any middleware in the pipeline"
@@ -1230,6 +1230,33 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertNotEmpty($connection->sentData, 'A 500 response must be sent, not silent worker death');
         $this->assertStringContainsString('500', $connection->sentData[0], 'Server fault must yield 500');
         $this->assertStringContainsString('Internal Server Error', $connection->sentData[0]);
+    }
+
+    public function testMiddlewareThrowingInvalidArgumentExceptionIsServerFaultNotClientError(): void
+    {
+        // Major finding from review: a middleware that throws
+        // \InvalidArgumentException is a server-side defect (buggy
+        // middleware), NOT a client error. The classification must not
+        // be based on the broad \InvalidArgumentException type — only
+        // bundle-internal conversion exceptions are client errors.
+        // We assert a middleware throwing \InvalidArgumentException
+        // produces a 500 and is logged at error (not debug) level.
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('debug');
+        $logger->expects($this->once())->method('error');
+
+        $controller = new SymfonyController($this->kernel, $this->responseConverter);
+        $handler = new HttpRequestHandler($controller, $this->rebootStrategy, $logger);
+        $handler->withMiddlewares(
+            $this->throwingMiddleware(new \InvalidArgumentException('middleware bad config')),
+        );
+
+        $connection = new MockTcpConnection();
+        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+
+        $handler($connection, $request);
+
+        $this->assertStringContainsString('500', $connection->sentData[0], 'Middleware \\InvalidArgumentException must be a 500 server fault, not 400');
     }
 
     public function testResponseWithNoMatchingStrategyReturns500(): void
@@ -1260,34 +1287,42 @@ final class HttpRequestHandlerTest extends TestCase
     public function testDoTerminateStillRunsWhenPipelineThrows(): void
     {
         // Acceptance criteria from #572/#577: doTerminate() must run on the
-        // failure path so services_resetter is invoked and the kernel
-        // terminate lifecycle is not skipped. When the throw happens before
-        // the controller sets its request/response, terminateIfNeeded() is
-        // a no-op — but the handler must still *reach* it and not skip it
-        // or let the throwable escape. We assert the handler completes
-        // normally (no escape) and a response is sent.
-        $this->handler->withMiddlewares(
+        // failure path. We use a spy reboot strategy whose shouldReboot()
+        // is expected to be called exactly once — doTerminate() runs
+        // before shouldReboot(), so if doTerminate() threw or were
+        // skipped, shouldReboot() would never be reached. We assert the
+        // strategy was consulted AND a 500 was sent.
+        $strategy = $this->createMock(RebootStrategyInterface::class);
+        $strategy->expects($this->once())->method('shouldReboot')->willReturn(false);
+        $strategy->method('needsPeakMemory')->willReturn(false);
+
+        $controller = new SymfonyController($this->kernel, $this->responseConverter);
+        $handler = new HttpRequestHandler($controller, $strategy);
+        $handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('boom')),
         );
 
         $connection = new MockTcpConnection();
         $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
 
-        // If doTerminate() were skipped or the throwable escaped, this
-        // call would throw and the test would error out.
-        ($this->handler)($connection, $request);
+        $handler($connection, $request);
 
-        $this->assertNotEmpty($connection->sentData, 'Handler must send an error response and run doTerminate on the failure path');
+        $this->assertNotEmpty($connection->sentData, 'Handler must send an error response on the failure path');
         $this->assertStringContainsString('500', $connection->sentData[0]);
     }
 
     public function testRebootCheckStillRunsWhenPipelineThrows(): void
     {
-        // The reboot strategy must be consulted on the failure path too,
-        // because a recurring error should still be able to trigger a
-        // graceful worker reload.
-        $this->rebootStrategy->shouldReboot = true;
-        $this->handler->withMiddlewares(
+        // Acceptance criteria: the reboot strategy must be consulted on the
+        // failure path. Using a mock with expects(once())->shouldReboot()
+        // proves the handler reached the reboot check after doTerminate().
+        $strategy = $this->createMock(RebootStrategyInterface::class);
+        $strategy->expects($this->once())->method('shouldReboot')->willReturn(true);
+        $strategy->method('needsPeakMemory')->willReturn(false);
+
+        $controller = new SymfonyController($this->kernel, $this->responseConverter);
+        $handler = new HttpRequestHandler($controller, $strategy);
+        $handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('boom')),
         );
 
@@ -1295,14 +1330,15 @@ final class HttpRequestHandlerTest extends TestCase
         $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
 
         // Utils::reload() sends SIGUSR1 which may fail outside Workerman;
-        // we only care that the handler reached the reboot check.
+        // the mock assertion proves the check ran regardless.
         try {
-            ($this->handler)($connection, $request);
+            $handler($connection, $request);
         } catch (\Throwable) {
-            // posix_kill may fail in test env — that's fine
+            // posix_kill may fail in test env — the strategy mock already
+            // asserted shouldReboot() was called.
         }
 
-        $this->addToAssertionCount(1);
+        $this->assertStringContainsString('500', $connection->sentData[0]);
     }
 
     public function testClientErrorIsLoggedAtDebugNotError(): void
@@ -1447,10 +1483,54 @@ final class HttpRequestHandlerTest extends TestCase
             ($this->handler)($connection, new Request($raw));
         }
 
-        // Every request produced a 400 response; the loop never threw.
-        $this->assertSame(10000, $connection->closed ? 10000 : 10000);
-        $this->assertNotEmpty($connection->sentData);
-        $this->assertStringContainsString('400', $connection->sentData[0]);
-        $this->addToAssertionCount(1);
+        // Every one of the 10 000 requests must have produced a 400 response.
+        $this->assertCount(10000, $connection->sentData, 'Every malformed request must produce a response');
+        foreach ($connection->sentData as $i => $data) {
+            $this->assertStringContainsString('400', $data, "Request #{$i} must yield 400");
+        }
+    }
+
+    public function testFailureToSendErrorResponseDoesNotEscapeHandler(): void
+    {
+        // Blocker from code review: if sendResponse() itself throws while
+        // sending the error response, the throwable must NOT escape
+        // __invoke() — otherwise doTerminate() and the reboot check are
+        // skipped (the #572 regression) and the throwable reaches
+        // Workerman's TcpConnection error handler. We use a connection
+        // whose send() throws to verify the handler contains it.
+        $connection = new class extends MockTcpConnection {
+            public bool $errorSendThrowing = false;
+
+            public function send(mixed $sendBuffer, bool $raw = false): bool
+            {
+                if ($this->errorSendThrowing) {
+                    throw new \RuntimeException('send buffer exploded');
+                }
+
+                return parent::send($sendBuffer, $raw);
+            }
+        };
+
+        // First request: trigger a 500 (throwing middleware), and make the
+        // error-response send throw too. The handler must not escape.
+        $this->handler->withMiddlewares(
+            $this->throwingMiddleware(new \RuntimeException('middleware boom')),
+        );
+        $connection->errorSendThrowing = true;
+
+        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+
+        $threw = false;
+        try {
+            ($this->handler)($connection, $request);
+        } catch (\Throwable) {
+            $threw = true;
+        }
+
+        $this->assertFalse(
+            $threw,
+            'Handler must not escape when sendResponse() throws during error response (blocker from review)',
+        );
+        $this->assertTrue($connection->closed, 'Connection must be closed when error-response send fails');
     }
 }

@@ -745,6 +745,52 @@ final class ServerWorkerTest extends TestCase
         $this->assertFalse($threw, 'errorHandler backstop must not rethrow (would bypass Worker::stopAll guard)');
     }
 
+    public function testErrorHandlerBackstopLogsToErrorLog(): void
+    {
+        // Major finding from review: the backstop must not silently swallow
+        // throwables — operators need visibility when the defence-in-depth
+        // backstop fires. We assert it writes to error_log with the
+        // exception message.
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-error-handler-log', 'listen' => 'http://127.0.0.1:8106'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-error-handler-log');
+        $this->assertNotNull($worker);
+
+        $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $connection->context = new \stdClass();
+        $connection->context->connectionTimerId = null;
+
+        $onConnect = $worker->onConnect;
+        $this->assertNotNull($onConnect);
+        $onConnect($connection);
+
+        $handler = $connection->errorHandler;
+        $this->assertNotNull($handler);
+
+        $logFile = tempnam(sys_get_temp_dir(), 'test_backstop_');
+        $this->assertNotFalse($logFile);
+        file_put_contents($logFile, '');
+        ini_set('error_log', $logFile);
+        try {
+            $handler(new \RuntimeException('backstop-visibility-check'));
+        } finally {
+            ini_restore('error_log');
+        }
+
+        $logContent = file_get_contents($logFile);
+        @unlink($logFile);
+
+        $this->assertIsString($logContent);
+        $this->assertStringContainsString('backstop-visibility-check', $logContent, 'Backstop must log the escaped throwable to error_log');
+    }
+
     public function testOnConnectClosureCapturesBodySizeCap(): void
     {
         $kernelFactory = $this->createKernelFactory();
