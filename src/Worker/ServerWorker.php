@@ -76,6 +76,38 @@ final readonly class ServerWorker
                 [],
                 false,
             );
+
+            // Defence-in-depth backstop: if a throwable escapes
+            // HttpRequestHandler's own try/catch (e.g. from a future
+            // throw site added after this fix, or from a Workerman
+            // callback that never passes through the handler), close
+            // the connection cleanly instead of letting Workerman call
+            // Worker::stopAll(250) which terminates the whole worker
+            // process. See issue #577.
+            $connection->errorHandler = static function (\Throwable $e) use ($connection): void {
+                // Log unconditionally — an escaped throwable should never
+                // happen and operators need visibility. Use error_log()
+                // because the PSR-3 logger is not easily reachable here.
+                error_log(sprintf(
+                    'Unhandled throwable escaped HttpRequestHandler; closing connection: %s in %s:%d',
+                    $e->getMessage(),
+                    $e->getFile(),
+                    $e->getLine(),
+                ));
+
+                // Clean up per-connection timers so they don't keep
+                // firing on a defunct connection after close().
+                if (isset($connection->context->keepaliveTimerId)) {
+                    Timer::del($connection->context->keepaliveTimerId);
+                    unset($connection->context->keepaliveTimerId);
+                }
+                if (isset($connection->context->connectionTimerId)) {
+                    Timer::del($connection->context->connectionTimerId);
+                    unset($connection->context->connectionTimerId);
+                }
+
+                $connection->close();
+            };
         };
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig, $keepaliveTimeout): void {

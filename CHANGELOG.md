@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Fix remote unauthenticated denial-of-service: a single control byte in
+  any request header value killed the worker process. The request
+  lifecycle in `HttpRequestHandler::__invoke()` is now wrapped in a
+  try/catch that converts throwables into 400/500 responses, and
+  `ServerWorker::onConnect` installs a `TcpConnection::$errorHandler`
+  backstop that closes the connection instead of letting Workerman call
+  `Worker::stopAll(250)`. Client errors (`MalformedRequestException`,
+  `FileUploadValidationException`) are logged at debug level to prevent
+  log flooding; server faults are logged at error level. A nested
+  try/catch around the error-response send ensures `doTerminate()` and
+  the reboot check still run when even the send fails
+  ([#577](https://github.com/crazy-goat/workerman-bundle/issues/577))
+
+### Changed
+
+- `RequestConverter` now throws `MalformedRequestException` (extends
+  `\InvalidArgumentException`, implements `ClientInputExceptionInterface`)
+  instead of bare `\InvalidArgumentException` for malformed client input
+  (control bytes in headers, invalid URI/method). This lets
+  `HttpRequestHandler` distinguish client errors (400) from server faults
+  (500) — a middleware throwing `\InvalidArgumentException` is now
+  correctly a 500, not a 400
+  ([#577](https://github.com/crazy-goat/workerman-bundle/issues/577))
+
+### Added
+
+- `CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface` —
+  marker interface for exceptions caused by malformed client input,
+  implemented by `MalformedRequestException` and
+  `FileUploadValidationException`
+  ([#577](https://github.com/crazy-goat/workerman-bundle/issues/577))
+
+- `CrazyGoat\WorkermanBundle\Exception\MalformedRequestException` —
+  thrown by `RequestConverter` for malformed client input (control
+  bytes, invalid URI/method)
+  ([#577](https://github.com/crazy-goat/workerman-bundle/issues/577))
+
 ## [0.24.0] - 2026-07-26
 
 ### Performance

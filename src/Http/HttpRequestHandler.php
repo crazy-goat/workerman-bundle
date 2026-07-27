@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http;
 
+use CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
@@ -12,6 +13,7 @@ use CrazyGoat\WorkermanBundle\Utils;
 use Psr\Log\LoggerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
+use Workerman\Protocols\Http\Response as WorkermanResponse;
 
 /**
  * Handles the per-request lifecycle for the HTTP worker.
@@ -195,7 +197,88 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     }
 
     /**
+     * Classify a throwable as a client-caused error (400) or a server fault (500).
+     *
+     * Client errors are caused by malformed input that the bundle rejects
+     * during request conversion (control bytes in headers, malformed
+     * multipart uploads, invalid URI/method). They are marked with
+     * ClientInputExceptionInterface and logged at debug level to prevent
+     * log flooding by an unauthenticated attacker (see issue #577).
+     *
+     * Server faults are everything else: middleware bugs, response
+     * conversion failures, misconfiguration, kernel errors that escaped
+     * HttpKernel::handle()'s own try block, etc. They are logged at error
+     * level because they indicate a real defect. Notably a middleware
+     * throwing \InvalidArgumentException is a server fault — only
+     * bundle-internal conversion exceptions implement
+     * ClientInputExceptionInterface.
+     */
+    private function isClientError(\Throwable $e): bool
+    {
+        return $e instanceof ClientInputExceptionInterface;
+    }
+
+    /**
+     * Build a Workerman error response for a throwable caught in the
+     * request lifecycle.
+     */
+    private function buildErrorResponse(bool $clientError): WorkermanResponse
+    {
+        if ($clientError) {
+            return new WorkermanResponse(400, [], 'Bad Request');
+        }
+
+        return new WorkermanResponse(500, [], 'Internal Server Error');
+    }
+
+    /**
+     * Log a throwable caught in the request lifecycle.
+     *
+     * Client errors are logged at debug level so an attacker cannot flood
+     * the log. Server faults are logged at error level with the full
+     * exception. When no PSR-3 logger is configured, only server faults
+     * fall back to error_log(); client errors are silent.
+     */
+    private function logThrowable(\Throwable $e, bool $clientError): void
+    {
+        if ($this->logger instanceof LoggerInterface) {
+            if ($clientError) {
+                $this->logger->debug('Client request rejected: ' . $e->getMessage(), [
+                    'exception' => $e,
+                ]);
+            } else {
+                $this->logger->error('Request lifecycle failed', [
+                    'exception' => $e,
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ]);
+            }
+        } elseif (!$clientError) {
+            error_log(sprintf(
+                'Request lifecycle failed: %s in %s:%d',
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine(),
+            ));
+        }
+    }
+
+    /**
      * Handle one Workerman HTTP request through the full lifecycle.
+     *
+     * The entire pipeline → send → terminate → close → reboot chain is
+     * wrapped in a single try/catch so that any throwable — whether from
+     * request conversion, a middleware, response conversion, or response
+     * preparation — is converted into a 400/500 response instead of
+     * escaping into Workerman's TcpConnection error handler, which (in
+     * the absence of an installed errorHandler) terminates the worker
+     * process. See issue #577.
+     *
+     * On the failure path, doTerminate() and the reboot check still run,
+     * because the kernel may have partially handled the request before
+     * the throwable escaped, and services_resetter must be invoked to
+     * avoid state leakage into the next request (see issue #572).
      *
      * @param TcpConnection $connection The incoming TCP connection.
      * @param Request       $request    The Workerman HTTP request (extended by
@@ -209,23 +292,39 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             \memory_reset_peak_usage();
         }
 
-        // 1. Dispatch through middleware chain → controller
         $controllerCall = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
         $pipeline = $this->getPipeline();
-        $response = $pipeline($request, $controllerCall);
 
-        // 2. Send response
-        $this->sendResponse($connection, $response);
+        try {
+            $response = $pipeline($request, $controllerCall);
+            $this->sendResponse($connection, $response);
+        } catch (\Throwable $e) {
+            $clientError = $this->isClientError($e);
+            $this->logThrowable($e, $clientError);
+            try {
+                $this->sendResponse($connection, $this->buildErrorResponse($clientError));
+            } catch (\Throwable $sendError) {
+                // Best-effort: if even the error-response send fails, log
+                // and close. We must not let the throwable escape __invoke()
+                // — otherwise doTerminate() and the reboot check (which
+                // run after this block) would be skipped, regressing #572,
+                // and Workerman's TcpConnection error handler would fire.
+                $this->logThrowable($sendError, false);
+                $connection->close();
+            }
+        }
 
-        // 3. Terminate synchronously (send() is non-blocking, no timer needed)
+        // Terminate synchronously on both success and failure paths.
+        // On the failure path the controller may not have set its
+        // request/response, in which case terminateIfNeeded() is a no-op.
         $this->doTerminate();
 
-        // 4. Close connection if protocol demands it
+        // Close connection if protocol demands it.
         if ($this->shouldCloseConnection($request)) {
             $connection->close();
         }
 
-        // 5. Reload if strategy signals — terminates synchronously before reload
+        // Reload if strategy signals — runs on both success and failure paths.
         if ($this->rebootStrategy->shouldReboot()) {
             Utils::reload();
         }
