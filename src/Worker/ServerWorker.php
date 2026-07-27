@@ -76,6 +76,17 @@ final readonly class ServerWorker
                 [],
                 false,
             );
+
+            // Defence-in-depth backstop: if a throwable escapes
+            // HttpRequestHandler's own try/catch (e.g. from a future
+            // throw site added after this fix, or from a Workerman
+            // callback that never passes through the handler), close
+            // the connection cleanly instead of letting Workerman call
+            // Worker::stopAll(250) which terminates the whole worker
+            // process. See issue #577.
+            $connection->errorHandler = static function (\Throwable $e) use ($connection): void {
+                $connection->close();
+            };
         };
 
         $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig, $keepaliveTimeout): void {

@@ -13,6 +13,7 @@ use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Connection\TcpConnection;
 use Workerman\Worker;
 
 final class ServerWorkerTest extends TestCase
@@ -665,6 +666,83 @@ final class ServerWorkerTest extends TestCase
         $worker = $this->findWorkerByName('[Server] ows-no-body-cap');
         $this->assertNotNull($worker);
         $this->assertNotNull($worker->onConnect, 'onConnect should always be set for timeout handling');
+    }
+
+    // ──────────────────────────────────────────────
+    // Issue #577 — defence-in-depth: $connection->errorHandler backstop
+    //
+    // Even if HttpRequestHandler's own try/catch misses a throw site added
+    // in the future, the TcpConnection error handler must be set so that
+    // Workerman closes the connection instead of calling Worker::stopAll()
+    // and killing the whole worker process.
+    // ──────────────────────────────────────────────
+
+    public function testOnConnectSetsErrorHandlerBackstop(): void
+    {
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-error-handler', 'listen' => 'http://127.0.0.1:8095'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-error-handler');
+        $this->assertNotNull($worker);
+        $this->assertNotNull($worker->onConnect, 'onConnect must be set');
+
+        // Instantiate TcpConnection without invoking the constructor so we
+        // don't need a real EventLoop / readable socket. onConnect only
+        // touches $maxPackageSize, $context and $errorHandler.
+        $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $connection->context = new \stdClass();
+
+        $onConnect = $worker->onConnect;
+        $onConnect($connection);
+
+        $this->assertNotNull(
+            $connection->errorHandler,
+            'TcpConnection->errorHandler must be set by onConnect as a worker-death backstop (issue #577)',
+        );
+        $this->assertIsCallable($connection->errorHandler, 'errorHandler must be callable');
+    }
+
+    public function testErrorHandlerBackstopClosesConnectionInsteadOfKillingWorker(): void
+    {
+        // The errorHandler installed by onConnect must close the connection
+        // when invoked with a throwable, NOT rethrow or call Worker::stopAll().
+        $kernelFactory = $this->createKernelFactory();
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'ows-error-handler-behavior', 'listen' => 'http://127.0.0.1:8105'],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-error-handler-behavior');
+        $this->assertNotNull($worker);
+
+        $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $connection->context = new \stdClass();
+        $connection->context->connectionTimerId = null;
+
+        $onConnect = $worker->onConnect;
+        $this->assertNotNull($onConnect, 'onConnect must be set');
+        $onConnect($connection);
+
+        $handler = $connection->errorHandler;
+        $this->assertNotNull($handler);
+
+        $threw = false;
+        try {
+            $handler(new \RuntimeException('simulated escape from handler'));
+        } catch (\Throwable) {
+            $threw = true;
+        }
+
+        $this->assertFalse($threw, 'errorHandler backstop must not rethrow (would bypass Worker::stopAll guard)');
     }
 
     public function testOnConnectClosureCapturesBodySizeCap(): void
