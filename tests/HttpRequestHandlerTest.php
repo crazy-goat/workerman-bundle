@@ -1189,28 +1189,43 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testMalformedMultipartUploadReturns400(): void
     {
-        // FileUploadValidationException is thrown by FileUploadValidator
-        // when multipart upload data is structurally malformed. It extends
-        // ValidationException extends \InvalidArgumentException, so it must
-        // be classified as a client error (400), not a server fault (500).
-        // Reproducing the exact parser path is brittle (Workerman's parser
-        // tolerates a lot), so we inject the exception via a middleware to
-        // verify the handler's classification logic.
-        $this->handler->withMiddlewares(
-            $this->throwingMiddleware(
-                new \CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException(
-                    'Malformed file upload data for field "file": expected array, got string',
-                ),
-            ),
-        );
-
+        // Drive a real FileUploadValidationException through the full
+        // RequestConverter → SymfonyController → HttpRequestHandler path
+        // (AC #577 throw-site coverage). Workerman's multipart parser is
+        // tolerant of many malformed bodies, so we inject a structurally
+        // incomplete file entry into the Request's internal data — the
+        // same shape FileUploadValidator rejects — then let conversion
+        // throw naturally (no middleware stand-in).
         $connection = new MockTcpConnection();
-        $request = new Request("POST /upload HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+        $request = new Request("POST /upload HTTP/1.1\r\nHost: test\r\nContent-Type: multipart/form-data; boundary=x\r\nConnection: close\r\n\r\n");
 
-        ($this->handler)($connection, $request);
+        // Workerman's Request::file() drops entries whose tmp_name is not
+        // a real file on disk — so the injected path must exist.
+        $tmpFile = \tempnam(\sys_get_temp_dir(), 'wmb577_');
+        $this->assertNotFalse($tmpFile);
+        \file_put_contents($tmpFile, 'x');
+
+        try {
+            $reflection = new \ReflectionClass($request);
+            $dataProperty = $reflection->getProperty('data');
+            $dataProperty->setValue($request, [
+                'files' => [
+                    'malformed_file' => [
+                        'name' => 'test.txt',
+                        'tmp_name' => $tmpFile,
+                        // missing type, size, error — FileUploadValidator rejects
+                    ],
+                ],
+            ]);
+
+            ($this->handler)($connection, $request);
+        } finally {
+            @\unlink($tmpFile);
+        }
 
         $this->assertNotEmpty($connection->sentData, 'Malformed upload must produce a response, not kill the worker');
         $this->assertStringContainsString('400', $connection->sentData[0], 'FileUploadValidationException must yield 400');
+        $this->assertStringContainsString('Bad Request', $connection->sentData[0]);
     }
 
     public function testThrowingMiddlewareReturns500(): void

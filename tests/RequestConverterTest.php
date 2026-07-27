@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
+use CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface;
+use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
+use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -268,6 +271,48 @@ final class RequestConverterTest extends TestCase
         ]);
 
         RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    /**
+     * AC #577: malformed multipart structure through RequestConverter must
+     * throw FileUploadValidationException (not bare InvalidArgumentException)
+     * and mark it as ClientInputExceptionInterface so the handler classifies
+     * it as a 400 client error.
+     */
+    public function testMalformedMultipartFileStructureThrowsFileUploadValidationException(): void
+    {
+        $tmpFile = $this->createTempFile('test content');
+
+        $buffer = "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary=x\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'malformed_file' => [
+                'name' => 'test.txt',
+                'tmp_name' => $tmpFile,
+                // missing type, size, error — FileUploadValidator rejects this
+            ],
+        ]);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail('Expected FileUploadValidationException');
+        } catch (FileUploadValidationException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('missing required field', $e->getMessage());
+        }
+    }
+
+    public function testControlByteInHeaderThrowsMalformedRequestException(): void
+    {
+        $buffer = "GET /boom HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail('Expected MalformedRequestException');
+        } catch (MalformedRequestException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('control characters', $e->getMessage());
+        }
     }
 
     public function testNonArrayFileEntryIsNotSilentlyDropped(): void
