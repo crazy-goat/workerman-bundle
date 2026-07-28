@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-07-28
+
 ### Security
 
 - Prevent middleware header mutations from persisting in Workerman's request cache and being replayed to later requests with the same raw buffer. Headers are restored after each request dispatch, preventing cross-request identity, proxy, and tenant-state leakage ([#576](https://github.com/crazy-goat/workerman-bundle/issues/576))
