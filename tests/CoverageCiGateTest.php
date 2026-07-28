@@ -89,7 +89,7 @@ final class CoverageCiGateTest extends TestCase
         self::assertStringContainsString('simplexml_load_file', $scriptContents);
     }
 
-    private static function readWorkflow(): string
+    private function readWorkflow(): string
     {
         $workflowFile = __DIR__ . '/../.github/workflows/tests.yaml';
         self::assertFileIsReadable($workflowFile);
