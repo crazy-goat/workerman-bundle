@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Fix duplicate `Content-Length` on every file download and on responses where
+  the application sets its own `Content-Length`. Workerman's
+  `Response::withHeaders()` merges recursively (`array_merge_recursive`), so
+  application-supplied framing headers were combined with — not replaced by —
+  the values the transport layer computes, emitting the header twice. When the
+  two values disagreed (app declares 5 bytes, body is 11), the conflict is a
+  response-desync primitive that can poison caches and leak responses across
+  keep-alive connections. `ResponseConverter::extractHeaders()` now strips
+  transport-owned headers (`Content-Length`, `Accept-Ranges`,
+  `Transfer-Encoding`) centrally so the transport is the sole authority on
+  message framing, and single-valued headers are flattened from
+  `list<string|null>` (nulls filtered) to `string` (except `Set-Cookie`, which
+  legitimately needs multiple values) to prevent `array_merge_recursive` from
+  ever producing arrays of conflicting values. Headers whose values are all
+  null/empty are dropped so they are not emitted as empty lines on the wire.
+  `Content-Range` and the `206` status on ranged responses are preserved. The
+  existing `strcasecmp` guards in `DefaultResponseStrategy::buildHeaderString()`
+  and `StreamedResponseStrategy::buildHeaderString()` are kept as
+  belt-and-braces
+  ([#579](https://github.com/crazy-goat/workerman-bundle/issues/579))
+
 ### Fixed
 
 - Make the CI coverage gate effective: the threshold was `0.0` (passing

@@ -912,8 +912,8 @@ final class SymfonyControllerTest extends TestCase
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         // All headers are normalized to proper case (e.g., Content-Type, X-Custom-Header)
-        $this->assertSame(['application/json'], $response->getHeader('Content-Type'));
-        $this->assertSame(['custom-value'], $response->getHeader('X-Custom-Header'));
+        $this->assertSame('application/json', $response->getHeader('Content-Type'));
+        $this->assertSame('custom-value', $response->getHeader('X-Custom-Header'));
     }
 
     public function testResponseStatusCodeIsPreserved(): void
@@ -1146,9 +1146,11 @@ final class SymfonyControllerTest extends TestCase
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         // Content-Type may have charset added by Symfony
-        $this->assertStringContainsString('text/event-stream', $response->getHeader('Content-Type')[0] ?? '');
+        $contentType = $response->getHeader('Content-Type');
+        $this->assertIsString($contentType);
+        $this->assertStringContainsString('text/event-stream', $contentType);
         // Headers are normalized to proper case
-        $this->assertSame(['true'], $response->getHeader('X-Stream'));
+        $this->assertSame('true', $response->getHeader('X-Stream'));
         $this->assertSame('', $response->rawBody());
     }
 

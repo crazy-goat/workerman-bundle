@@ -18,7 +18,10 @@ interface ResponseConverterStrategyInterface
     /**
      * Convert Symfony response to Workerman response.
      *
-     * @param array<string, list<string|null>> $headers Pre-extracted headers
+     * @param array<string, string|list<string|null>> $headers Pre-extracted headers,
+     *        with transport-owned headers (Content-Length, Accept-Ranges,
+     *        Transfer-Encoding) already stripped and single-valued headers
+     *        flattened to strings (except Set-Cookie)
      */
     public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse;
 }
