@@ -69,8 +69,9 @@ rm .git/hooks/pre-push
    ```
 
    The `test:coverage` script writes a Clover report to `var/coverage.xml` and
-   `coverage:check` parses it to enforce the configured line-coverage threshold.
-   CI uses the same scripts with PCOV so the gate is reproducible locally.
+   `coverage:check` parses it to enforce the line-coverage threshold (**80%**),
+   defined once in `composer.json`. CI runs the same check with PCOV on the
+   PHP 8.2 / Symfony 6.4 matrix leg, so the gate is reproducible locally.
 
    > **Troubleshooting "Address already in use"**
    > - Find the process occupying the port: `lsof -i :8888` or `ss -tlnp | grep 8888`
@@ -138,7 +139,7 @@ rm .git/hooks/pre-push
 The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
 
 - **Lint job**: Validates `composer.json`, runs security audit, and checks code style
-- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix
+- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix; the PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in `composer.json` → `coverage:check`)
 - **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge)
 
 ## Code Standards

@@ -139,7 +139,16 @@ composer lint-fix
 
 # Run tests (boots a real Workerman daemon on ports 8888 and 9999)
 composer test
+
+# (Optional) Verify the coverage gate locally — requires PCOV or Xdebug:
+composer test:coverage
+composer coverage:check
 ```
+
+> **Note:** CI enforces a line-coverage floor of **80%**, defined once in
+> `composer.json` (`coverage:check`) and checked on the PHP 8.2 / Symfony 6.4
+> matrix leg. If your PR adds meaningful logic, verify the gate locally so CI
+> doesn't tell you first.
 
 > **Note:** `composer test` boots a real Workerman daemon binding ports 8888
 > and 9999 for E2E tests. If you see "Address already in use" errors, ensure

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make the CI coverage gate effective: the threshold was `0.0` (passing
+  trivially at ~82% actual coverage) and the check ran twice per matrix leg.
+  The threshold (80%) is now defined once in `composer.json`
+  (`coverage:check`), the duplicate invocation in
+  `.github/workflows/tests.yaml` is removed, and the gate runs only on the
+  lowest supported matrix leg (PHP 8.2 / Symfony 6.4) — per-leg coverage
+  reports are still uploaded as artifacts
+  ([#589](https://github.com/crazy-goat/workerman-bundle/issues/589))
+
 ## [0.24.1] - 2026-07-28
 
 ### Security
