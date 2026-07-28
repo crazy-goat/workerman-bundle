@@ -10,9 +10,11 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
+use Workerman\Protocols\Http;
 
 /**
  * Regression tests for issue #579: duplicate Content-Length on every file
@@ -77,74 +79,18 @@ final class ContentLengthDesyncTest extends TestCase
     }
 
     /**
-     * Path 1: BinaryFileResponse download — must emit exactly one
-     * Content-Length and one Accept-Ranges.
+     * Path 1: BinaryFileResponse download — see
+     * testFileDownloadThroughEncodeEmitsSingleFramingHeaders for the
+     * end-to-end wire test using Http::encode() that asserts exactly one
+     * Content-Length and one Accept-Ranges on the wire plus the full body.
      */
-    public function testBinaryFileDownloadEmitsSingleContentLengthAndAcceptRanges(): void
-    {
-        $file = $this->createFixtureFile('download.txt', str_repeat('x', 5000));
-
-        $converter = $this->createConverter();
-        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
-            'Content-Type' => 'text/plain',
-        ]);
-        $binaryResponse->prepare($this->createSymfonyRequest());
-
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
-
-        // For file responses, Workerman's Http::encode() adds Content-Length
-        // and Accept-Ranges via withHeaders(). We simulate that here to prove
-        // no duplication occurs when the app headers were stripped centrally.
-        $workermanResponse->withHeaders([
-            'Content-Length' => 5000,
-            'Accept-Ranges' => 'bytes',
-        ]);
-
-        $head = (string) $workermanResponse;
-
-        $this->assertSame(
-            1,
-            substr_count($head, 'Content-Length:'),
-            'File download must emit exactly one Content-Length header',
-        );
-        $this->assertSame(
-            1,
-            substr_count($head, 'Accept-Ranges:'),
-            'File download must emit exactly one Accept-Ranges header',
-        );
-    }
 
     /**
-     * Path 2: ranged BinaryFileResponse — must yield 206 with exactly one
-     * Content-Length and one Content-Range.
+     * Path 2: ranged BinaryFileResponse — see
+     * testRangedFileDownloadThroughEncodeEmitsCorrectBodyRange for the
+     * end-to-end wire test that asserts status 206, single Content-Length,
+     * correct Content-Range value, and the requested byte range as body.
      */
-    public function testRangedBinaryFileResponseEmitsSingleContentLengthAndContentRange(): void
-    {
-        $file = $this->createFixtureFile('ranged.txt', str_repeat('x', 5000));
-
-        $converter = $this->createConverter();
-        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
-            'Content-Type' => 'text/plain',
-        ]);
-        $binaryResponse->prepare($this->createSymfonyRequest(range: 'bytes=0-99'));
-
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
-
-        // Simulate Http::encode() adding Content-Length, Accept-Ranges, and
-        // setting Content-Range + status via header() (which overwrites).
-        $workermanResponse->withHeaders([
-            'Content-Length' => 100,
-            'Accept-Ranges' => 'bytes',
-        ]);
-        $workermanResponse->header('Content-Range', 'bytes 0-99/5000');
-        $workermanResponse->withStatus(206);
-
-        $head = (string) $workermanResponse;
-
-        $this->assertSame(1, substr_count($head, 'Content-Length:'));
-        $this->assertSame(1, substr_count($head, 'Content-Range:'));
-        $this->assertStringContainsString('206', $head);
-    }
 
     /**
      * Path 3: small body where the app sets a Content-Length that DISAGREES
@@ -198,7 +144,8 @@ final class ContentLengthDesyncTest extends TestCase
 
     /**
      * Path 5: StreamedResponse — uses Transfer-Encoding: chunked, must not
-     * emit Content-Length at all.
+     * emit Content-Length at all, even when the application sets its own
+     * Content-Length (which must be stripped so it cannot leak onto the wire).
      */
     public function testStreamedResponseEmitsNoContentLength(): void
     {
@@ -206,12 +153,15 @@ final class ContentLengthDesyncTest extends TestCase
 
         $streamedResponse = new StreamedResponse(function (): void {
             echo 'streamed content';
-        });
+        }, Response::HTTP_OK, [
+            'Content-Length' => '999',
+        ]);
 
         $converter->convert($streamedResponse, $this->connection);
 
         $sent = implode('', $this->getSent());
-        $this->assertSame(0, substr_count($sent, 'Content-Length:'));
+        $this->assertSame(0, substr_count($sent, 'Content-Length:'), 'Streamed path must not emit Content-Length even if the app set one');
+        $this->assertSame(0, substr_count($sent, 'Content-Length: 999'), 'App-supplied Content-Length must not leak onto the wire');
         $this->assertSame(1, substr_count($sent, 'Transfer-Encoding: chunked'));
     }
 
@@ -294,6 +244,106 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame(1, substr_count($head, 'Content-Length:'));
         $this->assertSame(0, substr_count($head, 'Content-Length: 12345'));
         $this->assertStringContainsString('ETag: "abc"', $head);
+    }
+
+    /**
+     * A HEAD request must emit no body and a consistent Content-Length.
+     * Symfony's prepare() empties the body for HEAD; the transport then
+     * computes Content-Length: 0 from the empty body.
+     */
+    public function testHeadRequestEmitsNoBodyAndSingleContentLength(): void
+    {
+        $converter = $this->createConverter();
+
+        $response = new Response('hello world', Response::HTTP_OK, [
+            'Content-Length' => '999',
+        ]);
+        $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $output = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($output, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 0', $output);
+        $this->assertStringNotContainsString('Content-Length: 999', $output);
+
+        // No body after the head terminator.
+        $parts = explode("\r\n\r\n", $output, 2);
+        $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * End-to-end wire test for ranged file download using Workerman's actual
+     * Http::encode(). Asserts on the bytes written to the connection: status
+     * 206, exactly one Content-Length: 100, Content-Range: bytes 0-99/5000,
+     * and the body is the requested 100-byte range from the fixture.
+     */
+    public function testRangedFileDownloadThroughEncodeEmitsCorrectBodyRange(): void
+    {
+        $fixtureContent = str_repeat('y', 5000);
+        $file = $this->createFixtureFile('ranged_encode.txt', $fixtureContent);
+
+        $converter = $this->createConverter();
+        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare($this->createSymfonyRequest(range: 'bytes=0-99'));
+
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
+
+        // Drive the real Workerman serializer. For files < 2MB, encode() sends
+        // head + body in one send() call and returns ''.
+        $return = Http::encode($workermanResponse, $this->connection);
+        $this->assertSame('', $return, 'encode() should send inline for small files');
+
+        $wire = implode('', $this->getSent());
+
+        $this->assertStringContainsString('HTTP/1.1 206', $wire, 'Ranged response must be 206');
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'Exactly one Content-Length on the wire');
+        $this->assertStringContainsString('Content-Length: 100', $wire);
+        $this->assertSame(1, substr_count($wire, 'Content-Range:'), 'Exactly one Content-Range on the wire');
+        $this->assertStringContainsString('Content-Range: bytes 0-99/5000', $wire, 'Content-Range value must match the requested range');
+
+        // Body after the head terminator must be the requested 100-byte range.
+        $parts = explode("\r\n\r\n", $wire, 2);
+        $this->assertSame(
+            substr($fixtureContent, 0, 100),
+            $parts[1] ?? '',
+            'Body must be the requested byte range from the fixture',
+        );
+    }
+
+    /**
+     * End-to-end wire test for plain file download using Workerman's actual
+     * Http::encode(). Asserts exactly one Content-Length and one Accept-Ranges
+     * on the wire, and the body is the full fixture content.
+     */
+    public function testFileDownloadThroughEncodeEmitsSingleFramingHeaders(): void
+    {
+        $fixtureContent = str_repeat('z', 5000);
+        $file = $this->createFixtureFile('download_encode.txt', $fixtureContent);
+
+        $converter = $this->createConverter();
+        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare($this->createSymfonyRequest());
+
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
+
+        $return = Http::encode($workermanResponse, $this->connection);
+        $this->assertSame('', $return);
+
+        $wire = implode('', $this->getSent());
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'Exactly one Content-Length on the wire');
+        $this->assertStringContainsString('Content-Length: 5000', $wire);
+        $this->assertSame(1, substr_count($wire, 'Accept-Ranges:'), 'Exactly one Accept-Ranges on the wire');
+        $this->assertStringContainsString('Accept-Ranges: bytes', $wire);
+
+        $parts = explode("\r\n\r\n", $wire, 2);
+        $this->assertSame($fixtureContent, $parts[1] ?? '', 'Body must be the full fixture content');
     }
 
     private function createConverter(): ResponseConverter
