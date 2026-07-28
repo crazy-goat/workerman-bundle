@@ -57,7 +57,8 @@ class Request extends \Workerman\Protocols\Http\Request
      * `setTrustedHosts()` filtering, ensure that filtering runs **after** any
      * middleware that calls this method, or scope-limit which middleware is
      * allowed to set forwarding headers. See `docs/security.md` for the full
-     * trust model.
+     * trust model. Header mutations are reset after dispatch so they cannot
+     * persist in Workerman's request cache and affect a later request.
      */
     public function setHeader(string $name, string $value): self
     {
@@ -69,6 +70,11 @@ class Request extends \Workerman\Protocols\Http\Request
         $this->data['headers'][$name] = $value;
 
         return $this;
+    }
+
+    public function resetHeaders(): void
+    {
+        $this->parseHeaders();
     }
 
     /**

@@ -62,6 +62,24 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         }
     }
 
+    public function testCachedAndUncachedRequestHeadersAreResetBetweenConnections(): void
+    {
+        $this->startWorker('cache576');
+
+        foreach ([
+            "GET /cache HTTP/1.1\r\nHost: x\r\nX-Forwarded-For: 198.51.100.10\r\nConnection: close\r\n\r\n",
+            "GET /cache HTTP/1.1\r\nHost: x\r\nX-Forwarded-For: 198.51.100.10\r\nX-Large: " . str_repeat('a', 3000) . "\r\nConnection: close\r\n\r\n",
+        ] as $request) {
+            $first = $this->sendRaw($request);
+            $second = $this->sendRaw($request);
+
+            $this->assertStringContainsString('200 OK', $first);
+            $this->assertStringContainsString('200 OK', $second);
+            $this->assertStringContainsString("\r\n\r\nyes|198.51.100.99", $first);
+            $this->assertStringContainsString("\r\n\r\nmissing|198.51.100.10", $second);
+        }
+    }
+
     /**
      * AC: control byte → 400 and worker PID unchanged.
      */

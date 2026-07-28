@@ -25,6 +25,7 @@ final class RequestConverterBench
     private Request $simpleRequest;
     private Request $headerHeavyRequest;
     private Request $multipartRequest;
+    private Request $resetHeadersRequest;
 
     public function init(): void
     {
@@ -54,6 +55,7 @@ final class RequestConverterBench
         $buffer .= 'Content-Length: ' . strlen($body) . "\r\n";
         $buffer .= "\r\n";
         $this->multipartRequest = new Request($buffer . $body);
+        $this->resetHeadersRequest = new Request("GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 198.51.100.10\r\n\r\n");
     }
 
     public function benchSimpleRequest(): void
@@ -69,5 +71,10 @@ final class RequestConverterBench
     public function benchMultipartRequest(): void
     {
         RequestConverter::toSymfonyRequest($this->multipartRequest);
+    }
+
+    public function benchResetHeaders(): void
+    {
+        $this->resetHeadersRequest->resetHeaders();
     }
 }

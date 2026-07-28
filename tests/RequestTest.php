@@ -127,6 +127,18 @@ final class RequestTest extends TestCase
         $this->assertSame($request, $result);
     }
 
+    public function testResetHeadersRestoresOriginalHeaders(): void
+    {
+        $request = $this->createRequest('GET', '/', ['X-Original' => 'value']);
+
+        $request->setHeader('X-Internal', 'secret');
+        $request->setHeader('X-Original', 'changed');
+        $request->resetHeaders();
+
+        $this->assertSame('value', $request->header('x-original'));
+        $this->assertNull($request->header('x-internal'));
+    }
+
     public function testHeaderLookupIsCaseInsensitive(): void
     {
         $request = $this->createRequest('GET', '/', ['X-Custom-Header' => 'value']);

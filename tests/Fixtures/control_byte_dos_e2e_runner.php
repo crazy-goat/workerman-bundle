@@ -8,7 +8,7 @@ declare(strict_types=1);
  * argv:
  *   1 = vendor/autoload.php path
  *   2 = listen port (int)
- *   3 = mode: "handler" | "backstop"
+ *   3 = mode: "handler" | "backstop" | "cache576"
  *   4 = ready file path (written from onWorkerStart)
  *   5 = worker pid file path (written from onWorkerStart with getmypid())
  *   6 = work dir for Workerman pid/log/status files
@@ -40,8 +40,8 @@ if ($port < 1 || $port > 65535) {
     fwrite(STDERR, "invalid port: {$port}\n");
     exit(2);
 }
-if (!in_array($mode, ['handler', 'backstop'], true)) {
-    fwrite(STDERR, "mode must be handler|backstop, got: {$mode}\n");
+if (!in_array($mode, ['handler', 'backstop', 'cache576'], true)) {
+    fwrite(STDERR, "mode must be handler|backstop|cache576, got: {$mode}\n");
     exit(2);
 }
 
@@ -52,8 +52,10 @@ use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Request as BundleRequest;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -77,9 +79,20 @@ Worker::$stdoutFile = $workDir . '/stdout.log';
 Worker::$command = 'start';
 
 $kernel = new class implements KernelInterface {
+    private ?\Symfony\Component\DependencyInjection\ContainerInterface $container = null;
+
+    public function setContainer(\Symfony\Component\DependencyInjection\ContainerInterface $container): void
+    {
+        $this->container = $container;
+    }
+
     public function handle(SymfonyRequest $request, int $type = self::MAIN_REQUEST, bool $catch = true): SymfonyResponse
     {
-        return new SymfonyResponse('ok', SymfonyResponse::HTTP_OK);
+        return new SymfonyResponse(
+            ($request->headers->get('x-request-processed', 'missing')) . '|'
+            . ($request->headers->get('x-forwarded-for', 'missing')),
+            SymfonyResponse::HTTP_OK,
+        );
     }
 
     public function boot(): void
@@ -122,7 +135,11 @@ $kernel = new class implements KernelInterface {
 
     public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
     {
-        throw new \RuntimeException('n/a');
+        if (!$this->container instanceof \Symfony\Component\DependencyInjection\ContainerInterface) {
+            throw new \RuntimeException('Container not initialized');
+        }
+
+        return $this->container;
     }
 
     public function getStartTime(): float
@@ -180,6 +197,45 @@ $rebootStrategy = new class implements RebootStrategyInterface {
 $responseConverter = new ResponseConverter([new DefaultResponseStrategy()]);
 $controller = new SymfonyController($kernel, $responseConverter);
 $handler = new HttpRequestHandler($controller, $rebootStrategy);
+$handler->withMiddlewares(new class implements MiddlewareInterface {
+    /** @var array<int, int> */
+    private static array $requestsBySize = [];
+
+    public function __invoke(BundleRequest $request, callable $next): \Workerman\Protocols\Http\Response
+    {
+        $size = strlen($request->rawHead());
+        $requests = self::$requestsBySize[$size] ?? 0;
+        self::$requestsBySize[$size] = $requests + 1;
+        if ($requests === 0) {
+            $request->setHeader('X-Request-Processed', 'yes');
+            $request->setHeader('X-Forwarded-For', '198.51.100.99');
+        }
+
+        return $next($request);
+    }
+});
+
+if ($mode === 'cache576') {
+    $container = new ContainerBuilder();
+    $container->set('workerman.http_request_handler', $handler);
+    $kernel->setContainer($container);
+    $kernelFactory = new \CrazyGoat\WorkermanBundle\KernelFactory(static fn(): KernelInterface => $kernel, []);
+    new \CrazyGoat\WorkermanBundle\Worker\ServerWorker(
+        $kernelFactory,
+        null,
+        null,
+        [
+            'name' => 'sec576-e2e',
+            'listen' => sprintf('http://127.0.0.1:%d', $port),
+            'processes' => 1,
+            'reuse_port' => false,
+        ],
+    );
+    file_put_contents($pidFile, (string) getmypid());
+    file_put_contents($readyFile, sprintf("ready pid=%d mode=%s\\n", getmypid(), $mode));
+    Worker::runAll();
+    exit(0);
+}
 
 $worker = new Worker(sprintf('http://127.0.0.1:%d', $port));
 $worker->name = 'sec577-e2e';
