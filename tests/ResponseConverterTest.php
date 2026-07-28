@@ -76,8 +76,8 @@ final class ResponseConverterTest extends TestCase
         $workermanResponse = $converter->convert($response, $this->connection);
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
-        $this->assertSame(['text/html'], $workermanResponse->getHeader('Content-Type'));
-        $this->assertSame(['attachment'], $workermanResponse->getHeader('Content-Disposition'));
+        $this->assertSame('text/html', $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame('attachment', $workermanResponse->getHeader('Content-Disposition'));
     }
 
     public function testConvertHandlesIterableStrategies(): void
@@ -128,10 +128,10 @@ final class ResponseConverterTest extends TestCase
 
         $workermanResponse = $converter->convert($response, $this->connection);
 
-        $this->assertSame(['"abc123"'], $workermanResponse->getHeader('ETag'));
-        $this->assertSame(['deadbeef'], $workermanResponse->getHeader('Content-MD5'));
-        $this->assertSame(['Bearer'], $workermanResponse->getHeader('WWW-Authenticate'));
-        $this->assertSame(['1'], $workermanResponse->getHeader('DNT'));
+        $this->assertSame('"abc123"', $workermanResponse->getHeader('ETag'));
+        $this->assertSame('deadbeef', $workermanResponse->getHeader('Content-MD5'));
+        $this->assertSame('Bearer', $workermanResponse->getHeader('WWW-Authenticate'));
+        $this->assertSame('1', $workermanResponse->getHeader('DNT'));
     }
 
     public function testConvertNormalizesIrregularHeadersConsistentlyOnRepeatedCalls(): void
@@ -150,8 +150,8 @@ final class ResponseConverterTest extends TestCase
         $r2 = $converter->convert($response2, $this->connection);
 
         // Both calls hit the static cache on the second invocation
-        $this->assertSame(['"v1"'], $r1->getHeader('ETag'));
-        $this->assertSame(['"v2"'], $r2->getHeader('ETag'));
+        $this->assertSame('"v1"', $r1->getHeader('ETag'));
+        $this->assertSame('"v2"', $r2->getHeader('ETag'));
     }
 
     public function testConvertPreservesRegularHeaderCasingAfterCaching(): void
@@ -173,8 +173,8 @@ final class ResponseConverterTest extends TestCase
         ]);
         $workermanResponse = $converter->convert($response2, $this->connection);
 
-        $this->assertSame(['application/json'], $workermanResponse->getHeader('Content-Type'));
-        $this->assertSame(['second'], $workermanResponse->getHeader('X-Custom-Two'));
+        $this->assertSame('application/json', $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame('second', $workermanResponse->getHeader('X-Custom-Two'));
     }
 
     public function testConvertNormalizesMixedRegularAndIrregularHeaders(): void
@@ -191,9 +191,117 @@ final class ResponseConverterTest extends TestCase
 
         $workermanResponse = $converter->convert($response, $this->connection);
 
-        $this->assertSame(['text/plain'], $workermanResponse->getHeader('Content-Type'));
-        $this->assertSame(['"abc"'], $workermanResponse->getHeader('ETag'));
-        $this->assertSame(['value'], $workermanResponse->getHeader('X-Custom'));
-        $this->assertSame(['0'], $workermanResponse->getHeader('DNT'));
+        $this->assertSame('text/plain', $workermanResponse->getHeader('Content-Type'));
+        $this->assertSame('"abc"', $workermanResponse->getHeader('ETag'));
+        $this->assertSame('value', $workermanResponse->getHeader('X-Custom'));
+        $this->assertSame('0', $workermanResponse->getHeader('DNT'));
+    }
+
+    /**
+     * Transport-owned headers must be stripped centrally so the transport
+     * (Workerman's Http::encode() / Response::__toString()) is the sole
+     * authority on message framing. Otherwise array_merge_recursive in
+     * Response::withHeaders() emits duplicates — see issue #579.
+     *
+     * @dataProvider transportHeadersProvider
+     */
+    public function testConvertStripsTransportOwnedHeaders(string $headerName): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            $headerName => 'should-be-stripped',
+            'X-Custom' => 'kept',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $this->assertNull(
+            $workermanResponse->getHeader($this->normalizeForAssertion($headerName)),
+            "{$headerName} must be stripped by the converter so the transport owns it",
+        );
+        $this->assertSame('kept', $workermanResponse->getHeader('X-Custom'));
+    }
+
+    /**
+     * @return list<array{string}>
+     */
+    public static function transportHeadersProvider(): array
+    {
+        return [
+            ['Content-Length'],
+            ['content-length'],
+            ['Accept-Ranges'],
+            ['accept-ranges'],
+            ['Transfer-Encoding'],
+            ['transfer-encoding'],
+        ];
+    }
+
+    /**
+     * Set-Cookie legitimately needs multiple values (one Set-Cookie header per
+     * cookie), so flattening must not collapse it to a single string.
+     */
+    public function testConvertPreservesMultipleSetCookieValues(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK);
+        $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('a', '1'));
+        $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('b', '2'));
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $setCookie = $workermanResponse->getHeader('Set-Cookie');
+        $this->assertIsArray($setCookie, 'Set-Cookie must keep its array shape to emit one line per cookie');
+        $this->assertCount(2, $setCookie);
+        $this->assertStringContainsString('a=1', (string) $setCookie[0]);
+        $this->assertStringContainsString('b=2', (string) $setCookie[1]);
+    }
+
+    /**
+     * Content-Range must NOT be stripped — Workerman sets it via header()
+     * (which overwrites), and Symfony's value is correct for ranged responses.
+     */
+    public function testConvertPreservesContentRangeHeader(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_PARTIAL_CONTENT, [
+            'Content-Range' => 'bytes 0-99/5000',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $this->assertSame('bytes 0-99/5000', $workermanResponse->getHeader('Content-Range'));
+    }
+
+    /**
+     * A header whose values are all null (Symfony can produce these) must be
+     * dropped, not emitted as an empty line on the wire.
+     */
+    public function testConvertDropsAllNullHeaderValues(): void
+    {
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'X-Custom' => 'kept',
+        ]);
+        // Force a header with only null values, as Symfony can produce.
+        $response->headers->set('X-Empty', null);
+
+        $workermanResponse = $converter->convert($response, $this->connection);
+
+        $this->assertNull($workermanResponse->getHeader('X-Empty'));
+        $this->assertSame('kept', $workermanResponse->getHeader('X-Custom'));
+    }
+
+    private function normalizeForAssertion(string $name): string
+    {
+        return implode('-', array_map(ucfirst(...), explode('-', strtolower($name))));
     }
 }

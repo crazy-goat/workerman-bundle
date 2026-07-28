@@ -74,7 +74,7 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
     }
 
     /**
-     * @param array<string, list<string|null>> $headers
+     * @param array<string, string|list<string|null>> $headers
      */
     private function buildHeaderString(array $headers, int $statusCode): string
     {
@@ -85,13 +85,15 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
             if (strpbrk($name, ":\r\n") !== false) {
                 continue;
             }
+            // Belt-and-braces: ResponseConverter already strips these, but keep
+            // the guards so a future caller cannot reintroduce them.
             if (strcasecmp($name, 'Content-Length') === 0) {
                 continue;
             }
             if (strcasecmp($name, 'Transfer-Encoding') === 0) {
                 continue;
             }
-            foreach ($values as $value) {
+            foreach ((array) $values as $value) {
                 if ($value !== null && strpbrk($value, "\r\n") !== false) {
                     continue;
                 }

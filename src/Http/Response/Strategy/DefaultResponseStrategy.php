@@ -42,7 +42,7 @@ final readonly class DefaultResponseStrategy implements ResponseConverterStrateg
     }
 
     /**
-     * @param array<string, list<string|null>> $headers
+     * @param array<string, string|list<string|null>> $headers
      */
     private function sendChunked(string $content, int $contentLength, array $headers, TcpConnection $connection, int $statusCode): void
     {
@@ -63,7 +63,7 @@ final readonly class DefaultResponseStrategy implements ResponseConverterStrateg
     }
 
     /**
-     * @param array<string, list<string|null>> $headers
+     * @param array<string, string|list<string|null>> $headers
      */
     private function buildHeaderString(array $headers, int $contentLength, int $statusCode): string
     {
@@ -74,10 +74,12 @@ final readonly class DefaultResponseStrategy implements ResponseConverterStrateg
             if (strpbrk($name, ":\r\n") !== false) {
                 continue;
             }
+            // Belt-and-braces: ResponseConverter already strips Content-Length,
+            // but keep the guard so a future caller cannot reintroduce it.
             if (strcasecmp($name, 'Content-Length') === 0) {
                 continue;
             }
-            foreach ($values as $value) {
+            foreach ((array) $values as $value) {
                 if ($value !== null && strpbrk($value, "\r\n") !== false) {
                     continue;
                 }
