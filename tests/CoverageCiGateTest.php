@@ -23,11 +23,25 @@ final class CoverageCiGateTest extends TestCase
 
         self::assertSame(
             1,
-            substr_count($workflow, 'composer coverage:check'),
-            'The coverage gate must run exactly once (single designated matrix leg)',
+            substr_count($workflow, 'run: composer coverage:check'),
+            'The coverage gate must be invoked exactly once (single designated matrix leg)',
         );
-        self::assertStringContainsString("matrix.php-version == '8.2'", $workflow);
-        self::assertStringContainsString("matrix.symfony-version == '6.4.*'", $workflow);
+        self::assertMatchesRegularExpression(
+            '/- name: Check coverage threshold(?:(?!- name:).)*if: matrix\.php-version == \'8\.2\' && matrix\.symfony-version == \'6\.4\.\*\'/s',
+            $workflow,
+            'The coverage gate step must be restricted to the lowest supported matrix leg (PHP 8.2 / Symfony 6.4)',
+        );
+    }
+
+    public function testCoverageReportUploadRunsEvenWhenGateFails(): void
+    {
+        $workflow = self::readWorkflow();
+
+        self::assertMatchesRegularExpression(
+            '/- name: Upload coverage report(?:(?!- name:).)*if: always\(\)/s',
+            $workflow,
+            'The coverage report artifact must still upload when the gate fails (if: always())',
+        );
     }
 
     public function testThresholdIsDefinedOnlyInComposerScript(): void
@@ -55,7 +69,7 @@ final class CoverageCiGateTest extends TestCase
 
         $matched = preg_match(
             '/check-coverage\.php\s+\S+\s+(?<threshold>\d+(?:\.\d+)?)/',
-            (string) $scripts[0],
+            (string) reset($scripts),
             $matches,
         );
         self::assertSame(1, $matched, 'coverage:check must pass an explicit threshold to check-coverage.php');
