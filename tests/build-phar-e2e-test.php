@@ -85,7 +85,7 @@ try {
     echo "\n4) HTTP GET /health...\n";
     [$code, $body] = httpGet('http://127.0.0.1:8887/health');
     assertEq(200, $code, 'HTTP status');
-    $data = json_decode((string) $body, true);
+    $data = json_decode($body, true);
     assertEq('ok', $data['status'] ?? null, 'Response status');
     echo "   HTTP/{$code}: {$body}\n";
 

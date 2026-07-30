@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Fix `StaticFilesMiddleware` extension allowlists failing open for extensionless
+  files: `Dockerfile`, `id_rsa`, `dump`, and names ending in a dot now return 404
+  when an allowlist is configured. Blocked path components are also checked
+  correctly when filesystem paths use backslashes. This is a behavior change for
+  deployments that intentionally served extensionless files with an allowlist
+  ([#580](https://github.com/crazy-goat/workerman-bundle/issues/580))
+
 - Fix duplicate `Content-Length` on every file download and on responses where
   the application sets its own `Content-Length`. Workerman's
   `Response::withHeaders()` merges recursively (`array_merge_recursive`), so

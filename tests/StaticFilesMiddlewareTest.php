@@ -381,6 +381,37 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
+    public function testNestedHtaccessBlockedReturns404(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $nestedDir = $this->rootDirectory . '/nested';
+        mkdir($nestedDir);
+        file_put_contents($nestedDir . '/.htaccess', 'deny all');
+
+        try {
+            $request = $this->createRequest('/nested/.htaccess');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for nested .htaccess');
+            $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for nested .htaccess');
+
+            $rootPathReflection = new \ReflectionProperty($middleware, 'rootRealPath');
+            $rootPath = $rootPathReflection->getValue($middleware);
+            $this->assertIsString($rootPath);
+            $pathReflection = new \ReflectionMethod($middleware, 'isFilePathBlocked');
+            $this->assertTrue($pathReflection->invoke($middleware, $rootPath . '\\nested\\.htaccess'));
+        } finally {
+            unlink($nestedDir . '/.htaccess');
+            rmdir($nestedDir);
+        }
+    }
+
     public function testDotfileBlockedReturns404(): void
     {
         $dotfile = $this->rootDirectory . '/.secret';
@@ -592,6 +623,32 @@ final class StaticFilesMiddlewareTest extends TestCase
         ];
     }
 
+    /**
+     * @dataProvider blockedExtensionProvider
+     */
+    public function testBlockedExtensionsTakePrecedenceOverAllowlist(string $fileName, string $extension): void
+    {
+        $file = $this->rootDirectory . '/' . $fileName;
+        file_put_contents($file, 'x');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [$extension]);
+            $request = $this->createRequest('/' . $fileName);
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, "Next should NOT be called for .$extension file");
+            $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for .$extension");
+        } finally {
+            unlink($file);
+        }
+    }
+
     public function testAllowedExtensionsWhitelistServing(): void
     {
         $cssFile = $this->rootDirectory . '/style.css';
@@ -636,6 +693,94 @@ final class StaticFilesMiddlewareTest extends TestCase
             $this->assertEquals(404, $response->getStatusCode(), 'Should return 404 for disallowed extension');
         } finally {
             unlink($jsonFile);
+        }
+    }
+
+    /**
+     * @dataProvider extensionlessFileProvider
+     */
+    public function testExtensionlessFilesAreBlockedWithAllowlist(string $fileName): void
+    {
+        $file = $this->rootDirectory . '/' . $fileName;
+        file_put_contents($file, 'sensitive content');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/' . $fileName);
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, "Next should NOT be called for extensionless file: $fileName");
+            $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for extensionless file: $fileName");
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function extensionlessFileProvider(): array
+    {
+        return [
+            'Dockerfile' => ['Dockerfile'],
+            'SSH private key' => ['id_rsa'],
+            'Database dump' => ['dump'],
+        ];
+    }
+
+    public function testFileNameEndingWithDotIsBlockedByAllowlist(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $reflection = new \ReflectionMethod($middleware, 'isComponentBlocked');
+            $this->assertTrue($reflection->invoke($middleware, 'index.php.'));
+
+            return;
+        }
+
+        $file = $this->rootDirectory . '/index.php.';
+        file_put_contents($file, 'sensitive content');
+
+        try {
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($this->createRequest('/index.php.'), $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for a filename ending in a dot');
+            $this->assertEquals(404, $response->getStatusCode());
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testAllowlistBlockedFileIsIndistinguishableFromMissingFile(): void
+    {
+        $blockedFile = $this->rootDirectory . '/Dockerfile';
+        file_put_contents($blockedFile, 'sensitive content');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+            $next = fn(Request $req): Response => new Response(404);
+
+            $blockedResponse = $middleware($this->createRequest('/Dockerfile'), $next);
+            $missingResponse = $middleware($this->createRequest('/missing'), $next);
+
+            $this->assertSame($missingResponse->getStatusCode(), $blockedResponse->getStatusCode());
+            $this->assertSame($missingResponse->rawBody(), $blockedResponse->rawBody());
+        } finally {
+            unlink($blockedFile);
         }
     }
 

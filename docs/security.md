@@ -148,7 +148,7 @@ workerman:
               - workerman.middleware.static_files
 ```
 
-When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
+When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. Files without an extension, including names ending in a dot, are not served. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
 
 ### Symlink Protection
 
