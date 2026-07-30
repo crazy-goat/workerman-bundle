@@ -357,7 +357,16 @@ final class RunnerTest extends TestCase
 
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('Unable to create directory');
-            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+
+            // The failed mkdir is intentional here: the test places a file at
+            // the directory path. Suppress only PHP's expected warning; the
+            // RuntimeException is the behavior this test verifies.
+            set_error_handler(static fn(int $severity, string $message): bool => $severity === \E_WARNING && \str_contains($message, 'mkdir(): Not a directory'));
+            try {
+                $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+            } finally {
+                restore_error_handler();
+            }
         } finally {
             $this->restoreWorkerState($saved);
             $this->removeDir($tmpDir);
