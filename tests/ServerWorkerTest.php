@@ -793,11 +793,21 @@ final class ServerWorkerTest extends TestCase
         $handler = $connection->errorHandler;
         $this->assertNotNull($handler);
 
-        $threw = false;
+        // The backstop logs by design. Capture that expected log output so
+        // this behavioral test does not make the test suite look failed.
+        $logFile = tempnam(sys_get_temp_dir(), 'test_backstop_');
+        $this->assertNotFalse($logFile);
+        ini_set('error_log', $logFile);
         try {
-            $handler(new \RuntimeException('simulated escape from handler'));
-        } catch (\Throwable) {
-            $threw = true;
+            $threw = false;
+            try {
+                $handler(new \RuntimeException('simulated escape from handler'));
+            } catch (\Throwable) {
+                $threw = true;
+            }
+        } finally {
+            ini_restore('error_log');
+            @unlink($logFile);
         }
 
         $this->assertFalse($threw, 'errorHandler backstop must not rethrow (would bypass Worker::stopAll guard)');

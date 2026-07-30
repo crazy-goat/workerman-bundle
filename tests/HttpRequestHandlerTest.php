@@ -14,6 +14,7 @@ use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Test\App\TestMiddleware;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
@@ -294,7 +295,7 @@ final class HttpRequestHandlerTest extends TestCase
         $this->responseConverter = new ResponseConverter([new DefaultResponseStrategy()]);
 
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $this->handler = new HttpRequestHandler($controller, $this->rebootStrategy);
+        $this->handler = new HttpRequestHandler($controller, $this->rebootStrategy, new NullLogger());
 
         // Initialize Timer with a test event so Timer::add() doesn't throw in unit tests
         $this->timerEvent = new TestTimerEvent();
@@ -1288,7 +1289,7 @@ final class HttpRequestHandlerTest extends TestCase
 
         $kernel = new HttpHandlerTestKernel($weirdResponse);
         $controller = new SymfonyController($kernel, $emptyConverter);
-        $handler = new HttpRequestHandler($controller, $this->rebootStrategy);
+        $handler = new HttpRequestHandler($controller, $this->rebootStrategy, new NullLogger());
 
         $connection = new MockTcpConnection();
         $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
@@ -1312,7 +1313,7 @@ final class HttpRequestHandlerTest extends TestCase
         $strategy->method('needsPeakMemory')->willReturn(false);
 
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $handler = new HttpRequestHandler($controller, $strategy);
+        $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
         $handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('boom')),
         );
@@ -1336,7 +1337,7 @@ final class HttpRequestHandlerTest extends TestCase
         $strategy->method('needsPeakMemory')->willReturn(false);
 
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $handler = new HttpRequestHandler($controller, $strategy);
+        $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
         $handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('boom')),
         );
