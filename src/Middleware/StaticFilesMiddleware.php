@@ -121,6 +121,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     private function isFilePathBlocked(string $filePath): bool
     {
         $relativePath = substr($filePath, strlen($this->rootRealPath));
+        $relativePath = str_replace('\\', '/', $relativePath);
 
         $components = explode('/', ltrim($relativePath, '/'));
         foreach ($components as $component) {
@@ -147,7 +148,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return true;
         }
 
-        return $this->allowedExtensions !== [] && $ext !== '' && !in_array($ext, $this->allowedExtensions, true);
+        return $this->allowedExtensions !== [] && !in_array($ext, $this->allowedExtensions, true);
     }
 
     private function getPublicPathFile(Request $request): string|false
