@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
+use Workerman\Worker;
 
 final class RequestConverter
 {
@@ -19,6 +20,9 @@ final class RequestConverter
      */
     private const METHOD_REGEX = '/^[A-Z]+$/';
     private const MAX_METHOD_LENGTH = 32;
+
+    /** @var array<string, true> Header names already logged in this worker. */
+    private static array $loggedUnderscoreHeaders = [];
 
     /**
      * Validates that a URI does not contain control characters.
@@ -162,6 +166,8 @@ final class RequestConverter
      * - Host, Content-Length, Authorization: only the first value is used (duplicates discarded)
      * - All other headers: joined with ', ' per RFC 7230
      * - Header values containing control characters are rejected
+     * - Header names containing underscores are discarded because PHP's server
+     *   variable convention maps both dashes and underscores to underscores
      *
      * @param array<string, float|int|string> $server
      *
@@ -173,8 +179,8 @@ final class RequestConverter
         $rawHeaders = self::parseRawHeaderLines($rawRequest->rawHead());
 
         foreach ($workermanHeaders as $name => $value) {
-            $nameLower = \strtolower((string) $name);
-            $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
+            $name = (string) $name;
+            $nameLower = \strtolower($name);
 
             // Validate header value for control characters
             $stringValue = (string) $value;
@@ -183,6 +189,13 @@ final class RequestConverter
                     \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
                 );
             }
+
+            if (\str_contains($name, '_')) {
+                self::logDroppedUnderscoreHeader($name);
+                continue;
+            }
+
+            $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
 
             // Check if this header had duplicate values in the raw request
             $originalValues = $rawHeaders[$nameLower] ?? null;
@@ -213,6 +226,39 @@ final class RequestConverter
         }
 
         return $server;
+    }
+
+    /**
+     * Log an underscore-containing header once per worker before dropping it.
+     */
+    private static function logDroppedUnderscoreHeader(string $name): void
+    {
+        $nameLower = \strtolower($name);
+        if (isset(self::$loggedUnderscoreHeaders[$nameLower])) {
+            return;
+        }
+
+        self::$loggedUnderscoreHeaders[$nameLower] = true;
+        $message = \sprintf(
+            '[warning] Dropped HTTP header "%s": header names containing underscores are not forwarded to Symfony',
+            \addcslashes($name, "\0..\37\177"),
+        );
+
+        // Workerman initialises the output stream before serving requests. Keep
+        // direct RequestConverter users safe when conversion happens outside a
+        // running Worker (for example, in a unit test or a CLI utility), or
+        // when Workerman has no log file configured.
+        if (Worker::$logFile === '') {
+            \error_log($message);
+
+            return;
+        }
+
+        try {
+            Worker::log($message);
+        } catch (\Throwable) {
+            \error_log($message);
+        }
     }
 
     /**

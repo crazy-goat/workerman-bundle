@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Drop HTTP header names containing underscores before converting requests to
+  Symfony's `$_SERVER` bag. Without this, `X-Forwarded_For` collided with
+  `X-Forwarded-For` as `HTTP_X_FORWARDED_FOR`, allowing trusted-proxy client-IP
+  spoofing and bypassing proxy header stripping. Dropped names are logged once
+  per worker; dash-spelled headers and the CGI `CONTENT_TYPE`, `CONTENT_LENGTH`,
+  and `CONTENT_MD5` conventions are preserved
+  ([#578](https://github.com/crazy-goat/workerman-bundle/issues/578))
+
 - Fix `StaticFilesMiddleware` extension allowlists failing open for extensionless
   files: `Dockerfile`, `id_rsa`, `dump`, and names ending in a dot now return 404
   when an allowlist is configured. Blocked path components are also checked

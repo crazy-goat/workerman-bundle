@@ -4,6 +4,14 @@
 
 The `RequestConverter` applies security hardening when propagating HTTP headers from Workerman to Symfony:
 
+### Header Names Containing Underscores
+
+HTTP field names may legally contain underscores, but PHP's CGI-style server bag cannot preserve the distinction between a dash and an underscore. Both `X-Forwarded-For` and `X-Forwarded_For` would otherwise become `HTTP_X_FORWARDED_FOR`. If a trusted proxy supplies the dash-spelled header, an attacker could append the underscore-spelled variant and control which value Symfony receives. The same collision could bypass a proxy rule that strips an application header such as `X-Internal-Admin`.
+
+The bundle therefore discards every incoming header whose name contains `_` before constructing the Symfony server bag. A warning containing the dropped header name is written once per worker, so legitimate clients depending on underscore-containing names can be diagnosed without allowing an attacker to flood the logs on every request. This is the default and is intentionally not configurable: Workerman is the front server and must enforce the same boundary operators already expect from nginx (`underscores_in_headers off`) and Apache.
+
+This filtering does not affect ordinary dash-spelled headers or the CGI convention for `Content-Type`, `Content-Length`, and `Content-MD5`: for example, `Content-Type` still becomes `CONTENT_TYPE`, not `HTTP_CONTENT_TYPE`.
+
 ### Cookie Header (RFC 6265)
 
 When multiple `Cookie` header lines are present in the request, values are joined with `; ` as required by RFC 6265, rather than the standard HTTP `, ` separator. This prevents cookie smuggling where a `,` byte in a cookie value could be misinterpreted as a separator between cookies.
