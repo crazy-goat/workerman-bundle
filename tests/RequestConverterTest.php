@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Workerman\Worker;
 
 /**
  * @covers \CrazyGoat\WorkermanBundle\DTO\RequestConverter
@@ -382,6 +383,7 @@ final class RequestConverterTest extends TestCase
         $buffer .= "Authorization: Basic " . base64_encode('user:pass') . "\r\n";
         $buffer .= "Content-Type: application/json\r\n";
         $buffer .= "Content-Length: 123\r\n";
+        $buffer .= "Content-MD5: digest\r\n";
         $buffer .= "\r\n";
 
         $rawRequest = new Request($buffer);
@@ -403,10 +405,12 @@ final class RequestConverterTest extends TestCase
         // Content-Type and Content-Length should NOT have HTTP_ prefix (CGI convention)
         $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
         $this->assertSame('123', $symfonyRequest->server->get('CONTENT_LENGTH'));
+        $this->assertSame('digest', $symfonyRequest->server->get('CONTENT_MD5'));
 
         // HTTP_CONTENT_TYPE should NOT exist (moved to CONTENT_TYPE)
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_LENGTH'));
+        $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_MD5'));
     }
 
     public function testServerProtocolHasHttpPrefix(): void
@@ -750,6 +754,110 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
+    /**
+     * @dataProvider underscoreHeaderProvider
+     */
+    public function testHeadersContainingUnderscoresAreDiscarded(string $headerName): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= $headerName . ": attacker-value\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+        $serverKey = 'HTTP_' . strtoupper(str_replace('-', '_', $headerName));
+
+        $this->assertArrayNotHasKey($serverKey, $symfonyRequest->server->all());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function underscoreHeaderProvider(): iterable
+    {
+        yield 'forwarded for with underscore' => ['X-Forwarded_For'];
+        yield 'forwarded name with underscores' => ['X_Forwarded_For'];
+        yield 'custom name with underscore' => ['X_Custom'];
+    }
+
+    /**
+     * @dataProvider forwardedHeaderOrderProvider
+     */
+    public function testUnderscoreForwardedHeaderCannotOverrideDashHeader(string $forwardedHeaders): void
+    {
+        $trustedHeaders = \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_FOR;
+        \Symfony\Component\HttpFoundation\Request::setTrustedProxies(['10.0.0.7'], $trustedHeaders);
+
+        try {
+            $buffer = "GET /admin HTTP/1.1\r\n";
+            $buffer .= "Host: localhost\r\n";
+            $buffer .= $forwardedHeaders;
+            $buffer .= "\r\n";
+
+            $rawRequest = new Request($buffer);
+            $rawRequest->connection = $this->createMockConnection(80, 'tcp', '10.0.0.7:12345');
+            $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+            $this->assertSame('10.0.0.7', $symfonyRequest->server->get('REMOTE_ADDR'));
+            $this->assertSame('203.0.113.9', $symfonyRequest->getClientIp());
+            $this->assertSame('203.0.113.9', $symfonyRequest->headers->get('x-forwarded-for'));
+        } finally {
+            \Symfony\Component\HttpFoundation\Request::setTrustedProxies([], 0);
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function forwardedHeaderOrderProvider(): iterable
+    {
+        yield 'dash header first' => [
+            "X-Forwarded-For: 203.0.113.9\r\nX-Forwarded_For: 127.0.0.1\r\n",
+        ];
+        yield 'underscore header first' => [
+            "X-Forwarded_For: 127.0.0.1\r\nX-Forwarded-For: 203.0.113.9\r\n",
+        ];
+    }
+
+    public function testUnderscoreVariantCannotInjectProxyStrippedApplicationHeader(): void
+    {
+        $buffer = "GET /admin HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-Internal_Admin: 1\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertNull($symfonyRequest->server->get('HTTP_X_INTERNAL_ADMIN'));
+        $this->assertNull($symfonyRequest->headers->get('x-internal-admin'));
+    }
+
+    public function testDroppedUnderscoreHeaderIsLoggedOnlyOncePerWorker(): void
+    {
+        $headerName = 'X-Logged_' . bin2hex(random_bytes(4));
+        $logFile = tempnam(sys_get_temp_dir(), 'request_converter_log_');
+        $this->assertNotFalse($logFile);
+
+        $previousDaemonize = Worker::$daemonize;
+        $previousLogFile = Worker::$logFile;
+
+        try {
+            Worker::$daemonize = true;
+            Worker::$logFile = $logFile;
+
+            $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n";
+            $buffer .= $headerName . ": value\r\n\r\n";
+
+            RequestConverter::toSymfonyRequest(new Request($buffer));
+            RequestConverter::toSymfonyRequest(new Request($buffer));
+
+            $log = file_get_contents($logFile);
+            $this->assertIsString($log);
+            $this->assertSame(1, substr_count($log, strtolower($headerName)));
+            $this->assertStringContainsString('[warning] Dropped HTTP header', $log);
+        } finally {
+            Worker::$daemonize = $previousDaemonize;
+            Worker::$logFile = $previousLogFile;
+            @unlink($logFile);
+        }
+    }
+
     public function testMultipleCookieHeadersJoinedWithSemicolon(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -896,12 +1004,18 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    private function createMockConnection(int $localPort, string $transport = 'tcp'): \Workerman\Connection\TcpConnection
-    {
-        return new class ($localPort, $transport) extends \Workerman\Connection\TcpConnection {
-            public function __construct(private readonly int $port, string $transport)
-            {
-                $this->remoteAddress = '192.168.1.1:12345';
+    private function createMockConnection(
+        int $localPort,
+        string $transport = 'tcp',
+        string $remoteAddress = '192.168.1.1:12345',
+    ): \Workerman\Connection\TcpConnection {
+        return new class ($localPort, $transport, $remoteAddress) extends \Workerman\Connection\TcpConnection {
+            public function __construct(
+                private readonly int $port,
+                string $transport,
+                string $remoteAddress,
+            ) {
+                $this->remoteAddress = $remoteAddress;
                 $this->transport = $transport;
             }
 
