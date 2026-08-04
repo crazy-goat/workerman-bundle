@@ -427,6 +427,13 @@ final class SfxDownloaderTest extends TestCase
         self::assertSame('https://example.com:8443/d.sfx', $result);
     }
 
+    public function testResolveRedirectUrlProtocolRelative(): void
+    {
+        $result = $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com/a/b/c.sfx', '//cdn.example.com/d.sfx');
+
+        self::assertSame('https://cdn.example.com/d.sfx', $result);
+    }
+
     /**
      * @return array<string, array{0: string}>
      */

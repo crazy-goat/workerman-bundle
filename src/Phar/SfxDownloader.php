@@ -218,6 +218,13 @@ final readonly class SfxDownloader
         // parse_url() preserves the case of the scheme; normalize it so the
         // rebuilt URL always uses a lowercase scheme prefix.
         $scheme = strtolower($parts['scheme']);
+
+        // Protocol-relative location ("//cdn.example/path"): same scheme,
+        // different host.
+        if (str_starts_with($location, '//')) {
+            return $scheme . ':' . $location;
+        }
+
         $host = $parts['host'];
         $port = isset($parts['port']) ? ':' . $parts['port'] : '';
 
