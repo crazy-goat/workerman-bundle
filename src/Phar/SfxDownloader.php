@@ -10,11 +10,27 @@ use CrazyGoat\WorkermanBundle\Exception\SfxExtractionException;
  * Downloads phpmicro.sfx (the static PHP runtime used to build standalone
  * binaries) from an HTTPS mirror, optionally verifying a SHA-256 digest.
  *
+ * Redirects are always followed manually (never by the PHP http wrapper) so
+ * that every hop can be scheme-checked; `$allowInsecure` only disables TLS
+ * peer verification.
+ *
  * @internal
  */
-final class SfxDownloader
+final readonly class SfxDownloader
 {
     private const DOWNLOAD_CHUNK = 1 << 16;
+
+    private const DEFAULT_MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024;
+
+    /**
+     * @param int $maxDownloadBytes maximum accepted download size in bytes
+     */
+    public function __construct(private int $maxDownloadBytes = self::DEFAULT_MAX_DOWNLOAD_BYTES)
+    {
+        if ($maxDownloadBytes <= 0) {
+            throw new \InvalidArgumentException('maxDownloadBytes must be a positive number of bytes.');
+        }
+    }
 
     /**
      * Resolve an existing SFX file or download one.
@@ -41,6 +57,12 @@ final class SfxDownloader
             $this->downloadTo($url, $destination, $allowInsecure);
         }
 
+        // Verify the downloaded artifact before any extractor runs over its
+        // bytes: a tampered archive must never reach ZipArchive.
+        if (is_string($expectedSha256) && $expectedSha256 !== '') {
+            self::verifyChecksum($destination, $expectedSha256);
+        }
+
         // If the upstream artifact is a zip, extract it.
         if (str_ends_with($destination, '.zip')) {
             $destination = $this->extractZip($destination, $destinationDir);
@@ -48,10 +70,6 @@ final class SfxDownloader
 
         if (!is_file($destination)) {
             throw new \RuntimeException(sprintf('Failed to obtain phpmicro.sfx (resolved path "%s" does not exist).', $destination));
-        }
-
-        if (is_string($expectedSha256) && $expectedSha256 !== '') {
-            self::verifyChecksum($destination, $expectedSha256);
         }
 
         return $destination;
@@ -85,14 +103,9 @@ final class SfxDownloader
 
     private function downloadTo(string $url, string $destination, bool $allowInsecure): void
     {
-        if ($allowInsecure) {
-            $this->downloadWithRedirectCheck($url, $destination, $allowInsecure);
-
-            return;
-        }
-
-        $context = $this->buildContext($url, $allowInsecure);
-        $this->downloadStream($url, $destination, $context);
+        // Redirects are always followed manually so every hop can be
+        // scheme-checked; $allowInsecure only controls TLS peer verification.
+        $this->downloadWithRedirectCheck($url, $destination, $allowInsecure);
     }
 
     private function downloadWithRedirectCheck(string $url, string $destination, bool $allowInsecure): void
@@ -103,13 +116,17 @@ final class SfxDownloader
         for ($i = 0; $i <= $maxRedirects; $i++) {
             $context = $this->buildContext($currentUrl, $allowInsecure);
 
+            // The http wrapper only populates $http_response_header when the
+            // variable is already declared in the scope where fopen() runs;
+            // pre-declaring it makes the response headers observable here.
+            $http_response_header = [];
             $in = @fopen($currentUrl, 'rb', false, $context);
             if (!is_resource($in)) {
                 $err = error_get_last()['message'] ?? 'unknown error';
                 throw new \RuntimeException(sprintf('Failed to open "%s" for download: %s', $currentUrl, $err));
             }
 
-            $responseHeaders = $this->getHttpResponseHeaders(get_defined_vars());
+            $responseHeaders = $http_response_header;
 
             $httpCode = 0;
             if (isset($responseHeaders[0]) && preg_match('#^HTTP/\d+\.\d+\s+(\d+)#', $responseHeaders[0], $m)) {
@@ -126,6 +143,8 @@ final class SfxDownloader
 
             $location = null;
             foreach ($responseHeaders as $header) {
+                // Only the first matching header is used; obs-fold continuation
+                // lines are not supported and are simply ignored.
                 if (str_starts_with(strtolower($header), 'location:')) {
                     $location = trim(substr($header, 9));
                     break;
@@ -138,17 +157,35 @@ final class SfxDownloader
 
             $location = $this->resolveRedirectUrl($currentUrl, $location);
 
-            if (str_starts_with($currentUrl, 'https://') && str_starts_with(strtolower($location), 'http://')) {
-                throw new \RuntimeException(sprintf(
-                    'Blocked cross-scheme redirect from HTTPS to "%s". Disable redirects or use a trusted mirror.',
-                    $location,
-                ));
-            }
+            $this->assertAllowedRedirect($currentUrl, $location);
 
             $currentUrl = $location;
         }
 
         throw new \RuntimeException(sprintf('Too many redirects (max %d) for "%s".', $maxRedirects, $url));
+    }
+
+    /**
+     * Enforce the redirect scheme policy for a single hop.
+     *
+     * @throws \RuntimeException when the hop targets a non-HTTP(S) scheme or
+     *                           downgrades from HTTPS to plain HTTP
+     */
+    private function assertAllowedRedirect(string $currentUrl, string $location): void
+    {
+        if (!preg_match('#^https?://#i', $location)) {
+            throw new \RuntimeException(sprintf(
+                'Blocked redirect to non-HTTP(S) scheme "%s". Disable redirects or use a trusted mirror.',
+                $location,
+            ));
+        }
+
+        if (str_starts_with($currentUrl, 'https://') && str_starts_with(strtolower($location), 'http://')) {
+            throw new \RuntimeException(sprintf(
+                'Blocked cross-scheme redirect from HTTPS to "%s". Disable redirects or use a trusted mirror.',
+                $location,
+            ));
+        }
     }
 
     private function resolveRedirectUrl(string $base, string $location): string
@@ -157,9 +194,23 @@ final class SfxDownloader
             return $location;
         }
 
+        // Any other absolute scheme (file://, php://, ftp://, ...) must never
+        // be passed back to fopen(): reject it before resolving relative
+        // locations, so a non-HTTP(S) value can never be returned.
+        if (preg_match('#^[a-z][a-z0-9+.\-]*://#i', $location)) {
+            throw new \RuntimeException(sprintf(
+                'Blocked redirect to non-HTTP(S) scheme "%s". Disable redirects or use a trusted mirror.',
+                $location,
+            ));
+        }
+
         $parts = parse_url($base);
         if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
-            return $location;
+            throw new \RuntimeException(sprintf(
+                'Unable to resolve redirect location "%s" against base URL "%s".',
+                $location,
+                $base,
+            ));
         }
 
         $scheme = $parts['scheme'];
@@ -175,17 +226,6 @@ final class SfxDownloader
         return $scheme . '://' . $host . $port . $location;
     }
 
-    private function downloadStream(string $url, string $destination, mixed $context): void
-    {
-        $in = @fopen($url, 'rb', false, $context);
-        if (!is_resource($in)) {
-            $err = error_get_last()['message'] ?? 'unknown error';
-            throw new \RuntimeException(sprintf('Failed to open "%s" for download: %s', $url, $err));
-        }
-
-        $this->writeStream($in, $destination);
-    }
-
     private function writeStream(mixed $in, string $destination): void
     {
         $out = fopen($destination, 'wb');
@@ -194,6 +234,8 @@ final class SfxDownloader
             throw new \RuntimeException(sprintf('Unable to open "%s" for writing.', $destination));
         }
 
+        $totalBytes = 0;
+        $failed = false;
         try {
             while (!feof($in)) {
                 $chunk = fread($in, self::DOWNLOAD_CHUNK);
@@ -203,11 +245,29 @@ final class SfxDownloader
                 if ($chunk === '') {
                     continue;
                 }
+
+                $totalBytes += strlen($chunk);
+                if ($totalBytes > $this->maxDownloadBytes) {
+                    throw new \RuntimeException(sprintf(
+                        'Download exceeds the maximum allowed size of %d bytes.',
+                        $this->maxDownloadBytes,
+                    ));
+                }
+
                 fwrite($out, $chunk);
             }
+        } catch (\Throwable $e) {
+            $failed = true;
+            throw $e;
         } finally {
             fclose($in);
             fclose($out);
+
+            // Never leave a partial artifact behind: fetch() treats an
+            // existing destination file as a complete download.
+            if ($failed && is_file($destination)) {
+                unlink($destination);
+            }
         }
     }
 
@@ -216,6 +276,16 @@ final class SfxDownloader
      */
     private function buildContext(string $url, bool $allowInsecure)
     {
+        if (str_starts_with($url, 'http://')) {
+            return stream_context_create([
+                'http' => [
+                    'follow_location' => 0,
+                    'max_redirects' => 0,
+                    'timeout' => 60,
+                ],
+            ]);
+        }
+
         if (!str_starts_with($url, 'https://')) {
             return null;
         }
@@ -232,8 +302,8 @@ final class SfxDownloader
         return stream_context_create([
             'ssl' => $sslOptions,
             'http' => [
-                'follow_location' => $allowInsecure ? 0 : 1,
-                'max_redirects' => $allowInsecure ? 0 : 5,
+                'follow_location' => 0,
+                'max_redirects' => 0,
                 'timeout' => 60,
             ],
         ]);
@@ -394,18 +464,6 @@ final class SfxDownloader
                 $entryName,
             ));
         }
-    }
-
-    /**
-     * @param array<string, mixed> $definedVars
-     *
-     * @return list<string>
-     */
-    private function getHttpResponseHeaders(array $definedVars): array
-    {
-        $headerVar = 'http_response_header';
-
-        return $definedVars[$headerVar] ?? [];
     }
 
     /**

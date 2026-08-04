@@ -14,7 +14,27 @@ use PHPUnit\Framework\TestCase;
 
 final class SfxDownloaderTest extends TestCase
 {
+    private static ?int $serverPort = null;
+
+    /** @var resource|null */
+    private static $serverProcess;
+
     private string $tempDir;
+
+    public static function setUpBeforeClass(): void
+    {
+        self::$serverPort = self::allocatePort();
+        self::startRedirectServer();
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        if (is_resource(self::$serverProcess)) {
+            proc_terminate(self::$serverProcess);
+            proc_close(self::$serverProcess);
+            self::$serverProcess = null;
+        }
+    }
 
     protected function setUp(): void
     {
@@ -301,18 +321,24 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'fallback-entry-content');
     }
 
-    public function testBuildContextReturnsNullForHttpUrl(): void
+    public function testBuildContextDisablesRedirectFollowingForHttpUrl(): void
     {
-        $result = $this->invokeBuildContext('http://example.com/file.sfx', false);
+        $context = $this->invokeBuildContext('http://example.com/file.sfx', false);
+        self::assertNotNull($context);
 
-        self::assertNull($result);
+        $options = stream_context_get_options($context);
+        self::assertArrayHasKey('http', $options);
+        self::assertSame(0, $options['http']['follow_location']);
+        self::assertSame(0, $options['http']['max_redirects']);
+        self::assertArrayNotHasKey('ssl', $options);
     }
 
-    public function testBuildContextReturnsNullForHttpUrlEvenWhenInsecure(): void
+    public function testBuildContextHttpUrlOptionsIndependentOfAllowInsecure(): void
     {
-        $result = $this->invokeBuildContext('http://example.com/file.sfx', true);
+        $secure = stream_context_get_options($this->invokeBuildContext('http://example.com/file.sfx', false));
+        $insecure = stream_context_get_options($this->invokeBuildContext('http://example.com/file.sfx', true));
 
-        self::assertNull($result);
+        self::assertSame($secure, $insecure);
     }
 
     public function testBuildContextDisablesFollowLocationWhenInsecure(): void
@@ -323,20 +349,35 @@ final class SfxDownloaderTest extends TestCase
         $options = stream_context_get_options($context);
         self::assertArrayHasKey('http', $options);
         self::assertSame(0, $options['http']['follow_location']);
+        self::assertSame(0, $options['http']['max_redirects']);
         self::assertFalse($options['ssl']['verify_peer']);
         self::assertFalse($options['ssl']['verify_peer_name']);
     }
 
-    public function testBuildContextEnablesFollowLocationWhenSecure(): void
+    public function testBuildContextDisablesFollowLocationWhenSecure(): void
     {
         $context = $this->invokeBuildContext('https://example.com/file.sfx', false);
         self::assertNotNull($context);
 
         $options = stream_context_get_options($context);
         self::assertArrayHasKey('http', $options);
-        self::assertSame(1, $options['http']['follow_location']);
+        self::assertSame(0, $options['http']['follow_location']);
+        self::assertSame(0, $options['http']['max_redirects']);
         self::assertTrue($options['ssl']['verify_peer']);
         self::assertTrue($options['ssl']['verify_peer_name']);
+    }
+
+    public function testInsecureDiffersFromDefaultOnlyInPeerVerification(): void
+    {
+        $secure = stream_context_get_options($this->invokeBuildContext('https://example.com/file.sfx', false));
+        $insecure = stream_context_get_options($this->invokeBuildContext('https://example.com/file.sfx', true));
+
+        self::assertSame($secure['http'], $insecure['http']);
+        self::assertSame(0, $secure['http']['follow_location']);
+        self::assertTrue($secure['ssl']['verify_peer']);
+        self::assertFalse($insecure['ssl']['verify_peer']);
+        self::assertTrue($secure['ssl']['verify_peer_name']);
+        self::assertFalse($insecure['ssl']['verify_peer_name']);
     }
 
     public function testResolveRedirectUrlAbsolute(): void
@@ -367,6 +408,74 @@ final class SfxDownloaderTest extends TestCase
         self::assertSame('https://example.com:8443/d.sfx', $result);
     }
 
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function nonHttpSchemeLocationProvider(): array
+    {
+        return [
+            'ftp' => ['ftp://example.invalid/evil.sfx'],
+            'file' => ['file:///etc/passwd'],
+            'php' => ['php://filter/resource=/etc/passwd'],
+        ];
+    }
+
+    /**
+     * @dataProvider nonHttpSchemeLocationProvider
+     */
+    public function testResolveRedirectUrlRejectsNonHttpScheme(string $location): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(sprintf('Blocked redirect to non-HTTP(S) scheme "%s"', $location));
+
+        $this->invokePrivateSfxMethod('resolveRedirectUrl', 'https://example.com/a/b/c.sfx', $location);
+    }
+
+    public function testResolveRedirectUrlThrowsWhenBaseUrlCannotBeParsed(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Unable to resolve redirect location "d.sfx" against base URL "no-scheme/path".');
+
+        $this->invokePrivateSfxMethod('resolveRedirectUrl', 'no-scheme/path', 'd.sfx');
+    }
+
+    public function testHttpsToHttpDowngradeRejectedInDefaultMode(): void
+    {
+        // The scheme policy is applied on every hop in every mode: the check
+        // does not depend on $allowInsecure at all.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Blocked cross-scheme redirect from HTTPS to "http://attacker.example/sfx". Disable redirects or use a trusted mirror.');
+
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'https://mirror.example/php.sfx', 'http://attacker.example/sfx');
+    }
+
+    public function testHttpsToHttpDowngradeRejectedWhenInsecure(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Blocked cross-scheme redirect from HTTPS to "http://attacker.example/sfx".');
+
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'https://mirror.example/php.sfx', 'http://attacker.example/sfx');
+    }
+
+    /**
+     * @dataProvider nonHttpSchemeLocationProvider
+     */
+    public function testNonHttpSchemeRejectedFromHttpsOrigin(string $location): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(sprintf('Blocked redirect to non-HTTP(S) scheme "%s"', $location));
+
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'https://mirror.example/php.sfx', $location);
+    }
+
+    public function testSameSchemeRedirectsAllowed(): void
+    {
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'https://mirror.example/a.sfx', 'https://mirror2.example/b.sfx');
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'http://mirror.example/a.sfx', 'http://mirror2.example/b.sfx');
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'http://mirror.example/a.sfx', 'https://mirror2.example/b.sfx');
+        $this->addToAssertionCount(3);
+    }
+
     public function testDownloadWithRedirectCheckExtractsSfxFilename(): void
     {
         $tempFile = $this->tempDir . '/downloaded.sfx';
@@ -381,6 +490,173 @@ final class SfxDownloaderTest extends TestCase
 
         self::assertFileExists($result);
         self::assertStringEqualsFile($result, 'sfx-content');
+    }
+
+    public function testSameSchemeRedirectChainFollowedUpToLimit(): void
+    {
+        $result = (new SfxDownloader())->fetch(
+            sprintf('http://127.0.0.1:%d/r1', self::$serverPort),
+            $this->tempDir,
+        );
+
+        self::assertFileExists($result);
+        self::assertStringEqualsFile($result, 'sfx-content');
+    }
+
+    public function testRedirectChainExceedingLimitErrors(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Too many redirects (max 5)');
+
+        (new SfxDownloader())->fetch(
+            sprintf('http://127.0.0.1:%d/r6', self::$serverPort),
+            $this->tempDir,
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function nonHttpSchemePathProvider(): array
+    {
+        return [
+            'ftp' => ['/ftp', 'ftp://example.invalid/evil.sfx'],
+            'file' => ['/file', 'file:///etc/passwd'],
+            'php' => ['/php', 'php://filter/resource=/etc/passwd'],
+        ];
+    }
+
+    /**
+     * @dataProvider nonHttpSchemePathProvider
+     */
+    public function testRedirectToNonHttpSchemeRejectedFromHttpOrigin(string $path, string $location): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(sprintf('Blocked redirect to non-HTTP(S) scheme "%s"', $location));
+
+        (new SfxDownloader())->fetch(
+            sprintf('http://127.0.0.1:%d%s', self::$serverPort, $path),
+            $this->tempDir,
+        );
+    }
+
+    public function testDownloadExceedingMaxSizeIsAborted(): void
+    {
+        try {
+            (new SfxDownloader(1024))->fetch(
+                sprintf('http://127.0.0.1:%d/big', self::$serverPort),
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the oversized download.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('maximum allowed size of 1024 bytes', $e->getMessage());
+        }
+
+        // The partial artifact must not be left behind for a later fetch() to reuse.
+        self::assertFileDoesNotExist($this->tempDir . '/big');
+    }
+
+    public function testChecksumIsVerifiedBeforeZipExtraction(): void
+    {
+        // A corrupt archive that would fail ZipArchive::open(): the SHA-256
+        // mismatch must surface before any extraction is attempted.
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        file_put_contents($zipPath, 'PK' . random_bytes(64));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('SHA-256 mismatch');
+
+        (new SfxDownloader())->fetch(
+            'https://example.invalid/phpmicro.sfx.zip',
+            $this->tempDir,
+            str_repeat('0', 64),
+        );
+    }
+
+    private static function allocatePort(): int
+    {
+        $socket = stream_socket_server('tcp://127.0.0.1:0');
+        if (!is_resource($socket)) {
+            throw new \RuntimeException('Failed to allocate a test port.');
+        }
+        $name = stream_socket_get_name($socket, false);
+        fclose($socket);
+
+        return (int) substr((string) $name, strrpos((string) $name, ':') + 1);
+    }
+
+    private static function startRedirectServer(): void
+    {
+        $router = tempnam(sys_get_temp_dir(), 'sfx-router-') . '.php';
+        file_put_contents($router, <<<'PHP_WRAP'
+<?php
+
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+$redirect = static function (string $location): never {
+    header('Location: ' . $location, true, 302);
+    exit;
+};
+
+switch ($path) {
+    case '/r1':
+        $redirect('/r2');
+    case '/r2':
+        $redirect('/r3');
+    case '/r3':
+        $redirect('/r4');
+    case '/r4':
+        $redirect('/r5');
+    case '/r5':
+        $redirect('/sfx');
+    case '/r6':
+        $redirect('/r6');
+    case '/ftp':
+        $redirect('ftp://example.invalid/evil.sfx');
+    case '/file':
+        $redirect('file:///etc/passwd');
+    case '/php':
+        $redirect('php://filter/resource=/etc/passwd');
+    case '/big':
+        echo str_repeat('x', 65536);
+        exit;
+    case '/sfx':
+    default:
+        echo 'sfx-content';
+        exit;
+}
+PHP_WRAP);
+
+        $command = [PHP_BINARY, '-S', sprintf('127.0.0.1:%d', self::$serverPort), $router];
+        $process = proc_open($command, [
+            0 => ['file', '/dev/null', 'r'],
+            1 => ['file', '/dev/null', 'w'],
+            2 => ['file', '/dev/null', 'w'],
+        ], $pipes);
+
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Failed to start the test HTTP server.');
+        }
+        self::$serverProcess = $process;
+
+        // Wait until the server accepts connections.
+        $deadline = microtime(true) + 5.0;
+        while (microtime(true) < $deadline) {
+            $errno = 0;
+            $errstr = '';
+            $sock = @fsockopen('127.0.0.1', (int) self::$serverPort, $errno, $errstr, 0.2);
+            if ($sock !== false) {
+                fclose($sock);
+
+                return;
+            }
+            usleep(50000);
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Test HTTP server did not start on port %d.',
+            self::$serverPort,
+        ));
     }
 
     private function invokeBuildContext(string $url, bool $allowInsecure): mixed
