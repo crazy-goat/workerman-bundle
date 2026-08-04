@@ -287,17 +287,25 @@ If any entry fails validation, the build aborts with a `\RuntimeException`.
 
 ## SFX Download Protection (Redirect Scheme)
 
-When downloading `phpmicro.sfx` with `--insecure` (or `build.sfx.allow_insecure: true`), TLS peer
-verification is disabled. To prevent an on-path attacker from downgrading the download from HTTPS
-to plain HTTP via a redirect:
+SFX downloads are always redirected manually: automatic redirect following is disabled in the
+stream context (`follow_location: 0`) in **every** mode, so PHP's `http` wrapper never follows a
+redirect on the bundle's behalf. Each hop is inspected before it is followed:
 
-- **Automatic redirect following is disabled** in the stream context
-- Each redirect response is inspected manually
-- **Cross-scheme redirects (HTTPS → HTTP) are blocked** with a hard error
-- Redirects within the same scheme (HTTPS → HTTPS) are still allowed (up to 5 hops)
+- **Cross-scheme downgrades (HTTPS → HTTP) are blocked** with a hard error
+- **Redirects to any non-HTTP(S) scheme** (`file://`, `php://`, `ftp://`, ...) are blocked
+  with a hard error, regardless of the origin scheme
+- Redirects within HTTP(S) (including HTTP → HTTPS upgrades) are still followed, up to the
+  5-hop limit; exceeding the limit errors
+- A redirect target that cannot be resolved against the base URL is rejected with an error
 
-This defense is always active when `allow_insecure` is enabled, regardless of whether a checksum
-is configured.
+This policy is active in both `--insecure` and default mode: `--insecure` (or
+`build.sfx.allow_insecure: true`) disables TLS peer verification only (`verify_peer` /
+`verify_peer_name`) and does not relax the redirect policy. Whether a checksum is configured
+has no effect on it either.
+
+Additionally, downloads are capped at a maximum size (256 MiB by default): a response
+exceeding the limit aborts the download and removes the partial file, so a hostile or
+misconfigured mirror cannot fill the filesystem.
 
 ## Status File TOCTOU Protection
 
@@ -384,7 +392,8 @@ chgrp <webserver-group> var/cache/
 The build **fails** if no SHA-256 checksum is configured, unless `--unsafe-no-checksum` is explicitly
 passed. This ensures supply-chain integrity by default:
 
-- `--sfx-checksum=HASH` or config `build.sfx.sha256` → checksum verified after download
+- `--sfx-checksum=HASH` or config `build.sfx.sha256` → the downloaded artifact is verified
+  against the checksum immediately after download, **before** it is extracted
 - `--unsafe-no-checksum` → no verification (not recommended)
 - Neither → build aborts with an error
 

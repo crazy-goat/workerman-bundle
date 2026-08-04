@@ -78,9 +78,10 @@ workerman:
 
 ### `build.sfx.sha256`
 
-The SHA-256 hex digest of the expected phpmicro.sfx binary. When configured, the SFX binary
-is verified against this checksum after download (and after zip extraction, if applicable),
-protecting against supply-chain attacks (corrupted download, man-in-the-middle substitution).
+The SHA-256 hex digest of the expected phpmicro.sfx artifact. When configured, the downloaded
+artifact is verified against this checksum immediately after download, **before** it is
+extracted — the extractor never runs over unverified bytes — protecting against supply-chain
+attacks (corrupted download, man-in-the-middle substitution).
 **Required** for all builds unless `--unsafe-no-checksum` is explicitly passed.
 
 The `--sfx-checksum` CLI option overrides this config value when provided.
@@ -119,7 +120,8 @@ The `--insecure` CLI flag enables the same behavior.
 
 Security implications when enabled:
 - The connection is vulnerable to man-in-the-middle attacks
-- Cross-scheme redirects (HTTPS → HTTP) are **blocked** with a hard error
+- Redirects are still policed exactly as in default mode (see `docs/security.md`):
+  HTTPS → HTTP downgrades and non-HTTP(S) redirect targets are blocked in both modes
 - Always pair with `build.sfx.sha256` to verify the binary after download
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:310-313`.
