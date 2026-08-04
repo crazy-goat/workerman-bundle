@@ -19,6 +19,8 @@ final class SfxDownloaderTest extends TestCase
     /** @var resource|null */
     private static $serverProcess;
 
+    private static ?string $routerFile = null;
+
     private string $tempDir;
 
     public static function setUpBeforeClass(): void
@@ -33,6 +35,10 @@ final class SfxDownloaderTest extends TestCase
             proc_terminate(self::$serverProcess);
             proc_close(self::$serverProcess);
             self::$serverProcess = null;
+        }
+        if (is_string(self::$routerFile)) {
+            @unlink(self::$routerFile);
+            self::$routerFile = null;
         }
     }
 
@@ -333,6 +339,19 @@ final class SfxDownloaderTest extends TestCase
         self::assertArrayNotHasKey('ssl', $options);
     }
 
+    public function testBuildContextSchemeDetectionIsCaseInsensitive(): void
+    {
+        $httpContext = $this->invokeBuildContext('HTTP://example.com/file.sfx', false);
+        self::assertNotNull($httpContext);
+        self::assertSame(0, stream_context_get_options($httpContext)['http']['follow_location']);
+
+        $httpsContext = $this->invokeBuildContext('HTTPS://example.com/file.sfx', false);
+        self::assertNotNull($httpsContext);
+        $options = stream_context_get_options($httpsContext);
+        self::assertSame(0, $options['http']['follow_location']);
+        self::assertTrue($options['ssl']['verify_peer']);
+    }
+
     public function testBuildContextHttpUrlOptionsIndependentOfAllowInsecure(): void
     {
         $secure = stream_context_get_options($this->invokeBuildContext('http://example.com/file.sfx', false));
@@ -457,6 +476,16 @@ final class SfxDownloaderTest extends TestCase
         $this->invokePrivateSfxMethod('assertAllowedRedirect', 'https://mirror.example/php.sfx', 'http://attacker.example/sfx');
     }
 
+    public function testHttpsToHttpDowngradeRejectedWithMixedCaseSchemes(): void
+    {
+        // A hostile mirror may emit an uppercase-scheme Location header; the
+        // policy must not be bypassable via case differences.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Blocked cross-scheme redirect from HTTPS to "HTTP://attacker.example/sfx".');
+
+        $this->invokePrivateSfxMethod('assertAllowedRedirect', 'HTTPS://mirror.example/php.sfx', 'HTTP://attacker.example/sfx');
+    }
+
     /**
      * @dataProvider nonHttpSchemeLocationProvider
      */
@@ -512,6 +541,28 @@ final class SfxDownloaderTest extends TestCase
             sprintf('http://127.0.0.1:%d/r6', self::$serverPort),
             $this->tempDir,
         );
+    }
+
+    public function testRedirectLimitEnforcedForMixedCaseSchemeUrl(): void
+    {
+        // An uppercase-scheme URL must still get the manual redirect loop
+        // (follow_location => 0), not the default context that follows
+        // redirects inside the wrapper.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Too many redirects (max 5)');
+
+        (new SfxDownloader())->fetch(
+            sprintf('HTTP://127.0.0.1:%d/r6', self::$serverPort),
+            $this->tempDir,
+        );
+    }
+
+    public function testConstructorRejectsNonPositiveMaxDownloadBytes(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('maxDownloadBytes must be a positive number of bytes.');
+
+        new SfxDownloader(0);
     }
 
     /**
@@ -587,8 +638,8 @@ final class SfxDownloaderTest extends TestCase
 
     private static function startRedirectServer(): void
     {
-        $router = tempnam(sys_get_temp_dir(), 'sfx-router-') . '.php';
-        file_put_contents($router, <<<'PHP_WRAP'
+        self::$routerFile = sys_get_temp_dir() . '/sfx-router-' . uniqid('', true) . '.php';
+        file_put_contents(self::$routerFile, <<<'PHP_WRAP'
 <?php
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -627,7 +678,7 @@ switch ($path) {
 }
 PHP_WRAP);
 
-        $command = [PHP_BINARY, '-S', sprintf('127.0.0.1:%d', self::$serverPort), $router];
+        $command = [PHP_BINARY, '-S', sprintf('127.0.0.1:%d', self::$serverPort), self::$routerFile];
         $process = proc_open($command, [
             0 => ['file', '/dev/null', 'r'],
             1 => ['file', '/dev/null', 'w'],

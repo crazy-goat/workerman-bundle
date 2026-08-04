@@ -116,9 +116,11 @@ final readonly class SfxDownloader
         for ($i = 0; $i <= $maxRedirects; $i++) {
             $context = $this->buildContext($currentUrl, $allowInsecure);
 
-            // The http wrapper only populates $http_response_header when the
-            // variable is already declared in the scope where fopen() runs;
-            // pre-declaring it makes the response headers observable here.
+            // Pre-declare $http_response_header so the http wrapper populates
+            // it in the fopen() scope (it is only set when the variable is
+            // already declared there). On PHP 8.4+ this can be replaced with
+            // http_get_last_response_headers(); the fallback must stay for
+            // PHP 8.2/8.3.
             $http_response_header = [];
             $in = @fopen($currentUrl, 'rb', false, $context);
             if (!is_resource($in)) {
@@ -180,7 +182,7 @@ final readonly class SfxDownloader
             ));
         }
 
-        if (str_starts_with($currentUrl, 'https://') && str_starts_with(strtolower($location), 'http://')) {
+        if (str_starts_with(strtolower($currentUrl), 'https://') && str_starts_with(strtolower($location), 'http://')) {
             throw new \RuntimeException(sprintf(
                 'Blocked cross-scheme redirect from HTTPS to "%s". Disable redirects or use a trusted mirror.',
                 $location,
@@ -213,7 +215,9 @@ final readonly class SfxDownloader
             ));
         }
 
-        $scheme = $parts['scheme'];
+        // parse_url() preserves the case of the scheme; normalize it so the
+        // rebuilt URL always uses a lowercase scheme prefix.
+        $scheme = strtolower($parts['scheme']);
         $host = $parts['host'];
         $port = isset($parts['port']) ? ':' . $parts['port'] : '';
 
@@ -254,7 +258,13 @@ final readonly class SfxDownloader
                     ));
                 }
 
-                fwrite($out, $chunk);
+                $written = fwrite($out, $chunk);
+                if ($written === false || $written !== strlen($chunk)) {
+                    throw new \RuntimeException(sprintf(
+                        'Failed to write to "%s" (short write).',
+                        $destination,
+                    ));
+                }
             }
         } catch (\Throwable $e) {
             $failed = true;
@@ -276,7 +286,12 @@ final readonly class SfxDownloader
      */
     private function buildContext(string $url, bool $allowInsecure)
     {
-        if (str_starts_with($url, 'http://')) {
+        // Scheme prefixes are matched case-insensitively: PHP's http wrapper
+        // accepts mixed-case schemes, and a redirect to "HTTPS://..." must
+        // not fall through to the default context (which follows redirects).
+        $lower = strtolower($url);
+
+        if (str_starts_with($lower, 'http://')) {
             return stream_context_create([
                 'http' => [
                     'follow_location' => 0,
@@ -286,7 +301,7 @@ final readonly class SfxDownloader
             ]);
         }
 
-        if (!str_starts_with($url, 'https://')) {
+        if (!str_starts_with($lower, 'https://')) {
             return null;
         }
 

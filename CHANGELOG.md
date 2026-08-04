@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unresolvable targets instead of passing them through, and downloads are capped at a maximum
   size (256 MiB by default) with the partial file removed on abort. The SHA-256 checksum is
   now verified immediately after download, before any zip extraction, so the extractor never
-  runs over unverified bytes. `--insecure` now differs from the default in exactly one
-  respect: TLS peer verification
+  runs over unverified bytes — for `.zip` URLs the checksum now covers the downloaded zip
+  artifact rather than the extracted SFX binary. `--insecure` now differs from the default in
+  exactly one respect: TLS peer verification
   ([#585](https://github.com/crazy-goat/workerman-bundle/issues/585))
 
 - Drop HTTP header names containing underscores before converting requests to
