@@ -496,6 +496,7 @@ final class HttpRequestHandlerTest extends TestCase
 
         $this->assertTrue($connection->closed, 'HTTP/1.0 request should close the connection');
         $this->assertStringStartsWith("HTTP/1.0 200 OK\r\n", $connection->sentData[0]);
+        $this->assertStringContainsString("Connection: close\r\n", $connection->sentData[0]);
     }
 
     public function testLargeResponseIsSentInOneTransportWrite(): void

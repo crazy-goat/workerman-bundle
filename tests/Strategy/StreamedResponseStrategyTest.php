@@ -93,7 +93,7 @@ final class StreamedResponseStrategyTest extends TestCase
             echo 'chunk2';
         });
 
-        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.0');
+        $workermanResponse = $strategy->convert($streamedResponse, ['Connection' => 'keep-alive'], $this->connection, '1.0');
 
         $this->assertSame('', $workermanResponse->rawBody());
         $this->assertSame(200, $workermanResponse->getStatusCode());
@@ -101,6 +101,7 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertCount(2, $sendCalls, 'HTTP/1.0 must send head + raw body, no chunk framing, no terminator');
         $this->assertStringStartsWith('HTTP/1.0 200 OK', $sendCalls[0]['data']);
         $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data']);
+        $this->assertStringNotContainsString('Connection: keep-alive', $sendCalls[0]['data'], 'App-provided Connection must not duplicate the strategy-owned close header');
         $this->assertStringNotContainsString('Transfer-Encoding', $sendCalls[0]['data']);
         $this->assertTrue($sendCalls[0]['raw']);
 

@@ -103,6 +103,11 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
             if (strcasecmp($name, 'Transfer-Encoding') === 0) {
                 continue;
             }
+            // For HTTP/1.0 this strategy owns the Connection header (the body
+            // is close-delimited); never emit a conflicting app-provided value.
+            if ($protocolVersion === '1.0' && strcasecmp($name, 'Connection') === 0) {
+                continue;
+            }
             foreach ((array) $values as $value) {
                 if ($value !== null && strpbrk($value, "\r\n") !== false) {
                     continue;
