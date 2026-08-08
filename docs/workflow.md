@@ -20,10 +20,14 @@ comments, related code). Delegate it to a subagent with its own context.
 #  stability/data-correctness/performance, blockers, user-facing (README/API docs)."
 ```
 
-The subagent uses `gh issue list --state open --limit 30` and
+The subagent uses `gh issue list --state open --limit 100` and
 `gh issue view <NUMBER> --json title,body,labels,state` to gather data, then
 returns a ranked shortlist. The main session picks one issue from the
 shortlist and proceeds to step 2.
+
+> **Note:** `gh issue list` returns **at most 30 issues by default** — the
+> triage task must explicitly raise `--limit` (e.g. `--limit 100`, max 1000)
+> so issues beyond the first page are not missed.
 
 > **Why a subagent:** issue bodies, comments, and related code can easily
 > exceed thousands of tokens. Keeping this in a separate context protects the
