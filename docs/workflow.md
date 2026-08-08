@@ -70,6 +70,8 @@ session stays free to orchestrate, review findings, and handle the next steps.
 ```bash
 # The subagent receives a task like:
 # "Implement issue #<NUMBER> on branch feat/issue-<NUMBER>-<description>.
+#  Read docs/helpers/ (faq.md, decisions.md) first — it documents
+#  recurring pitfalls and project decisions that apply to this task.
 #  Read the issue body first, then make the smallest correct change.
 #  Run the relevant tests for the changed behavior.
 #  Commit and push when done.
@@ -120,9 +122,15 @@ its own context). The subagent checks:
 ```bash
 # The subagent receives a task like:
 # "Code review the changes in files: <list of files>.
+#  Read docs/helpers/ (faq.md, decisions.md) first and flag any
+#  violations of documented decisions.
 #  Check: type correctness, error handling, PSR-12 compliance,
 #  missing tests, outdated documentation.
 #  List all issues to fix."
+
+After the review, the subagent should append any non-obvious findings to
+`docs/helpers/` (see "Knowledge Base (docs/helpers/)" below) — typically
+as part of the fix commits that follow.
 ```
 
 > **Why a subagent:** code review reads the full diff plus surrounding code,
@@ -359,6 +367,27 @@ gh issue create \
 
 ---
 
+## Knowledge Base (docs/helpers/)
+
+`worker`/`coder` (implementation) and `review` (code review) subagents
+maintain a persistent knowledge base in `docs/helpers/` so lessons learned
+carry over to future tasks:
+
+- `docs/helpers/faq.md` — frequently asked questions, recurring pitfalls
+  (test daemon ports, pre-push lint hook, coverage gate, `gh` default
+  limits) and their solutions
+- `docs/helpers/decisions.md` — important project decisions with rationale
+  (response strategy, security policy, coverage floor)
+- `docs/helpers/README.md` — structure and rules for the knowledge base
+
+Subagents **read** the knowledge base before starting a task and **append**
+short entries after finishing (one topic: the problem, the
+solution/decision, optionally an issue/commit reference). Entries are
+committed as part of the regular fix/feat commits — no extra PRs. In doubt,
+extend `docs/troubleshooting.md` or ask the user before adding a new entry.
+
+---
+
 ## Quick Reference – Full Cycle
 
 ```bash
@@ -421,6 +450,10 @@ All subagents have read/write/edit/bash tools and operate on the same
 repository. Give each one a clear, scoped instruction and a defined output
 format (ranked list with rationale / numbered findings list / coder report
 with biggest problem + discovered bugs).
+
+**Knowledge base:** implementation and review subagents read
+`docs/helpers/` before starting and append learnings after finishing
+(see "Knowledge Base (docs/helpers/)" above).
 
 ---
 
