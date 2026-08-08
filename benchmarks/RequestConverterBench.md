@@ -24,3 +24,18 @@ Working tree after the underscore-header filter.
 | `benchHeaderHeavyRequest` | 6.042 μs |
 | `benchMultipartRequest` | 5.737 μs |
 | `benchResetHeaders` | 0.113 μs |
+
+## Cookie value URL-decoding (issue #583)
+
+Source commit: `fbd0318` adds one `rawurldecode()` per cookie value on the hot
+path (for FPM parity). Measured with the same environment as above, 1000
+revisions × 5 iterations:
+
+| Subject | Before (#583) | After (fbd0318) | Δ |
+| --- | ---: | ---: | ---: |
+| `benchSimpleRequest` | 2.736 μs | 2.842 μs | +0.106 μs |
+| `benchHeaderHeavyRequest` (1 cookie) | 5.794 μs | 6.001 μs | +0.207 μs |
+
+Per-cookie decode cost ≈ 0.1–0.2 μs; within run-to-run noise (an independent
+run measured 6.06 μs before vs 6.18 μs after on `benchHeaderHeavyRequest`).
+No regression considered material.

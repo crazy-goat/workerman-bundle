@@ -57,7 +57,10 @@ split.
 Known intentional deviations from `$_COOKIE`, kept for backwards
 compatibility: duplicate cookie names keep the last value (PHP keeps the
 first), and PHP's cookie-name rewriting (` ` and `.` → `_`, `name[key]` array
-syntax) is not reproduced — the bundle treats names verbatim.
+syntax) is not reproduced — the bundle treats names verbatim. One further
+whitespace micro-deviation: PHP strips leading whitespace of a value
+(`a= b` → `b`) but keeps trailing whitespace, while the bundle trims both
+ends on the raw pair.
 
 ### Duplicate Sensitive Headers
 
