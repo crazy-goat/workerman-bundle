@@ -334,6 +334,36 @@ dedicated GitHub issue.
    description, and suggested fix (including findings outside the scope of the
    issue just closed).
 
+**Verify each candidate finding with a review subagent (read-only) before
+offering or creating an issue.** For every candidate finding the subagent
+must confirm:
+
+1. **The finding is real** - read the cited file/line(s) on the current
+   branch and confirm the behavior actually occurs and is reachable; check
+   whether it is by-design and already documented (those are skipped, not
+   filed).
+2. **No similar issue exists on GitHub** - search open *and* closed issues.
+   `gh issue list` returns at most 30 issues by default, so always pass an
+   explicit limit:
+
+   ```bash
+   gh issue list --state open --limit 150 --json number,title,labels,body
+   gh issue list --state closed --limit 150 --json number,title,labels
+   gh search issues --repo <owner>/<repo> --state open --limit 50 "<keyword>"
+   ```
+
+   Same or overlapping scope counts as tracked; known related issues (e.g.
+   referenced from CHANGELOG entries) must be checked explicitly.
+3. **A recommendation per finding**: (a) create a new issue - with proposed
+   title and labels per the project's conventions (`bug` / `enhancement` /
+   `code-quality` / `minor` / …), (b) skip - already tracked (cite the issue
+   number), or (c) skip - not real or by-design and documented.
+
+The verification subagent must not modify files and must not create/close/
+edit issues itself. Like steps 3 and 4, it reads `docs/helpers/`
+(faq.md, decisions.md) first. Only findings that pass verification (real +
+untracked) are offered to the user / created.
+
 **Then ask:** "Create GitHub issue(s) for these findings?"
 
 - If yes, create an issue via `gh` (adjust labels to the project's conventions):
@@ -430,14 +460,16 @@ git checkout master && git pull origin master
 
 # 11. Report + offer GitHub issue for discovered problems
 #    show: biggest problem(s), discovered bugs / places to improve
-#    ask: "Create GitHub issue(s)?" → if yes: gh issue create ...
+#    verify each candidate with a review subagent (finding is real?
+#    no duplicate on GitHub? use --limit >30 in issue lists)
+#    then ask: "Create GitHub issue(s)?" → if yes: gh issue create ...
 ```
 
 ---
 
 ## Subagent Usage Summary
 
-Three steps of this workflow are delegated to subagents to keep the main
+Four steps of this workflow are delegated to subagents to keep the main
 session's context lean:
 
 | Step | Subagent task                              | Why delegate                          |
@@ -445,11 +477,13 @@ session's context lean:
 | 1    | Triage open issues, return ranked shortlist | Issue bodies + comments are token-heavy |
 | 3    | Implement the issue (worker/coder)         | Coding context is token-heavy; agent returns structured report (files, biggest problem, discovered bugs) |
 | 4    | Code review of the implementation diff     | Full diff + surrounding code is token-heavy |
+| 14   | Verify candidate findings before creating GitHub issues (read-only: is the finding real? is it already tracked?) | GitHub duplicate search (open + closed, `--limit` > 30) plus code verification across several findings is query-heavy |
 
 All subagents have read/write/edit/bash tools and operate on the same
-repository. Give each one a clear, scoped instruction and a defined output
-format (ranked list with rationale / numbered findings list / coder report
-with biggest problem + discovered bugs).
+repository (the step-14 verifier is instructed to run read-only). Give each
+one a clear, scoped instruction and a defined output format (ranked list
+with rationale / numbered findings list / coder report with biggest problem
++ discovered bugs / per-finding verification verdict).
 
 **Knowledge base:** implementation and review subagents read
 `docs/helpers/` before starting and append learnings after finishing
