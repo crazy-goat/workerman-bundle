@@ -526,7 +526,7 @@ final class ProcessInspectorTest extends TestCase
         try {
             $this->inspector->killOrphanedIntermediateFork($pid);
 
-            usleep(100_000);
+            $this->waitForProcessDeath($pid);
 
             $this->assertFalse(
                 $this->inspector->isProcessAlive($pid),
@@ -537,6 +537,18 @@ final class ProcessInspectorTest extends TestCase
                 posix_kill($pid, SIGKILL);
             }
             pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Poll until the process is dead, so signal delivery does not depend
+     * on a fixed sleep (flaky under heavy CI load).
+     */
+    private function waitForProcessDeath(int $pid): void
+    {
+        $deadline = \microtime(true) + 1.0;
+        while ($this->inspector->isProcessAlive($pid) && \microtime(true) < $deadline) {
+            \usleep(20_000);
         }
     }
 
@@ -574,8 +586,7 @@ final class ProcessInspectorTest extends TestCase
         try {
             $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
 
-            // Give the kernel a moment to deliver SIGKILL.
-            usleep(100_000);
+            $this->waitForProcessDeath($pid);
 
             $this->assertFalse(
                 $this->inspector->isProcessAlive($pid),

@@ -108,6 +108,7 @@ final class MasterWorkerTest extends TestCase
             self::assertSame((string) \getmypid(), (string) file_get_contents($pidFile));
         } finally {
             Worker::$outputStream = $previousOutputStream;
+            \fclose($testStream);
             Worker::$pidFile = $previousPidFile;
             Worker::$logFile = $previousLogFile;
             $masterPidProp->setValue(null, $previousMasterPid);

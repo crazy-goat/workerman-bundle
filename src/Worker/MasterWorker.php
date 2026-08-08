@@ -52,7 +52,7 @@ final class MasterWorker extends Worker
         try {
             MasterFingerprint::capture()->writeTo($pidFile . '.fingerprint');
         } catch (\Throwable $e) {
-            self::log(\sprintf('Unable to write master fingerprint: %s', $e->getMessage()));
+            self::log('Unable to write master fingerprint: ' . $e->getMessage());
         }
     }
 }
