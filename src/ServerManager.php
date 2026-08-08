@@ -300,16 +300,18 @@ final readonly class ServerManager
      * before sending signals — preventing the `/proc/cmdline`
      * substring-match vulnerability described in issue #327.
      *
-     * Daemon mode: in daemon mode, `Worker::daemonize()` forks twice
-     * and the launcher process exits. The actual master is a grandchild
-     * process whose PID differs from the launcher's PID. Since we
-     * cannot capture the grandchild's PID before `Runner::run()` is
-     * invoked, the fingerprint is intentionally NOT written in daemon
-     * mode and the legacy cmdline-based check is used as a fallback.
+     * Daemon mode: `Worker::daemonize()` forks twice and the launcher
+     * process exits, so the launcher PID is not the master PID and no
+     * fingerprint is written here. The gap is closed by
+     * {@see \CrazyGoat\WorkermanBundle\Worker\MasterWorker::saveMasterPid()},
+     * which records the fingerprint from inside the real master process
+     * right after the PID file is written (issue #584). Until the master
+     * starts, `ProcessInspector` fails closed rather than signalling on
+     * an unverifiable PID.
      *
      * Failures are logged but do not abort the start sequence: if the
-     * fingerprint cannot be written, the legacy cmdline-based check
-     * is used as a fallback.
+     * fingerprint cannot be written, the strict cmdline-based check
+     * (master process title) is used as a fallback.
      */
     private function writeMasterFingerprint(bool $daemon): void
     {
@@ -321,7 +323,7 @@ final readonly class ServerManager
         }
 
         if ($daemon) {
-            $this->logger->info('Daemon mode: skipping master fingerprint (launcher PID does not match master PID after daemonize)');
+            $this->logger->info('Daemon mode: skipping launcher fingerprint (master fingerprint is written by the master process itself)');
 
             return;
         }

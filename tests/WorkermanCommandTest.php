@@ -91,6 +91,106 @@ final class WorkermanCommandTest extends KernelTestCase
         self::assertSame(200, $response->getStatusCode());
     }
 
+    /**
+     * Regression test for issue #584: the real master process must
+     * record a fingerprint in daemon mode.
+     *
+     * The test server is started with `start -d` by phpunit's bootstrap,
+     * so this asserts the daemon-mode path end to end: the fingerprint
+     * sidecar exists next to the PID file, describes the same PID, and
+     * passes `ProcessInspector::matchesFingerprint()`.
+     */
+    public function testDaemonModeWritesMasterFingerprint(): void
+    {
+        $pidFile = self::bootKernel()->getProjectDir() . '/var/run/workerman.pid';
+        $fingerprintPath = $pidFile . '.fingerprint';
+
+        self::assertFileExists($pidFile, 'PID file must exist for the daemonised test server');
+        self::assertFileExists(
+            $fingerprintPath,
+            'Master fingerprint must be written in daemon mode (issue #584)',
+        );
+
+        $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::readFrom($fingerprintPath);
+        self::assertNotNull($fingerprint, 'Fingerprint must be parseable');
+
+        $masterPid = (int) file_get_contents($pidFile);
+        self::assertSame($masterPid, $fingerprint->pid, 'Fingerprint PID must match the PID file');
+
+        $inspector = new \CrazyGoat\WorkermanBundle\ProcessInspector();
+        self::assertTrue(
+            $inspector->matchesFingerprint($masterPid, $fingerprint),
+            'Fingerprint must verify the real master process',
+        );
+    }
+
+    /**
+     * End-to-end regression test for issue #584: a stale pid file that
+     * points at a reused (unrelated) PID must not result in any signal
+     * being sent by the console `stop` command.
+     *
+     * Simulates the reported scenario: master died, kernel reassigned
+     * the PID to a plain PHP process, no fingerprint is present. The
+     * stop command must fail without signalling the foreign process.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testStopWithStalePidFileDoesNotSignalForeignProcess(): void
+    {
+        $pidFile = self::bootKernel()->getProjectDir() . '/var/run/workerman.pid';
+        $fingerprintPath = $pidFile . '.fingerprint';
+
+        self::assertFileExists($pidFile, 'Prerequisite: daemonised test server must be running');
+
+        $originalPid = (string) file_get_contents($pidFile);
+        $originalFingerprint = \is_file($fingerprintPath) ? (string) file_get_contents($fingerprintPath) : null;
+
+        // Foreign "reused" process: a plain PHP child whose cmdline
+        // contains "php" but not the Workerman master title.
+        $child = pcntl_fork();
+        if ($child === -1) {
+            self::markTestSkipped('pcntl_fork failed');
+        }
+        if ($child === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            file_put_contents($pidFile, (string) $child);
+            @\unlink($fingerprintPath);
+
+            \exec(
+                \workerman_create_console_command('stop') . ' 2>&1',
+                $output,
+                $exitCode,
+            );
+
+            self::assertNotSame(
+                0,
+                $exitCode,
+                'stop must fail when the PID file points at a non-master process',
+            );
+            self::assertTrue(
+                \posix_kill($child, 0),
+                'The foreign process must not have been signaled',
+            );
+        } finally {
+            // Restore the real server's pid/fingerprint files.
+            file_put_contents($pidFile, $originalPid);
+            if ($originalFingerprint !== null) {
+                file_put_contents($fingerprintPath, $originalFingerprint);
+            } else {
+                @\unlink($fingerprintPath);
+            }
+
+            \posix_kill($child, \SIGKILL);
+            \pcntl_waitpid($child, $status);
+        }
+    }
+
     private function createCommandTester(): CommandTester
     {
         $application = new Application(self::bootKernel());
