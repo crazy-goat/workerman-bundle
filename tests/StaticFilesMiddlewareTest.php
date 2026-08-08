@@ -347,6 +347,130 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertEquals(404, $response->getStatusCode());
     }
 
+    public function testSymlinkNegativeCacheRespectsMaxSize(): void
+    {
+        $linkPath = $this->rootDirectory . '/assets';
+        $subDir = $this->rootDirectory . '/realdir';
+
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        try {
+            if (!is_dir($subDir)) {
+                mkdir($subDir, 0777, true);
+            }
+            if (!file_exists($linkPath)) {
+                symlink($subDir, $linkPath);
+            }
+
+            $cacheCount = function () use ($middleware): int {
+                $method = new \ReflectionMethod($middleware, 'getRealPathCache');
+
+                return count($method->invoke($middleware));
+            };
+
+            $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
+            $maxSize = $maxSizeReflection->getValue();
+            assert(is_int($maxSize));
+
+            $requestAt = fn(int $i): Request => $this->createRequest(sprintf('/assets/pad-%d.css', $i));
+            $batchSize = 5 * $maxSize;
+
+            // First batch: 5x the cap worth of unique symlink-traversing paths.
+            for ($i = 0; $i < $batchSize; $i++) {
+                $middleware($requestAt($i), $next);
+            }
+            $countAfterFirstBatch = $cacheCount();
+
+            $this->assertLessThanOrEqual($maxSize, $countAfterFirstBatch, 'Negative cache must never exceed CACHE_MAX_SIZE');
+
+            // Second batch: entry count must stay stable, not grow linearly with request count.
+            for ($i = $batchSize; $i < 2 * $batchSize; $i++) {
+                $middleware($requestAt($i), $next);
+            }
+            $this->assertSame($countAfterFirstBatch, $cacheCount(), 'Cache size must stay stable across batches');
+
+            // Repeated lookups of a rejected path must still fall through to $next.
+            $called = false;
+            $nextBlocking = function (Request $req) use (&$called): Response {
+                $called = true;
+
+                return new Response(404);
+            };
+            $middleware($requestAt(0), $nextBlocking);
+
+            $this->assertTrue($called, 'Symlink-traversing path should still be rejected');
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (is_dir($subDir)) {
+                rmdir($subDir);
+            }
+        }
+    }
+
+    public function testSymlinkRejectionHitKeepsFixedTtl(): void
+    {
+        $linkPath = $this->rootDirectory . '/assets';
+        $subDir = $this->rootDirectory . '/realdir';
+
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        try {
+            if (!is_dir($subDir)) {
+                mkdir($subDir, 0777, true);
+            }
+            if (!file_exists($linkPath)) {
+                symlink($subDir, $linkPath);
+            }
+
+            $path = '/assets/secret.txt';
+            $called = 0;
+            $next = function (Request $req) use (&$called): Response {
+                $called++;
+
+                return new Response(404);
+            };
+
+            $cacheIndex = function () use ($middleware, $path): string {
+                $rootRealPathReflection = new \ReflectionProperty($middleware, 'rootRealPath');
+                $rootRealPath = $rootRealPathReflection->getValue($middleware);
+                assert(is_string($rootRealPath));
+
+                return $path . "\0" . '0' . "\0" . $rootRealPath;
+            };
+
+            $storedTime = function () use ($middleware, $cacheIndex): ?int {
+                $cacheMethod = new \ReflectionMethod($middleware, 'getRealPathCache');
+                $cache = $cacheMethod->invoke($middleware);
+                assert(is_array($cache));
+                $entry = $cache[$cacheIndex()] ?? null;
+
+                return is_array($entry) && is_int($entry['time']) ? $entry['time'] : null;
+            };
+
+            // Warm the negative cache.
+            $middleware($this->createRequest($path), $next);
+            $timeAfterWarm = $storedTime();
+            $this->assertNotNull($timeAfterWarm, 'Rejected path should be present in the negative cache');
+
+            // A hit within CACHE_NEGATIVE_TTL must not slide the expiry forward.
+            sleep(1);
+            $middleware($this->createRequest($path), $next);
+
+            $this->assertSame($timeAfterWarm, $storedTime(), 'A cache hit must not refresh the TTL timestamp');
+            $this->assertSame(2, $called, 'Every symlink-traversing request must fall through to $next');
+        } finally {
+            if (file_exists($linkPath)) {
+                unlink($linkPath);
+            }
+            if (is_dir($subDir)) {
+                rmdir($subDir);
+            }
+        }
+    }
+
     private function createRequest(string $path): Request
     {
         $buffer = "GET $path HTTP/1.1\r\nHost: localhost\r\n\r\n";

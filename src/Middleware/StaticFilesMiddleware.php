@@ -184,10 +184,8 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $cached = $cache[$cacheIndex];
             $ttl = $cached['path'] === false ? self::CACHE_NEGATIVE_TTL : self::CACHE_TTL;
             if ($now - $cached['time'] < $ttl) {
-                unset($cache[$cacheIndex]);
-                $cache[$cacheIndex] = $cached;
-
-                return $cached['path'];
+                // Refresh hit preserves the original timestamp: TTL stays fixed, only LRU position moves.
+                return $this->cacheStore($cache, $cacheIndex, $cached['path'], $cached['time']);
             }
             unset($cache[$cacheIndex]);
         }
@@ -205,12 +203,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
                     }
                     $checkPath .= DIRECTORY_SEPARATOR . $component;
                     if (is_link($checkPath)) {
-                        $cache[$cacheIndex] = [
-                            'path' => false,
-                            'time' => $now,
-                        ];
-
-                        return false;
+                        return $this->cacheStore($cache, $cacheIndex, false, $now);
                     }
                 }
             }
@@ -218,16 +211,30 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $resolved = realpath($path);
         }
 
-        $cache[$cacheIndex] = [
-            'path' => $resolved,
+        return $this->cacheStore($cache, $cacheIndex, $resolved, $now);
+    }
+
+    /**
+     * Inserts an entry into the realpath cache, enforcing CACHE_MAX_SIZE on every insert.
+     *
+     * @param array<string, array{path: string|false, time: int}> $cache
+     */
+    private function cacheStore(array &$cache, string $index, string|false $path, int $now): string|false
+    {
+        unset($cache[$index]);
+        $cache[$index] = [
+            'path' => $path,
             'time' => $now,
         ];
 
         if (count($cache) > self::CACHE_MAX_SIZE) {
-            array_shift($cache);
+            $oldest = array_key_first($cache);
+            if ($oldest !== null) {
+                unset($cache[$oldest]);
+            }
         }
 
-        return $resolved;
+        return $path;
     }
 
     private function joinPaths(string $root, string $path): string

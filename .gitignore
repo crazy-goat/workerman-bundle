@@ -7,3 +7,6 @@ var/
 /e2e/build/
 /e2e/vendor/
 /e2e/composer.lock
+
+# Pi subagent artifacts
+.pi-subagents/

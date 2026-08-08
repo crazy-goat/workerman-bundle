@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Fix unbounded memory growth in `StaticFilesMiddleware`'s realpath cache.
+  The symlink-rejection path inserted into the shared worker cache without
+  enforcing `CACHE_MAX_SIZE`, and negative entries only expired on a repeat
+  lookup of the same URL — unauthenticated requests to symlink-traversing
+  paths (`/assets/<anything>` when `assets` is a symlink) grew the cache
+  monotonically (~556 B per distinct URL; 106 MB after 200k requests),
+  forcing continuous `MemoryRebootStrategy` reloads. All cache writes now go
+  through a single helper that enforces the cap and evicts the oldest entry
+  via `unset(array_key_first())` instead of `array_shift()`; fixed-TTL
+  semantics on cache hits are preserved
+  ([#570](https://github.com/crazy-goat/workerman-bundle/issues/570),
+  [#558](https://github.com/crazy-goat/workerman-bundle/issues/558))
+
 - Unify SFX download redirect policing across modes: HTTPS → HTTP downgrade redirects and
   redirects to non-HTTP(S) schemes (`file://`, `php://`, `ftp://`) are now blocked in **all**
   modes, not only with `--insecure`. Automatic redirect following is disabled in the stream
