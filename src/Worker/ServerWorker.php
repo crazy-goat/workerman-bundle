@@ -63,25 +63,17 @@ final readonly class ServerWorker
         $bodySizeCap = $serverConfig['body_size_cap'] ?? null;
 
         $worker->onClose = function (TcpConnection $connection): void {
-            $this->cancelConnectionTimers($connection);
             $connection->context = null;
         };
 
-        $worker->onConnect = function (TcpConnection $connection) use ($connectionTimeout, $bodySizeCap): void {
+        $worker->onConnect = function (TcpConnection $connection) use ($bodySizeCap): void {
             if ($bodySizeCap !== null) {
                 $connection->maxPackageSize = $bodySizeCap;
             }
 
             $connection->context ??= new \stdClass();
-            $connectionReference = \WeakReference::create($connection);
-            $connection->context->connectionTimerId = Timer::add(
-                $connectionTimeout,
-                static function () use ($connectionReference): void {
-                    $connectionReference->get()?->close();
-                },
-                [],
-                false,
-            );
+            $connection->context->lastActivity = time();
+            $connection->context->requestCompleted = false;
 
             // Defence-in-depth backstop: if a throwable escapes
             // HttpRequestHandler's own try/catch (e.g. from a future
@@ -101,16 +93,39 @@ final readonly class ServerWorker
                     $e->getLine(),
                 ));
 
-                // Clean up per-connection timers so they don't keep
-                // firing on a defunct connection after close().
-                $this->cancelConnectionTimers($connection);
-
                 $connection->close();
             };
         };
 
-        $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serverConfig, $keepaliveTimeout): void {
+        $worker->onWorkerStart = function (Worker $worker) use ($connectionTimeout, $kernelFactory, $keepaliveTimeout, $serverConfig): void {
             Http::requestClass(Request::class);
+
+            $timeouts = array_filter(
+                [$connectionTimeout, $keepaliveTimeout],
+                static fn(int $timeout): bool => $timeout > 0,
+            );
+            if ($timeouts !== []) {
+                $sweepInterval = max(1, intdiv(min($timeouts), 4));
+                Timer::add($sweepInterval, static function () use ($connectionTimeout, $keepaliveTimeout, $worker): void {
+                    $now = time();
+                    foreach ($worker->connections as $connection) {
+                        if (!$connection->context instanceof \stdClass) {
+                            continue;
+                        }
+
+                        $lastActivity = $connection->context->lastActivity ?? null;
+                        $requestCompleted = $connection->context->requestCompleted ?? false;
+                        if (!is_int($lastActivity)) {
+                            continue;
+                        }
+
+                        $timeout = $requestCompleted ? $keepaliveTimeout : $connectionTimeout;
+                        if ($timeout > 0 && $now - $lastActivity >= $timeout) {
+                            $connection->close();
+                        }
+                    }
+                }, [], true);
+            }
 
             $serveFiles = $serverConfig['serve_files'] ?? false;
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
@@ -121,26 +136,16 @@ final readonly class ServerWorker
 
             $handler = $this->configureHandler($kernel, $serverConfig, $rootDir);
 
-            $worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler, $keepaliveTimeout): void {
-                $this->cancelConnectionTimers($connection);
-
+            $worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler): void {
                 try {
                     $handler($connection, $request);
                 } finally {
                     $request->resetHeaders();
                 }
 
-                if ($keepaliveTimeout > 0) {
-                    $connection->context ??= new \stdClass();
-                    $connectionReference = \WeakReference::create($connection);
-                    $connection->context->keepaliveTimerId = Timer::add(
-                        $keepaliveTimeout,
-                        static function () use ($connectionReference): void {
-                            $connectionReference->get()?->close();
-                        },
-                        [],
-                        false,
-                    );
+                if ($connection->context instanceof \stdClass) {
+                    $connection->context->lastActivity = time();
+                    $connection->context->requestCompleted = true;
                 }
             };
         };
@@ -192,23 +197,6 @@ final readonly class ServerWorker
         }
 
         return $callable;
-    }
-
-    private function cancelConnectionTimers(TcpConnection $connection): void
-    {
-        if (!$connection->context instanceof \stdClass) {
-            return;
-        }
-
-        if (isset($connection->context->keepaliveTimerId)) {
-            Timer::del($connection->context->keepaliveTimerId);
-            unset($connection->context->keepaliveTimerId);
-        }
-
-        if (isset($connection->context->connectionTimerId)) {
-            Timer::del($connection->context->connectionTimerId);
-            unset($connection->context->connectionTimerId);
-        }
     }
 
     /**

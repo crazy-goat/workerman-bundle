@@ -28,6 +28,8 @@ final class ServerWorkerTest extends TestCase
         $this->tempDir = sys_get_temp_dir() . '/workerman-test-' . uniqid();
         mkdir($this->tempDir, 0755, true);
 
+        Timer::init(new Select());
+
         if (Worker::$outputStream === null) {
             $stream = fopen('php://memory', 'w');
             if ($stream === false) {
@@ -42,6 +44,8 @@ final class ServerWorkerTest extends TestCase
 
     protected function tearDown(): void
     {
+        Timer::delAll();
+
         $files = glob($this->tempDir . '/*');
         if (is_array($files)) {
             foreach ($files as $file) {
@@ -538,8 +542,6 @@ final class ServerWorkerTest extends TestCase
 
         $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
         $connection->context = new \stdClass();
-        $connection->context->connectionTimerId = null;
-        $connection->context->keepaliveTimerId = null;
         $onMessage = $worker->onMessage;
         $this->assertNotNull($onMessage);
         $request = new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
@@ -786,7 +788,6 @@ final class ServerWorkerTest extends TestCase
 
         $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
         $connection->context = new \stdClass();
-        $connection->context->connectionTimerId = null;
 
         $onConnect = $worker->onConnect;
         $this->assertNotNull($onConnect, 'onConnect must be set');
@@ -835,7 +836,6 @@ final class ServerWorkerTest extends TestCase
 
         $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
         $connection->context = new \stdClass();
-        $connection->context->connectionTimerId = null;
 
         $onConnect = $worker->onConnect;
         $this->assertNotNull($onConnect);
@@ -928,11 +928,10 @@ final class ServerWorkerTest extends TestCase
         $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
     }
 
-    public function testOnCloseCancelsPerConnectionTimersAndClearsContext(): void
+    public function testOnCloseClearsContextAndLeavesSharedSweeperRunning(): void
     {
-        $worker = $this->createStartedWorkerForTimerTests('ows-close-timers', 5, 5);
         $eventLoop = new Select();
-        Timer::init($eventLoop);
+        $worker = $this->createStartedWorkerForTimerTests('ows-close-timers', 5, 5, $eventLoop);
 
         [$idleConnection, $idlePeer] = $this->createRealConnection($eventLoop);
         [$keepaliveConnection, $keepalivePeer] = $this->createRealConnection($eventLoop);
@@ -941,25 +940,25 @@ final class ServerWorkerTest extends TestCase
 
         try {
             $baseline = $eventLoop->getTimerCount();
-            $this->assertSame(0, $baseline);
+            $this->assertSame(1, $baseline);
 
             $onConnect = $worker->onConnect;
             $this->assertNotNull($onConnect);
             $onConnect($idleConnection);
-            $this->assertSame($baseline + 1, $eventLoop->getTimerCount(), 'connection timeout timer should be armed on connect');
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'connecting must not add a per-connection timer');
 
             $idleConnection->close();
-            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing before a request must cancel the connection-timeout timer');
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing before a request must not remove the shared sweeper');
             $this->assertNull($idleConnection->context, 'worker-level onClose should clear connection context');
 
             $onConnect($keepaliveConnection);
             $onMessage = $worker->onMessage;
             $this->assertNotNull($onMessage);
             $onMessage($keepaliveConnection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
-            $this->assertSame($baseline + 1, $eventLoop->getTimerCount(), 'keepalive timer should be armed after a request');
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'requests must not add a per-connection timer');
 
             $keepaliveConnection->close();
-            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing after a request must cancel the keepalive timer');
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing after a request must not remove the shared sweeper');
             $this->assertNull($keepaliveConnection->context, 'worker-level onClose should clear connection context after keepalive close');
         } finally {
             Timer::delAll();
@@ -970,9 +969,8 @@ final class ServerWorkerTest extends TestCase
 
     public function testClosedConnectionIsCollectableAfterDestroyAndEventLoopTick(): void
     {
-        $worker = $this->createStartedWorkerForTimerTests('ows-weakref', 5, 5);
         $eventLoop = new Select();
-        Timer::init($eventLoop);
+        $worker = $this->createStartedWorkerForTimerTests('ows-weakref', 5, 5, $eventLoop);
 
         [$connection, $peer] = $this->createRealConnection($eventLoop);
         $this->bindConnectionToWorker($connection, $worker);
@@ -1000,9 +998,8 @@ final class ServerWorkerTest extends TestCase
 
     public function testConnectionTimeoutStillClosesIdleConnections(): void
     {
-        $worker = $this->createStartedWorkerForTimerTests('ows-connection-timeout', 1, 5);
         $eventLoop = new Select();
-        Timer::init($eventLoop);
+        $worker = $this->createStartedWorkerForTimerTests('ows-connection-timeout', 1, 5, $eventLoop);
 
         [$connection, $peer] = $this->createRealConnection($eventLoop);
         $this->bindConnectionToWorker($connection, $worker);
@@ -1016,7 +1013,7 @@ final class ServerWorkerTest extends TestCase
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
-            $this->assertSame(0, $eventLoop->getTimerCount());
+            $this->assertSame(0, $eventLoop->getTimerCount(), 'stopping the test event loop clears its timers');
         } finally {
             Timer::delAll();
             @fclose($peer);
@@ -1025,9 +1022,8 @@ final class ServerWorkerTest extends TestCase
 
     public function testKeepaliveTimeoutStillClosesInactiveConnections(): void
     {
-        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-timeout', 5, 1);
         $eventLoop = new Select();
-        Timer::init($eventLoop);
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-timeout', 5, 1, $eventLoop);
 
         [$connection, $peer] = $this->createRealConnection($eventLoop);
         $this->bindConnectionToWorker($connection, $worker);
@@ -1045,7 +1041,7 @@ final class ServerWorkerTest extends TestCase
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
-            $this->assertSame(0, $eventLoop->getTimerCount());
+            $this->assertSame(0, $eventLoop->getTimerCount(), 'stopping the test event loop clears its timers');
         } finally {
             Timer::delAll();
             @fclose($peer);
@@ -1054,9 +1050,8 @@ final class ServerWorkerTest extends TestCase
 
     public function testKeepaliveTimeoutZeroDoesNotScheduleKeepaliveTimer(): void
     {
-        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-zero', 5, 0);
         $eventLoop = new Select();
-        Timer::init($eventLoop);
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-zero', 5, 0, $eventLoop);
 
         [$connection, $peer] = $this->createRealConnection($eventLoop);
         $this->bindConnectionToWorker($connection, $worker);
@@ -1068,14 +1063,44 @@ final class ServerWorkerTest extends TestCase
             $this->assertNotNull($onMessage);
 
             $onConnect($connection);
-            $this->assertSame(1, $eventLoop->getTimerCount(), 'connection timeout timer should be armed before the first request');
+            $this->assertSame(1, $eventLoop->getTimerCount(), 'the shared sweeper should be armed before the first request');
 
             $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
-            $this->assertSame(0, $eventLoop->getTimerCount(), 'keepaliveTimeout=0 must leave no timer armed after a request');
+            $this->assertSame(1, $eventLoop->getTimerCount(), 'keepaliveTimeout=0 must not add a per-connection timer');
 
             $this->runEventLoopFor($eventLoop, 0.05);
 
             $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus(), 'keepaliveTimeout=0 should not close active keep-alive connections');
+        } finally {
+            $connection->destroy();
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testRepeatedRequestsDoNotGrowSelectTimerHeap(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-bounded-timers', 120, 30, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+            $onConnect($connection);
+
+            for ($requestNumber = 0; $requestNumber < 100_000; ++$requestNumber) {
+                $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            }
+
+            $scheduler = (new \ReflectionProperty(Select::class, 'scheduler'))->getValue($eventLoop);
+            assert($scheduler instanceof \SplPriorityQueue);
+            $this->assertSame(1, $eventLoop->getTimerCount());
+            $this->assertSame(1, $scheduler->count(), 'the persistent sweeper must be the only Select heap entry');
         } finally {
             $connection->destroy();
             Timer::delAll();
@@ -1094,7 +1119,7 @@ final class ServerWorkerTest extends TestCase
         return null;
     }
 
-    private function createStartedWorkerForTimerTests(string $name, int $connectionTimeout, int $keepaliveTimeout): Worker
+    private function createStartedWorkerForTimerTests(string $name, int $connectionTimeout, int $keepaliveTimeout, Select $eventLoop): Worker
     {
         $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
             ->disableOriginalConstructor()
@@ -1111,6 +1136,8 @@ final class ServerWorkerTest extends TestCase
         $kernel = $this->createMock(KernelInterface::class);
         $kernel->method('boot');
         $kernel->method('getContainer')->willReturn($container);
+
+        Timer::init($eventLoop);
 
         new ServerWorker(
             new KernelFactory(fn(): KernelInterface => $kernel, []),

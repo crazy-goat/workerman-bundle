@@ -53,6 +53,13 @@ Always raise the limit explicitly (`--limit 100`, max 1000) or paginate
 with `--page N` — otherwise issues beyond the first page are silently
 missed during triage.
 
+## Worker timer tests
+
+When invoking `ServerWorker::onWorkerStart` directly in a unit test, initialize
+`Workerman\Timer` with the test event loop first. Production initializes the
+event loop before `onWorkerStart`; direct callback tests otherwise register
+process-level alarm timers instead of timers on the test loop.
+
 ## Long-running worker gotchas
 
 ### Symfony container / service state survives requests
