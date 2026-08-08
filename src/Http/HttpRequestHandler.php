@@ -27,9 +27,11 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  *    is the controller callable that delegates to SymfonyController.
  *
  * 2. **Response send** — The Http\Response returned by the pipeline is encoded
- *    and sent via TcpConnection::send(). If a middleware already sent the
- *    response directly (e.g. StaticFilesMiddleware for static assets), this
- *    step is skipped via the responseSentDirectly context flag.
+ *    and sent via TcpConnection::send(). The response is stamped with the
+ *    request's protocol version and, when the connection will be closed,
+ *    Connection: close. If a response strategy already sent the response
+ *    directly (StreamedResponseStrategy for streamed responses), this step
+ *    is skipped via the responseSentDirectly context flag.
  *
  * 3. **Kernel termination** — TerminateIfNeeded() is called synchronously.
  *    The method is run inline after send() because send() is non-blocking.
