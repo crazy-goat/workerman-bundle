@@ -385,8 +385,9 @@ containing directory** before loading it:
   itself world-writable is **refused**.
 - **Unreadable metadata**: If the file or directory metadata cannot be read
   (e.g. on filesystems that do not report permissions), a **warning naming
-  the path is logged** and loading proceeds — the check degrades loudly
-  instead of silently disappearing.
+  the path is emitted** — logged via the PSR-3 logger when one is configured,
+  raised as an `E_USER_WARNING` otherwise — and loading proceeds; the check
+  degrades loudly instead of silently disappearing.
 - **Scope**: The checks cover POSIX owner and permission bits only. They do
   not cover ACLs, extended attributes, or filesystems that do not support
   POSIX permissions.

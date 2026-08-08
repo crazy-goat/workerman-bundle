@@ -491,8 +491,8 @@ final class ConfigLoaderTest extends TestCase
         $triggered = null;
 
         set_error_handler(
-            static function (int $severity, string $message) use (&$triggered, $missingPath): bool {
-                $triggered = $missingPath;
+            static function (int $severity, string $message) use (&$triggered): bool {
+                $triggered = $message;
 
                 return true;
             },
@@ -506,7 +506,8 @@ final class ConfigLoaderTest extends TestCase
             restore_error_handler();
         }
 
-        $this->assertSame($missingPath, $triggered);
+        $this->assertIsString($triggered);
+        $this->assertStringContainsString($missingPath, $triggered);
     }
 
     public function testCheckCacheFilePermissionsAcceptsSecurePermissions(): void
