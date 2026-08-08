@@ -74,7 +74,7 @@ Duplicate `Host`, `Content-Length`, and `Authorization` headers are suspicious a
 
 Header values containing bytes `\x00-\x08`, `\x0A-\x1F`, or `\x7F` are rejected with a `MalformedRequestException` (TAB, `\x09`, remains accepted because it is legal in field values). The request handler returns `400 Bad Request` for this client input. This protects against log forging and other protocol-level attacks through malformed header values.
 
-This check is not the response-splitting defence by itself. Response headers are independently protected by the `strpbrk()` CR/LF checks in Workerman's response writer and in the bundle's `DefaultResponseStrategy` and `StreamedResponseStrategy` header builders, which omit unsafe response headers rather than emitting them.
+This check is not the response-splitting defence by itself. Response headers are independently protected by the `strpbrk()` CR/LF checks in Workerman's response writer (which covers the default `WorkermanResponse` path) and in the bundle's `StreamedResponseStrategy` header builder, which omit unsafe response headers rather than emitting them.
 
 ### Request URI and Method Validation
 
