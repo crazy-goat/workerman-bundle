@@ -316,6 +316,40 @@ final class RequestConverterTest extends TestCase
         }
     }
 
+    public function testHeaderControlCharacterBoundaryIsRejectedExceptTab(): void
+    {
+        for ($byte = 0; $byte <= 0x1F; ++$byte) {
+            $this->assertHeaderByteValidation($byte);
+        }
+        $this->assertHeaderByteValidation(0x7F);
+    }
+
+    private function assertHeaderByteValidation(int $byte): void
+    {
+        if ($byte < 0 || $byte > 255) {
+            throw new \InvalidArgumentException('Header byte must fit in one byte');
+        }
+
+        $value = 'before' . chr($byte) . 'after';
+        $buffer = "GET /control-byte HTTP/1.1\r\nHost: x\r\nX-A: {$value}\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        if ($byte === 0x09) {
+            $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+            $this->assertSame($value, $symfonyRequest->server->get('HTTP_X_A'));
+
+            return;
+        }
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail(sprintf('Expected byte 0x%02X to be rejected', $byte));
+        } catch (MalformedRequestException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('control characters', $e->getMessage());
+        }
+    }
+
     public function testNonArrayFileEntryIsNotSilentlyDropped(): void
     {
         $this->expectException(\InvalidArgumentException::class);

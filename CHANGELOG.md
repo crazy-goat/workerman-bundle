@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Reject bare CR and LF, along with the rest of the non-TAB control-byte range, in incoming header values. `RequestConverter` now covers `\x00-\x08` and `\x0A-\x1F` (plus `\x7F`) while retaining legal TAB values, preventing malformed header data from reaching the Symfony server bag ([#581](https://github.com/crazy-goat/workerman-bundle/issues/581))
+
 - URL-decode cookie values in `parseCookiesFromServerBag()` with `rawurldecode()` semantics, so values written by Symfony's `Cookie` (which `rawurlencode()`s in `__toString()`) round-trip exactly as they do under PHP-FPM. Decoding matches PHP's SAPI (`php_raw_url_decode`: `%XX` decoded, literal `+` preserved) and runs strictly after splitting the header on `;` and `=`, so an encoded `%3B` in a value is never reinterpreted as a cookie separator and the duplicate-`Cookie`-header smuggling fix ([#217](https://github.com/crazy-goat/workerman-bundle/issues/217)) stays intact
   ([#583](https://github.com/crazy-goat/workerman-bundle/issues/583))
 

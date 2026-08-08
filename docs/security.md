@@ -72,11 +72,9 @@ Duplicate `Host`, `Content-Length`, and `Authorization` headers are suspicious a
 
 ### Control Character Rejection
 
-Header values containing control characters (`\x00-\x08`, `\x0B`, `\x0C`, `\x0E-\x1F`, `\x7F`) are rejected with an `\InvalidArgumentException`. This prevents:
+Header values containing bytes `\x00-\x08`, `\x0A-\x1F`, or `\x7F` are rejected with a `MalformedRequestException` (TAB, `\x09`, remains accepted because it is legal in field values). The request handler returns `400 Bad Request` for this client input. This protects against log forging and other protocol-level attacks through malformed header values.
 
-- HTTP response splitting via CR/LF injection in header values
-- Log forging via control characters in custom headers
-- Protocol-level attacks through malformed header values
+This check is not the response-splitting defence by itself. Response headers are independently protected by the `strpbrk()` CR/LF checks in Workerman's response writer and in the bundle's `DefaultResponseStrategy` and `StreamedResponseStrategy` header builders, which omit unsafe response headers rather than emitting them.
 
 ### Request URI and Method Validation
 

@@ -184,7 +184,7 @@ final class RequestConverter
 
             // Validate header value for control characters
             $stringValue = (string) $value;
-            if (\preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $stringValue)) {
+            if (\preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $stringValue)) {
                 throw new MalformedRequestException(
                     \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
                 );
