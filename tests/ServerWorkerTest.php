@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
+use Workerman\Events\Select;
+use Workerman\Timer;
 use Workerman\Worker;
 
 final class ServerWorkerTest extends TestCase
@@ -926,6 +928,173 @@ final class ServerWorkerTest extends TestCase
         $this->assertNotNull($worker->onMessage, 'onMessage should be set after onWorkerStart');
     }
 
+    public function testOnCloseCancelsPerConnectionTimersAndClearsContext(): void
+    {
+        $worker = $this->createStartedWorkerForTimerTests('ows-close-timers', 5, 5);
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        [$idleConnection, $idlePeer] = $this->createRealConnection($eventLoop);
+        [$keepaliveConnection, $keepalivePeer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($idleConnection, $worker);
+        $this->bindConnectionToWorker($keepaliveConnection, $worker);
+
+        try {
+            $baseline = $eventLoop->getTimerCount();
+            $this->assertSame(0, $baseline);
+
+            $onConnect = $worker->onConnect;
+            $this->assertNotNull($onConnect);
+            $onConnect($idleConnection);
+            $this->assertSame($baseline + 1, $eventLoop->getTimerCount(), 'connection timeout timer should be armed on connect');
+
+            $idleConnection->close();
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing before a request must cancel the connection-timeout timer');
+            $this->assertNull($idleConnection->context, 'worker-level onClose should clear connection context');
+
+            $onConnect($keepaliveConnection);
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onMessage);
+            $onMessage($keepaliveConnection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $this->assertSame($baseline + 1, $eventLoop->getTimerCount(), 'keepalive timer should be armed after a request');
+
+            $keepaliveConnection->close();
+            $this->assertSame($baseline, $eventLoop->getTimerCount(), 'closing after a request must cancel the keepalive timer');
+            $this->assertNull($keepaliveConnection->context, 'worker-level onClose should clear connection context after keepalive close');
+        } finally {
+            Timer::delAll();
+            @fclose($idlePeer);
+            @fclose($keepalivePeer);
+        }
+    }
+
+    public function testClosedConnectionIsCollectableAfterDestroyAndEventLoopTick(): void
+    {
+        $worker = $this->createStartedWorkerForTimerTests('ows-weakref', 5, 5);
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $this->assertNotNull($onConnect);
+            $onConnect($connection);
+
+            $weakReference = \WeakReference::create($connection);
+
+            $connection->destroy();
+            unset($connection);
+            gc_collect_cycles();
+
+            $this->runEventLoopFor($eventLoop, 0.01);
+            gc_collect_cycles();
+
+            $this->assertNull($weakReference->get(), 'closed connection should be collectable after destroy() and one event-loop tick');
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testConnectionTimeoutStillClosesIdleConnections(): void
+    {
+        $worker = $this->createStartedWorkerForTimerTests('ows-connection-timeout', 1, 5);
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $this->assertNotNull($onConnect);
+            $onConnect($connection);
+
+            $this->runEventLoopFor($eventLoop, 1.1);
+
+            $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
+            $this->assertNull($connection->context);
+            $this->assertSame(0, $eventLoop->getTimerCount());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testKeepaliveTimeoutStillClosesInactiveConnections(): void
+    {
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-timeout', 5, 1);
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+
+            $this->runEventLoopFor($eventLoop, 1.1);
+
+            $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
+            $this->assertNull($connection->context);
+            $this->assertSame(0, $eventLoop->getTimerCount());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testKeepaliveTimeoutZeroDoesNotScheduleKeepaliveTimer(): void
+    {
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-zero', 5, 0);
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $this->assertSame(1, $eventLoop->getTimerCount(), 'connection timeout timer should be armed before the first request');
+
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $this->assertSame(0, $eventLoop->getTimerCount(), 'keepaliveTimeout=0 must leave no timer armed after a request');
+
+            $this->runEventLoopFor($eventLoop, 0.05);
+
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus(), 'keepaliveTimeout=0 should not close active keep-alive connections');
+        } finally {
+            $connection->destroy();
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testTimerCancellationLogicIsCentralizedInOneHelper(): void
+    {
+        $source = file_get_contents(__DIR__ . '/../src/Worker/ServerWorker.php');
+        $this->assertIsString($source);
+        $this->assertSame(1, substr_count($source, 'private function cancelConnectionTimers'));
+        $this->assertSame(2, substr_count($source, 'Timer::del('), 'Timer cancellation should live in the helper only');
+        $this->assertStringContainsString('$worker->onClose = function (TcpConnection $connection): void {', $source);
+        $this->assertStringContainsString('$this->cancelConnectionTimers($connection);' . "\n            " . '$connection->context = null;', $source);
+        $this->assertStringContainsString('$worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler, $keepaliveTimeout): void {', $source);
+        $this->assertSame(3, substr_count($source, '$this->cancelConnectionTimers($connection);'));
+    }
+
     private function findWorkerByName(string $name): ?Worker
     {
         foreach (Worker::getAllWorkers() as $worker) {
@@ -935,6 +1104,83 @@ final class ServerWorkerTest extends TestCase
         }
 
         return null;
+    }
+
+    private function createStartedWorkerForTimerTests(string $name, int $connectionTimeout, int $keepaliveTimeout): Worker
+    {
+        $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+            ->addMethods(['__invoke'])
+            ->getMock();
+        $handler->method('withStaticFileConfig')->willReturnSelf();
+        $handler->method('withRootDirectory')->willReturnSelf();
+        $handler->method('__invoke')->willReturn(null);
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('boot');
+        $kernel->method('getContainer')->willReturn($container);
+
+        new ServerWorker(
+            new KernelFactory(fn(): KernelInterface => $kernel, []),
+            null,
+            null,
+            [
+                'name' => $name,
+                'listen' => 'http://127.0.0.1:0',
+            ],
+            connectionTimeout: $connectionTimeout,
+            keepaliveTimeout: $keepaliveTimeout,
+        );
+
+        $worker = $this->findWorkerByName('[Server] ' . $name);
+        $this->assertNotNull($worker);
+
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+
+        return $worker;
+    }
+
+    /**
+     * @return array{0: TcpConnection, 1: resource}
+     */
+    private function createRealConnection(Select $eventLoop): array
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+        if ($pair === false) {
+            $this->fail('Failed to create socket pair for TcpConnection test');
+        }
+
+        [$serverSocket, $peerSocket] = $pair;
+
+        return [
+            new TcpConnection($eventLoop, $serverSocket, '127.0.0.1:12345'),
+            $peerSocket,
+        ];
+    }
+
+    private function bindConnectionToWorker(TcpConnection $connection, Worker $worker): void
+    {
+        $connection->worker = $worker;
+        $worker->connections[$connection->id] = $connection;
+        $connection->onClose = $worker->onClose;
+        $connection->onMessage = $worker->onMessage;
+        $connection->onError = $worker->onError;
+        $connection->onBufferDrain = $worker->onBufferDrain;
+        $connection->onBufferFull = $worker->onBufferFull;
+    }
+
+    private function runEventLoopFor(Select $eventLoop, float $seconds): void
+    {
+        $eventLoop->delay($seconds, static function () use ($eventLoop): void {
+            $eventLoop->stop();
+        });
+        $eventLoop->run();
     }
 
     /**

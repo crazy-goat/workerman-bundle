@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Cancel `ServerWorker`'s per-connection timeout and keep-alive timers on connection close, centralize timer cleanup in one helper shared by `onMessage` and `onClose`, and keep `BinaryFileResponseStrategy` temp-file cleanup chained correctly with the worker-level `onClose` base callback ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571))
+
 ### Security
 
 - Fix the config-cache permission guard so it checks the object that

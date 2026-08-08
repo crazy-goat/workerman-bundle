@@ -62,16 +62,22 @@ final readonly class ServerWorker
 
         $bodySizeCap = $serverConfig['body_size_cap'] ?? null;
 
+        $worker->onClose = function (TcpConnection $connection): void {
+            $this->cancelConnectionTimers($connection);
+            $connection->context = null;
+        };
+
         $worker->onConnect = function (TcpConnection $connection) use ($connectionTimeout, $bodySizeCap): void {
             if ($bodySizeCap !== null) {
                 $connection->maxPackageSize = $bodySizeCap;
             }
 
             $connection->context ??= new \stdClass();
+            $connectionReference = \WeakReference::create($connection);
             $connection->context->connectionTimerId = Timer::add(
                 $connectionTimeout,
-                static function () use ($connection): void {
-                    $connection->close();
+                static function () use ($connectionReference): void {
+                    $connectionReference->get()?->close();
                 },
                 [],
                 false,
@@ -84,7 +90,7 @@ final readonly class ServerWorker
             // the connection cleanly instead of letting Workerman call
             // Worker::stopAll(250) which terminates the whole worker
             // process. See issue #577.
-            $connection->errorHandler = static function (\Throwable $e) use ($connection): void {
+            $connection->errorHandler = function (\Throwable $e) use ($connection): void {
                 // Log unconditionally — an escaped throwable should never
                 // happen and operators need visibility. Use error_log()
                 // because the PSR-3 logger is not easily reachable here.
@@ -97,14 +103,7 @@ final readonly class ServerWorker
 
                 // Clean up per-connection timers so they don't keep
                 // firing on a defunct connection after close().
-                if (isset($connection->context->keepaliveTimerId)) {
-                    Timer::del($connection->context->keepaliveTimerId);
-                    unset($connection->context->keepaliveTimerId);
-                }
-                if (isset($connection->context->connectionTimerId)) {
-                    Timer::del($connection->context->connectionTimerId);
-                    unset($connection->context->connectionTimerId);
-                }
+                $this->cancelConnectionTimers($connection);
 
                 $connection->close();
             };
@@ -123,15 +122,7 @@ final readonly class ServerWorker
             $handler = $this->configureHandler($kernel, $serverConfig, $rootDir);
 
             $worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler, $keepaliveTimeout): void {
-                if (isset($connection->context->connectionTimerId)) {
-                    Timer::del($connection->context->connectionTimerId);
-                    unset($connection->context->connectionTimerId);
-                }
-
-                if (isset($connection->context->keepaliveTimerId)) {
-                    Timer::del($connection->context->keepaliveTimerId);
-                    unset($connection->context->keepaliveTimerId);
-                }
+                $this->cancelConnectionTimers($connection);
 
                 try {
                     $handler($connection, $request);
@@ -141,10 +132,11 @@ final readonly class ServerWorker
 
                 if ($keepaliveTimeout > 0) {
                     $connection->context ??= new \stdClass();
+                    $connectionReference = \WeakReference::create($connection);
                     $connection->context->keepaliveTimerId = Timer::add(
                         $keepaliveTimeout,
-                        static function () use ($connection): void {
-                            $connection->close();
+                        static function () use ($connectionReference): void {
+                            $connectionReference->get()?->close();
                         },
                         [],
                         false,
@@ -200,6 +192,23 @@ final readonly class ServerWorker
         }
 
         return $callable;
+    }
+
+    private function cancelConnectionTimers(TcpConnection $connection): void
+    {
+        if (!$connection->context instanceof \stdClass) {
+            return;
+        }
+
+        if (isset($connection->context->keepaliveTimerId)) {
+            Timer::del($connection->context->keepaliveTimerId);
+            unset($connection->context->keepaliveTimerId);
+        }
+
+        if (isset($connection->context->connectionTimerId)) {
+            Timer::del($connection->context->connectionTimerId);
+            unset($connection->context->connectionTimerId);
+        }
     }
 
     /**
