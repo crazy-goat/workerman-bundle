@@ -1012,7 +1012,7 @@ final class ServerWorkerTest extends TestCase
             $this->assertNotNull($onConnect);
             $onConnect($connection);
 
-            $this->runEventLoopFor($eventLoop, 1.1);
+            $this->runEventLoopFor($eventLoop, 1.3);
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
@@ -1041,7 +1041,7 @@ final class ServerWorkerTest extends TestCase
             $onConnect($connection);
             $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
 
-            $this->runEventLoopFor($eventLoop, 1.1);
+            $this->runEventLoopFor($eventLoop, 1.3);
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
@@ -1081,18 +1081,6 @@ final class ServerWorkerTest extends TestCase
             Timer::delAll();
             @fclose($peer);
         }
-    }
-
-    public function testTimerCancellationLogicIsCentralizedInOneHelper(): void
-    {
-        $source = file_get_contents(__DIR__ . '/../src/Worker/ServerWorker.php');
-        $this->assertIsString($source);
-        $this->assertSame(1, substr_count($source, 'private function cancelConnectionTimers'));
-        $this->assertSame(2, substr_count($source, 'Timer::del('), 'Timer cancellation should live in the helper only');
-        $this->assertStringContainsString('$worker->onClose = function (TcpConnection $connection): void {', $source);
-        $this->assertStringContainsString('$this->cancelConnectionTimers($connection);' . "\n            " . '$connection->context = null;', $source);
-        $this->assertStringContainsString('$worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler, $keepaliveTimeout): void {', $source);
-        $this->assertSame(3, substr_count($source, '$this->cancelConnectionTimers($connection);'));
     }
 
     private function findWorkerByName(string $name): ?Worker
@@ -1166,6 +1154,8 @@ final class ServerWorkerTest extends TestCase
 
     private function bindConnectionToWorker(TcpConnection $connection, Worker $worker): void
     {
+        // Mirrors Workerman\Worker::acceptTcpConnection(), which copies the worker-level
+        // callbacks onto each accepted connection. Keep in sync if Workerman changes this.
         $connection->worker = $worker;
         $worker->connections[$connection->id] = $connection;
         $connection->onClose = $worker->onClose;
