@@ -54,18 +54,21 @@ final class SymfonyController
             try {
                 $this->symfonyRequest->getHost();
             } catch (SuspiciousOperationException) {
+                $this->resetServices();
+                $this->symfonyRequest = null;
+
                 return new Response(400);
             }
         }
 
-        $this->kernel->boot();
-
         try {
+            $this->kernel->boot();
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
             return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion());
         } catch (\Throwable $e) {
+            $this->resetServices();
             $this->symfonyRequest = null;
             $this->symfonyResponse = null;
             throw $e;
@@ -85,17 +88,21 @@ final class SymfonyController
      */
     public function terminateIfNeeded(): void
     {
-        if ($this->kernel instanceof TerminableInterface
-            && $this->symfonyRequest instanceof SymfonyRequest
-            && $this->symfonyResponse instanceof SymfonyResponse
-        ) {
-            try {
+        if (!$this->symfonyRequest instanceof SymfonyRequest && !$this->symfonyResponse instanceof SymfonyResponse) {
+            return;
+        }
+
+        try {
+            if ($this->kernel instanceof TerminableInterface
+                && $this->symfonyRequest instanceof SymfonyRequest
+                && $this->symfonyResponse instanceof SymfonyResponse
+            ) {
                 $this->kernel->terminate($this->symfonyRequest, $this->symfonyResponse);
-            } finally {
-                $this->resetServices();
-                $this->symfonyRequest = null;
-                $this->symfonyResponse = null;
             }
+        } finally {
+            $this->resetServices();
+            $this->symfonyRequest = null;
+            $this->symfonyResponse = null;
         }
     }
 

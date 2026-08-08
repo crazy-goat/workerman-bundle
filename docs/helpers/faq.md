@@ -82,3 +82,9 @@ handlers, caching repositories, static/global state) leaks data between
 requests. See [docs/troubleshooting.md](../troubleshooting.md) for
 detection and mitigation (`kernel.reset`, `EntityManager::clear()`,
 reload strategies).
+
+The `services_resetter` must run independently of `TerminableInterface` and
+also on kernel/response exceptions. `terminateIfNeeded()` owns the reset and
+must clear request references even when no kernel termination is available;
+controller failure paths reset before rethrowing so the handler can still
+send its error response (issue #572).
