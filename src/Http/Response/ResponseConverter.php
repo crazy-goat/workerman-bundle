@@ -33,13 +33,13 @@ final readonly class ResponseConverter
         $this->strategies = iterator_to_array($strategies, false);
     }
 
-    public function convert(SymfonyResponse $response, TcpConnection $connection): WorkermanResponse
+    public function convert(SymfonyResponse $response, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
         $headers = $this->extractHeaders($response);
 
         foreach ($this->strategies as $strategy) {
             if ($strategy->supports($response)) {
-                return $strategy->convert($response, $headers, $connection);
+                return $strategy->convert($response, $headers, $connection, $protocolVersion);
             }
         }
 

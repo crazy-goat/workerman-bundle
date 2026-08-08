@@ -60,7 +60,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -77,7 +77,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['application/pdf'],
             'Content-Disposition' => ['attachment; filename="report.pdf"'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -88,7 +88,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $strategy = new BinaryFileResponseStrategy();
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NOT_FOUND);
 
-        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
     }
@@ -106,7 +106,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('tempFileObject');
         $property->setValue($binaryResponse, $tempFile);
 
-        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('Temp file content', $workermanResponse->rawBody());
@@ -128,7 +128,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Range' => ['bytes 0-4/29'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -153,7 +153,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertFileExists($tempFile);
@@ -185,7 +185,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         // Simulate connection close without buffer drain (early disconnect)
         $onCloseCallback = $this->connection->onClose;
@@ -215,7 +215,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         // Trigger via onClose fallback
         $onCloseCallback = $this->connection->onClose;
@@ -241,7 +241,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         };
         $this->connection->onClose = $existingOnClose;
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Simulate buffer drain (primary path)
         $onBufferDrain = $this->connection->onBufferDrain;
@@ -276,7 +276,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $conn->context = null;
         };
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $onBufferDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($onBufferDrain);
@@ -312,7 +312,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         };
         $this->connection->onBufferDrain = $existingOnBufferDrain;
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Simulate buffer drain
         $onBufferDrain = $this->connection->onBufferDrain;
@@ -334,7 +334,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $onBufferDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($onBufferDrain);
@@ -360,7 +360,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $onCloseCallback = $this->connection->onClose;
         $this->assertNotNull($onCloseCallback);
@@ -386,7 +386,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Fire buffer drain
         $onBufferDrain = $this->connection->onBufferDrain;
@@ -413,7 +413,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Fire onClose (early disconnect)
         $onCloseCallback = $this->connection->onClose;
@@ -447,7 +447,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $conn->context = null;
         };
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $onCloseCallback = $this->connection->onClose;
         $onCloseCallback($this->connection);
@@ -473,7 +473,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Fire buffer drain (deletes file)
         $onBufferDrain = $this->connection->onBufferDrain;
@@ -492,7 +492,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK);
 
-        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertNotNull($workermanResponse->file);
@@ -509,7 +509,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         unlink($tempFile);
 
-        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
     }
@@ -533,7 +533,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
-        ], $this->connection);
+        ], $this->connection, '1.1');
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
     }
@@ -561,7 +561,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $onCloseCallback = $this->connection->onClose;
         assert(is_callable($onCloseCallback));
@@ -595,7 +595,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('deleteFileAfterSend');
         $property->setValue($binaryResponse, true);
 
-        $strategy->convert($binaryResponse, [], $this->connection);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         // Trigger via buffer drain (primary path)
         $onBufferDrain = $this->connection->onBufferDrain;

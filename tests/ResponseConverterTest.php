@@ -29,7 +29,7 @@ final class ResponseConverterTest extends TestCase
         $converter = new ResponseConverter($strategies);
 
         $regularResponse = new Response('regular');
-        $workermanResponse = $converter->convert($regularResponse, $this->connection);
+        $workermanResponse = $converter->convert($regularResponse, $this->connection, '1.1');
 
         $this->assertSame('regular', $workermanResponse->rawBody());
     }
@@ -41,7 +41,7 @@ final class ResponseConverterTest extends TestCase
 
         // Empty strategies array
         $converter = new ResponseConverter([]);
-        $converter->convert(new Response(), $this->connection);
+        $converter->convert(new Response(), $this->connection, '1.1');
     }
 
     public function testConvertPreservesHeaders(): void
@@ -55,7 +55,7 @@ final class ResponseConverterTest extends TestCase
         ]);
 
         // Should not throw - headers are passed to strategy
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('content', $workermanResponse->rawBody());
@@ -73,7 +73,7 @@ final class ResponseConverterTest extends TestCase
         ]);
 
         // Should not throw - headers are normalized and passed to strategy
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('text/html', $workermanResponse->getHeader('Content-Type'));
@@ -88,7 +88,7 @@ final class ResponseConverterTest extends TestCase
         };
 
         $converter = new ResponseConverter($generator());
-        $response = $converter->convert(new Response('test'), $this->connection);
+        $response = $converter->convert(new Response('test'), $this->connection, '1.1');
 
         $this->assertSame('test', $response->rawBody());
     }
@@ -107,7 +107,7 @@ final class ResponseConverterTest extends TestCase
             echo 'streamed content';
         });
 
-        $workermanResponse = $converter->convert($streamedResponse, $this->connection);
+        $workermanResponse = $converter->convert($streamedResponse, $this->connection, '1.1');
 
         // Content is sent directly via $connection->send(), not buffered in response
         $this->assertSame('', $workermanResponse->rawBody());
@@ -126,7 +126,7 @@ final class ResponseConverterTest extends TestCase
             'dnt' => '1',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertSame('"abc123"', $workermanResponse->getHeader('ETag'));
         $this->assertSame('deadbeef', $workermanResponse->getHeader('Content-MD5'));
@@ -146,8 +146,8 @@ final class ResponseConverterTest extends TestCase
             'etag' => '"v2"',
         ]);
 
-        $r1 = $converter->convert($response1, $this->connection);
-        $r2 = $converter->convert($response2, $this->connection);
+        $r1 = $converter->convert($response1, $this->connection, '1.1');
+        $r2 = $converter->convert($response2, $this->connection, '1.1');
 
         // Both calls hit the static cache on the second invocation
         $this->assertSame('"v1"', $r1->getHeader('ETag'));
@@ -164,14 +164,14 @@ final class ResponseConverterTest extends TestCase
             'content-type' => 'text/html',
             'x-custom-one' => 'first',
         ]);
-        $converter->convert($response1, $this->connection);
+        $converter->convert($response1, $this->connection, '1.1');
 
         // Second call on same instance hits cache entries
         $response2 = new Response('b', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'content-type' => 'application/json',
             'x-custom-two' => 'second',
         ]);
-        $workermanResponse = $converter->convert($response2, $this->connection);
+        $workermanResponse = $converter->convert($response2, $this->connection, '1.1');
 
         $this->assertSame('application/json', $workermanResponse->getHeader('Content-Type'));
         $this->assertSame('second', $workermanResponse->getHeader('X-Custom-Two'));
@@ -189,7 +189,7 @@ final class ResponseConverterTest extends TestCase
             'dnt' => '0',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertSame('text/plain', $workermanResponse->getHeader('Content-Type'));
         $this->assertSame('"abc"', $workermanResponse->getHeader('ETag'));
@@ -215,7 +215,7 @@ final class ResponseConverterTest extends TestCase
             'X-Custom' => 'kept',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertNull(
             $workermanResponse->getHeader($this->normalizeForAssertion($headerName)),
@@ -252,7 +252,7 @@ final class ResponseConverterTest extends TestCase
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('a', '1'));
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('b', '2'));
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $setCookie = $workermanResponse->getHeader('Set-Cookie');
         $this->assertIsArray($setCookie, 'Set-Cookie must keep its array shape to emit one line per cookie');
@@ -274,7 +274,7 @@ final class ResponseConverterTest extends TestCase
             'Content-Range' => 'bytes 0-99/5000',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertSame('bytes 0-99/5000', $workermanResponse->getHeader('Content-Range'));
     }
@@ -294,7 +294,7 @@ final class ResponseConverterTest extends TestCase
         // Force a header with only null values, as Symfony can produce.
         $response->headers->set('X-Empty', null);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $this->assertNull($workermanResponse->getHeader('X-Empty'));
         $this->assertSame('kept', $workermanResponse->getHeader('X-Custom'));

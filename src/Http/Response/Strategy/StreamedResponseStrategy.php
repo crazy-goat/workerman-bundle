@@ -31,17 +31,25 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
         return $response instanceof StreamedResponse;
     }
 
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
+        $isHttp10 = $protocolVersion === '1.0';
         $sendChunkSize = max($this->chunkSize, self::MIN_CHUNK_SIZE);
 
-        $head = $this->buildHeaderString($headers, $response->getStatusCode());
+        $head = $this->buildHeaderString($headers, $response->getStatusCode(), $protocolVersion);
         $connection->send($head, true);
 
+        // HTTP/1.0 has no chunked transfer encoding; the body is streamed raw
+        // and the connection is closed by HttpRequestHandler (the head carries
+        // Connection: close). For HTTP/1.1 each flushed chunk is hex-framed.
+        $frame = static fn(string $chunk): string => $isHttp10
+            ? $chunk
+            : dechex(strlen($chunk)) . "\r\n{$chunk}\r\n";
+
         $initialLevel = ob_get_level();
-        $obStarted = ob_start(function (string $chunk) use ($connection): string {
+        $obStarted = ob_start(function (string $chunk) use ($connection, $frame): string {
             if ($chunk !== '') {
-                $connection->send(dechex(strlen($chunk)) . "\r\n{$chunk}\r\n", true);
+                $connection->send($frame($chunk), true);
             }
 
             return '';
@@ -64,7 +72,9 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
             ob_end_flush();
         }
 
-        $connection->send("0\r\n\r\n", true);
+        if (!$isHttp10) {
+            $connection->send("0\r\n\r\n", true);
+        }
 
         if ($connection->context instanceof \stdClass) {
             $connection->context->responseSentDirectly = true;
@@ -76,10 +86,10 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
     /**
      * @param array<string, string|list<string|null>> $headers
      */
-    private function buildHeaderString(array $headers, int $statusCode): string
+    private function buildHeaderString(array $headers, int $statusCode, string $protocolVersion): string
     {
         $reason = WorkermanResponse::PHRASES[$statusCode] ?? 'Unknown';
-        $head = "HTTP/1.1 {$statusCode} {$reason}\r\n";
+        $head = "HTTP/{$protocolVersion} {$statusCode} {$reason}\r\n";
 
         foreach ($headers as $name => $values) {
             if (strpbrk($name, ":\r\n") !== false) {
@@ -93,6 +103,11 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
             if (strcasecmp($name, 'Transfer-Encoding') === 0) {
                 continue;
             }
+            // For HTTP/1.0 this strategy owns the Connection header (the body
+            // is close-delimited); never emit a conflicting app-provided value.
+            if ($protocolVersion === '1.0' && strcasecmp($name, 'Connection') === 0) {
+                continue;
+            }
             foreach ((array) $values as $value) {
                 if ($value !== null && strpbrk($value, "\r\n") !== false) {
                     continue;
@@ -101,7 +116,11 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
             }
         }
 
-        $head .= "Transfer-Encoding: chunked\r\n";
+        if ($protocolVersion === '1.0') {
+            $head .= "Connection: close\r\n";
+        } else {
+            $head .= "Transfer-Encoding: chunked\r\n";
+        }
 
         return $head . "\r\n";
     }

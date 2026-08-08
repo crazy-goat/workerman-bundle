@@ -34,8 +34,12 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         return $response instanceof BinaryFileResponse;
     }
 
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
+        // $protocolVersion is intentionally unused: this strategy returns a
+        // regular WorkermanResponse (with or without withFile()); the status
+        // line and Connection header are handled by Workerman and by
+        // HttpRequestHandler::sendResponse().
         /** @var BinaryFileResponse $response */
         $workermanResponse = new WorkermanResponse(
             $response->getStatusCode(),

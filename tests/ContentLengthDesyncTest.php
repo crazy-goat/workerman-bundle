@@ -105,7 +105,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '5',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $head = (string) $workermanResponse;
 
@@ -127,7 +127,7 @@ final class ContentLengthDesyncTest extends TestCase
     public function testLargeBodyPathEmitsSingleContentLength(): void
     {
         $converter = new ResponseConverter([
-            new DefaultResponseStrategy(2048),
+            new DefaultResponseStrategy(),
         ]);
 
         $body = str_repeat('a', 4096);
@@ -135,11 +135,11 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => (string) strlen($body),
         ]);
 
-        $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
-        $sent = implode('', $this->getSent());
-        $this->assertSame(1, substr_count($sent, 'Content-Length:'));
-        $this->assertStringContainsString('Content-Length: 4096', $sent);
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 4096', $wire);
     }
 
     /**
@@ -157,7 +157,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '999',
         ]);
 
-        $converter->convert($streamedResponse, $this->connection);
+        $converter->convert($streamedResponse, $this->connection, '1.1');
 
         $sent = implode('', $this->getSent());
         $this->assertSame(0, substr_count($sent, 'Content-Length:'), 'Streamed path must not emit Content-Length even if the app set one');
@@ -177,7 +177,7 @@ final class ContentLengthDesyncTest extends TestCase
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('a', '1'));
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('b', '2'));
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $head = (string) $workermanResponse;
 
@@ -215,7 +215,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '999',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $head = (string) $workermanResponse;
 
@@ -237,7 +237,7 @@ final class ContentLengthDesyncTest extends TestCase
             'ETag' => '"abc"',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $head = (string) $workermanResponse;
 
@@ -260,7 +260,7 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
 
-        $workermanResponse = $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
 
         $output = (string) $workermanResponse;
 
@@ -290,7 +290,7 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $binaryResponse->prepare($this->createSymfonyRequest(range: 'bytes=0-99'));
 
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1');
 
         // Drive the real Workerman serializer. For files < 2MB, encode() sends
         // head + body in one send() call and returns ''.
@@ -330,7 +330,7 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $binaryResponse->prepare($this->createSymfonyRequest());
 
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection);
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1');
 
         $return = Http::encode($workermanResponse, $this->connection);
         $this->assertSame('', $return);

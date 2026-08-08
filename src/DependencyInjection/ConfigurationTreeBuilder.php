@@ -83,7 +83,7 @@ final readonly class ConfigurationTreeBuilder
                 ->defaultValue(30)
                 ->end()
             ->integerNode('response_chunk_size')
-                ->info('Response chunk size')
+                ->info('Streamed response chunk size')
                 ->defaultValue(2048)
                 ->end()
             ->arrayNode('trusted_hosts')

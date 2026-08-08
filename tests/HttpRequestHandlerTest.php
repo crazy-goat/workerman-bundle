@@ -495,6 +495,22 @@ final class HttpRequestHandlerTest extends TestCase
         ($this->handler)($connection, $request);
 
         $this->assertTrue($connection->closed, 'HTTP/1.0 request should close the connection');
+        $this->assertStringStartsWith("HTTP/1.0 200 OK\r\n", $connection->sentData[0]);
+        $this->assertStringContainsString("Connection: close\r\n", $connection->sentData[0]);
+    }
+
+    public function testLargeResponseIsSentInOneTransportWrite(): void
+    {
+        $body = str_repeat('a', 1024 * 1024);
+        $kernel = new HttpHandlerTestKernel(new SymfonyResponse($body));
+        $controller = new SymfonyController($kernel, new ResponseConverter([new DefaultResponseStrategy()]));
+        $handler = new HttpRequestHandler($controller, $this->rebootStrategy, new NullLogger());
+        $connection = new MockTcpConnection();
+
+        $handler($connection, new Request(self::HTTP11));
+
+        $this->assertCount(1, $connection->sentData);
+        $this->assertStringEndsWith("\r\n{$body}", $connection->sentData[0]);
     }
 
     public function testInvokeHttp11KeepsConnectionOpen(): void
@@ -1014,8 +1030,9 @@ final class HttpRequestHandlerTest extends TestCase
 
         $connection = new MockTcpConnection();
         $response = new \Workerman\Protocols\Http\Response(200, [], 'Body content');
+        $request = new Request(self::HTTP11);
 
-        $method->invoke($this->handler, $connection, $response);
+        $method->invoke($this->handler, $connection, $response, $request);
 
         $this->assertCount(1, $connection->sentData);
         $this->assertStringContainsString('Body content', $connection->sentData[0]);
@@ -1031,8 +1048,9 @@ final class HttpRequestHandlerTest extends TestCase
         $connection->context->responseSentDirectly = true;
 
         $response = new \Workerman\Protocols\Http\Response(200, [], 'Body content');
+        $request = new Request(self::HTTP11);
 
-        $method->invoke($this->handler, $connection, $response);
+        $method->invoke($this->handler, $connection, $response, $request);
 
         $this->assertCount(0, $connection->sentData, 'Should skip send when responseSentDirectly is set');
         $this->assertFalse(
