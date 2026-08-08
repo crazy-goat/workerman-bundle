@@ -23,6 +23,16 @@ final readonly class ProcessInspector
      */
     private const TIMEOUT_BUFFER = 3;
 
+    /**
+     * The process comm (prctl PR_SET_NAME) of a Workerman master as
+     * visible in `/proc/$pid/comm` on Linux. `cli_set_process_title()`
+     * always sets the comm, but on PHP >= 8.5 it no longer rewrites the
+     * argv memory area, so `/proc/$pid/cmdline` keeps the original
+     * command line; the comm is truncated to 15 chars by the kernel
+     * ("WorkerMan: mast").
+     */
+    private const MASTER_COMM = 'WorkerMan: mast';
+
     public function __construct(
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -211,8 +221,20 @@ final readonly class ProcessInspector
             $cmdline = "/proc/{$masterPid}/cmdline";
             if (is_readable($cmdline)) {
                 $content = file_get_contents($cmdline);
-                if (\is_string($content) && $content !== '') {
-                    return str_contains($content, 'WorkerMan: master process');
+                if (\is_string($content) && $content !== '' && str_contains($content, 'WorkerMan: master process')) {
+                    return true;
+                }
+            }
+
+            // On PHP >= 8.5, cli_set_process_title() no longer rewrites
+            // the argv memory area, so /proc/$pid/cmdline keeps the
+            // original command line — but the comm is always set via
+            // prctl and is truncated to 15 chars by the kernel.
+            $comm = "/proc/{$masterPid}/comm";
+            if (is_readable($comm)) {
+                $content = file_get_contents($comm);
+                if (\is_string($content) && \trim($content) === self::MASTER_COMM) {
+                    return true;
                 }
             }
         }
@@ -262,13 +284,23 @@ final readonly class ProcessInspector
         // containing "WorkerMan"; it is tightened to the actual master
         // title so an unrelated "WorkerMan" mention cannot match (issue #584).
         $cmdline = "/proc/{$parentPid}/cmdline";
-        if (!is_readable($cmdline)) {
-            return;
+        if (is_readable($cmdline)) {
+            $content = file_get_contents($cmdline);
+            if (\is_string($content) && $content !== '' && str_contains($content, 'WorkerMan: master process')) {
+                posix_kill($parentPid, \SIGKILL);
+
+                return;
+            }
         }
 
-        $content = file_get_contents($cmdline);
-        if (\is_string($content) && str_contains($content, 'WorkerMan: master process')) {
-            posix_kill($parentPid, \SIGKILL);
+        // PHP >= 8.5 keeps the original argv in /proc/$pid/cmdline;
+        // match the comm (always set via prctl, truncated to 15 chars).
+        $comm = "/proc/{$parentPid}/comm";
+        if (is_readable($comm)) {
+            $content = file_get_contents($comm);
+            if (\is_string($content) && \trim($content) === self::MASTER_COMM) {
+                posix_kill($parentPid, \SIGKILL);
+            }
         }
     }
 
