@@ -327,6 +327,119 @@ final class RebootStrategyTest extends TestCase
         $this->assertFalse($schedulerCalled, 'GC scheduler should not be called when memory is below gcLimit');
     }
 
+    public function testMemoryRebootStrategyVerdictUsesPostGcReadingAboveLimit(): void
+    {
+        gc_collect_cycles();
+
+        $garbage = [];
+        for ($i = 0; $i < 4000; ++$i) {
+            $a = new \stdClass();
+            $b = new \stdClass();
+            $a->self = $b;
+            $b->self = $a;
+            $garbage[] = $a;
+        }
+        unset($garbage, $a, $b);
+
+        $schedulerRan = 0;
+        $freed = 0;
+        $scheduler = static function () use (&$schedulerRan, &$freed): void {
+            ++$schedulerRan;
+            $freed += gc_collect_cycles();
+        };
+
+        // The limit sits just below the pre-GC reading: only the strategy's own
+        // collection can keep the worker from being reloaded.
+        $strategy = new MemoryRebootStrategy(memory_get_usage() - 1, 1, 60, $scheduler);
+
+        $this->assertFalse(
+            $strategy->shouldReboot(),
+            'The reload verdict must be based on the post-collection reading',
+        );
+        $this->assertSame(1, $schedulerRan);
+        $this->assertGreaterThan(0, $freed, 'The synchronous scheduler must have freed the cycles');
+    }
+
+    public function testMemoryRebootStrategyCollectsSynchronouslyAboveLimitWithDefaultScheduler(): void
+    {
+        gc_collect_cycles();
+
+        $garbage = [];
+        for ($i = 0; $i < 4000; ++$i) {
+            $a = new \stdClass();
+            $b = new \stdClass();
+            $a->self = $b;
+            $b->self = $a;
+            $garbage[] = $a;
+        }
+        unset($garbage, $a, $b);
+
+        $runsBefore = gc_status()['runs'];
+
+        $strategy = new MemoryRebootStrategy(1, 1);
+        $this->assertTrue($strategy->shouldReboot());
+
+        $this->assertSame(
+            $runsBefore + 1,
+            gc_status()['runs'],
+            'At risk of reload, the default scheduler must run gc_collect_cycles() synchronously',
+        );
+    }
+
+    public function testMemoryRebootStrategyDoesNotCollectInlineWhenBelowLimit(): void
+    {
+        gc_collect_cycles();
+
+        $garbage = [];
+        for ($i = 0; $i < 4000; ++$i) {
+            $a = new \stdClass();
+            $b = new \stdClass();
+            $a->self = $b;
+            $b->self = $a;
+            $garbage[] = $a;
+        }
+        unset($garbage, $a, $b);
+
+        // Default scheduler: the preventive collection is deferred via
+        // Timer::add(0, ...), which never fires in this unit test, so the
+        // cycles must still be present after shouldReboot().
+        $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1);
+        $this->assertFalse($strategy->shouldReboot());
+
+        $this->assertGreaterThan(
+            0,
+            gc_collect_cycles(),
+            'Preventive GC must be deferred, not run inline in the request path',
+        );
+    }
+
+    public function testMemoryRebootStrategyStillRebootsWhenCollectionDoesNotHelp(): void
+    {
+        $strategy = new MemoryRebootStrategy(1, 1, 60, static function (): void {
+        });
+
+        $this->assertTrue($strategy->shouldReboot());
+    }
+
+    public function testMemoryRebootStrategyCooldownBlockedCollectionKeepsReloadVerdict(): void
+    {
+        $schedulerCalls = 0;
+        $scheduler = static function () use (&$schedulerCalls): void {
+            ++$schedulerCalls;
+        };
+
+        $strategy = new MemoryRebootStrategy(1, 1, 60, $scheduler);
+
+        $this->assertTrue($strategy->shouldReboot());
+        $this->assertSame(1, $schedulerCalls);
+
+        // Within gc_cooldown no collection is attempted; the verdict must fall
+        // back to the current reading instead of pretending memory is fine.
+        $this->assertTrue($strategy->shouldReboot());
+        $this->assertSame(1, $schedulerCalls);
+    }
+
+
     public function testStackRebootStrategyReturnsFalseWithEmptyStack(): void
     {
         $strategy = new StackRebootStrategy([]);

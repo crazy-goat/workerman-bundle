@@ -50,8 +50,8 @@ interface RebootStrategyInterface
      * call entirely, saving a syscall on the hot path for every request.
      *
      * Strategies that read memory_get_peak_usage() in shouldReboot() (e.g.,
-     * MemoryRebootStrategy) should return true here. All other strategies
-     * should return false.
+     * a strategy tracking peak usage over the request lifecycle) should
+     * return true here. All other strategies should return false.
      *
      * @return bool true if memory_reset_peak_usage() must be called before
      *              every request for this strategy to work correctly.

@@ -36,7 +36,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 4. **Response conversion with strategy pattern** — `BinaryFileResponseStrategy` (uses Workerman's `withFile()`, supports `SplTempFileObject`, offset/maxlen, `deleteFileAfterSend` cleanup), `StreamedResponseStrategy` (chunked transfer encoding), `DefaultResponseStrategy` (large responses via chunked transfer directly to connection), header name normalization with caching. Upstream buffers everything in memory.
 
-5. **Memory reload strategy** — preemptive `gc_collect_cycles()` before reload check, configurable `limit` (default 128 MB), `gc_limit` (default 96 MB), `gc_cooldown` (default 60s).
+5. **Memory reload strategy** — reloads the worker when emalloc'ed memory exceeds `limit` (default 128 MB); a `gc_collect_cycles()` is attempted once memory passes `gc_limit` (default 96 MB) — synchronously, before the reload decision, whenever the worker is also above `limit` (so a collection that frees enough memory avoids the reload), and deferred to the next event-loop tick otherwise; `gc_cooldown` (default 60s) limits collection frequency.
 
 6. **Trusted hosts** — `trusted_hosts` config key with regex patterns, rejects non-matching `Host` header via `SuspiciousOperationException` (400).
 
@@ -259,7 +259,7 @@ There are a few restart strategies that are implemented and can be enabled or di
    Reload worker after each request.
  - **memory**  
    Reload worker when memory usage reaches a certain threshold. Three options are available:
-   `active` (default: `false`) toggles the strategy, `limit` (default: `134217728` — 128 MB) is the RSS threshold in bytes that triggers a worker reload, and `gc_limit` (default: `100663296` — 96 MB) runs `gc_collect_cycles()` preemptively before the reload check.
+   `active` (default: `false`) toggles the strategy, `limit` (default: `134217728` — 128 MB) is the memory threshold in bytes that triggers a worker reload, and `gc_limit` (default: `100663296` — 96 MB) attempts `gc_collect_cycles()` to free memory before the reload check. Memory is measured with `memory_get_usage()` (emalloc accounting), not `memory_get_usage(true)` (real usage): emalloc accounting drops as soon as collectable cycles are freed, whereas the allocator arena behind real usage does not shrink from `gc_collect_cycles()` — with real usage the post-collection re-check could never avoid a reload. When the worker is at risk of reloading (already above `limit`), the collection runs synchronously so the reload verdict is based on the post-collection reading; otherwise it is deferred to the next event-loop tick to keep the request path short. `gc_cooldown` (default: `60`) is the minimum number of seconds between collection attempts; a collection blocked by the cooldown leaves the reload verdict on the current memory reading.
 
    ```yaml
    workerman:
