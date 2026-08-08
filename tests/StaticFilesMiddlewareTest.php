@@ -755,6 +755,8 @@ final class StaticFilesMiddlewareTest extends TestCase
             'Temp file' => ['config.php.tmp', 'tmp'],
             'Old version' => ['config.php.old', 'old'],
             'Distribution template' => ['config.inc.dist', 'dist'],
+            'Plain distribution template' => ['config.dist', 'dist'],
+            'Exported backup' => ['export.bak', 'bak'],
             'SQL dump' => ['backup.sql', 'sql'],
             'Log file' => ['app.log', 'log'],
             'PEM private key' => ['id_rsa.pem', 'pem'],
@@ -886,7 +888,7 @@ final class StaticFilesMiddlewareTest extends TestCase
 
     public function testLegitimateCompoundExtensionsStillServed(): void
     {
-        $files = ['app.js.map', 'font.woff2', 'lib.tar.gz'];
+        $files = ['app.js.map', 'font.woff2', 'lib.tar.gz', 'app.dist.js'];
         foreach ($files as $fileName) {
             file_put_contents($this->rootDirectory . '/' . $fileName, 'x');
         }
@@ -903,6 +905,35 @@ final class StaticFilesMiddlewareTest extends TestCase
             foreach ($files as $fileName) {
                 @unlink($this->rootDirectory . '/' . $fileName);
             }
+        }
+    }
+
+    public function testResidueSuffixDirectoriesAreNotBlocked(): void
+    {
+        $dir = $this->rootDirectory . '/assets.dist';
+        $backupDir = $this->rootDirectory . '/backup.bak';
+        mkdir($dir);
+        mkdir($backupDir);
+        file_put_contents($dir . '/logo.png', 'png');
+        file_put_contents($backupDir . '/style.css', 'css');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+            $next = fn(Request $req): Response => new Response(404);
+
+            foreach (['/assets.dist/logo.png', '/backup.bak/style.css'] as $path) {
+                $response = $middleware($this->createRequest($path), $next);
+                $this->assertSame(
+                    200,
+                    $response->getStatusCode(),
+                    "Asset under a residue-suffix directory should be served: $path",
+                );
+            }
+        } finally {
+            @unlink($dir . '/logo.png');
+            @unlink($backupDir . '/style.css');
+            @rmdir($dir);
+            @rmdir($backupDir);
         }
     }
 

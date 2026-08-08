@@ -17,11 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left in `public/` (`index.php~`, `index.php.bak`, `config.php.save`,
   `config.inc`, `backup.sql`, …) disclosed full PHP source or credentials
   over HTTP. The denylist now also rejects names ending in `~` (vim/emacs
-  backups) and `#…#` (emacs autosaves), extends the blocked extension list
-  with `phps`, `inc`, `bak`, `orig`, `rej`, `save`, `swp`, `swo`, `tmp`,
-  `old`, `dist`, `sql`, `log`, `pem`, `key`, `crt`, `sqlite`, `sqlite3`,
-  `db`, and checks every dot-separated extension segment so a blocked
-  extension is caught wherever it appears (`x.phar.gz`, `x.php.txt`)
+  backups), extends the blocked extension list with `phps`, `inc`, `sql`,
+  `log`, `pem`, `key`, `crt`, `sqlite`, `sqlite3`, `db` — checked in every
+  dot-separated suffix segment so they are caught wherever they appear
+  (`x.phar.gz`, `x.php.txt`) — and with `bak`, `orig`, `rej`, `save`, `swp`,
+  `swo`, `tmp`, `old`, `dist` — blocked as the final extension of a file
+  only (`config.dist` is denied, an `assets.dist/` directory or an interior
+  `app.dist.js` segment is not)
   ([#582](https://github.com/crazy-goat/workerman-bundle/issues/582))
 
 - Harden master-process identification before sending signals. The legacy

@@ -114,10 +114,10 @@ Configure `trusted_hosts` when your application generates absolute URLs based on
 The following are **always blocked** (requests return 404):
 
 - **Dotfiles and dot-directories**: Any path component starting with `.` is rejected (e.g., `.env`, `.git/HEAD`, `.htaccess`, `.hidden/secret.txt`).
-- **Editor backup residue**: any name ending in `~` (vim/emacs backups, e.g. `index.php~`) and any name wrapped in `#...#` (emacs autosaves) is rejected.
-- **Source and executable extensions**: `.php`, `.phar`, `.phtml`, `.phps` and `.inc` files are never served. The check applies to every dot-separated extension segment, so a blocked extension is caught wherever it appears in a compound name (`x.php.bak`, `x.phar.gz`).
-- **Editor backup and deploy-residue extensions**: `.bak`, `.orig`, `.rej`, `.save`, `.swp`, `.swo`, `.tmp`, `.old`, `.dist`.
-- **Credentials, dumps and logs**: `.sql`, `.log`, `.pem`, `.key`, `.crt`, `.sqlite`, `.sqlite3`, `.db`.
+- **Editor backup residue**: any name ending in `~` (vim/emacs backups, e.g. `index.php~`) and any name wrapped in `#...#` (emacs autosaves) is rejected. The `#...#` rule is enforced defensively at the path-component level — normal HTTP path parsing already strips `#` fragments, so fragment-style names are in practice unreachable through URLs.
+- **Source and executable extensions**: `.php`, `.phar`, `.phtml`, `.phps` and `.inc` files are never served. The check applies to every dot-separated segment of the suffix, so a blocked extension is caught wherever it appears in a compound name (`x.php.bak`, `x.php.txt`, `x.phar.gz`).
+- **Credentials, dumps and logs**: `.sql`, `.log`, `.pem`, `.key`, `.crt`, `.sqlite`, `.sqlite3`, `.db` — also checked in every segment of a compound suffix.
+- **Editor backup and deploy-residue extensions**: `.bak`, `.orig`, `.rej`, `.save`, `.swp`, `.swo`, `.tmp`, `.old`, `.dist` — blocked as the final extension of a file only. An interior segment (`app.dist.js`) or a directory name (`assets.dist/`) is not a leak signal on its own; the contents are still covered by the rules above (and by the allowlist when configured).
 - **Well-known leak files**: `composer.json`, `composer.lock`, and `package.json` are blocked.
 - **Server configuration files**: `.htaccess` and `.htpasswd` are blocked.
 
