@@ -490,9 +490,11 @@ final class ProcessInspectorTest extends TestCase
         }
 
         try {
+            $cmdline = \is_readable("/proc/{$pid}/cmdline") ? (string) @file_get_contents("/proc/{$pid}/cmdline") : 'unreadable';
+            $comm = \is_readable("/proc/{$pid}/comm") ? \trim((string) @file_get_contents("/proc/{$pid}/comm")) : 'unreadable';
             $this->assertTrue(
                 $this->inspector->isMasterRunning($pid),
-                'isMasterRunning() must accept a process carrying the Workerman master title',
+                'isMasterRunning() must accept a process carrying the Workerman master title (cmdline=' . var_export(\str_replace("\0", ' ', $cmdline), true) . ', comm=' . var_export($comm, true) . ')',
             );
         } finally {
             posix_kill($pid, SIGKILL);
