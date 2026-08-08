@@ -1029,8 +1029,9 @@ final class HttpRequestHandlerTest extends TestCase
 
         $connection = new MockTcpConnection();
         $response = new \Workerman\Protocols\Http\Response(200, [], 'Body content');
+        $request = new Request(self::HTTP11);
 
-        $method->invoke($this->handler, $connection, $response);
+        $method->invoke($this->handler, $connection, $response, $request);
 
         $this->assertCount(1, $connection->sentData);
         $this->assertStringContainsString('Body content', $connection->sentData[0]);
@@ -1046,8 +1047,9 @@ final class HttpRequestHandlerTest extends TestCase
         $connection->context->responseSentDirectly = true;
 
         $response = new \Workerman\Protocols\Http\Response(200, [], 'Body content');
+        $request = new Request(self::HTTP11);
 
-        $method->invoke($this->handler, $connection, $response);
+        $method->invoke($this->handler, $connection, $response, $request);
 
         $this->assertCount(0, $connection->sentData, 'Should skip send when responseSentDirectly is set');
         $this->assertFalse(

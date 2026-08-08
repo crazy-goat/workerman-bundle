@@ -64,10 +64,7 @@ final class SymfonyController
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
-            $response = $this->responseConverter->convert($this->symfonyResponse, $connection);
-            $response->withProtocolVersion($request->protocolVersion());
-
-            return $response;
+            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion());
         } catch (\Throwable $e) {
             $this->symfonyRequest = null;
             $this->symfonyResponse = null;

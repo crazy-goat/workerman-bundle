@@ -143,8 +143,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
     /**
      * Send the response to the connection, unless already sent by a middleware.
+     *
+     * The response is stamped with the request's protocol version so the
+     * status line matches the client (e.g. HTTP/1.0 requests receive an
+     * HTTP/1.0 response line). When the connection will be closed after
+     * this response (HTTP/1.0 or a Connection: close request header), a
+     * matching Connection: close header is emitted instead of Workerman's
+     * default keep-alive.
      */
-    private function sendResponse(TcpConnection $connection, Http\Response $response): void
+    private function sendResponse(TcpConnection $connection, Http\Response $response, Request $request): void
     {
         $responseAlreadySent = $connection->context instanceof \stdClass
             && isset($connection->context->responseSentDirectly);
@@ -152,6 +159,11 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             unset($connection->context->responseSentDirectly);
 
             return;
+        }
+
+        $response->withProtocolVersion($request->protocolVersion());
+        if ($this->shouldCloseConnection($request)) {
+            $response->header('Connection', 'close');
         }
 
         $connection->send(Http::encode($response, $connection), true);
@@ -297,12 +309,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
         try {
             $response = $pipeline($request, $controllerCall);
-            $this->sendResponse($connection, $response);
+            $this->sendResponse($connection, $response, $request);
         } catch (\Throwable $e) {
             $clientError = $this->isClientError($e);
             $this->logThrowable($e, $clientError);
             try {
-                $this->sendResponse($connection, $this->buildErrorResponse($clientError));
+                $this->sendResponse($connection, $this->buildErrorResponse($clientError), $request);
             } catch (\Throwable $sendError) {
                 // Best-effort: if even the error-response send fails, log
                 // and close. We must not let the throwable escape __invoke()

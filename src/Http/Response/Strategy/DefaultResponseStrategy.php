@@ -16,8 +16,12 @@ final readonly class DefaultResponseStrategy implements ResponseConverterStrateg
         return true;
     }
 
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
+        // $protocolVersion is intentionally unused: this strategy returns a
+        // regular WorkermanResponse whose status line is derived by Workerman
+        // itself; HttpRequestHandler::sendResponse() stamps the request's
+        // protocol version centrally before encoding.
         return new WorkermanResponse(
             $response->getStatusCode(),
             $headers,

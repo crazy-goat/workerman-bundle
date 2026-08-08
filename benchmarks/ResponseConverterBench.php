@@ -65,21 +65,21 @@ final class ResponseConverterBench
 
     public function benchSimpleResponse(): void
     {
-        $this->converter->convert($this->simpleResponse, $this->connection);
+        $this->converter->convert($this->simpleResponse, $this->connection, '1.1');
     }
 
     public function benchHeaderHeavyResponse(): void
     {
-        $this->converter->convert($this->headerHeavyResponse, $this->connection);
+        $this->converter->convert($this->headerHeavyResponse, $this->connection, '1.1');
     }
 
     public function benchIrregularHeadersResponse(): void
     {
-        $this->converter->convert($this->irregularHeadersResponse, $this->connection);
+        $this->converter->convert($this->irregularHeadersResponse, $this->connection, '1.1');
     }
 
     public function benchLargeBodyResponse(): void
     {
-        $this->converter->convert($this->largeBodyResponse, $this->connection);
+        $this->converter->convert($this->largeBodyResponse, $this->connection, '1.1');
     }
 }

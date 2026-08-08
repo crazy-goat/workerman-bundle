@@ -23,7 +23,7 @@ final class DefaultResponseStrategyTest extends TestCase
         $strategy = new DefaultResponseStrategy();
         $symfonyResponse = new Response('Hello World', \Symfony\Component\HttpFoundation\Response::HTTP_OK, ['Content-Type' => 'text/plain']);
 
-        $workermanResponse = $strategy->convert($symfonyResponse, ['Content-Type' => ['text/plain']], $this->connection);
+        $workermanResponse = $strategy->convert($symfonyResponse, ['Content-Type' => ['text/plain']], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('Hello World', $workermanResponse->rawBody());
@@ -34,7 +34,7 @@ final class DefaultResponseStrategyTest extends TestCase
         $strategy = new DefaultResponseStrategy();
         $symfonyResponse = new Response();
 
-        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame('', $workermanResponse->rawBody());
@@ -49,7 +49,7 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->connection->expects($this->never())
             ->method('send');
 
-        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection, '1.1');
 
         $this->assertSame(1024, strlen($workermanResponse->rawBody()));
     }
@@ -64,7 +64,7 @@ final class DefaultResponseStrategyTest extends TestCase
             ->expects($this->never())
             ->method('send');
 
-        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
+        $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection, '1.1');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
         $this->assertSame($body, $workermanResponse->rawBody());
@@ -81,6 +81,7 @@ final class DefaultResponseStrategyTest extends TestCase
             $symfonyResponse,
             ['Content-Type' => 'text/plain', 'X-Test' => 'value'],
             $this->connection,
+            '1.1',
         );
 
         $wire = (string) $workermanResponse;

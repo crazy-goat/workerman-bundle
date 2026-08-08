@@ -22,6 +22,9 @@ interface ResponseConverterStrategyInterface
      *        with transport-owned headers (Content-Length, Accept-Ranges,
      *        Transfer-Encoding) already stripped and single-valued headers
      *        flattened to strings (except Set-Cookie)
+     * @param string $protocolVersion The request's HTTP protocol version
+     *        (e.g. '1.1' or '1.0'); strategies that build their own status
+     *        line must derive it from this value
      */
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse;
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse;
 }
