@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Harden master-process identification before sending signals. The legacy
+  `/proc/$pid/cmdline` fallback accepted any process whose command line
+  contained the substring `php` (and returned `true` unconditionally when
+  the cmdline was unreadable or on non-Linux hosts), so a stale or
+  attacker-supplied pid file could make `stop()`/`reload()`/`status` signal
+  an unrelated PHP process. The fallback now matches the process title
+  Workerman assigns to its master process (`WorkerMan: master process ...`)
+  and fails closed — an unverifiable PID is refused with a warning instead
+  of being signalled. A new `MasterWorker` records the master fingerprint
+  from inside the real master process, closing the daemon-mode gap where
+  `start -d` deployments never had a fingerprint
+  ([#584](https://github.com/crazy-goat/workerman-bundle/issues/584))
+
 - Fix unbounded memory growth in `StaticFilesMiddleware`'s realpath cache.
   The symlink-rejection path inserted into the shared worker cache without
   enforcing `CACHE_MAX_SIZE`, and negative entries only expired on a repeat

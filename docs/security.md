@@ -401,11 +401,13 @@ passed. This ensures supply-chain integrity by default:
 
 `ServerManager` identifies the Workerman master process before sending signals (SIGINT, SIGQUIT, SIGUSR1, SIGUSR2, SIGIOT, SIGIO). Without hardening, the identification relied on a loose `str_contains($cmdline, 'WorkerMan')` check against `/proc/$pid/cmdline` — a substring match that could misidentify any co-located process whose command line happens to contain the word "WorkerMan" (an unrelated binary, a script with that name in its path, a build tool). A misidentification could lead to `SIGKILL` being sent to an unrelated process, causing a denial-of-service on adjacent services.
 
+A later revision added `|| str_contains($cmdline, 'php')` to that fallback, which made the check **vacuous**: every PHP process on the host matched — `php-fpm` children, a `composer` run, a cron script, an unrelated Symfony command, even the process asking the question. This was removed again (issue #584); see [Fallback Behaviour](#fallback-behaviour) for what the check enforces today.
+
 ### Defence
 
-When the master is started in **non-daemon mode**, `ServerManager` writes a **fingerprint file** alongside the PID file (`<pid_file>.fingerprint`). The fingerprint records:
+`ServerManager` writes a **fingerprint file** alongside the PID file (`<pid_file>.fingerprint`). The fingerprint records:
 
-- **PID**: the process ID of the master (the CLI process that becomes the master in non-daemon mode)
+- **PID**: the process ID of the master
 - **Start time**: clock ticks since boot, read from `/proc/$pid/stat` field 22. **Linux only** — on POSIX without `/proc` the value is recorded as `0` and the start-time check is disabled.
 - **UID**: the Unix user ID of the master process
 
@@ -417,25 +419,32 @@ Before sending any signal, `ProcessInspector` reads the fingerprint and verifies
 
 The start time check is the strongest defense against PID reuse: even if the original master process died and its PID was reassigned to an unrelated process, the new process will have a different start time and will be rejected.
 
-### Daemon Mode
+**Non-daemon mode**: the fingerprint is written by `ServerManager` before the runner starts (the CLI process becomes the master).
 
-In daemon mode (`start -d`), `Worker::daemonize()` forks twice and the launcher process exits. The actual master is a grandchild process whose PID differs from the launcher's PID. Since the fingerprint cannot be captured before `Runner::run()` is invoked, the fingerprint is **intentionally not written in daemon mode** and the legacy cmdline-based check is used as a fallback. This is a known limitation: daemon-mode deployments rely on the cmdline substring check, which is weaker than the fingerprint check but still prevents the most obvious misidentification attacks.
+**Daemon mode**: `Worker::daemonize()` forks twice and the launcher process exits, so the launcher PID is not the master PID. The bundle runs Workerman through `MasterWorker` (a `Workerman\Worker` subclass), which records the fingerprint from **inside the real master process** immediately after the PID file is written (`saveMasterPid()`). The fingerprint therefore describes the actual master PID in every mode — the daemon-mode gap documented in earlier revisions of this file is closed (issue #584). Until the master has started, `ProcessInspector` fails closed rather than signalling an unverifiable PID.
 
 ### Fallback Behaviour
 
-If the fingerprint file does not exist (e.g., after upgrading from a version that did not write fingerprints, in daemon mode, or if the write failed), `ProcessInspector` falls back to the legacy cmdline-based check. This ensures backward compatibility with existing deployments.
+If the fingerprint file does not exist (e.g. after upgrading from a version that did not write fingerprints, or if the write failed), `ProcessInspector` falls back to a strict command-line check against the process title Workerman assigns to its master process — `WorkerMan: master process ...`. The check requires that exact title; a process whose cmdline merely contains the word "php" (or "WorkerMan" elsewhere) is **rejected**.
+
+**Runtime dependence**: `cli_set_process_title()` rewrites the argv memory area, and the effect is visible in `/proc/$pid/cmdline` on most PHP builds — but on PHP >= 8.5 some builds keep the original argv. On those runtimes the strict fallback may also reject the *real* master when no fingerprint exists; the command then fails closed ("not running"). The fingerprint is written automatically on every start (including daemon mode), so a single restart after upgrading restores full control-plane operation. This is the documented trade-off: refusing to signal an unverifiable PID is preferred over signalling an unrelated process.
+
+Verification is **fail-closed**: when the cmdline cannot be read (a process owned by another user under `hidepid`, a non-Linux host without `/proc`), `isMasterRunning()` logs a warning and returns `false` — the caller refuses to signal. Earlier revisions returned `true` in this situation (fail-open in the direction of sending a signal); that behaviour is gone (issue #584).
 
 ### When this matters
 
-- **Multi-user hosts**: Shared CI runners, containers with multiple service accounts, or any environment where an attacker could spawn a process whose command line contains "WorkerMan".
+- **Multi-user hosts**: Shared CI runners, containers with multiple service accounts, or any environment where an attacker could spawn a process whose command line contains "WorkerMan" (or any plain PHP process — earlier revisions accepted any cmdline containing "php").
 - **Shared runtime directories**: If the PID file directory is shared between multiple services or users, an attacker could write a fake PID file pointing to an unrelated process.
-- **PID reuse**: After a master process dies, its PID may be reassigned to an unrelated process. The start time check prevents the new process from being misidentified as the master.
+- **PID reuse**: After a master process dies without a clean `stop()` (OOM kill, `SIGKILL`, host reboot with a persisted pid file), its PID may be reassigned to an unrelated process. The start time check prevents the new process from being misidentified as the master; without a fingerprint, the strict cmdline check (master process title) rejects the reused PID.
 
 ### Verification
 
+- `testDaemonModeWritesMasterFingerprint` (in `tests/WorkermanCommandTest.php`) verifies end to end that a `start -d` deployment produces a fingerprint for the real master PID (issue #584).
+- `testStopWithStalePidFileDoesNotSignalForeignProcess` (in `tests/WorkermanCommandTest.php`) runs the console `stop` command with a stale pid file pointing at a plain PHP process and asserts no signal is sent (issue #584 end-to-end regression).
 - `testIsRunningUsesFingerprintWhenAvailable` (in `tests/ServerManagerTest.php`) verifies that `isRunning()` returns true when the fingerprint matches the PID file PID.
 - `testIsRunningRejectsUnrelatedProcessWithFingerprint` (in `tests/ServerManagerTest.php`) verifies that `isRunning()` returns false when the fingerprint PID does not match the PID file PID.
-- `testIsRunningFallsBackToLegacyCheckWithoutFingerprint` (in `tests/ServerManagerTest.php`) verifies backward compatibility.
+- `testIsRunningWithoutFingerprintRejectsPlainPhpProcess` and `testIsRunningWithoutFingerprintAcceptsMasterTitleProcess` (in `tests/ServerManagerTest.php`) verify the strict cmdline fallback: a plain PHP process is rejected, a process carrying the `WorkerMan: master process` title is accepted (issue #584).
+- `testStopRefusesToSignalPlainPhpProcessWithoutFingerprint`, `testReloadRefusesToSignalPlainPhpProcessWithoutFingerprint`, `testGetStatusRefusesToSignalPlainPhpProcessWithoutFingerprint` and `testGetConnectionsRefusesToSignalPlainPhpProcessWithoutFingerprint` (in `tests/ServerManagerTest.php`) verify that every signal path refuses to signal when verification fails (issue #584).
 - `testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess` (in `tests/ProcessInspectorTest.php`) verifies that `killOrphanedIntermediateFork()` does not kill a process whose PID does not match the fingerprint.
 
 ## Composer Audit Advisory Suppression Policy

@@ -179,6 +179,13 @@ final readonly class ProcessInspector
         return true;
     }
 
+    /**
+     * Determine whether the given PID is the Workerman master process.
+     *
+     * Returns false (and logs a warning) when the candidate cannot be
+     * verified — the method fails closed, never open, in the direction of
+     * sending a signal.
+     */
     public function isMasterRunning(int $masterPid, ?MasterFingerprint $fingerprint = null): bool
     {
         if ($masterPid <= 0 || !$this->isProcessAlive($masterPid)) {
@@ -187,28 +194,38 @@ final readonly class ProcessInspector
 
         // If a fingerprint is available, use it as the primary check.
         // The fingerprint-based check is strictly stronger than the
-        // cmdline substring check because it verifies PID + UID + start
-        // time, not just a loose substring match.
+        // cmdline check because it verifies PID + UID + start time,
+        // not a substring match.
         if ($fingerprint instanceof \CrazyGoat\WorkermanBundle\MasterFingerprint) {
             return $this->matchesFingerprint($masterPid, $fingerprint);
         }
 
-        // Legacy fallback: cmdline substring check. Kept for backward
-        // compatibility with deployments that have an existing PID file
-        // but no fingerprint file (e.g., after upgrading from a version
-        // that did not write fingerprints, or in daemon mode where the
-        // launcher PID does not match the master PID).
+        // Legacy fallback: match against the process title the Workerman
+        // master actually sets ("WorkerMan: master process ..."). Earlier
+        // versions also accepted any cmdline containing the substring
+        // "php", which made the check vacuous — every PHP process on the
+        // host matched (see issue #584). The title is set before the
+        // master forks, so it survives daemon mode and matches only
+        // genuine Workerman masters.
         if (self::isLinux()) {
             $cmdline = "/proc/{$masterPid}/cmdline";
             if (is_readable($cmdline)) {
                 $content = file_get_contents($cmdline);
-                if (\is_string($content) && $content !== '') {
-                    return str_contains($content, 'WorkerMan') || str_contains($content, 'php');
+                if (\is_string($content) && $content !== '' && str_contains($content, 'WorkerMan: master process')) {
+                    return true;
                 }
             }
         }
 
-        return true;
+        // Fail closed: on a non-Linux host, or when /proc/$pid/cmdline
+        // is unreadable (e.g. a process owned by another user under
+        // hidepid), we cannot verify the candidate — refuse to signal.
+        $this->logger->warning('Cannot verify master process identity; refusing to signal', [
+            'pid' => $masterPid,
+            'has_fingerprint' => false,
+        ]);
+
+        return false;
     }
 
     public function killOrphanedIntermediateFork(int $parentPid, ?MasterFingerprint $fingerprint = null): void
@@ -240,14 +257,17 @@ final readonly class ProcessInspector
             return;
         }
 
-        // Legacy fallback: cmdline substring check.
+        // Legacy fallback: cmdline check against the process title the
+        // Workerman master sets. The old check accepted any cmdline
+        // containing "WorkerMan"; it is tightened to the actual master
+        // title so an unrelated "WorkerMan" mention cannot match (issue #584).
         $cmdline = "/proc/{$parentPid}/cmdline";
         if (!is_readable($cmdline)) {
             return;
         }
 
         $content = file_get_contents($cmdline);
-        if (\is_string($content) && str_contains($content, 'WorkerMan')) {
+        if (\is_string($content) && str_contains($content, 'WorkerMan: master process')) {
             posix_kill($parentPid, \SIGKILL);
         }
     }

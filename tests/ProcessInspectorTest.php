@@ -426,17 +426,19 @@ final class ProcessInspectorTest extends TestCase
     }
 
     /**
-     * Regression test for issue #327: `isMasterRunning()` without a
-     * fingerprint must fall back to the legacy cmdline-based check.
+     * Regression test for issue #584: `isMasterRunning()` without a
+     * fingerprint must reject a live process whose cmdline contains
+     * "php" but is not a Workerman master.
      *
-     * On non-Linux platforms, the legacy check returns true for any
-     * alive PID. On Linux, it requires the cmdline to contain
-     * "WorkerMan" or "php".
+     * The old fallback accepted any cmdline containing the substring
+     * "php", which made the check vacuous — every PHP process matched,
+     * including the caller itself. On non-Linux hosts the old code
+     * returned true unconditionally; it now fails closed.
      *
      * @requires extension pcntl
      * @requires extension posix
      */
-    public function testIsMasterRunningWithoutFingerprintFallsBackToLegacyCheck(): void
+    public function testIsMasterRunningWithoutFingerprintRejectsPlainPhpProcess(): void
     {
         $pid = pcntl_fork();
         if ($pid === -1) {
@@ -450,17 +452,161 @@ final class ProcessInspectorTest extends TestCase
         }
 
         try {
-            // Without a fingerprint, the legacy check is used.
-            // On Linux, the forked child's cmdline contains "php",
-            // so the check returns true. On non-Linux, the check
-            // returns true for any alive PID.
-            $this->assertTrue(
+            // Without a fingerprint, the legacy cmdline check is used.
+            // The forked child is a plain PHP process: its cmdline
+            // contains "php" but not the Workerman master title, so
+            // the check must reject it on every platform.
+            $this->assertFalse(
                 $this->inspector->isMasterRunning($pid),
-                'isMasterRunning() without fingerprint must use legacy cmdline check',
+                'isMasterRunning() without fingerprint must reject a plain PHP process',
             );
         } finally {
             posix_kill($pid, SIGKILL);
             pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #584: `isMasterRunning()` without a
+     * fingerprint accepts a live process whose cmdline carries the
+     * process title Workerman assigns to its master process.
+     *
+     * The title is simulated with `execve()` (argv[0]) rather than
+     * `cli_set_process_title()`, whose effect on /proc/$pid/cmdline
+     * varies by PHP build (PHP >= 8.5 keeps the original argv on some
+     * builds) — execve is kernel behaviour, identical everywhere.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsMasterRunningWithoutFingerprintAcceptsWorkermanMasterTitle(): void
+    {
+        $pid = $this->forkChildWithMasterTitle();
+
+        try {
+            $this->assertTrue(
+                $this->inspector->isMasterRunning($pid),
+                'isMasterRunning() must accept a process carrying the Workerman master title',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #584: `killOrphanedIntermediateFork()`
+     * without a fingerprint must kill a process carrying the Workerman
+     * master title.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithoutFingerprintKillsMasterTitleProcess(): void
+    {
+        $pid = $this->forkChildWithMasterTitle();
+
+        try {
+            $this->inspector->killOrphanedIntermediateFork($pid);
+
+            $this->waitForProcessDeath($pid);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() must kill a process carrying the Workerman master title',
+            );
+        } finally {
+            if ($this->inspector->isProcessAlive($pid)) {
+                posix_kill($pid, SIGKILL);
+            }
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Poll until the process is dead, so signal delivery does not depend
+     * on a fixed sleep (flaky under heavy CI load).
+     */
+    private function waitForProcessDeath(int $pid): void
+    {
+        $deadline = \microtime(true) + 1.0;
+        while ($this->inspector->isProcessAlive($pid) && \microtime(true) < $deadline) {
+            \usleep(20_000);
+        }
+    }
+
+    /**
+     * Fork a child that replaces itself with a process carrying the
+     * Workerman master process title in its command line.
+     *
+     * The title is simulated with `bash -c 'exec -a ...'` (execve
+     * argv[0]) rather than `cli_set_process_title()`, whose effect on
+     * /proc/$pid/cmdline varies by PHP build (PHP >= 8.5 keeps the
+     * original argv on some builds). Execve is kernel behaviour,
+     * identical everywhere.
+     *
+     * A marker file (created by the child AFTER the exec) synchronises
+     * the fork, so the caller never reads /proc before the title is in
+     * place.
+     */
+    private function forkChildWithMasterTitle(): int
+    {
+        $marker = \sys_get_temp_dir() . '/workerman_master_title_' . \bin2hex(\random_bytes(4));
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            $this->execAsMasterTitle($marker);
+        }
+
+        $this->waitForFile($marker, 3);
+        @\unlink($marker);
+
+        return $pid;
+    }
+
+    /**
+     * Replace the current process with one that carries the Workerman
+     * master process title in its command line.
+     *
+     * The exec'd process redirects stdio to `/dev/null` so it cannot
+     * keep PHPUnit's output descriptors open, and it uses a tiny PHP
+     * loop (not `/bin/sh`) because the shell loop ignores SIGINT/SIGQUIT
+     * on macOS and makes stop() tests hang in `waitpid()`.
+     */
+    private function execAsMasterTitle(string $marker): never
+    {
+        $title = 'WorkerMan: master process  start_file=' . __FILE__;
+        $script = <<<'PHP'
+pcntl_async_signals(true);
+pcntl_signal(SIGINT, static function (): void { exit(0); });
+pcntl_signal(SIGQUIT, static function (): void { exit(0); });
+pcntl_signal(SIGTERM, static function (): void { exit(0); });
+touch(__MARKER__);
+while (true) {
+    sleep(1);
+}
+PHP;
+        $script = str_replace('__MARKER__', var_export($marker, true), $script);
+        $command = 'exec -a ' . escapeshellarg($title)
+            . ' ' . escapeshellarg(\PHP_BINARY)
+            . ' -r ' . escapeshellarg($script)
+            . ' < /dev/null > /dev/null 2>&1';
+
+        pcntl_exec('/bin/bash', ['-c', $command]);
+        \fwrite(\STDERR, 'Unable to exec master-title process' . \PHP_EOL);
+        exit(1);
+    }
+
+    private function waitForFile(string $path, int $timeout): void
+    {
+        $deadline = \microtime(true) + $timeout;
+        while (!\file_exists($path) && \microtime(true) < $deadline) {
+            \usleep(20_000);
         }
     }
 
@@ -498,8 +644,7 @@ final class ProcessInspectorTest extends TestCase
         try {
             $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
 
-            // Give the kernel a moment to deliver SIGKILL.
-            usleep(100_000);
+            $this->waitForProcessDeath($pid);
 
             $this->assertFalse(
                 $this->inspector->isProcessAlive($pid),
@@ -565,12 +710,13 @@ final class ProcessInspectorTest extends TestCase
     }
 
     /**
-     * Regression test for issue #327: `killOrphanedIntermediateFork()`
+     * Regression test for issue #327/#584: `killOrphanedIntermediateFork()`
      * without a fingerprint must fall back to the legacy cmdline check.
      *
      * On Linux, the legacy check kills the process only if its cmdline
-     * contains "WorkerMan". A forked child's cmdline contains "php" but
-     * not "WorkerMan", so the legacy check does NOT kill it.
+     * carries the Workerman master title. A forked child's cmdline
+     * contains "php" but not that title, so the legacy check does NOT
+     * kill it.
      *
      * @requires OS Linux
      * @requires extension pcntl

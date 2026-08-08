@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
+use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
@@ -40,7 +41,10 @@ readonly class Runner implements RunnerInterface
         $this->applyWorkermanConfig($config);
         $this->createWorkers($config, $schedulerConfig, $processConfig);
 
-        Worker::runAll();
+        // Run through MasterWorker so the real master PID (which is only
+        // known after daemonize) gets a fingerprint — closing the daemon-mode
+        // verification gap described in issue #584.
+        MasterWorker::runAll();
 
         return 0;
     }
