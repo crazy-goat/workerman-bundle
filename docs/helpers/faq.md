@@ -66,6 +66,12 @@ activity bookkeeping is second-granular (`time()`), "closed within X"
 timeout tests must run the loop for more than two sweep intervals (e.g.
 2.2 s with a 1 s interval) to avoid second-boundary phase flakes.
 
+## Byte-oriented test helpers
+
+PHPStan requires `chr()` arguments to be provably within `0..255`. When a test
+helper accepts an integer byte, guard that range before calling `chr()` rather
+than suppressing the diagnostic.
+
 ## Long-running worker gotchas
 
 ### Symfony container / service state survives requests
