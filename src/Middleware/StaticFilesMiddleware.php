@@ -10,7 +10,37 @@ use Workerman\Protocols\Http\Response;
 
 final readonly class StaticFilesMiddleware implements MiddlewareInterface
 {
-    private const BLOCKED_EXTENSIONS = ['php', 'phar', 'phtml'];
+    private const BLOCKED_EXTENSIONS = [
+        // PHP source spellings — the middleware never executes PHP, so
+        // blocking these is about source disclosure, not execution.
+        'php',
+        'phar',
+        'phtml',
+        'phps',
+        'inc',
+        // Editor backup and deploy residue — vim/emacs backups, conflicted
+        // merges, interrupted saves. These appear in production directories
+        // without anyone intending them to, and often contain the source
+        // (and credentials) of the file they back up.
+        'bak',
+        'orig',
+        'rej',
+        'save',
+        'swp',
+        'swo',
+        'tmp',
+        'old',
+        'dist',
+        // Credentials, dumps and logs.
+        'sql',
+        'log',
+        'pem',
+        'key',
+        'crt',
+        'sqlite',
+        'sqlite3',
+        'db',
+    ];
 
     private const BLOCKED_FILENAMES = [
         '.htaccess',
@@ -139,9 +169,24 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return true;
         }
 
-        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-        if (in_array($ext, self::BLOCKED_EXTENSIONS, true)) {
+        // Editor backup residue: `index.php~` (vim/emacs) and
+        // `#index.php#` (emacs autosave) bypass the extension checks below.
+        if (str_ends_with($name, '~') || (str_starts_with($name, '#') && str_ends_with($name, '#'))) {
             return true;
+        }
+
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        // Check every dot-separated extension segment of the full suffix
+        // (after the *first* dot), so a blocked extension is caught wherever
+        // it appears in a compound name (`x.php.bak`, `x.php.txt`,
+        // `x.phar.gz`), not only as the final extension (`pathinfo()`
+        // returns only the segment after the last dot).
+        $firstDot = strpos($name, '.');
+        $extensionChain = $firstDot === false ? '' : strtolower(substr($name, $firstDot + 1));
+        foreach ($extensionChain === '' ? [] : explode('.', $extensionChain) as $segment) {
+            if (in_array($segment, self::BLOCKED_EXTENSIONS, true)) {
+                return true;
+            }
         }
 
         if (in_array(strtolower($name), self::BLOCKED_FILENAMES, true)) {

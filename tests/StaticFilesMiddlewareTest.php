@@ -744,6 +744,25 @@ final class StaticFilesMiddlewareTest extends TestCase
             'PHP file' => ['test.php', 'php'],
             'PHAR file' => ['app.phar', 'phar'],
             'PHTML file' => ['index.phtml', 'phtml'],
+            'PHP source-highlight file' => ['index.phps', 'phps'],
+            'Legacy include file' => ['config.inc', 'inc'],
+            'Backup file' => ['index.php.bak', 'bak'],
+            'Patch original file' => ['index.php.orig', 'orig'],
+            'Rejected patch hunk' => ['index.php.rej', 'rej'],
+            'Interrupted save' => ['config.php.save', 'save'],
+            'Vim swap file' => ['index.php.swp', 'swp'],
+            'Vim swap file (newer)' => ['index.php.swo', 'swo'],
+            'Temp file' => ['config.php.tmp', 'tmp'],
+            'Old version' => ['config.php.old', 'old'],
+            'Distribution template' => ['config.inc.dist', 'dist'],
+            'SQL dump' => ['backup.sql', 'sql'],
+            'Log file' => ['app.log', 'log'],
+            'PEM private key' => ['id_rsa.pem', 'pem'],
+            'SSH key' => ['id_rsa.key', 'key'],
+            'Certificate' => ['server.crt', 'crt'],
+            'SQLite database' => ['app.sqlite', 'sqlite'],
+            'SQLite3 database' => ['app.sqlite3', 'sqlite3'],
+            'Database file' => ['app.db', 'db'],
         ];
     }
 
@@ -770,6 +789,139 @@ final class StaticFilesMiddlewareTest extends TestCase
             $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for .$extension");
         } finally {
             unlink($file);
+        }
+    }
+
+    /**
+     * @dataProvider backupSuffixFileProvider
+     */
+    public function testBackupSuffixFilesBlockedReturn404(string $fileName): void
+    {
+        $file = $this->rootDirectory . '/' . $fileName;
+        file_put_contents($file, '<?php $DB_PASS = "s3cr3t";');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/' . $fileName);
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, "Next should NOT be called for backup-suffix file: $fileName");
+            $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for backup-suffix file: $fileName");
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function backupSuffixFileProvider(): array
+    {
+        return [
+            'vim backup of PHP file' => ['index.php~'],
+            'vim backup of stylesheet' => ['style.css~'],
+        ];
+    }
+
+    public function testEmacsAutosaveSuffixBlocked(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $reflection = new \ReflectionMethod($middleware, 'isComponentBlocked');
+
+        // Emacs autosaves are `#name#`. They cannot be addressed through the
+        // HTTP path (the underlying parser strips everything after `#`), but
+        // the rule is enforced defensively at the component level.
+        $this->assertTrue($reflection->invoke($middleware, '#index.php#'));
+        $this->assertTrue($reflection->invoke($middleware, '#style.css#'));
+    }
+
+    /**
+     * @dataProvider compoundExtensionProvider
+     */
+    public function testCompoundExtensionBlockedReturn404(string $fileName): void
+    {
+        $file = $this->rootDirectory . '/' . $fileName;
+        file_put_contents($file, '<?php $DB_PASS = "s3cr3t";');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/' . $fileName);
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, "Next should NOT be called for compound-extension file: $fileName");
+            $this->assertEquals(404, $response->getStatusCode(), "Should return 404 for compound-extension file: $fileName");
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function compoundExtensionProvider(): array
+    {
+        return [
+            'PHP source with backup extension' => ['x.php.bak'],
+            'blocked segment before a safe extension' => ['x.php.txt'],
+            'compressed PHAR' => ['x.phar.gz'],
+            'PHP source with save suffix' => ['config.php.save'],
+            'PHTML with orig suffix' => ['index.phtml.orig'],
+            'compressed SQL dump' => ['secrets.sql.gz'],
+        ];
+    }
+
+    public function testLegitimateCompoundExtensionsStillServed(): void
+    {
+        $files = ['app.js.map', 'font.woff2', 'lib.tar.gz'];
+        foreach ($files as $fileName) {
+            file_put_contents($this->rootDirectory . '/' . $fileName, 'x');
+        }
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+            $next = fn(Request $req): Response => new Response(404);
+
+            foreach ($files as $fileName) {
+                $response = $middleware($this->createRequest('/' . $fileName), $next);
+                $this->assertSame(200, $response->getStatusCode(), "Legitimate asset should be served: $fileName");
+            }
+        } finally {
+            foreach ($files as $fileName) {
+                @unlink($this->rootDirectory . '/' . $fileName);
+            }
+        }
+    }
+
+    public function testBackupFileBlockedIsIndistinguishableFromMissingFile(): void
+    {
+        $blockedFile = $this->rootDirectory . '/index.php~';
+        file_put_contents($blockedFile, '<?php $DB_PASS = "s3cr3t";');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+            $next = fn(Request $req): Response => new Response(404);
+
+            $blockedResponse = $middleware($this->createRequest('/index.php~'), $next);
+            $missingResponse = $middleware($this->createRequest('/missing'), $next);
+
+            $this->assertSame($missingResponse->getStatusCode(), $blockedResponse->getStatusCode());
+            $this->assertSame($missingResponse->rawBody(), $blockedResponse->rawBody());
+        } finally {
+            unlink($blockedFile);
         }
     }
 
