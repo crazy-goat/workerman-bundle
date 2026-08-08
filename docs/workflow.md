@@ -58,10 +58,31 @@ Existing examples in this repository:
 
 ---
 
-## 3. Implement the Change
+## 3. Implement the Change (via Worker/Coder Subagent)
+
+Implementation is delegated to a subagent (`worker` or `coder`) so the main
+session stays free to orchestrate, review findings, and handle the next steps.
 
 ```bash
-# Edit files, then commit and push
+# The subagent receives a task like:
+# "Implement issue #<NUMBER> on branch feat/issue-<NUMBER>-<description>.
+#  Read the issue body first, then make the smallest correct change.
+#  Run the relevant tests for the changed behavior.
+#  Commit and push when done.
+#
+#  Your report must ALWAYS contain:
+#  1. Files changed and why
+#  2. What was the BIGGEST problem or obstacle during implementation
+#     (with details: where, why it was hard, how you solved it)
+#  3. Any bugs or places to improve you discovered along the way
+#     (also outside the scope of this issue) - each with file/line,
+#     short description, and suggested fix"
+```
+
+After the subagent reports, commit and push if it did not do so already:
+
+```bash
+# Ensure everything is committed and pushed
 git add -A
 git commit -m "feat(core): implement <short description> (closes #<NUMBER>)"
 git push origin feat/issue-<NUMBER>-<description>
@@ -71,6 +92,12 @@ git push origin feat/issue-<NUMBER>-<description>
 - Type: `feat`, `fix`, `docs`, `refactor`, `ci`, `test`, `chore`
 - Scope: `(core)`, `(runtime)`, `(command)`, `(config)`, `(ci)`, `(dto)` etc.
 - Reference to issue: `(closes #<NUMBER>)`
+
+> **Coder output contract (non-negotiable):** the subagent must always return
+> (1) changed files, (2) the biggest problem it faced with details, and
+> (3) any discovered bugs / places to improve - even ones outside the current
+> issue's scope. The main session stores these findings for the final report
+> (step 14).
 
 ---
 
@@ -279,7 +306,52 @@ git checkout master
 git pull origin master
 ```
 
-Done. Ready to start the next cycle from step 1.
+---
+
+## 14. Report Implementation Problems and Offer a GitHub Issue
+
+At the end of the workflow, present the findings collected from the
+implementation subagent(s) and decide with the user whether they deserve a
+dedicated GitHub issue.
+
+**Display to the user:**
+
+1. **Biggest problem(s) faced during implementation** - as reported by the
+   worker/coder subagent in step 3.
+2. **Discovered bugs / places to improve** - each with file/line, short
+   description, and suggested fix (including findings outside the scope of the
+   issue just closed).
+
+**Then ask:** "Create GitHub issue(s) for these findings?"
+
+- If yes, create an issue via `gh` (adjust labels to the project's conventions):
+
+```bash
+gh issue create \
+  --title "<short title of the discovered problem>" \
+  --body "## Description
+
+<what was found>
+
+## Where
+
+- <file:line>
+
+## Suggested fix
+
+<short description>" \
+  --label bug
+```
+
+- Assign `--label bug` for confirmed bugs or `code-quality` / `enhancement`
+  for improvement candidates. One issue per distinct finding keeps them
+  actionable.
+- If the user declines or the findings are already tracked, just record the
+  outcome and finish.
+
+> **Note:** findings that were already fixed as part of this workflow do not
+> need an issue - only newly discovered, still-open problems should be
+> reported.
 
 ---
 
@@ -293,8 +365,10 @@ Done. Ready to start the next cycle from step 1.
 git checkout master && git pull origin master
 git checkout -b feat/issue-<NUMBER>-<description>
 
-# 3. Implementation
-# ... coding ...
+# 3. Implementation (worker/coder subagent)
+#    subagent: "Implement issue #<NUMBER>..."
+#    report must include: files changed, BIGGEST problem, discovered bugs
+#    / places to improve (also out of scope)
 git add -A && git commit -m "feat: implement <desc> (closes #<NUMBER>)"
 git push origin feat/issue-<NUMBER>-<description>
 
@@ -320,23 +394,29 @@ gh issue close <NUMBER>
 
 # 10. Switch back to master
 git checkout master && git pull origin master
+
+# 11. Report + offer GitHub issue for discovered problems
+#    show: biggest problem(s), discovered bugs / places to improve
+#    ask: "Create GitHub issue(s)?" → if yes: gh issue create ...
 ```
 
 ---
 
 ## Subagent Usage Summary
 
-Two steps of this workflow are delegated to subagents to keep the main
+Three steps of this workflow are delegated to subagents to keep the main
 session's context lean:
 
 | Step | Subagent task                              | Why delegate                          |
 | ---- | ------------------------------------------ | ------------------------------------- |
 | 1    | Triage open issues, return ranked shortlist | Issue bodies + comments are token-heavy |
+| 3    | Implement the issue (worker/coder)         | Coding context is token-heavy; agent returns structured report (files, biggest problem, discovered bugs) |
 | 4    | Code review of the implementation diff     | Full diff + surrounding code is token-heavy |
 
-Both subagents have read/write/edit/bash tools and operate on the same
+All subagents have read/write/edit/bash tools and operate on the same
 repository. Give each one a clear, scoped instruction and a defined output
-format (ranked list with rationale / numbered findings list).
+format (ranked list with rationale / numbered findings list / coder report
+with biggest problem + discovered bugs).
 
 ---
 
