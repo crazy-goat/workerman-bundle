@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- URL-decode cookie values in `parseCookiesFromServerBag()` with `rawurldecode()` semantics, so values written by Symfony's `Cookie` (which `rawurlencode()`s in `__toString()`) round-trip exactly as they do under PHP-FPM. Decoding matches PHP's SAPI (`php_raw_url_decode`: `%XX` decoded, literal `+` preserved) and runs strictly after splitting the header on `;` and `=`, so an encoded `%3B` in a value is never reinterpreted as a cookie separator and the duplicate-`Cookie`-header smuggling fix ([#217](https://github.com/crazy-goat/workerman-bundle/issues/217)) stays intact
+  ([#583](https://github.com/crazy-goat/workerman-bundle/issues/583))
+
 - Fix the config-cache permission guard so it checks the object that
   actually governs file replacement: the **containing directory**. The
   previous check only examined the cache file's world-writable bit, but on

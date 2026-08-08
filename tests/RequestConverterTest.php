@@ -874,6 +874,127 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('xyz789', $symfonyRequest->cookies->get('token'));
     }
 
+    public function testCookieValueRoundTripThroughSymfonyCookie(): void
+    {
+        $value = 'aGVsbG8=|x+y:/%';
+        $serialized = (string) new \Symfony\Component\HttpFoundation\Cookie('remember', $value);
+        $pair = \explode(';', $serialized, 2)[0];
+
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: {$pair}\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame($value, $symfonyRequest->cookies->get('remember'));
+    }
+
+    public function testRawCookieValueIsNotReencoded(): void
+    {
+        $value = 'a=b+c/d';
+        $serialized = (string) new \Symfony\Component\HttpFoundation\Cookie('rawk', $value, raw: true);
+        $pair = \explode(';', $serialized, 2)[0];
+
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: {$pair}\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame($value, $symfonyRequest->cookies->get('rawk'));
+    }
+
+    public function testEncodedSemicolonInValueIsNotTreatedAsSeparator(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: token=a%3Bb%26c\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame(['token' => 'a;b&c'], $symfonyRequest->cookies->all());
+    }
+
+    public function testEncodedPercentDecodesExactlyOnce(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: pct=%25; double=a%2525b\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('%', $symfonyRequest->cookies->get('pct'));
+        $this->assertSame('a%25b', $symfonyRequest->cookies->get('double'));
+    }
+
+    public function testCookieDecodingMatchesPhpSapi(): void
+    {
+        // Expected values are exactly what PHP's $_COOKIE produces for the same
+        // header: php_default_treat_data() decodes cookie values with
+        // php_raw_url_decode() semantics (%XX decoded, '+' preserved verbatim)
+        // and does not decode cookie names.
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: plus=a+b; pct20=a%20b; pct3D=a%3Db; nonascii=%C4%85%C4%87; name%3Bx=keep\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('a+b', $symfonyRequest->cookies->get('plus'));
+        $this->assertSame('a b', $symfonyRequest->cookies->get('pct20'));
+        $this->assertSame('a=b', $symfonyRequest->cookies->get('pct3D'));
+        $this->assertSame('ąć', $symfonyRequest->cookies->get('nonascii'));
+        $this->assertSame('keep', $symfonyRequest->cookies->get('name%3Bx'));
+    }
+
+    public function testEmptyAndValuelessCookies(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: empty=; valueless; named=%20\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('', $symfonyRequest->cookies->get('empty'));
+        $this->assertSame('', $symfonyRequest->cookies->get('valueless'));
+        $this->assertSame(' ', $symfonyRequest->cookies->get('named'));
+    }
+
+    public function testDuplicateCookieNamesLastWins(): void
+    {
+        // Existing bundle behaviour: the last occurrence wins. PHP's $_COOKIE
+        // keeps the first occurrence instead; the divergence is documented in
+        // docs/security.md and intentionally not changed here.
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: dup=first; dup=second%20value\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('second value', $symfonyRequest->cookies->get('dup'));
+    }
+
+    public function testMultipleCookieHeadersWithEncodedValuesStaySeparate(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "Cookie: session=a%3Db\r\n";
+        $buffer .= "Cookie: token=x%20y\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('session=a%3Db; token=x%20y', $symfonyRequest->server->get('HTTP_COOKIE'));
+        $this->assertSame('a=b', $symfonyRequest->cookies->get('session'));
+        $this->assertSame('x y', $symfonyRequest->cookies->get('token'));
+    }
+
     public function testMultipleHostHeadersKeepsFirstOnly(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
