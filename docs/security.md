@@ -425,9 +425,9 @@ The start time check is the strongest defense against PID reuse: even if the ori
 
 ### Fallback Behaviour
 
-If the fingerprint file does not exist (e.g. after upgrading from a version that did not write fingerprints, or if the write failed), `ProcessInspector` falls back to a strict check against the process title Workerman assigns to its master process — `WorkerMan: master process ...`. The check requires that exact title; a process whose cmdline merely contains the word "php" (or "WorkerMan" elsewhere) is **rejected**.
+If the fingerprint file does not exist (e.g. after upgrading from a version that did not write fingerprints, or if the write failed), `ProcessInspector` falls back to a strict command-line check against the process title Workerman assigns to its master process — `WorkerMan: master process ...`. The check requires that exact title; a process whose cmdline merely contains the word "php" (or "WorkerMan" elsewhere) is **rejected**.
 
-The check reads both `/proc/$pid/cmdline` and `/proc/$pid/comm`: `cli_set_process_title()` always sets the comm via `prctl(PR_SET_NAME)`, but on PHP >= 8.5 it no longer rewrites the argv memory area, so the cmdline keeps the original command line there — the comm (truncated to 15 chars by the kernel: `WorkerMan: mast`) still matches.
+**Runtime dependence**: `cli_set_process_title()` rewrites the argv memory area, and the effect is visible in `/proc/$pid/cmdline` on most PHP builds — but on PHP >= 8.5 some builds keep the original argv. On those runtimes the strict fallback may also reject the *real* master when no fingerprint exists; the command then fails closed ("not running"). The fingerprint is written automatically on every start (including daemon mode), so a single restart after upgrading restores full control-plane operation. This is the documented trade-off: refusing to signal an unverifiable PID is preferred over signalling an unrelated process.
 
 Verification is **fail-closed**: when the cmdline cannot be read (a process owned by another user under `hidepid`, a non-Linux host without `/proc`), `isMasterRunning()` logs a warning and returns `false` — the caller refuses to signal. Earlier revisions returned `true` in this situation (fail-open in the direction of sending a signal); that behaviour is gone (issue #584).
 

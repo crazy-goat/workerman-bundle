@@ -471,30 +471,23 @@ final class ProcessInspectorTest extends TestCase
      * fingerprint accepts a live process whose cmdline carries the
      * process title Workerman assigns to its master process.
      *
+     * The title is simulated with `execve()` (argv[0]) rather than
+     * `cli_set_process_title()`, whose effect on /proc/$pid/cmdline
+     * varies by PHP build (PHP >= 8.5 keeps the original argv on some
+     * builds) — execve is kernel behaviour, identical everywhere.
+     *
      * @requires OS Linux
      * @requires extension pcntl
      * @requires extension posix
      */
     public function testIsMasterRunningWithoutFingerprintAcceptsWorkermanMasterTitle(): void
     {
-        $pid = pcntl_fork();
-        if ($pid === -1) {
-            $this->markTestSkipped('pcntl_fork failed');
-        }
-
-        if ($pid === 0) {
-            @cli_set_process_title('WorkerMan: master process  start_file=' . __FILE__);
-            for (;;) {
-                sleep(1);
-            }
-        }
+        $pid = $this->forkChildWithMasterTitle();
 
         try {
-            $cmdline = \is_readable("/proc/{$pid}/cmdline") ? (string) @file_get_contents("/proc/{$pid}/cmdline") : 'unreadable';
-            $comm = \is_readable("/proc/{$pid}/comm") ? \trim((string) @file_get_contents("/proc/{$pid}/comm")) : 'unreadable';
             $this->assertTrue(
                 $this->inspector->isMasterRunning($pid),
-                'isMasterRunning() must accept a process carrying the Workerman master title (cmdline=' . var_export(\str_replace("\0", ' ', $cmdline), true) . ', comm=' . var_export($comm, true) . ')',
+                'isMasterRunning() must accept a process carrying the Workerman master title',
             );
         } finally {
             posix_kill($pid, SIGKILL);
@@ -513,17 +506,7 @@ final class ProcessInspectorTest extends TestCase
      */
     public function testKillOrphanedIntermediateForkWithoutFingerprintKillsMasterTitleProcess(): void
     {
-        $pid = pcntl_fork();
-        if ($pid === -1) {
-            $this->markTestSkipped('pcntl_fork failed');
-        }
-
-        if ($pid === 0) {
-            @cli_set_process_title('WorkerMan: master process  start_file=' . __FILE__);
-            for (;;) {
-                sleep(1);
-            }
-        }
+        $pid = $this->forkChildWithMasterTitle();
 
         try {
             $this->inspector->killOrphanedIntermediateFork($pid);
@@ -550,6 +533,79 @@ final class ProcessInspectorTest extends TestCase
     {
         $deadline = \microtime(true) + 1.0;
         while ($this->inspector->isProcessAlive($pid) && \microtime(true) < $deadline) {
+            \usleep(20_000);
+        }
+    }
+
+    /**
+     * Fork a child that replaces itself with a process carrying the
+     * Workerman master process title in its command line.
+     *
+     * The title is simulated with `bash -c 'exec -a ...'` (execve
+     * argv[0]) rather than `cli_set_process_title()`, whose effect on
+     * /proc/$pid/cmdline varies by PHP build (PHP >= 8.5 keeps the
+     * original argv on some builds). Execve is kernel behaviour,
+     * identical everywhere.
+     *
+     * A marker file (created by the child AFTER the exec) synchronises
+     * the fork, so the caller never reads /proc before the title is in
+     * place.
+     */
+    private function forkChildWithMasterTitle(): int
+    {
+        $marker = \sys_get_temp_dir() . '/workerman_master_title_' . \bin2hex(\random_bytes(4));
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            $this->execAsMasterTitle($marker);
+        }
+
+        $this->waitForFile($marker, 3);
+        @\unlink($marker);
+
+        return $pid;
+    }
+
+    /**
+     * Replace the current process with one that carries the Workerman
+     * master process title in its command line.
+     *
+     * The exec'd process redirects stdio to `/dev/null` so it cannot
+     * keep PHPUnit's output descriptors open, and it uses a tiny PHP
+     * loop (not `/bin/sh`) because the shell loop ignores SIGINT/SIGQUIT
+     * on macOS and makes stop() tests hang in `waitpid()`.
+     */
+    private function execAsMasterTitle(string $marker): never
+    {
+        $title = 'WorkerMan: master process  start_file=' . __FILE__;
+        $script = <<<'PHP'
+pcntl_async_signals(true);
+pcntl_signal(SIGINT, static function (): void { exit(0); });
+pcntl_signal(SIGQUIT, static function (): void { exit(0); });
+pcntl_signal(SIGTERM, static function (): void { exit(0); });
+touch(__MARKER__);
+while (true) {
+    sleep(1);
+}
+PHP;
+        $script = str_replace('__MARKER__', var_export($marker, true), $script);
+        $command = 'exec -a ' . escapeshellarg($title)
+            . ' ' . escapeshellarg(\PHP_BINARY)
+            . ' -r ' . escapeshellarg($script)
+            . ' < /dev/null > /dev/null 2>&1';
+
+        pcntl_exec('/bin/bash', ['-c', $command]);
+        \fwrite(\STDERR, 'Unable to exec master-title process' . \PHP_EOL);
+        exit(1);
+    }
+
+    private function waitForFile(string $path, int $timeout): void
+    {
+        $deadline = \microtime(true) + $timeout;
+        while (!\file_exists($path) && \microtime(true) < $deadline) {
             \usleep(20_000);
         }
     }
