@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Fix the config-cache permission guard so it checks the object that
+  actually governs file replacement: the **containing directory**. The
+  previous check only examined the cache file's world-writable bit, but on
+  POSIX replacing a file requires write permission on the directory, not on
+  the file — so an attacker with a writable cache directory (e.g. under
+  `umask 0000`) could `unlink` the cache file, write their own, and have it
+  `require`d at boot. Loading is now refused when the cache directory is
+  world-writable, when it is group-writable by a group the process does not
+  belong to, or when the cache file is not owned by the process's effective
+  user ID (a replaced file would be owned by the attacker). The original
+  world-writable-file check is kept as a secondary signal, and metadata that
+  cannot be read (ACLs, non-POSIX filesystems) now logs a warning naming the
+  path instead of silently proceeding
+  ([#586](https://github.com/crazy-goat/workerman-bundle/issues/586))
+
 - Widen `StaticFilesMiddleware`'s built-in denylist to cover editor
   backups, deploy residue and credential files, and make the check
   compound-extension aware. In the default configuration the middleware

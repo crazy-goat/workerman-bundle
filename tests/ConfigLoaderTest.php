@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 
 final class ConfigLoaderTest extends TestCase
 {
@@ -275,6 +276,163 @@ final class ConfigLoaderTest extends TestCase
         // Create loader B (no config set via setters) — should load from cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
+    }
+
+    public function testLoadFromCacheRefusesWorldWritableCacheDirectory(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        // The file itself is safe (0644); only the containing directory is world-writable.
+        chmod($cachePath, 0644);
+        chmod($cacheDir, 0777);
+
+        // Create loader B (no config set via setters) — should reject the world-writable directory
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('#configuration cache directory ".*" is world-writable #');
+
+        $loaderB->getWorkermanConfig();
+    }
+
+    public function testLoadFromCacheRefusesGroupWritableCacheDirectoryOfAnotherGroup(): void
+    {
+        $foreignGroup = $this->findForeignGroup();
+        if ($foreignGroup === null) {
+            $this->markTestSkipped('No supplementary group available to chgrp to');
+        }
+
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        // Group-writable, but not world-writable; the file itself stays safe.
+        chmod($cachePath, 0644);
+        chmod($cacheDir, 0770);
+
+        if (!chgrp($cacheDir, $foreignGroup)) {
+            $this->markTestSkipped('chgrp to a group other than the process group requires membership');
+        }
+
+        // Create loader B (no config set via setters) — should reject the foreign-group directory
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('#configuration cache directory ".*" is writable by group #');
+
+        $loaderB->getWorkermanConfig();
+    }
+
+    public function testLoadFromCacheRefusesCacheFileOwnedByAnotherUser(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+
+        chmod($cachePath, 0644);
+        if (!@chown($cachePath, 65534)) {
+            $this->markTestSkipped('chown to another user requires root privileges');
+        }
+
+        // Create loader B (no config set via setters) — should reject the foreign-owned file
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('#configuration cache file ".*" is owned by uid #');
+
+        $loaderB->getWorkermanConfig();
+    }
+
+    public function testLoadFromCacheWithSecureDirectoryAndFilePermissionsStillWorks(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $config = [
+            'server' => ['listen' => 'http://0.0.0.0:8080'],
+        ];
+        $loaderA->setWorkermanConfig($config);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        // 0750 directory, 0644 file, owned by the process user — must load.
+        chmod($cacheDir, 0750);
+        chmod($cachePath, 0644);
+
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertSame($config, $loaderB->getWorkermanConfig());
+
+        // 0700 directory also works.
+        chmod($cacheDir, 0700);
+
+        $loaderC = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertSame($config, $loaderC->getWorkermanConfig());
+    }
+
+    public function testValidateCacheFilePermissionsLogsWarningWhenMetadataIsUnreadable(): void
+    {
+        $logger = new class extends AbstractLogger {
+            /** @var array<int, array{level: string, message: string}> */
+            public array $records = [];
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->records[] = ['level' => $level, 'message' => (string) $message];
+            }
+        };
+
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true, $logger);
+
+        $missingPath = $this->tempDir . '/cache/workerman/does-not-exist.php';
+        (new \ReflectionMethod(ConfigLoader::class, 'validateCacheFilePermissions'))
+            ->invoke($loader, $missingPath);
+
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertStringContainsString($missingPath, $logger->records[0]['message']);
+    }
+
+    private function findForeignGroup(): ?int
+    {
+        $groups = posix_getgroups();
+        if ($groups === false) {
+            return null;
+        }
+
+        $egid = posix_getegid();
+        foreach ($groups as $gid) {
+            if ($gid !== $egid) {
+                return $gid;
+            }
+        }
+
+        return null;
     }
 
     public function testLoadFreshThrowsWhenNoConfigAndNoCache(): void
