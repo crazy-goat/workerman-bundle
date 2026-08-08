@@ -61,7 +61,6 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
-use Workerman\Timer;
 use Workerman\Worker;
 
 if (!is_dir($workDir) && !mkdir($workDir, 0700, true) && !is_dir($workDir)) {
@@ -252,14 +251,6 @@ $worker->onConnect = static function (TcpConnection $connection): void {
             $e->getFile(),
             $e->getLine(),
         ));
-        if (isset($connection->context->keepaliveTimerId)) {
-            Timer::del($connection->context->keepaliveTimerId);
-            unset($connection->context->keepaliveTimerId);
-        }
-        if (isset($connection->context->connectionTimerId)) {
-            Timer::del($connection->context->connectionTimerId);
-            unset($connection->context->connectionTimerId);
-        }
         $connection->close();
     };
 };

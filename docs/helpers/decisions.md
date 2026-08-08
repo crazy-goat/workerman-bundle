@@ -17,10 +17,17 @@ not reintroduce chunked sends for regular responses.
 `StreamedResponseStrategy` (docs fix #622). Any new response path must go
 through the strategy layer, not the handler.
 
-### Per-connection timers are cancelled on connection close
+### One worker-level sweeper enforces connection/keepalive timeouts (supersedes per-connection timers)
 
-All timers registered per connection must be cancelled in the close
-handler, otherwise they fire for dead connections (fix #571, #616).
+ServerWorker enforces `connection_timeout` and `keepalive_timeout` via one
+persistent worker-level sweeper plus `context->lastActivity` /
+`context->requestCompleted` timestamps instead of per-connection timers
+(#555, 8294c49). This supersedes the earlier "Per-connection timers are
+cancelled on connection close" decision (fix #571, #616): the sweeper
+intentionally survives connection close, and `onClose` clears the context
+so closed connections are skipped. Timeouts are enforced with sweep
+interval granularity (`max(1, intdiv(min(timeout), 4))` seconds), not
+exactly, and activity is whole-second granular.
 
 ### Negative realpath cache is capped
 

@@ -1009,7 +1009,7 @@ final class ServerWorkerTest extends TestCase
             $this->assertNotNull($onConnect);
             $onConnect($connection);
 
-            $this->runEventLoopFor($eventLoop, 1.3);
+            $this->runEventLoopFor($eventLoop, 2.2);
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
@@ -1037,7 +1037,7 @@ final class ServerWorkerTest extends TestCase
             $onConnect($connection);
             $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
 
-            $this->runEventLoopFor($eventLoop, 1.3);
+            $this->runEventLoopFor($eventLoop, 2.2);
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
             $this->assertNull($connection->context);
@@ -1048,7 +1048,7 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
-    public function testKeepaliveTimeoutZeroDoesNotScheduleKeepaliveTimer(): void
+    public function testKeepaliveTimeoutZeroKeepsOnlySweeperTimer(): void
     {
         $eventLoop = new Select();
         $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-zero', 5, 0, $eventLoop);
@@ -1071,6 +1071,27 @@ final class ServerWorkerTest extends TestCase
             $this->runEventLoopFor($eventLoop, 0.05);
 
             $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus(), 'keepaliveTimeout=0 should not close active keep-alive connections');
+        } finally {
+            $connection->destroy();
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testZeroTimeoutsDoNotArmSweeper(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-zero-timeouts', 0, 0, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $this->assertNotNull($onConnect);
+            $onConnect($connection);
+
+            $this->assertSame(0, $eventLoop->getTimerCount(), 'zero/negative timeouts must not arm the sweeper');
         } finally {
             $connection->destroy();
             Timer::delAll();
