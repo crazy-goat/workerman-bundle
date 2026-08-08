@@ -257,6 +257,43 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertFileDoesNotExist($tempFile);
     }
 
+    public function testBufferDrainRestoresWorkerLevelOnCloseChain(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/drain_worker_base_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Drain worker base!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $workerOnCloseCalled = false;
+        $this->connection->context = new \stdClass();
+        $this->connection->onClose = function (TcpConnection $conn) use (&$workerOnCloseCalled): void {
+            $workerOnCloseCalled = true;
+            $conn->context = null;
+        };
+
+        $strategy->convert($binaryResponse, [], $this->connection);
+
+        $onBufferDrain = $this->connection->onBufferDrain;
+        $this->assertNotNull($onBufferDrain);
+        assert(is_callable($onBufferDrain));
+        $onBufferDrain($this->connection);
+
+        $this->assertFileDoesNotExist($tempFile);
+        $this->assertNotNull($this->connection->onClose, 'worker-level onClose should be restored after buffer drain');
+
+        $restoredOnClose = $this->connection->onClose;
+        assert(is_callable($restoredOnClose));
+        $restoredOnClose($this->connection);
+
+        $this->assertTrue($workerOnCloseCalled, 'restored worker-level onClose callback must still run');
+        $this->assertNull($this->connection->context, 'restored worker-level onClose should still be able to clear context');
+    }
+
     public function testBufferDrainPreservesExistingOnBufferDrainCallback(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -388,6 +425,36 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $this->connection->onBufferDrain,
             'onBufferDrain must be removed when onClose fires first',
         );
+        $this->assertFileDoesNotExist($tempFile);
+    }
+
+    public function testOnCloseFallbackChainsWorkerLevelOnClose(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/close_worker_base_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Close worker base!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $workerOnCloseCalled = false;
+        $this->connection->context = new \stdClass();
+        $this->connection->onClose = function (TcpConnection $conn) use (&$workerOnCloseCalled): void {
+            $workerOnCloseCalled = true;
+            $conn->context = null;
+        };
+
+        $strategy->convert($binaryResponse, [], $this->connection);
+
+        $onCloseCallback = $this->connection->onClose;
+        $onCloseCallback($this->connection);
+
+        $this->assertTrue($workerOnCloseCalled, 'early-disconnect cleanup must chain to the worker-level onClose callback');
+        $this->assertNull($this->connection->context, 'worker-level onClose should still run during early disconnect cleanup');
+        $this->assertNull($this->connection->onBufferDrain, 'buffer-drain callback must be removed when onClose fires first');
         $this->assertFileDoesNotExist($tempFile);
     }
 
