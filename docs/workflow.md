@@ -346,11 +346,11 @@ must confirm:
    `gh issue list` returns at most 30 issues by default, so always pass an
    explicit limit:
 
-```bash
-gh issue list --state open --limit 150 --json number,title,labels,body
-gh issue list --state closed --limit 150 --json number,title,labels
-gh search issues --repo <owner>/<repo> --state open --limit 50 "<keyword>"
-```
+   ```bash
+   gh issue list --state open --limit 150 --json number,title,labels,body
+   gh issue list --state closed --limit 150 --json number,title,labels
+   gh search issues --repo <owner>/<repo> --state open --limit 50 "<keyword>"
+   ```
 
    Same or overlapping scope counts as tracked; known related issues (e.g.
    referenced from CHANGELOG entries) must be checked explicitly.
@@ -360,8 +360,9 @@ gh search issues --repo <owner>/<repo> --state open --limit 50 "<keyword>"
    number), or (c) skip - not real or by-design and documented.
 
 The verification subagent must not modify files and must not create/close/
-edit issues itself. Only findings that pass verification (real + untracked)
-are offered to the user / created.
+edit issues itself. Like steps 3 and 4, it reads `docs/helpers/`
+(faq.md, decisions.md) first. Only findings that pass verification (real +
+untracked) are offered to the user / created.
 
 **Then ask:** "Create GitHub issue(s) for these findings?"
 
@@ -468,7 +469,7 @@ git checkout master && git pull origin master
 
 ## Subagent Usage Summary
 
-Three steps of this workflow are delegated to subagents to keep the main
+Four steps of this workflow are delegated to subagents to keep the main
 session's context lean:
 
 | Step | Subagent task                              | Why delegate                          |
@@ -479,9 +480,10 @@ session's context lean:
 | 14   | Verify candidate findings before creating GitHub issues (read-only: is the finding real? is it already tracked?) | GitHub duplicate search (open + closed, `--limit` > 30) plus code verification across several findings is query-heavy |
 
 All subagents have read/write/edit/bash tools and operate on the same
-repository. Give each one a clear, scoped instruction and a defined output
-format (ranked list with rationale / numbered findings list / coder report
-with biggest problem + discovered bugs).
+repository (the step-14 verifier is instructed to run read-only). Give each
+one a clear, scoped instruction and a defined output format (ranked list
+with rationale / numbered findings list / coder report with biggest problem
++ discovered bugs / per-finding verification verdict).
 
 **Knowledge base:** implementation and review subagents read
 `docs/helpers/` before starting and append learnings after finishing
