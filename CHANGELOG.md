@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path instead of silently proceeding
   ([#586](https://github.com/crazy-goat/workerman-bundle/issues/586))
 
+- **Behaviour change**: because the cache file must now be owned by the
+  process that loads it (see previous entry), a config cache warmed up by
+  a different user than the runtime user (e.g. deploy user vs `www-data`)
+  is **refused at boot** instead of being loaded silently. Warm up with
+  the runtime user or `chown` the cache file to that user after warm-up
+  ([#586](https://github.com/crazy-goat/workerman-bundle/issues/586))
+
 - Widen `StaticFilesMiddleware`'s built-in denylist to cover editor
   backups, deploy residue and credential files, and make the check
   compound-extension aware. In the default configuration the middleware

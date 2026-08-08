@@ -373,9 +373,10 @@ containing directory** before loading it:
   file requires write permission on the directory, not on the file itself,
   so the directory is the primary object checked.
 - **Directory group check**: If the cache directory is group-writable
-  (`g+w`) by a group the current process does not belong to, loading is
-  **refused**. A group-writable directory whose group is the process's own
-  group (e.g. `0750` combined with `chgrp` to the webserver group) is
+  (`g+w`) by a group the current process does not belong to — neither its
+  effective group nor any supplementary group — loading is **refused**. A
+  group-writable directory whose group is a group the process belongs to
+  (e.g. `0770` combined with `chgrp` to the webserver group) is
   accepted.
 - **Ownership check**: If the cache file is not owned by the process's
   effective user ID, loading is **refused** — a file another user could
@@ -412,6 +413,22 @@ Or, if the web server and CLI users differ, use a shared group:
 ```bash
 chmod 0750 var/cache/
 chgrp <webserver-group> var/cache/
+```
+
+Because the cache file must also be **owned by the runtime user** (see the
+Ownership check above), a cache warmed up by a different user — e.g. a
+deploy script running as `root` or a CI user, with the server later
+running as `www-data` — is refused at boot. Either warm up with the
+runtime user:
+
+```bash
+sudo -u <runtime-user> bin/console cache:warmup
+```
+
+or re-own the cache file after warm-up:
+
+```bash
+chown <runtime-user> var/cache/workerman/config.cache.php
 ```
 
 ## SFX Checksum Requirement

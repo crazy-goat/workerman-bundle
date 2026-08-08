@@ -50,6 +50,7 @@ final class ServicesConfiguratorTest extends TestCase
         self::assertTrue($this->container->hasDefinition('workerman.config_loader'));
         $definition = $this->container->getDefinition('workerman.config_loader');
         self::assertSame(ConfigLoader::class, $definition->getClass());
+        self::assertTrue($definition->isAutowired());
         self::assertTrue($definition->hasTag('kernel.cache_warmer'));
     }
 
