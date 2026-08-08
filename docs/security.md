@@ -32,6 +32,36 @@ Cookie: token=xyz789
 → Cookies correctly parsed as two cookies: session=abc123, token=xyz789
 ```
 
+### Cookie Value Decoding (PHP SAPI Parity)
+
+The bundle deliberately reproduces PHP's SAPI cookie-decoding semantics.
+`parseCookiesFromServerBag()` splits the joined header on `;` and the first
+`=` of each pair, then URL-decodes the value with `rawurldecode()` semantics
+— matching the `php_raw_url_decode()` step that populates `$_COOKIE` under
+PHP-FPM and every other SAPI: `%XX` sequences decode to their byte, while a
+literal `+` in a cookie value is **preserved** and does not become a space
+despite the common assumption that cookies use `urldecode()` semantics.
+Cookie names are not decoded, exactly like PHP.
+
+This is what makes the Symfony write path round-trip: Symfony's
+`Cookie::__toString()` serialises values with `rawurlencode()`, and without
+this decode a cookie holding base64 (`=`, `+`, `/`), a signature separator
+(`:`), or any non-ASCII byte came back to the application in its encoded form
+— silently different from what PHP-FPM would deliver for the same header.
+
+Decoding must always run **after** splitting: an encoded `%3B` in a value is
+data, never a cookie separator, so the duplicate-`Cookie`-header smuggling fix
+above stays intact. Do not "optimise" this decode away or move it before the
+split.
+
+Known intentional deviations from `$_COOKIE`, kept for backwards
+compatibility: duplicate cookie names keep the last value (PHP keeps the
+first), and PHP's cookie-name rewriting (` ` and `.` → `_`, `name[key]` array
+syntax) is not reproduced — the bundle treats names verbatim. One further
+whitespace micro-deviation: PHP strips leading whitespace of a value
+(`a= b` → `b`) but keeps trailing whitespace, while the bundle trims both
+ends on the raw pair.
+
 ### Duplicate Sensitive Headers
 
 Duplicate `Host`, `Content-Length`, and `Authorization` headers are suspicious and may indicate request smuggling or header injection attacks. Only the first value of each is propagated to Symfony; subsequent values are silently discarded.

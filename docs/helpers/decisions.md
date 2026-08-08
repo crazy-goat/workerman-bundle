@@ -70,3 +70,15 @@ php-cs-fixer, phpstan and rector (dry-run). Keep `composer lint` /
 `worker`/`coder` and `review` subagents read and append to
 `docs/helpers/` (see [README.md](README.md)). This keeps project memory
 persistent across sessions.
+
+### Cookie values are raw-URL-decoded exactly like PHP's SAPI (#583)
+
+`RequestConverter::parseCookiesFromServerBag()` decodes cookie values with
+`rawurldecode()` semantics **after** splitting on `;`/`=`, mirroring PHP's
+`php_default_treat_data()` → `php_raw_url_decode()` step that populates
+`$_COOKIE` under FPM and every other SAPI. Verified from `main/php_variables.c`
+(PHP-8.2) and live probes: `%XX` sequences decode, a literal `+` stays `+`
+(it is NOT turned into a space — despite the widespread assumption that cookie
+values are `urldecode()`d), and cookie names are not decoded at all. Decoding
+is ordered after splitting so an encoded `%3B` can never re-open the #217
+smuggling class.

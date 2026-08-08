@@ -296,6 +296,14 @@ final class RequestConverter
      * This replaces Workerman's built-in cookie() call to ensure correct
      * handling when duplicate Cookie headers are present (see security issue #217).
      *
+     * Values are URL-decoded after splitting on ';' and '=' with rawurldecode()
+     * semantics, mirroring PHP's SAPI: PHP populates $_COOKIE via
+     * php_raw_url_decode(), so %XX sequences are decoded but a literal '+' is
+     * preserved (it does not become a space — see docs/security.md). Decoding
+     * must never run before splitting, or an encoded '%3B' in a value would be
+     * reinterpreted as a cookie separator and reintroduce the smuggling class
+     * closed by #217. Cookie names are not decoded, matching PHP.
+     *
      * @param array<string, mixed> $server
      *
      * @return array<string, string>
@@ -320,7 +328,7 @@ final class RequestConverter
             if ($name === '') {
                 continue;
             }
-            $cookies[$name] = $parts[1] ?? '';
+            $cookies[$name] = \rawurldecode($parts[1] ?? '');
         }
 
         return $cookies;
