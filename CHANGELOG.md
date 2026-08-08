@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Widen `StaticFilesMiddleware`'s built-in denylist to cover editor
+  backups, deploy residue and credential files, and make the check
+  compound-extension aware. In the default configuration the middleware
+  previously served any existing file whose final extension was not one of
+  `.php`, `.phar`, `.phtml`, so a single editor backup or interrupted save
+  left in `public/` (`index.php~`, `index.php.bak`, `config.php.save`,
+  `config.inc`, `backup.sql`, …) disclosed full PHP source or credentials
+  over HTTP. The denylist now also rejects names ending in `~` (vim/emacs
+  backups), extends the blocked extension list with `phps`, `inc`, `sql`,
+  `log`, `pem`, `key`, `crt`, `sqlite`, `sqlite3`, `db` — checked in every
+  dot-separated suffix segment so they are caught wherever they appear
+  (`x.phar.gz`, `x.php.txt`) — and with `bak`, `orig`, `rej`, `save`, `swp`,
+  `swo`, `tmp`, `old`, `dist` — blocked as the final extension of a file
+  only (`config.dist` is denied, an `assets.dist/` directory or an interior
+  `app.dist.js` segment is not)
+  ([#582](https://github.com/crazy-goat/workerman-bundle/issues/582))
+
 - Harden master-process identification before sending signals. The legacy
   `/proc/$pid/cmdline` fallback accepted any process whose command line
   contained the substring `php` (and returned `true` unconditionally when

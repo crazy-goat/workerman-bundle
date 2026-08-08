@@ -114,7 +114,10 @@ Configure `trusted_hosts` when your application generates absolute URLs based on
 The following are **always blocked** (requests return 404):
 
 - **Dotfiles and dot-directories**: Any path component starting with `.` is rejected (e.g., `.env`, `.git/HEAD`, `.htaccess`, `.hidden/secret.txt`).
-- **Executable file extensions**: `.php`, `.phar`, and `.phtml` files are never served.
+- **Editor backup residue**: any name ending in `~` (vim/emacs backups, e.g. `index.php~`) and any name wrapped in `#...#` (emacs autosaves) is rejected. The `#...#` rule is enforced defensively at the path-component level — normal HTTP path parsing already strips `#` fragments, so fragment-style names are in practice unreachable through URLs.
+- **Source and executable extensions**: `.php`, `.phar`, `.phtml`, `.phps` and `.inc` files are never served. The check applies to every dot-separated segment of the suffix, so a blocked extension is caught wherever it appears in a compound name (`x.php.bak`, `x.php.txt`, `x.phar.gz`).
+- **Credentials, dumps and logs**: `.sql`, `.log`, `.pem`, `.key`, `.crt`, `.sqlite`, `.sqlite3`, `.db` — also checked in every segment of a compound suffix.
+- **Editor backup and deploy-residue extensions**: `.bak`, `.orig`, `.rej`, `.save`, `.swp`, `.swo`, `.tmp`, `.old`, `.dist` — blocked as the final extension of a file only. An interior segment (`app.dist.js`) or a directory name (`assets.dist/`) is not a leak signal on its own; the contents are still covered by the rules above (and by the allowlist when configured).
 - **Well-known leak files**: `composer.json`, `composer.lock`, and `package.json` are blocked.
 - **Server configuration files**: `.htaccess` and `.htpasswd` are blocked.
 
@@ -189,6 +192,7 @@ When `follow_symlinks` is `false` (default), any path component inside the root 
 ### Security Considerations
 
 - **Keep `$rootDirectory` isolated**: Point `$rootDirectory` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
+- **Prefer the allowlist over the denylist**: without `allowed_extensions`, the default posture is "serve everything except the denylist above" — safe for a directory that contains only public assets, but the denylist is a last line of defence, not a guarantee. Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
 - **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
 - **Disable symlinks**: Keep `$followSymlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.

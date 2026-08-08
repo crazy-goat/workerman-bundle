@@ -10,7 +10,44 @@ use Workerman\Protocols\Http\Response;
 
 final readonly class StaticFilesMiddleware implements MiddlewareInterface
 {
-    private const BLOCKED_EXTENSIONS = ['php', 'phar', 'phtml'];
+    private const LEAK_EXTENSIONS = [
+        // PHP source spellings — the middleware never executes PHP, so
+        // blocking these is about source disclosure, not execution. A leak
+        // signal wherever it appears in a compound suffix (`x.php.bak`,
+        // `x.phar.gz`), for directories and files alike.
+        'php',
+        'phar',
+        'phtml',
+        'phps',
+        'inc',
+        // Credentials, dumps and logs — also leak signals in any position.
+        'sql',
+        'log',
+        'pem',
+        'key',
+        'crt',
+        'sqlite',
+        'sqlite3',
+        'db',
+    ];
+
+    private const RESIDUE_EXTENSIONS = [
+        // Editor backup and deploy residue — vim/emacs backups, conflicted
+        // merges, interrupted saves. These appear in production directories
+        // without anyone intending them to, and often contain the source
+        // (and credentials) of the file they back up. A leak signal only as
+        // the *final* extension of a *file*: a directory named `assets.dist`
+        // or `backup.bak` is legitimate and must not deny its contents.
+        'bak',
+        'orig',
+        'rej',
+        'save',
+        'swp',
+        'swo',
+        'tmp',
+        'old',
+        'dist',
+    ];
 
     private const BLOCKED_FILENAMES = [
         '.htaccess',
@@ -124,8 +161,13 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         $relativePath = str_replace('\\', '/', $relativePath);
 
         $components = explode('/', ltrim($relativePath, '/'));
+        $componentPath = $this->rootRealPath;
         foreach ($components as $component) {
-            if ($component !== '' && $this->isComponentBlocked($component)) {
+            if ($component === '') {
+                continue;
+            }
+            $componentPath .= DIRECTORY_SEPARATOR . $component;
+            if ($this->isComponentBlocked($component, $componentPath)) {
                 return true;
             }
         }
@@ -133,14 +175,44 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return false;
     }
 
-    private function isComponentBlocked(string $name): bool
+    private function isComponentBlocked(string $name, ?string $componentPath = null): bool
     {
         if (str_starts_with($name, '.')) {
             return true;
         }
 
+        // Editor backup residue: `index.php~` (vim/emacs) and
+        // `#index.php#` (emacs autosave) bypass the extension checks below.
+        if (str_ends_with($name, '~') || (str_starts_with($name, '#') && str_ends_with($name, '#'))) {
+            return true;
+        }
+
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-        if (in_array($ext, self::BLOCKED_EXTENSIONS, true)) {
+
+        // Leak extensions are blocked wherever they appear in the suffix
+        // chain (after the *first* dot), so a blocked extension is caught
+        // in every position of a compound name (`x.php.bak`, `x.php.txt`,
+        // `x.phar.gz`) — `pathinfo()` alone only sees the segment after the
+        // last dot.
+        $firstDot = strpos($name, '.');
+        if ($firstDot !== false) {
+            $chain = strtolower(substr($name, $firstDot + 1));
+            foreach (explode('.', $chain) as $segment) {
+                if (in_array($segment, self::LEAK_EXTENSIONS, true)) {
+                    return true;
+                }
+            }
+        }
+
+        // Residue suffixes are a leak signal only as the final extension of
+        // a file. An interior or directory occurrence (`app.dist.js`,
+        // `assets.dist/`) is not — its contents are still protected by the
+        // checks above, and the allowlist below when configured. The
+        // directory stat is only paid when the final extension is a residue
+        // candidate, keeping the common asset path stat-free.
+        if (in_array($ext, self::RESIDUE_EXTENSIONS, true)
+            && ($componentPath === null || !is_dir($componentPath))
+        ) {
             return true;
         }
 
