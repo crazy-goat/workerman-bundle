@@ -184,7 +184,8 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $cached = $cache[$cacheIndex];
             $ttl = $cached['path'] === false ? self::CACHE_NEGATIVE_TTL : self::CACHE_TTL;
             if ($now - $cached['time'] < $ttl) {
-                return $this->cacheStore($cache, $cacheIndex, $cached['path'], $now);
+                // Refresh hit preserves the original timestamp: TTL stays fixed, only LRU position moves.
+                return $this->cacheStore($cache, $cacheIndex, $cached['path'], $cached['time']);
             }
             unset($cache[$cacheIndex]);
         }

@@ -410,7 +410,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    public function testNegativeCacheRejectsSameSymlinkPathRepeatedly(): void
+    public function testSymlinkRejectionHitKeepsFixedTtl(): void
     {
         $linkPath = $this->rootDirectory . '/assets';
         $subDir = $this->rootDirectory . '/realdir';
@@ -425,6 +425,7 @@ final class StaticFilesMiddlewareTest extends TestCase
                 symlink($subDir, $linkPath);
             }
 
+            $path = '/assets/secret.txt';
             $called = 0;
             $next = function (Request $req) use (&$called): Response {
                 $called++;
@@ -432,13 +433,34 @@ final class StaticFilesMiddlewareTest extends TestCase
                 return new Response(404);
             };
 
-            // Three consecutive lookups within the negative TTL: all must fall through to $next
-            // (the symlink rejection is cached, not silently dropped).
-            for ($i = 0; $i < 3; $i++) {
-                $middleware($this->createRequest('/assets/secret.txt'), $next);
-            }
+            $cacheIndex = function () use ($middleware, $path): string {
+                $rootRealPathReflection = new \ReflectionProperty($middleware, 'rootRealPath');
+                $rootRealPath = $rootRealPathReflection->getValue($middleware);
+                assert(is_string($rootRealPath));
 
-            $this->assertSame(3, $called, 'Every symlink-traversing request must fall through to $next');
+                return $path . "\0" . '0' . "\0" . $rootRealPath;
+            };
+
+            $storedTime = function () use ($middleware, $cacheIndex): ?int {
+                $cacheMethod = new \ReflectionMethod($middleware, 'getRealPathCache');
+                $cache = $cacheMethod->invoke($middleware);
+                assert(is_array($cache));
+                $entry = $cache[$cacheIndex()] ?? null;
+
+                return is_array($entry) && is_int($entry['time']) ? $entry['time'] : null;
+            };
+
+            // Warm the negative cache.
+            $middleware($this->createRequest($path), $next);
+            $timeAfterWarm = $storedTime();
+            $this->assertNotNull($timeAfterWarm, 'Rejected path should be present in the negative cache');
+
+            // A hit within CACHE_NEGATIVE_TTL must not slide the expiry forward.
+            sleep(1);
+            $middleware($this->createRequest($path), $next);
+
+            $this->assertSame($timeAfterWarm, $storedTime(), 'A cache hit must not refresh the TTL timestamp');
+            $this->assertSame(2, $called, 'Every symlink-traversing request must fall through to $next');
         } finally {
             if (file_exists($linkPath)) {
                 unlink($linkPath);
