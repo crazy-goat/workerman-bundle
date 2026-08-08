@@ -54,18 +54,21 @@ final class SymfonyController
             try {
                 $this->symfonyRequest->getHost();
             } catch (SuspiciousOperationException) {
+                $this->resetServices();
+                $this->symfonyRequest = null;
+
                 return new Response(400);
             }
         }
 
-        $this->kernel->boot();
-
         try {
+            $this->kernel->boot();
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
             return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion());
         } catch (\Throwable $e) {
+            $this->resetServices();
             $this->symfonyRequest = null;
             $this->symfonyResponse = null;
             throw $e;
@@ -73,10 +76,17 @@ final class SymfonyController
     }
 
     /**
-     * Terminate the kernel if it implements TerminableInterface.
+     * Terminate the kernel and/or reset request-scoped services.
      *
      * This method should be called AFTER the response has been sent to the client,
      * typically in a deferred timer callback to avoid blocking response delivery.
+     *
+     * This method owns the services_resetter reset on every request path:
+     * kernel termination runs only for TerminableInterface kernels with both
+     * Symfony request and response objects available, while service reset and
+     * reference clearing happen unconditionally here (and in the exception /
+     * trusted-host-rejection paths inside {@see __invoke}). The guard below
+     * keeps this call idempotent so the reset never runs twice per request.
      *
      * After termination, the stored request and response references are cleared
      * to prevent memory leaks and ensure idempotency.
@@ -85,17 +95,21 @@ final class SymfonyController
      */
     public function terminateIfNeeded(): void
     {
-        if ($this->kernel instanceof TerminableInterface
-            && $this->symfonyRequest instanceof SymfonyRequest
-            && $this->symfonyResponse instanceof SymfonyResponse
-        ) {
-            try {
+        if (!$this->symfonyRequest instanceof SymfonyRequest && !$this->symfonyResponse instanceof SymfonyResponse) {
+            return;
+        }
+
+        try {
+            if ($this->kernel instanceof TerminableInterface
+                && $this->symfonyRequest instanceof SymfonyRequest
+                && $this->symfonyResponse instanceof SymfonyResponse
+            ) {
                 $this->kernel->terminate($this->symfonyRequest, $this->symfonyResponse);
-            } finally {
-                $this->resetServices();
-                $this->symfonyRequest = null;
-                $this->symfonyResponse = null;
             }
+        } finally {
+            $this->resetServices();
+            $this->symfonyRequest = null;
+            $this->symfonyResponse = null;
         }
     }
 

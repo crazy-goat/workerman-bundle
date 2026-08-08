@@ -491,8 +491,10 @@ final class TestNonTerminableKernel implements KernelInterface
 {
     public bool $bootCalled = false;
 
-    public function __construct(private readonly ?SymfonyResponse $responseToReturn = null)
-    {
+    public function __construct(
+        private readonly ?SymfonyResponse $responseToReturn = null,
+        private readonly ?\Symfony\Component\DependencyInjection\ContainerInterface $container = null,
+    ) {
     }
 
     public function boot(): void
@@ -575,7 +577,11 @@ final class TestNonTerminableKernel implements KernelInterface
 
     public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
     {
-        throw new \RuntimeException('Not implemented');
+        if (!$this->container instanceof \Symfony\Component\DependencyInjection\ContainerInterface) {
+            throw new \RuntimeException('Not implemented');
+        }
+
+        return $this->container;
     }
 
     public function getStartTime(): float
@@ -694,8 +700,10 @@ final class TestThrowingKernel implements KernelInterface, TerminableInterface
     public bool $bootCalled = false;
     public bool $terminateCalled = false;
 
-    public function __construct(private readonly \Throwable $exception)
-    {
+    public function __construct(
+        private readonly \Throwable $exception,
+        private readonly ?\Symfony\Component\DependencyInjection\ContainerInterface $container = null,
+    ) {
     }
 
     public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void
@@ -783,7 +791,11 @@ final class TestThrowingKernel implements KernelInterface, TerminableInterface
 
     public function getContainer(): \Symfony\Component\DependencyInjection\ContainerInterface
     {
-        throw new \RuntimeException('Not implemented');
+        if (!$this->container instanceof \Symfony\Component\DependencyInjection\ContainerInterface) {
+            throw new \RuntimeException('Not implemented');
+        }
+
+        return $this->container;
     }
 
     public function getStartTime(): float
@@ -889,6 +901,21 @@ final class SymfonyControllerTest extends TestCase
         // Second call should not trigger terminate again (request/response are nullified)
         $controller->terminateIfNeeded();
         $this->assertSame(1, $kernel->terminateCount, 'Terminate should not be called twice');
+    }
+
+    public function testServicesResetterRunsForNonTerminableKernel(): void
+    {
+        $resetter = $this->createMock(ResetInterface::class);
+        $resetter->expects($this->once())->method('reset');
+        $container = $this->createMock(\Symfony\Component\DependencyInjection\ContainerInterface::class);
+        $container->method('has')->with('services_resetter')->willReturn(true);
+        $container->method('get')->with('services_resetter')->willReturn($resetter);
+
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse(), $container);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter());
+
+        $controller(new Request("GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"), $this->connection);
+        $controller->terminateIfNeeded();
     }
 
     public function testResponseHeadersAreConverted(): void
@@ -1339,6 +1366,26 @@ final class SymfonyControllerTest extends TestCase
         $this->assertFalse($kernel->terminateCalled, 'terminate() must not be called when __invoke threw — references should be null');
     }
 
+    public function testServicesResetterRunsWhenKernelHandleThrows(): void
+    {
+        $resetter = $this->createMock(ResetInterface::class);
+        $resetter->expects($this->once())->method('reset');
+        $container = $this->createMock(\Symfony\Component\DependencyInjection\ContainerInterface::class);
+        $container->method('has')->with('services_resetter')->willReturn(true);
+        $container->method('get')->with('services_resetter')->willReturn($resetter);
+        $kernel = new TestThrowingKernel(new \RuntimeException('kernel crash'), $container);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter());
+
+        try {
+            $controller(new Request("GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"), $this->connection);
+            $this->fail('Expected exception was not thrown');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('kernel crash', $e->getMessage());
+        }
+
+        $controller->terminateIfNeeded();
+    }
+
     public function testTerminateIfNeededCallsServicesResetter(): void
     {
         $symfonyResponse = new SymfonyResponse('test content');
@@ -1422,5 +1469,22 @@ final class SymfonyControllerTest extends TestCase
         $suspiciousRequest = SymfonyRequest::create('http://attacker.com/');
         $this->expectException(SuspiciousOperationException::class);
         $suspiciousRequest->getHost();
+    }
+
+    public function testTrustedHostRejectionResetsServicesAndClearsReferences(): void
+    {
+        $resetter = $this->createMock(ResetInterface::class);
+        $resetter->expects($this->once())->method('reset');
+        $container = $this->createMock(\Symfony\Component\DependencyInjection\ContainerInterface::class);
+        $container->method('has')->with('services_resetter')->willReturn(true);
+        $container->method('get')->with('services_resetter')->willReturn($resetter);
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse(), $container);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter(), null, ['^example\\.com$']);
+
+        $response = $controller(new Request("GET /test HTTP/1.1\r\nHost: attacker.com\r\n\r\n"), $this->connection);
+        $this->assertSame(400, $response->getStatusCode());
+
+        // A second lifecycle call must be a no-op after the early return cleanup.
+        $controller->terminateIfNeeded();
     }
 }
