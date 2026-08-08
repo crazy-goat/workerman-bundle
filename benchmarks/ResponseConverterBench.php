@@ -32,6 +32,7 @@ final class ResponseConverterBench
     private Response $simpleResponse;
     private Response $headerHeavyResponse;
     private Response $irregularHeadersResponse;
+    private Response $largeBodyResponse;
 
     public function init(): void
     {
@@ -56,6 +57,10 @@ final class ResponseConverterBench
             'www-authenticate' => 'Bearer',
             'dnt' => '1',
         ]);
+
+        $this->largeBodyResponse = new Response(str_repeat('a', 1024 * 1024), Response::HTTP_OK, [
+            'Content-Type' => 'text/html',
+        ]);
     }
 
     public function benchSimpleResponse(): void
@@ -71,5 +76,10 @@ final class ResponseConverterBench
     public function benchIrregularHeadersResponse(): void
     {
         $this->converter->convert($this->irregularHeadersResponse, $this->connection);
+    }
+
+    public function benchLargeBodyResponse(): void
+    {
+        $this->converter->convert($this->largeBodyResponse, $this->connection);
     }
 }

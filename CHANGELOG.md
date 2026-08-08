@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop manually splitting buffered responses into 8 KiB sends. `DefaultResponseStrategy` now returns the complete body to Workerman's transport, avoiding redundant `substr()` copies and write syscalls; preserve the request's HTTP protocol version on converted responses ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
+
 - Cancel `ServerWorker`'s per-connection timeout and keep-alive timers on connection close, centralize timer cleanup in one helper shared by `onMessage` and `onClose`, and keep `BinaryFileResponseStrategy` temp-file cleanup chained correctly with the worker-level `onClose` base callback ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571))
 
 ### Security

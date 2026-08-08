@@ -127,7 +127,7 @@ final class ContentLengthDesyncTest extends TestCase
     public function testLargeBodyPathEmitsSingleContentLength(): void
     {
         $converter = new ResponseConverter([
-            new DefaultResponseStrategy(2048),
+            new DefaultResponseStrategy(),
         ]);
 
         $body = str_repeat('a', 4096);
@@ -135,11 +135,11 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => (string) strlen($body),
         ]);
 
-        $converter->convert($response, $this->connection);
+        $workermanResponse = $converter->convert($response, $this->connection);
 
-        $sent = implode('', $this->getSent());
-        $this->assertSame(1, substr_count($sent, 'Content-Length:'));
-        $this->assertStringContainsString('Content-Length: 4096', $sent);
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 4096', $wire);
     }
 
     /**

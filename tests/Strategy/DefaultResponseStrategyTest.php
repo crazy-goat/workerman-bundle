@@ -42,7 +42,7 @@ final class DefaultResponseStrategyTest extends TestCase
 
     public function testSmallBodyReturnsWorkermanResponse(): void
     {
-        $strategy = new DefaultResponseStrategy(2048 * 1024);
+        $strategy = new DefaultResponseStrategy();
         $body = str_repeat('a', 1024);
         $symfonyResponse = new Response($body);
 
@@ -54,43 +54,40 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertSame(1024, strlen($workermanResponse->rawBody()));
     }
 
-    public function testLargeBodySendsChunkedResponse(): void
+    public function testLargeBodyReturnsCompleteResponseWithoutManualChunking(): void
     {
-        $chunkSize = 2048;
-        $strategy = new DefaultResponseStrategy($chunkSize);
-        $chunkCount = 5;
-        $sendChunkSize = max($chunkSize, 8192);
-        $bodySize = $sendChunkSize * $chunkCount;
-        $body = str_repeat('a', $bodySize);
+        $strategy = new DefaultResponseStrategy();
+        $body = str_repeat('a', 8192 * 5);
         $symfonyResponse = new Response($body);
 
-        $this->connection->context = new \stdClass();
-
-        $sendCalls = [];
-        $expectedSendCount = 1 + $chunkCount;
         $this->connection
-            ->expects($this->exactly($expectedSendCount))
-            ->method('send')
-            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
-                $sendCalls[] = ['data' => $data, 'raw' => $raw];
-            });
+            ->expects($this->never())
+            ->method('send');
 
         $workermanResponse = $strategy->convert($symfonyResponse, [], $this->connection);
 
-        $this->assertSame('', $workermanResponse->rawBody());
         $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertSame($body, $workermanResponse->rawBody());
+        $this->assertStringContainsString('Content-Length: ' . strlen($body), (string) $workermanResponse);
+    }
 
-        $this->assertCount($expectedSendCount, $sendCalls);
-        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
-        $this->assertStringContainsString("Content-Length: {$bodySize}", $sendCalls[0]['data']);
-        $this->assertTrue($sendCalls[0]['raw']);
+    public function testResponseWireFormatPreservesHeadersAndBody(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $body = str_repeat('body', 4096);
+        $symfonyResponse = new Response($body, \Symfony\Component\HttpFoundation\Response::HTTP_CREATED, ['Content-Type' => 'text/plain', 'X-Test' => 'value']);
 
-        for ($i = 1; $i <= $chunkCount; $i++) {
-            $this->assertTrue($sendCalls[$i]['raw']);
-            $this->assertSame($sendChunkSize, strlen((string) $sendCalls[$i]['data']));
-        }
+        $workermanResponse = $strategy->convert(
+            $symfonyResponse,
+            ['Content-Type' => 'text/plain', 'X-Test' => 'value'],
+            $this->connection,
+        );
 
-        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
-        $this->assertTrue($this->connection->context->responseSentDirectly);
+        $wire = (string) $workermanResponse;
+
+        $this->assertStringStartsWith("HTTP/1.1 201 Created\r\n", $wire);
+        $this->assertStringContainsString("Content-Type: text/plain\r\n", $wire);
+        $this->assertStringContainsString("X-Test: value\r\n", $wire);
+        $this->assertStringEndsWith("\r\n{$body}", $wire);
     }
 }
