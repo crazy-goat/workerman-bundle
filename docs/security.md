@@ -365,15 +365,40 @@ The configuration cache file is a PHP file that gets executed. Any attacker who 
 
 ### Permission Validation
 
-To mitigate misconfiguration, the bundle validates the cache file permissions before loading it:
+To mitigate misconfiguration, the bundle validates the cache file **and its
+containing directory** before loading it:
 
-- **World-writable check**: If the cache file is world-writable (permissions include `o+w`), loading is **refused** with a clear error message.
-- **Scope**: The check covers POSIX file permissions only. It does not cover ACLs, extended attributes, or filesystems that do not support POSIX permissions.
+- **Directory write check**: If the cache directory is world-writable
+  (permissions include `o+w`), loading is **refused**. Replacing the cache
+  file requires write permission on the directory, not on the file itself,
+  so the directory is the primary object checked.
+- **Directory group check**: If the cache directory is group-writable
+  (`g+w`) by a group the current process does not belong to — neither its
+  effective group nor any supplementary group — loading is **refused**. A
+  group-writable directory whose group is a group the process belongs to
+  (e.g. `0770` combined with `chgrp` to the webserver group) is
+  accepted.
+- **Ownership check**: If the cache file is not owned by the process's
+  effective user ID, loading is **refused** — a file another user could
+  replace would be owned by that user.
+- **World-writable file check**: As a secondary signal, a cache file that is
+  itself world-writable is **refused**.
+- **Unreadable metadata**: If the file or directory metadata cannot be read
+  (e.g. on filesystems that do not report permissions), a **warning naming
+  the path is emitted** — logged via the PSR-3 logger when one is configured,
+  raised as an `E_USER_WARNING` otherwise — and loading proceeds; the check
+  degrades loudly instead of silently disappearing.
+- **Scope**: The checks cover POSIX owner and permission bits only. They do
+  not cover ACLs, extended attributes, or filesystems that do not support
+  POSIX permissions.
+- **Ownership requirement**: the cache file must be written and loaded by
+  the same user. Warm up the cache with the runtime user, or `chown` the
+  cache file to that user after warm-up.
 
 ### When this matters
 
 - **Multi-tenant environments**: Shared hosting or CI runners where the cache directory might be accessible to other users.
-- **Containerised deployments**: Containers with overly permissive `umask` settings (e.g., `umask 0000`) can produce world-writable cache files.
+- **Containerised deployments**: Containers with overly permissive `umask` settings (e.g., `umask 0000`) can produce world-writable cache files and directories.
 - **Development setups**: Developers running with `umask 0000` or cache directories created with `0777` permissions.
 
 ### Remediation
@@ -389,6 +414,22 @@ Or, if the web server and CLI users differ, use a shared group:
 ```bash
 chmod 0750 var/cache/
 chgrp <webserver-group> var/cache/
+```
+
+Because the cache file must also be **owned by the runtime user** (see the
+Ownership check above), a cache warmed up by a different user — e.g. a
+deploy script running as `root` or a CI user, with the server later
+running as `www-data` — is refused at boot. Either warm up with the
+runtime user:
+
+```bash
+sudo -u <runtime-user> bin/console cache:warmup
+```
+
+or re-own the cache file after warm-up:
+
+```bash
+chown <runtime-user> var/cache/workerman/config.cache.php
 ```
 
 ## SFX Checksum Requirement

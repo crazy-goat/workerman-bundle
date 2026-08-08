@@ -69,6 +69,7 @@ final readonly class ServicesConfigurator
         $container
             ->register('workerman.config_loader', ConfigLoader::class)
             ->setPublic(true)
+            ->setAutowired(true)
             ->addMethodCall('setWorkermanConfig', [$config])
             ->addMethodCall('setBuildConfig', [$config['build']])
             ->addTag('kernel.cache_warmer')
