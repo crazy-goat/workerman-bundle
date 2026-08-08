@@ -205,13 +205,13 @@ The HTTP server exposes configurable timeouts to protect against slowloris-style
 
 The maximum time (in seconds) to wait for a complete request (headers + body) on a newly established connection. If the client does not send the complete request within this window, the connection is closed. This prevents slow-read attacks where an attacker sends headers or body data byte-by-byte.
 
-Default: `120` seconds.
+Default: `120` seconds. Timeout checks run from a shared worker-level sweeper, so a connection may remain open until the next sweep (at most approximately one quarter of the smallest configured timeout, with a minimum one-second interval). Because activity is tracked at whole-second granularity, a connection may also be closed up to about one second *before* its exact timeout.
 
 ### keepalive_timeout
 
 The maximum idle time (in seconds) to keep a keep-alive connection open after the previous request has been fully processed. If no new request arrives within this window, the connection is closed. This prevents idle connections from consuming worker capacity indefinitely.
 
-Default: `30` seconds.
+Default: `30` seconds. As with `connection_timeout`, enforcement uses the shared sweeper's interval rather than a dedicated timer for each connection.
 
 ### body_size_cap (per-server)
 

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cancel `ServerWorker`'s per-connection timeout and keep-alive timers on connection close, centralize timer cleanup in one helper shared by `onMessage` and `onClose`, and keep `BinaryFileResponseStrategy` temp-file cleanup chained correctly with the worker-level `onClose` base callback ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571))
 
+- Replace per-request connection timers with one worker-level sweeper and activity timestamps, preventing cancelled `Select` timer entries from retaining memory under sustained keep-alive traffic ([#555](https://github.com/crazy-goat/workerman-bundle/issues/555)). Note: when `ServerWorker` is constructed directly with `connectionTimeout: 0`, the timeout is now disabled (previously it armed an immediate close); the YAML configuration still enforces a minimum of 1 second.
+
 ### Security
 
 - Fix the config-cache permission guard so it checks the object that
