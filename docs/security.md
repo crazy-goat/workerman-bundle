@@ -437,11 +437,18 @@ containing directory** before loading it:
   POSIX permissions.
 - **Ownership requirement**: the cache file must be written and loaded by
   the same user. Warm up the cache with the runtime user, or `chown` the
-  cache file to that user after warm-up.
+  cache file to that user after warm-up. A mismatch is refused in the
+  launcher process (`Runner::run()`, before any worker forks) with a
+  `RuntimeException` naming both UIDs.
 
 ### When this matters
 
 - **Multi-tenant environments**: Shared hosting or CI runners where the cache directory might be accessible to other users.
+- **Container image builds**: warming the cache as `root` during a Docker
+  build and starting the server as a non-root user (`USER www-data`) trips
+  the ownership check. This is the single most common containerised layout
+  and is now a hard boot failure, not a warning — see [Containerised
+  deployments (Docker)](#containerised-deployments-docker) below.
 - **Containerised deployments**: Containers with overly permissive `umask` settings (e.g., `umask 0000`) can produce world-writable cache files and directories.
 - **Development setups**: Developers running with `umask 0000` or cache directories created with `0777` permissions.
 
@@ -450,15 +457,19 @@ containing directory** before loading it:
 Ensure the cache directory has restrictive permissions:
 
 ```bash
-chmod 0700 var/cache/
+chmod 0700 var/cache/<env>/workerman/
 ```
 
 Or, if the web server and CLI users differ, use a shared group:
 
 ```bash
-chmod 0750 var/cache/
-chgrp <webserver-group> var/cache/
+chmod 0750 var/cache/<env>/workerman/
+chgrp <webserver-group> var/cache/<env>/workerman/
 ```
+
+(`<env>` is the Symfony environment segment, e.g. `prod`.) The guard checks the directory
+*containing* the cache file — `var/cache/<env>/workerman/` — so permissions must be set
+on that directory, not on `var/cache/` itself, and for every environment you deploy.
 
 Because the cache file must also be **owned by the runtime user** (see the
 Ownership check above), a cache warmed up by a different user — e.g. a
@@ -473,8 +484,60 @@ sudo -u <runtime-user> bin/console cache:warmup
 or re-own the cache file after warm-up:
 
 ```bash
-chown <runtime-user> var/cache/workerman/config.cache.php
+chown <runtime-user> var/cache/<env>/workerman/config.cache.php
 ```
+
+### Containerised deployments (Docker)
+
+The most common way to trip the ownership check is the standard Docker
+layout where the cache is warmed at image build time and the server runs
+as a different user:
+
+```dockerfile
+# Broken: cache warmed as root, server runs as www-data
+FROM php:8.3-cli
+COPY . /app
+WORKDIR /app
+RUN bin/console cache:warmup
+USER www-data
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+The `cache:warmup` step runs as `root`, so `var/cache/<env>/workerman/config.cache.php`
+is owned by UID 0. When the container later starts the server as `www-data`,
+`ConfigLoader` refuses to load the cache file, and the launcher process
+aborts with a `RuntimeException` before any worker forks — the whole start
+sequence dies.
+
+**Warm up with the runtime user** (recommended):
+
+```dockerfile
+FROM php:8.3-cli
+COPY --chown=www-data:www-data . /app
+WORKDIR /app
+USER www-data
+RUN bin/console cache:warmup
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
+write `var/cache` during warm-up — a plain `COPY . /app` would create
+root-owned files that `www-data` cannot overwrite.)
+
+**Or re-own the cache file after warm-up:**
+
+```dockerfile
+FROM php:8.3-cli
+COPY . /app
+WORKDIR /app
+RUN bin/console cache:warmup && chown -R www-data var/cache
+USER www-data
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+The same applies to any deploy-user/runtime-user split: deploy scripts, CI
+runs and `sudo` invocations must either run the warm-up as the runtime user
+or re-own the cache afterwards.
 
 ## SFX Checksum Requirement
 

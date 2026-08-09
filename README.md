@@ -225,6 +225,61 @@ Or using the runtime directly:
 $ APP_RUNTIME=CrazyGoat\\WorkermanBundle\\Runtime php public/index.php start
 ```
 
+### Config cache and runtime user
+
+Since 0.25.0 the bundle refuses to load a configuration cache file that is not
+**owned by the process that loads it**: the cache file
+(`{cacheDir}/workerman/config.cache.php`, in Symfony's kernel cache directory,
+e.g. `var/cache/prod`) is a PHP file that is `require`d at boot, so a file
+replaced by another user would be owned by that user. The check is enforced
+in the launcher process, before any worker forks — an ownership mismatch
+aborts `workerman:server start` with a `RuntimeException`, not a warning. See
+[Config Cache File Protection](docs/security.md#config-cache-file-protection)
+for the full threat model.
+
+> **Note:** This is the upgrade-relevant change in 0.25.0. The most common
+> containerised layout trips it: the cache is warmed at image build time
+> (as `root`), the server runs as a non-root user.
+
+The error message names both UIDs and suggests the fix:
+
+```
+The configuration cache file "/app/var/cache/prod/workerman/config.cache.php" is owned by uid 0,
+not by the current process user (uid 33). The file may have been replaced by another user.
+Ensure the cache is written by the same user that loads it (e.g., warm up with the runtime
+user, or chown the cache to that user).
+```
+
+**Warm up with the runtime user** (recommended):
+
+```dockerfile
+FROM php:8.3-cli
+COPY --chown=www-data:www-data . /app
+WORKDIR /app
+USER www-data
+RUN bin/console cache:warmup
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
+write `var/cache` during warm-up — a plain `COPY . /app` creates root-owned
+files that `www-data` cannot overwrite.)
+
+**Or re-own the cache file after warm-up**:
+
+```dockerfile
+FROM php:8.3-cli
+COPY . /app
+WORKDIR /app
+RUN bin/console cache:warmup && chown -R www-data var/cache
+USER www-data
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+The same applies to any deploy-user/runtime-user split (deploy scripts, CI
+runs, `sudo`): the user that warms the cache must be the user that starts
+`workerman:server`, or the cache must be re-owned by that user in between.
+
 ### Manage the server
 
 ```bash
