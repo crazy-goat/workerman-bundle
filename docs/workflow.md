@@ -33,11 +33,53 @@ shortlist and proceeds to step 2.
 > exceed thousands of tokens. Keeping this in a separate context protects the
 > main session's budget for implementation and review.
 
+### Fast path: ranked candidates via `bin/pick-issue.php`
+
+The workflow is milestone-driven, so before delegating triage to a subagent,
+run the ranking script — it costs a few tokens instead of thousands:
+
+```bash
+php bin/pick-issue.php                            # top 5 of the lowest open milestone
+php bin/pick-issue.php --milestone=0.7.0 --top=5  # explicit milestone
+php bin/pick-issue.php --json                     # machine-readable, for scripting
+```
+
+The script lists open milestones, picks the **lowest** one (semver), scores
+its open issues — type labels (`bug`/`security`/`enhancement`/…), priority
+labels (`critical`/`high`/`medium`/`minor`), title signals (leak/crash/
+security/performance), age and comment count — and prints the top N with an
+explicit per-issue score breakdown. It never reads issue bodies or comment
+text: the API payload is projected down to titles, labels, dates and comment
+counts at parse time, and it always paginates (`gh` caps lists at 30 by
+default). The LLM/user still makes the final pick from the ranked candidates;
+the script only narrows the pool.
+
+> **Release gate:** when the target milestone has 0 open issues left, the
+> script exits with code **3** and prints the release steps instead of
+> candidates — the workflow STOPS, a release must be cut and the milestone
+> closed before picking again (see "Release Gate" below).
+
 **Selection criteria (applied by the subagent):**
 - Issues labeled `enhancement`, `code-quality`, `good-first-issue`
 - Issues about stability, data correctness, performance
 - Issues blocking other tasks
 - Issues most relevant to users (README, API documentation)
+
+---
+
+## Release Gate
+
+Work is driven by the **lowest open milestone**: a milestone is a release
+candidate, not a bottomless backlog. When the current milestone has no open
+issues left, the workflow must **stop** — do not silently pick an issue from
+a higher milestone.
+
+`php bin/pick-issue.php` enforces this:
+
+- exit code `0` → candidates printed, proceed to step 2
+- exit code `3` (`RELEASE NEEDED`) → the target milestone is empty; cut the
+  release (tag + `gh release create`), close the milestone, then re-run the
+  script so the next milestone becomes the target
 
 ---
 
@@ -421,8 +463,10 @@ extend `docs/troubleshooting.md` or ask the user before adding a new entry.
 ## Quick Reference – Full Cycle
 
 ```bash
-# 1. Pick an issue (via subagent)
-#    subagent: "List top 5 impactful open issues with rationale + branch name"
+# 1. Pick an issue — fast path: rank candidates, then let the LLM/user choose
+#    php bin/pick-issue.php            # top 5 of lowest milestone (exit 3 => RELEASE NEEDED, stop!)
+#    php bin/pick-issue.php --milestone=0.7.0 --top=5 --json
+#    alternative: delegate full triage to a subagent ("List top 5 impactful\u2026")
 
 # 2. Feature branch
 git checkout master && git pull origin master

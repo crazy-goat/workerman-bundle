@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `bin/pick-issue.php` — dev tool that ranks the open issues of the lowest open milestone and prints the top candidates with an explainable score, so the next issue can be picked without pulling full issue bodies into the session; exits with code 3 (release needed) when the current milestone has no open issues left, stopping the workflow until a release is cut ([#633](https://github.com/crazy-goat/workerman-bundle/issues/633))
+
 ### Changed
 
 - The `response_chunk_size` option now configures only streamed responses; it no longer affects regular buffered responses, and the (final, DI-registered) `DefaultResponseStrategy` no longer accepts a constructor chunk-size argument ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
