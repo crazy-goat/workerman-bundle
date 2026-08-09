@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ProcessTest` event-marker assertions no longer fail spuriously when the daemon stalls or restarts: the start- and error-marker files are reset before each test and the helper now waits for a **freshly appended** entry (15 s budget) instead of returning on the first non-empty file, so stale entries from previous runs or a >4 s daemon gap can no longer satisfy the recency check ([#645](https://github.com/crazy-goat/workerman-bundle/issues/645))
+
 - Bound the dropped-underscore-header diagnostics in `RequestConverter` to 64 distinct names per worker process: the log-once-per-worker bookkeeping was an unbounded static map keyed by client-supplied header names, so a single unauthenticated peer could drive unbounded memory growth and sustained log-write amplification. Once the cap is reached, one suppression notice is logged and recording stops ([#638](https://github.com/crazy-goat/workerman-bundle/issues/638))
 
 - `StaticFilesMiddleware` no longer 404s every file in a subdirectory when `static_files.allowed_extensions` is configured: the allowlist and the residue-extension checks are file-only rules and are now applied exclusively to the last path component, while every component still gets the dotfile, leak-extension and blocked-name checks ([#637](https://github.com/crazy-goat/workerman-bundle/issues/637))

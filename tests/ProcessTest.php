@@ -16,7 +16,11 @@ final class ProcessTest extends KernelTestCase
         $this->varDir = dirname(__DIR__) . '/var';
 
         // Clean up marker files from prior runs so leftover state cannot
-        // cause false failures (Issue #348 review warning #3).
+        // cause false failures (Issue #348 review warning #3). Reset BOTH
+        // markers: a stale entry in either could otherwise satisfy the
+        // fresh-entry waits below when the daemon stalls mid-run or a prior
+        // run was killed before its shutdown cleanup ran (Issue #645).
+        @unlink($this->varDir . '/' . ProcessMarkerPaths::START_MARKER);
         @unlink($this->varDir . '/' . ProcessMarkerPaths::ERROR_MARKER);
     }
 
@@ -48,12 +52,16 @@ final class ProcessTest extends KernelTestCase
      */
     public function testProcessStartEventIsDispatched(): void
     {
-        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::START_MARKER);
-        $this->assertNotEmpty($entries, 'Process start marker is not found');
+        $freshAfter = time() - 1;
+        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::START_MARKER, $freshAfter);
+        $this->assertNotEmpty($entries, 'No fresh ProcessStartEvent marker entry appeared within 15s');
 
         $latest = $this->findLatestEntryForProcess($entries, 'Test process');
         $this->assertNotNull($latest, 'No ProcessStartEvent entry found for "Test process"');
 
+        // Backstop recency check only: the fresh-entry wait above is the
+        // actual fix for #645. The issue suggested widening this window, but
+        // that is no longer needed and must not be done.
         $this->assertGreaterThan(
             time() - 4,
             $latest['timestamp'],
@@ -92,12 +100,16 @@ final class ProcessTest extends KernelTestCase
      */
     public function testProcessErrorEventIsDispatchedOnThrowable(): void
     {
-        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::ERROR_MARKER);
-        $this->assertNotEmpty($entries, 'Process error marker is not found — error event was not dispatched');
+        $freshAfter = time() - 1;
+        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::ERROR_MARKER, $freshAfter);
+        $this->assertNotEmpty($entries, 'No fresh ProcessErrorEvent marker entry appeared within 15s');
 
         $latest = $this->findLatestEntryForProcess($entries, 'Test error process');
         $this->assertNotNull($latest, 'No ProcessErrorEvent entry found for "Test error process"');
 
+        // Backstop recency check only: the fresh-entry wait above is the
+        // actual fix for #645. The issue suggested widening this window, but
+        // that is no longer needed and must not be done.
         $this->assertGreaterThan(
             time() - 4,
             $latest['timestamp'],
@@ -271,20 +283,33 @@ final class ProcessTest extends KernelTestCase
     }
 
     /**
-     * Wait for a marker file to appear and return its parsed entries.
+     * Wait for a marker file to gain a freshly appended entry and return all
+     * of its parsed entries.
+     *
+     * A merely non-empty file is not enough: entries left over from previous
+     * runs or written before a daemon stall could otherwise satisfy the
+     * caller (Issue #645). Polls at a 200ms interval until at least one
+     * parsed entry has a timestamp >= $freshAfter, or a generous ~15s
+     * deadline passes to tolerate slow macOS daemon respawns (see #534).
+     * Returns [] on timeout.
      *
      * @return list<array{timestamp: int, process: string, message?: string}>
      */
-    private function waitForMarkerEntries(string $relativePath): array
+    private function waitForMarkerEntries(string $relativePath, int $freshAfter): array
     {
         $i = 0;
         do {
             $content = @file_get_contents($this->varDir . '/' . $relativePath);
             if ($content !== false && $content !== '') {
-                return $this->parseMarkerEntries($content);
+                $entries = $this->parseMarkerEntries($content);
+                foreach ($entries as $entry) {
+                    if ($entry['timestamp'] >= $freshAfter) {
+                        return $entries;
+                    }
+                }
             }
             usleep(200000);
-        } while (++$i < 10);
+        } while (++$i < 75);
         return [];
     }
 
