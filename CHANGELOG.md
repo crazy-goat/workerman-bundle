@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bound the dropped-underscore-header diagnostics in `RequestConverter` to 64 distinct names per worker process: the log-once-per-worker bookkeeping was an unbounded static map keyed by client-supplied header names, so a single unauthenticated peer could drive unbounded memory growth and sustained log-write amplification. Once the cap is reached, one suppression notice is logged and recording stops ([#638](https://github.com/crazy-goat/workerman-bundle/issues/638))
+
 - `StaticFilesMiddleware` no longer 404s every file in a subdirectory when `static_files.allowed_extensions` is configured: the allowlist and the residue-extension checks are file-only rules and are now applied exclusively to the last path component, while every component still gets the dotfile, leak-extension and blocked-name checks ([#637](https://github.com/crazy-goat/workerman-bundle/issues/637))
 
 - Run the `services_resetter` on every request path — including kernel boot/handle exceptions, trusted-host rejections, and kernels that do not implement `TerminableInterface` — so request-scoped Symfony service state cannot leak between requests in a long-running Workerman process ([#572](https://github.com/crazy-goat/workerman-bundle/issues/572))
