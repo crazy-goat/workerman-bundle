@@ -324,7 +324,7 @@ PID      Worker          CID       Trans   Protocol        ipv4   ipv6   Recv-Q 
 
 > **Note:** For better performance, Workerman recommends installing the `php-event` extension.
 
-> **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The `grpc` extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details.
+> **Note:** If you have the `grpc` PHP extension installed, you must set the environment variable `GRPC_ENABLE_FORK_SUPPORT=1` before starting the server. The `grpc` extension spawns background threads that deadlock in forked child processes (e.g. scheduler tasks) unless fork support is explicitly enabled. See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241) for details. On grpc hosts the bundle additionally terminates supervised-process and task children with SIGKILL instead of `exit()`, because `grpc_shutdown()` can hang in forked children — see [docs/troubleshooting.md](docs/troubleshooting.md#grpc-extension-and-fork-safety).
 
 ### Programmatic reload
 

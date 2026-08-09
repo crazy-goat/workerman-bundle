@@ -49,6 +49,25 @@ final class SchedulerWorkerSigchldTest extends TestCase
     }
 
     /**
+     * On grpc hosts ProcessTerminator ends task children with SIGKILL, so
+     * signal 9 is the NORMAL completion path and must not be logged as a
+     * crash — while other signals still must be.
+     */
+    public function testSigchldHandlerSilencesSigkillOnGrpcHosts(): void
+    {
+        $this->runIsolatedTest('sigkill_normal_when_grpc');
+    }
+
+    /**
+     * Regression guard for the non-grpc contract: SIGKILL death without the
+     * termination override must still be logged as a crash (Issue #41).
+     */
+    public function testSigchldHandlerWarnsOnSigkillWithoutGrpc(): void
+    {
+        $this->runIsolatedTest('sigkill_warns_without_grpc');
+    }
+
+    /**
      * Test that multiple simultaneous child terminations are all reaped.
      */
     public function testSigchldHandlerReapsMultipleChildren(): void

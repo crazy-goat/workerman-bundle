@@ -209,6 +209,34 @@ If you have the `grpc` PHP extension installed, it spawns internal background th
   GRPC_ENABLE_FORK_SUPPORT=1
   ```
 
+The server prints a warning at start-up when the `grpc` extension is loaded
+and `GRPC_ENABLE_FORK_SUPPORT` is unset.
+
+### The other direction: shutdown hangs and SIGKILL termination
+
+Fork support fixes the deadlock *inside* forked children, but it leaves a
+second grpc hazard: `grpc_shutdown()` — which runs when a PHP process
+exits — can hang indefinitely in a forked child (observed on macOS with
+Homebrew PHP; the shutdown handler waits on a condition variable that
+never fires). A supervised process worker or a scheduled task child that
+finishes its work therefore never dies, the supervisor cannot respawn it,
+and failed runs leave live processes behind.
+
+Because of this, when the `grpc` extension is loaded the bundle terminates
+worker and task children with **SIGKILL** instead of `exit()` (see
+[`ProcessTerminator`](../src/Util/ProcessTerminator.php), which is also
+used by the cache-warmup child via `posix_kill()`). SIGKILL bypasses PHP
+module shutdown entirely.
+
+- **Trade-off:** destructors and `register_shutdown_function()` callbacks
+  are skipped for supervised processes and forked tasks on grpc hosts.
+  Logging directly before termination is unaffected (it is synchronous).
+- **Stop/reload on grpc hosts:** prefer *non-graceful* `stop` / `reload`
+  (SIGINT/SIGUSR1). Workerman's SIGKILL-after-`stop_timeout` fallback is
+  only armed for non-graceful stops, so `stop --graceful` / `reload
+  --graceful` (SIGQUIT/SIGUSR2) can hang on grpc hosts when the master has
+  to wait for children stuck in `grpc_shutdown`.
+
 ## Reload Strategies Reference
 
 Consider which restart strategy matches your deployment model:

@@ -128,6 +128,8 @@ match ($testName) {
     'multiple_children' => testMultipleChildren(),
     'scheduler_worker_handler' => testSchedulerWorkerHandler(),
     'scheduler_worker_exception_logging' => testSchedulerWorkerExceptionLogging(),
+    'sigkill_normal_when_grpc' => testSigkillNormalWhenGrpc(),
+    'sigkill_warns_without_grpc' => testSigkillWarnsWithoutGrpc(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -539,4 +541,151 @@ function createSchedulerWorkerInstance(): \CrazyGoat\WorkermanBundle\Worker\Sche
     $workerProp->setValue($schedulerWorker, $mockWorker);
 
     return $schedulerWorker;
+}
+
+/**
+ * Simulates a grpc host for signals tests: SIGKILL is the normal
+ * task-completion path (ProcessTerminator is active).
+ */
+function testSigkillNormalWhenGrpc(): void
+{
+    requireAutoloader();
+
+    // Simulate a grpc host: SIGKILL becomes the normal task-completion path
+    // (as when ProcessTerminator is active).
+    \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::setSigkillNormalCompletion(true);
+
+    $logFilePath = tempnam(sys_get_temp_dir(), 'test_sigchld_');
+    if ($logFilePath === false) {
+        fail('Failed to create temp log file');
+    }
+    $logStream = fopen($logFilePath, 'w+');
+    if ($logStream === false) {
+        fail('Failed to open temp log stream');
+    }
+    \Workerman\Worker::$logFile = $logFilePath;
+    \Workerman\Worker::$outputStream = $logStream;
+
+    $schedulerWorker = createSchedulerWorkerInstance();
+    $handleSigchld = (new \ReflectionMethod(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'handleSigchld',
+    ))->getClosure($schedulerWorker);
+
+    if (!$handleSigchld instanceof \Closure) {
+        fail('handleSigchld must be accessible via reflection');
+    }
+
+    pcntl_signal(SIGCHLD, $handleSigchld);
+
+    // SIGKILL self-kill = normal completion on grpc hosts: must stay silent.
+    $pid = pcntl_fork();
+    if ($pid === 0) {
+        \posix_kill(\posix_getpid(), \SIGKILL);
+    }
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+
+    $deadline = microtime(true) + 5;
+    $childAlive = true;
+    while (microtime(true) < $deadline && $childAlive) {
+        pcntl_signal_dispatch();
+        // The handler reaps the child silently (normal completion), so
+        // existence-check the pid instead of waitpid.
+        $childAlive = \posix_kill($pid, 0);
+        usleep(10_000);
+    }
+    if ($childAlive) {
+        fail('SIGKILL child was not reaped by SIGCHLD handler');
+    }
+    usleep(50_000);
+    pcntl_signal_dispatch();
+
+    if (str_contains((string) file_get_contents($logFilePath), 'was killed by signal')) {
+        fail('SIGKILL completion must not be logged as a crash on grpc hosts');
+    }
+
+    // A non-SIGKILL signal must still be logged as a crash.
+    $pid2 = pcntl_fork();
+    if ($pid2 === 0) {
+        sleep(60);
+        exit(0);
+    }
+    if ($pid2 === -1) {
+        fail('Fork failed');
+    }
+    usleep(50_000);
+    // SIGUSR1 is SIG_IGN in this process (inherited from the PHPUnit
+    // bootstrap across exec), so use SIGTERM to kill the child.
+    \posix_kill($pid2, \SIGTERM);
+
+    $found = false;
+    $deadline = microtime(true) + 5;
+    while (microtime(true) < $deadline && !$found) {
+        pcntl_signal_dispatch();
+        $log = (string) file_get_contents($logFilePath);
+        if (str_contains($log, 'was killed by signal')) {
+            $found = true;
+            continue;
+        }
+        usleep(10_000);
+    }
+    if (!$found) {
+        fail('Non-SIGKILL signal death must still be logged on grpc hosts');
+    }
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+function testSigkillWarnsWithoutGrpc(): void
+{
+    requireAutoloader();
+
+    $logFilePath = tempnam(sys_get_temp_dir(), 'test_sigchld_');
+    if ($logFilePath === false) {
+        fail('Failed to create temp log file');
+    }
+    $logStream = fopen($logFilePath, 'w+');
+    if ($logStream === false) {
+        fail('Failed to open temp log stream');
+    }
+    \Workerman\Worker::$logFile = $logFilePath;
+    \Workerman\Worker::$outputStream = $logStream;
+
+    $schedulerWorker = createSchedulerWorkerInstance();
+    $handleSigchld = (new \ReflectionMethod(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'handleSigchld',
+    ))->getClosure($schedulerWorker);
+
+    pcntl_signal(SIGCHLD, $handleSigchld);
+
+    // Without grpc (plain php -n process) SIGKILL is NOT the normal
+    // completion path and must still produce a warning.
+    $pid = pcntl_fork();
+    if ($pid === 0) {
+        \posix_kill(\posix_getpid(), \SIGKILL);
+    }
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+
+    $found = false;
+    $deadline = microtime(true) + 5;
+    while (microtime(true) < $deadline && !$found) {
+        pcntl_signal_dispatch();
+        if (str_contains((string) file_get_contents($logFilePath), 'was killed by signal 9')) {
+            $found = true;
+            continue;
+        }
+        usleep(10_000);
+    }
+    if (!$found) {
+        fail('SIGKILL death must still warn on hosts without grpc');
+    }
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
 }

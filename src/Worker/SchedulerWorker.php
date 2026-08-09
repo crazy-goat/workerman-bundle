@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
+use CrazyGoat\WorkermanBundle\Util\ProcessTerminator;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Workerman\Worker;
 
@@ -81,11 +82,42 @@ final class SchedulerWorker
                 }
             } elseif (pcntl_wifsignaled($status)) {
                 $signal = pcntl_wtermsig($status);
+                if ($signal === \SIGKILL && self::sigkillIsNormalCompletion()) {
+                    // On grpc hosts ProcessTerminator ends every task child
+                    // with SIGKILL (see ProcessTerminator), so signal 9 is
+                    // the NORMAL completion path, not a crash. A failed task
+                    // is already logged by the child with its stack trace
+                    // (SIGKILL carries no exit code).
+                    continue;
+                }
                 $this->worker->log(
                     sprintf('%s [warning] Child process %d was killed by signal %d', $this->worker->name, $pid, $signal),
                 );
             }
         }
+    }
+
+    /**
+     * True when SIGKILL is the normal task-completion path: the grpc
+     * extension is loaded and ProcessTerminator kills children instead of
+     * calling exit() to bypass grpc's hanging shutdown handler.
+     */
+    protected static function sigkillIsNormalCompletion(): bool
+    {
+        return self::$sigkillNormalCompletion ?? \extension_loaded('grpc');
+    }
+
+    private static bool|null $sigkillNormalCompletion = null;
+
+    /**
+     * Test hook: force the SIGKILL-completion decision. Pass null to
+     * restore auto-detection via extension_loaded().
+     *
+     * @internal test-only
+     */
+    public static function setSigkillNormalCompletion(?bool $value): void
+    {
+        self::$sigkillNormalCompletion = $value;
     }
 
     private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
@@ -237,7 +269,7 @@ final class SchedulerWorker
     {
         $fp = $this->openChildPidFile($pidFile);
         if ($fp === null) {
-            exit(0);
+            ProcessTerminator::terminate(0);
         }
 
         $this->worker::$globalEvent?->deleteAllTimer();
@@ -267,7 +299,9 @@ final class SchedulerWorker
         } finally {
             $this->releaseLockAndClose($fp);
             $this->deleteTaskPid($service);
-            exit($childExitCode);
+            // SIGKILL instead of exit() when grpc is loaded: its shutdown
+            // handler deadlocks in forked children (see ProcessTerminator).
+            ProcessTerminator::terminate($childExitCode);
         }
     }
 
