@@ -11,8 +11,10 @@ finishing (see [README.md](README.md) for rules).
 (`isFilePathBlocked()`), so file-only rules — the `allowed_extensions`
 allowlist and residue-extension blocking — must be applied only to the
 final component (`array_key_last`, `$isFile` flag). Directory components
-have no extension and were denied whenever an allowlist was configured,
-making every subdirectory file 404 (issue #637).
+must not be evaluated by file-only rules even when their names contain dots
+(`assets.dist/`, `backup.bak/`) — before the fix they were denied whenever
+an allowlist was configured, making every subdirectory file 404 (issue
+#637).
 
 ## Test suite
 
