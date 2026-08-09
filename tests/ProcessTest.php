@@ -53,7 +53,7 @@ final class ProcessTest extends KernelTestCase
     public function testProcessStartEventIsDispatched(): void
     {
         $freshAfter = time() - 1;
-        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::START_MARKER, $freshAfter);
+        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::START_MARKER, 'Test process', $freshAfter);
         $this->assertNotEmpty($entries, 'No fresh ProcessStartEvent marker entry appeared within 15s');
 
         $latest = $this->findLatestEntryForProcess($entries, 'Test process');
@@ -101,7 +101,7 @@ final class ProcessTest extends KernelTestCase
     public function testProcessErrorEventIsDispatchedOnThrowable(): void
     {
         $freshAfter = time() - 1;
-        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::ERROR_MARKER, $freshAfter);
+        $entries = $this->waitForMarkerEntries(ProcessMarkerPaths::ERROR_MARKER, 'Test error process', $freshAfter);
         $this->assertNotEmpty($entries, 'No fresh ProcessErrorEvent marker entry appeared within 15s');
 
         $latest = $this->findLatestEntryForProcess($entries, 'Test error process');
@@ -283,19 +283,21 @@ final class ProcessTest extends KernelTestCase
     }
 
     /**
-     * Wait for a marker file to gain a freshly appended entry and return all
-     * of its parsed entries.
+     * Wait for a marker file to gain a freshly appended entry for the given
+     * process and return all of its parsed entries.
      *
      * A merely non-empty file is not enough: entries left over from previous
      * runs or written before a daemon stall could otherwise satisfy the
-     * caller (Issue #645). Polls at a 200ms interval until at least one
-     * parsed entry has a timestamp >= $freshAfter, or a generous ~15s
-     * deadline passes to tolerate slow macOS daemon respawns (see #534).
-     * Returns [] on timeout.
+     * caller (Issue #645). Freshness is scoped to the expected process name:
+     * the marker is shared by every supervised process, so an unrelated
+     * process restarting must not satisfy a wait. Polls at a 200ms interval
+     * until at least one parsed entry for $processName has a timestamp
+     * >= $freshAfter, or a generous ~15s deadline passes to tolerate slow
+     * macOS daemon respawns (see #534). Returns [] on timeout.
      *
      * @return list<array{timestamp: int, process: string, message?: string}>
      */
-    private function waitForMarkerEntries(string $relativePath, int $freshAfter): array
+    private function waitForMarkerEntries(string $relativePath, string $processName, int $freshAfter): array
     {
         $i = 0;
         do {
@@ -303,7 +305,7 @@ final class ProcessTest extends KernelTestCase
             if ($content !== false && $content !== '') {
                 $entries = $this->parseMarkerEntries($content);
                 foreach ($entries as $entry) {
-                    if ($entry['timestamp'] >= $freshAfter) {
+                    if ($entry['process'] === $processName && $entry['timestamp'] >= $freshAfter) {
                         return $entries;
                     }
                 }
@@ -316,12 +318,23 @@ final class ProcessTest extends KernelTestCase
     /**
      * Parse append-only marker file content into structured entries.
      *
+     * The final line is only parsed when it is newline-terminated: the file
+     * is read concurrently with the daemon's FILE_APPEND writes, so a
+     * partially written trailing line (no process field yet, truncated
+     * message) must not be treated as a valid entry (Issue #645 review).
+     *
      * @return list<array{timestamp: int, process: string, message?: string}>
      */
     private function parseMarkerEntries(string $content): array
     {
         $entries = [];
-        foreach (explode("\n", $content) as $line) {
+        $lines = explode("\n", $content);
+        if (end($lines) !== '') {
+            // Trailing line was not terminated by a newline: still being
+            // written, ignore it.
+            array_pop($lines);
+        }
+        foreach ($lines as $line) {
             if ($line === '') {
                 continue;
             }
