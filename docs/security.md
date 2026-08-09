@@ -480,7 +480,7 @@ sudo -u <runtime-user> bin/console cache:warmup
 or re-own the cache file after warm-up:
 
 ```bash
-chown <runtime-user> var/cache/workerman/config.cache.php
+chown <runtime-user> var/cache/<env>/workerman/config.cache.php
 ```
 
 ### Containerised deployments (Docker)
