@@ -30,6 +30,40 @@ them instead of restating the pattern in issues or PRs.
 
 ## Test suite
 
+### grpc extension on macOS: stop timeouts, zombie masters, no worker restarts
+
+If the `grpc` extension is loaded (Homebrew PHP), its shutdown handler
+(`grpc_shutdown()`) **can hang indefinitely in forked children** on
+affected macOS/Homebrew setups. On such hosts (tracked in
+[#651](https://github.com/crazy-goat/workerman-bundle/issues/651)):
+
+- The daemonize intermediate can hang at `start -d`, so
+  `workerman:server stop` can time out and leave a zombie master. Clean
+  up with a **repo-scoped** command (never a bare `pkill -f WorkerMan` —
+  it would kill unrelated Workerman applications on the host):
+  ```bash
+  pkill -9 -f 'tests/App/index.php'; rm -f var/run/workerman.pid*
+  ```
+- A self-called `exit()` inside a process service hangs the worker (no
+  restarts). The bundle terminates worker/task children with SIGKILL when
+  grpc is loaded (`Util\ProcessTerminator`, since #650); make sure your
+  process services do not `exit()` themselves — return instead.
+- Expect **exactly one** start-up warning in the Workerman log file
+  (`var/log/workerman.log`): with `GRPC_ENABLE_FORK_SUPPORT` unset it
+  says to set it; with it set (or `true`) it announces SIGKILL
+  termination. They are mutually exclusive, not both emitted.
+
+CI (Linux, no grpc) does not exercise any of this.
+
+### Don't write start-up warnings to stderr before daemonize()
+
+`Runner`'s grpc warning must go to the Workerman log file only. Writing to
+`STDERR` before `daemonize()` killed launchers spawned with a closed stderr
+pipe under `proc_open` (SIGPIPE) — the daemon never started and
+stop/reload commands failed. `Worker::log()` is equally unusable there: its
+`safeEcho()` path reads `Worker::$outputStream`, which is only initialized
+inside `runAll()` (feof() on null).
+
 ### "Address already in use" when running `composer test`
 
 `composer test` boots a real Workerman daemon that binds ports **8888**
