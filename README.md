@@ -254,17 +254,23 @@ user, or chown the cache to that user).
 
 ```dockerfile
 FROM php:8.3-cli
-COPY . /app
+COPY --chown=www-data:www-data . /app
+WORKDIR /app
 USER www-data
 RUN bin/console cache:warmup
 CMD ["bin/console", "workerman:server", "start"]
 ```
+
+(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
+write `var/cache` during warm-up — a plain `COPY . /app` creates root-owned
+files that `www-data` cannot overwrite.)
 
 **Or re-own the cache file after warm-up**:
 
 ```dockerfile
 FROM php:8.3-cli
 COPY . /app
+WORKDIR /app
 RUN bin/console cache:warmup && chown -R www-data var/cache
 USER www-data
 CMD ["bin/console", "workerman:server", "start"]

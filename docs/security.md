@@ -457,15 +457,19 @@ containing directory** before loading it:
 Ensure the cache directory has restrictive permissions:
 
 ```bash
-chmod 0700 var/cache/
+chmod 0700 var/cache/<env>/workerman/
 ```
 
 Or, if the web server and CLI users differ, use a shared group:
 
 ```bash
-chmod 0750 var/cache/
-chgrp <webserver-group> var/cache/
+chmod 0750 var/cache/<env>/workerman/
+chgrp <webserver-group> var/cache/<env>/workerman/
 ```
+
+(`<env>` is the Symfony environment segment, e.g. `prod`.) The guard checks the directory
+*containing* the cache file — `var/cache/<env>/workerman/` — so permissions must be set
+on that directory, not on `var/cache/` itself, and for every environment you deploy.
 
 Because the cache file must also be **owned by the runtime user** (see the
 Ownership check above), a cache warmed up by a different user — e.g. a
@@ -508,17 +512,23 @@ sequence dies.
 
 ```dockerfile
 FROM php:8.3-cli
-COPY . /app
+COPY --chown=www-data:www-data . /app
+WORKDIR /app
 USER www-data
 RUN bin/console cache:warmup
 CMD ["bin/console", "workerman:server", "start"]
 ```
+
+(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
+write `var/cache` during warm-up — a plain `COPY . /app` would create
+root-owned files that `www-data` cannot overwrite.)
 
 **Or re-own the cache file after warm-up:**
 
 ```dockerfile
 FROM php:8.3-cli
 COPY . /app
+WORKDIR /app
 RUN bin/console cache:warmup && chown -R www-data var/cache
 USER www-data
 CMD ["bin/console", "workerman:server", "start"]
