@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Complete the README "Configuration reference": every top-level `workerman` key is now covered — `servers`, `reload_strategy` and `build` were missing, and `build` delegates to `docs/build-packaging.md`. New per-server and per-strategy option tables document `reuse_port`, `local_cert`, `local_pk`, `dispersion`, `allowed_exceptions`, `source_dir`, `file_pattern` and the deprecated `serve_files`/`root_dir` keys; the memory strategy section now documents all four options including `gc_cooldown` (default 60 s), which is also added to its YAML example. A working `https://` configuration example (with the `wss://` note and the symlinked-path rejection) was added to `docs/security.md`, and the `static_files.allowed_extensions` trap — silently ignored by a service-registered `StaticFilesMiddleware` — is called out in the reference and the middleware section ([#590](https://github.com/crazy-goat/workerman-bundle/issues/590))
+
 - The `response_chunk_size` option now configures only streamed responses; it no longer affects regular buffered responses, and the (final, DI-registered) `DefaultResponseStrategy` no longer accepts a constructor chunk-size argument ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
 
 ### Fixed
