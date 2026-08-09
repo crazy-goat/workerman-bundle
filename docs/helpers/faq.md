@@ -3,6 +3,17 @@
 Subagents: read this before starting a task, append new entries after
 finishing (see [README.md](README.md) for rules).
 
+## Static files
+
+### File-only rules must be gated on the last path component
+
+`StaticFilesMiddleware` walks every relative-path component
+(`isFilePathBlocked()`), so file-only rules — the `allowed_extensions`
+allowlist and residue-extension blocking — must be applied only to the
+final component (`array_key_last`, `$isFile` flag). Directory components
+have no extension and were denied whenever an allowlist was configured,
+making every subdirectory file 404 (issue #637).
+
 ## Test suite
 
 ### "Address already in use" when running `composer test`
