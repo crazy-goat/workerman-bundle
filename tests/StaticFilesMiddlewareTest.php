@@ -1003,6 +1003,87 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
+    public function testAllowlistedFileInSubdirectoryIsServed(): void
+    {
+        $subDir = $this->rootDirectory . '/assets/css';
+        mkdir($subDir, 0777, true);
+        $cssFile = $subDir . '/app.css';
+        file_put_contents($cssFile, 'body { color: red; }');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/assets/css/app.css');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for allowlisted file in subdirectory');
+            $this->assertEquals(200, $response->getStatusCode(), 'Allowlisted file in subdirectory should be served');
+        } finally {
+            unlink($cssFile);
+            rmdir($subDir);
+            rmdir(dirname($subDir));
+        }
+    }
+
+    public function testExtensionlessFileInSubdirectoryIsBlockedWithAllowlist(): void
+    {
+        $subDir = $this->rootDirectory . '/subdir';
+        mkdir($subDir, 0777, true);
+        $secretFile = $subDir . '/Dockerfile';
+        file_put_contents($secretFile, 'sensitive content');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/subdir/Dockerfile');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for extensionless file in subdirectory');
+            $this->assertEquals(404, $response->getStatusCode(), 'Extensionless file in subdirectory should be blocked');
+        } finally {
+            unlink($secretFile);
+            rmdir($subDir);
+        }
+    }
+
+    public function testAllowlistedFileServedUnderResidueSuffixDirectory(): void
+    {
+        $dir = $this->rootDirectory . '/assets.dist';
+        mkdir($dir, 0777, true);
+        file_put_contents($dir . '/logo.png', 'png');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+            $request = $this->createRequest('/assets.dist/logo.png');
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertFalse($called, 'Next should NOT be called for allowlisted file under residue-suffix directory');
+            $this->assertEquals(200, $response->getStatusCode(), 'Allowlisted file under residue-suffix directory should be served');
+        } finally {
+            @unlink($dir . '/logo.png');
+            @rmdir($dir);
+        }
+    }
+
     /**
      * @dataProvider extensionlessFileProvider
      */

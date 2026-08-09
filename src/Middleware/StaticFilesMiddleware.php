@@ -161,13 +161,12 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         $relativePath = str_replace('\\', '/', $relativePath);
 
         $components = explode('/', ltrim($relativePath, '/'));
-        $componentPath = $this->rootRealPath;
-        foreach ($components as $component) {
+        $lastIndex = array_key_last($components);
+        foreach ($components as $index => $component) {
             if ($component === '') {
                 continue;
             }
-            $componentPath .= DIRECTORY_SEPARATOR . $component;
-            if ($this->isComponentBlocked($component, $componentPath)) {
+            if ($this->isComponentBlocked($component, $index === $lastIndex)) {
                 return true;
             }
         }
@@ -175,7 +174,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return false;
     }
 
-    private function isComponentBlocked(string $name, ?string $componentPath = null): bool
+    private function isComponentBlocked(string $name, bool $isFile = false): bool
     {
         if (str_starts_with($name, '.')) {
             return true;
@@ -207,12 +206,10 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         // Residue suffixes are a leak signal only as the final extension of
         // a file. An interior or directory occurrence (`app.dist.js`,
         // `assets.dist/`) is not — its contents are still protected by the
-        // checks above, and the allowlist below when configured. The
-        // directory stat is only paid when the final extension is a residue
-        // candidate, keeping the common asset path stat-free.
-        if (in_array($ext, self::RESIDUE_EXTENSIONS, true)
-            && ($componentPath === null || !is_dir($componentPath))
-        ) {
+        // checks above, and the allowlist below when configured. Directory
+        // components never reach this branch: the file/directory distinction
+        // is carried by the $isFile flag, so no per-component stat is needed.
+        if ($isFile && in_array($ext, self::RESIDUE_EXTENSIONS, true)) {
             return true;
         }
 
@@ -220,7 +217,9 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return true;
         }
 
-        return $this->allowedExtensions !== [] && !in_array($ext, $this->allowedExtensions, true);
+        // The allowlist applies to files only: directory components have no
+        // extension and must never be denied by it (issue #637).
+        return $isFile && $this->allowedExtensions !== [] && !in_array($ext, $this->allowedExtensions, true);
     }
 
     private function getPublicPathFile(Request $request): string|false

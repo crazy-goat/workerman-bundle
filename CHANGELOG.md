@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `StaticFilesMiddleware` no longer 404s every file in a subdirectory when `static_files.allowed_extensions` is configured: the allowlist and the residue-extension checks are file-only rules and are now applied exclusively to the last path component, while every component still gets the dotfile, leak-extension and blocked-name checks ([#637](https://github.com/crazy-goat/workerman-bundle/issues/637))
+
 - Run the `services_resetter` on every request path — including kernel boot/handle exceptions, trusted-host rejections, and kernels that do not implement `TerminableInterface` — so request-scoped Symfony service state cannot leak between requests in a long-running Workerman process ([#572](https://github.com/crazy-goat/workerman-bundle/issues/572))
 
 - `MemoryRebootStrategy` now bases its reload verdict on the memory reading taken **after** the `gc_collect_cycles()` it triggers, so a worker whose memory drops back under `limit` as a result of the collection is no longer reloaded unnecessarily. When the worker is already above `limit`, the collection runs synchronously instead of being scheduled on a later event-loop tick; the deferred `Timer::add(0, ...)` path is kept for the preventive "above `gc_limit`, below `limit`" case, and a collection blocked by `gc_cooldown` leaves the verdict on the current reading. Memory is measured with `memory_get_usage()` (emalloc accounting) — stated explicitly in the config docs, since the allocator arena behind `memory_get_usage(true)` would mask the effect of the collection ([#561](https://github.com/crazy-goat/workerman-bundle/issues/561))
