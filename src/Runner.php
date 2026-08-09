@@ -39,6 +39,7 @@ readonly class Runner implements RunnerInterface
         $processConfig = $configLoader->getProcessConfig();
 
         $this->applyWorkermanConfig($config);
+        $this->warnAboutGrpcExtension();
         $this->createWorkers($config, $schedulerConfig, $processConfig);
 
         // Run through MasterWorker so the real master PID (which is only
@@ -88,7 +89,7 @@ readonly class Runner implements RunnerInterface
                 fwrite(STDERR, $e->getMessage() . PHP_EOL);
             }
 
-            \posix_kill((int) \getmypid(), $success ? \SIGKILL : \SIGTERM);
+            \posix_kill(\posix_getpid(), $success ? \SIGKILL : \SIGTERM);
         }
 
         $timeout = $this->getCacheWarmupTimeout();
@@ -183,6 +184,54 @@ readonly class Runner implements RunnerInterface
         Worker::$stopTimeout = $stopTimeout;
         Worker::$statusFile = (string) preg_replace('/\.pid$/', '.status', $pidFile);
         Worker::$onMasterReload = Utils::clearOpcache(...);
+    }
+
+    /**
+     * Emit one-time start-up warnings for grpc hosts (no-op otherwise).
+     *
+     * The grpc extension interacts badly with forked children in both
+     * directions: without GRPC_ENABLE_FORK_SUPPORT children deadlock early
+     * (see README), and with it set, grpc_shutdown() can hang when a child
+     * exits (mitigated via SIGKILL in ProcessTerminator). Must run after
+     * applyWorkermanConfig() so Worker::$logFile is already configured.
+     */
+    private function warnAboutGrpcExtension(): void
+    {
+        if (!\extension_loaded('grpc')) {
+            return;
+        }
+
+        $forkSupport = $_ENV['GRPC_ENABLE_FORK_SUPPORT'] ?? \getenv('GRPC_ENABLE_FORK_SUPPORT');
+        if ($forkSupport !== '1' && $forkSupport !== 'true') {
+            $this->logStartupWarning('[WARN] grpc extension detected but GRPC_ENABLE_FORK_SUPPORT is not set: forked children (scheduler tasks, supervised processes) can deadlock. Set GRPC_ENABLE_FORK_SUPPORT=1 before starting the server — see docs/troubleshooting.md "gRPC Extension and Fork Safety".');
+
+            return;
+        }
+
+        $this->logStartupWarning('[WARN] grpc extension detected: supervised processes and forked task children are terminated with SIGKILL on completion because grpc_shutdown() can hang in forked children — destructors and shutdown functions are skipped for them. See docs/troubleshooting.md "gRPC Extension and Fork Safety".');
+    }
+
+    /**
+     * Write a start-up warning to the configured Workerman log file.
+     *
+     * Only the log file is used: writing to stderr before daemonize() is
+     * unsafe on grpc hosts where `start -d` is spawned with a closed stderr
+     * pipe (e.g. via proc_open in tests) - the write hits SIGPIPE and the
+     * launcher dies before forking the daemon. Worker::log() itself cannot
+     * be used either: its safeEcho() path reads Worker::$outputStream,
+     * which is only initialized inside runAll() and would throw feof() on
+     * null. This runs before daemonize, so the log entry is written once
+     * by the launcher process.
+     */
+    private function logStartupWarning(string $msg): void
+    {
+        if (Worker::$logFile !== '') {
+            \file_put_contents(
+                Worker::$logFile,
+                \sprintf("[%s] %s\n", \date('Y-m-d H:i:s'), $msg),
+                \FILE_APPEND | \LOCK_EX,
+            );
+        }
     }
 
     /**

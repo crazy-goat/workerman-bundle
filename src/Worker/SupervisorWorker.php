@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
+use CrazyGoat\WorkermanBundle\Util\ProcessTerminator;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use Workerman\Worker;
 
@@ -45,7 +46,9 @@ final readonly class SupervisorWorker
                 $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
                 $handler(new ServiceMethod($serviceId, $method), $taskName);
                 $worker->log("Process \"$taskName\" (service: $serviceId::$method) finished unexpectedly");
-                exit(1);
+                // SIGKILL instead of exit() when grpc is loaded: its shutdown
+                // handler deadlocks in forked children (see ProcessTerminator).
+                ProcessTerminator::terminate(1);
             };
         }
     }
