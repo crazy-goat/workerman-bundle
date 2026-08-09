@@ -16,6 +16,18 @@ must not be evaluated by file-only rules even when their names contain dots
 an allowlist was configured, making every subdirectory file 404 (issue
 #637).
 
+## Config cache
+
+### Warm-as-root cache trips the ownership guard at boot
+
+Since 0.25.0 the config cache file (`{cacheDir}/workerman/config.cache.php`)
+must be owned by the process that loads it. Warming it as `root` in a
+Docker build and starting the server as another user is a hard boot
+`RuntimeException` (raised by the launcher process before any worker forks),
+not a warning. Worked examples live in README (§ "Config cache and runtime
+user") and security.md (§ "Containerised deployments (Docker)") — link to
+them instead of restating the pattern in issues or PRs.
+
 ## Test suite
 
 ### "Address already in use" when running `composer test`

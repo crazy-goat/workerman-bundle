@@ -57,9 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Behaviour change**: because the cache file must now be owned by the
   process that loads it (see previous entry), a config cache warmed up by
-  a different user than the runtime user (e.g. deploy user vs `www-data`)
-  is **refused at boot** instead of being loaded silently. Warm up with
-  the runtime user or `chown` the cache file to that user after warm-up
+  a different user than the runtime user (e.g. deploy user vs `www-data`,
+  or a Docker build that runs `cache:warmup` as `root` before switching to
+  the runtime user) is **refused at boot** instead of being loaded
+  silently: the launcher process aborts with a `RuntimeException` naming
+  both UIDs before any worker forks. Warm up with the runtime user or
+  `chown` the cache file to that user after warm-up — see [Config cache
+  and runtime user](README.md#config-cache-and-runtime-user) and the
+  [security docs](docs/security.md#config-cache-file-protection)
   ([#586](https://github.com/crazy-goat/workerman-bundle/issues/586))
 
 - Widen `StaticFilesMiddleware`'s built-in denylist to cover editor
