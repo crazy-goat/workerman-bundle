@@ -497,6 +497,7 @@ as a different user:
 # Broken: cache warmed as root, server runs as www-data
 FROM php:8.3-cli
 COPY . /app
+WORKDIR /app
 RUN bin/console cache:warmup
 USER www-data
 CMD ["bin/console", "workerman:server", "start"]
