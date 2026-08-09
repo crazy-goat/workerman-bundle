@@ -21,8 +21,23 @@ final class RequestConverter
     private const METHOD_REGEX = '/^[A-Z]+$/';
     private const MAX_METHOD_LENGTH = 32;
 
+    /**
+     * Number of distinct underscore header names logged per worker before
+     * further names are suppressed. The names come straight off the wire, so
+     * this constant — not client input — bounds both the static map's memory
+     * and the number of log lines written by logDroppedUnderscoreHeader().
+     */
+    private const MAX_LOGGED_UNDERSCORE_HEADERS = 64;
+
     /** @var array<string, true> Header names already logged in this worker. */
     private static array $loggedUnderscoreHeaders = [];
+
+    /**
+     * True once MAX_LOGGED_UNDERSCORE_HEADERS distinct names were logged and
+     * further names are suppressed. Kept out of the map so client-supplied
+     * header names can never collide with bookkeeping keys.
+     */
+    private static bool $underscoreHeaderLogSuppressed = false;
 
     /**
      * Validates that a URI does not contain control characters.
@@ -230,6 +245,11 @@ final class RequestConverter
 
     /**
      * Log an underscore-containing header once per worker before dropping it.
+     *
+     * Bounded by a constant: at most MAX_LOGGED_UNDERSCORE_HEADERS distinct
+     * names are recorded and logged per worker, followed by a single
+     * suppression notice. Unauthenticated clients cannot grow the static map
+     * or the log volume without limit.
      */
     private static function logDroppedUnderscoreHeader(string $name): void
     {
@@ -238,16 +258,29 @@ final class RequestConverter
             return;
         }
 
+        if (\count(self::$loggedUnderscoreHeaders) >= self::MAX_LOGGED_UNDERSCORE_HEADERS) {
+            if (!self::$underscoreHeaderLogSuppressed) {
+                self::$underscoreHeaderLogSuppressed = true;
+                self::writeDroppedHeaderLog('[warning] Reached log limit for dropped underscore header names; further names are suppressed');
+            }
+
+            return;
+        }
+
         self::$loggedUnderscoreHeaders[$nameLower] = true;
-        $message = \sprintf(
+        self::writeDroppedHeaderLog(\sprintf(
             '[warning] Dropped HTTP header "%s": header names containing underscores are not forwarded to Symfony',
             \addcslashes($name, "\0..\37\177"),
-        );
+        ));
+    }
 
-        // Workerman initialises the output stream before serving requests. Keep
-        // direct RequestConverter users safe when conversion happens outside a
-        // running Worker (for example, in a unit test or a CLI utility), or
-        // when Workerman has no log file configured.
+    /**
+     * Write the message through Workerman's log, falling back to error_log
+     * when conversion happens outside a running Worker or no log file is
+     * configured.
+     */
+    private static function writeDroppedHeaderLog(string $message): void
+    {
         if (Worker::$logFile === '') {
             \error_log($message);
 

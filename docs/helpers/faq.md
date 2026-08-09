@@ -50,6 +50,15 @@ PHP 8.2 / Symfony 6.4 matrix leg. If a PR adds meaningful logic, verify
 the gate locally (`composer test:coverage && composer coverage:check`) so
 CI doesn't tell you first. Requires PCOV or Xdebug locally.
 
+## Underscore header test fixtures need a literal `_` character
+
+When building a raw HTTP header fixture to exercise the underscore-header
+drop path, put a real `_` in the name (e.g. `X-Dropped_1`). Writing the
+word `X-Underscore-1` produces hyphens only (`x-underscore-1`), which
+parses as a normal header and sails past the drop filter — the test then
+exercises nothing. See [decisions.md](decisions.md) for the bounded-logging
+decision behind #638.
+
 ## Git hooks
 
 ### Pre-push hook runs `composer lint` before every push

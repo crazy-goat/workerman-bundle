@@ -46,6 +46,11 @@ code paths:
   extensions (`.bak`, `.env`, etc.) are blocked (#580/#582, #603/#609).
 - Master process identification is hardened (#584, #608).
 - HTTP headers starting with underscore are dropped (#578, #605).
+- Dropped-underscore-header logging is bounded per worker: at most 64
+  distinct client-supplied header names are recorded and logged, then a
+  single suppression notice (issue #638). The map is capped and the
+  suppression flag is a separate scalar, so attacker-sent names can
+  neither grow worker memory nor amplify log writes.
 - SFX redirect policy is unified across modes (#585, #606).
 - Transport-owned headers are stripped to prevent duplicate
   `Content-Length` (#579, #602).

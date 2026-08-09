@@ -892,6 +892,56 @@ final class RequestConverterTest extends TestCase
         }
     }
 
+    /**
+     * AC #638: the per-worker bookkeeping for dropped underscore header names
+     * must be bounded by a constant — client-supplied header names must not
+     * drive unbounded static-map memory growth or log volume.
+     */
+    public function testDroppedUnderscoreHeaderLogIsBoundedPerWorker(): void
+    {
+        $this->resetUnderscoreHeaderLogState();
+        $logFile = tempnam(sys_get_temp_dir(), 'request_converter_log_');
+        $this->assertNotFalse($logFile);
+
+        $previousDaemonize = Worker::$daemonize;
+        $previousLogFile = Worker::$logFile;
+
+        try {
+            Worker::$daemonize = true;
+            Worker::$logFile = $logFile;
+
+            // 66 distinct client-controlled names: two beyond the 64-entry cap.
+            for ($i = 0; $i < 66; ++$i) {
+                $headerName = 'X-Dropped_' . $i;
+                $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n";
+                $buffer .= $headerName . ": value\r\n\r\n";
+                RequestConverter::toSymfonyRequest(new Request($buffer));
+            }
+
+            $log = file_get_contents($logFile);
+            $this->assertIsString($log);
+
+            $this->assertSame(64, substr_count($log, '[warning] Dropped HTTP header'));
+            $this->assertSame(1, substr_count($log, 'further names are suppressed'));
+            $this->assertStringNotContainsString('x-dropped_64', $log);
+            $this->assertStringNotContainsString('x-dropped_65', $log);
+
+            // The static map itself must not exceed the cap either.
+            $this->assertCount(64, $this->getLoggedUnderscoreHeaderMap());
+
+            // Repeating a name inside the cap still logs nothing new.
+            RequestConverter::toSymfonyRequest(new Request(
+                "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Dropped_0: value\r\n\r\n",
+            ));
+            $this->assertSame(1, substr_count((string) file_get_contents($logFile), 'x-dropped_0'));
+        } finally {
+            Worker::$daemonize = $previousDaemonize;
+            Worker::$logFile = $previousLogFile;
+            $this->resetUnderscoreHeaderLogState();
+            @unlink($logFile);
+        }
+    }
+
     public function testMultipleCookieHeadersJoinedWithSemicolon(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -1303,6 +1353,27 @@ final class RequestConverterTest extends TestCase
         $reflection = new \ReflectionMethod(RequestConverter::class, $methodName);
 
         return $reflection->invokeArgs(null, $args);
+    }
+
+    /**
+     * Reset the per-worker underscore-header bookkeeping via reflection so
+     * tests are deterministic regardless of execution order.
+     */
+    private function resetUnderscoreHeaderLogState(): void
+    {
+        $class = new \ReflectionClass(RequestConverter::class);
+        $class->getProperty('loggedUnderscoreHeaders')->setValue(null, []);
+        $class->getProperty('underscoreHeaderLogSuppressed')->setValue(null, false);
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function getLoggedUnderscoreHeaderMap(): array
+    {
+        $class = new \ReflectionClass(RequestConverter::class);
+
+        return $class->getProperty('loggedUnderscoreHeaders')->getValue();
     }
 
     /**
