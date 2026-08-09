@@ -91,12 +91,13 @@ send its error response (issue #572).
 
 ## Documentation claims vs. runtime support
 
-### README lists `tcp://` as a supported scheme, but `ListenScheme` rejects it
+### README used to list `tcp://` as a supported scheme, but `ListenScheme` rejects it
 
-`README.md` and the `listen` node's `info()` text list `tcp://` among the
+Older README versions and the `listen` node's `info()` text listed `tcp://` among the
 supported URI schemes, but `ListenScheme::fromListen()` throws
 `UnsupportedListenSchemeException` for it — `tests/Worker/ListenSchemeTest.php`
 asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://`, `https://`,
-`ws://` and `wss://` work. Keep the documented scheme list in sync with the
+`ws://` and `wss://` work. The README and the `info()` text now match the enum
+(issue #590); keep them in sync with the
 enum unless real `tcp://` support (a `Tcp` case with transport `tcp` and no
-protocol) is added (issue #590).
+protocol) is added.
