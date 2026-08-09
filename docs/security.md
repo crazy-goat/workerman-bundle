@@ -280,7 +280,23 @@ workerman:
 
 ## SSL Certificate and Key Validation
 
-When configuring HTTPS or WSS servers, the `local_cert` and `local_pk` options specify the paths to the SSL certificate and private key files. These paths are validated before being passed to the TLS stream context:
+When configuring HTTPS or WSS servers, the `local_cert` and `local_pk` options specify the paths to the SSL certificate and private key files:
+
+```yaml
+# config/packages/workerman.yaml
+workerman:
+    servers:
+        - name: 'TLS webserver'
+          listen: 'https://0.0.0.0:443'
+          local_cert: '%kernel.project_dir%/config/tls/server.crt'
+          local_pk: '%kernel.project_dir%/config/tls/server.key'
+```
+
+The same `local_cert`/`local_pk` pair is used for `wss://` (WebSocket over SSL) listeners — no additional keys are needed. Both files must be PEM-encoded, existing, and readable by the server process.
+
+> **Note:** **Symlinked certificate and key paths are rejected.** If your deployment points `local_cert` or `local_pk` at a symlink, the server fails to start with `SSL certificate path must not be a symlink: <path>` or `SSL private key path must not be a symlink: <path>` — deploy the actual files instead.
+
+These paths are validated before being passed to the TLS stream context:
 
 ### Regular File Check
 
