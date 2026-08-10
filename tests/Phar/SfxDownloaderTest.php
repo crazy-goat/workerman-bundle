@@ -227,14 +227,41 @@ final class SfxDownloaderTest extends TestCase
         $existing = $this->tempDir . '/php8.3.micro.sfx';
         file_put_contents($existing, 'static-php-bytes');
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('SHA-256 mismatch');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/php8.3.micro.sfx',
+                $this->tempDir,
+                str_repeat('a', 64),
+            );
+            self::fail('Expected a RuntimeException for the checksum mismatch.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('SHA-256 mismatch', $e->getMessage());
+            self::assertStringContainsString('removed', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/php8.3.micro.sfx',
-            $this->tempDir,
-            str_repeat('a', 64),
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($existing);
+    }
+
+    public function testFetchRetriesDownloadAfterChecksumMismatch(): void
+    {
+        // First fetch fails the checksum; the failed artifact is unlinked, so
+        // the second fetch re-downloads instead of re-verifying bad bytes.
+        $url = sprintf('http://127.0.0.1:%d/sfx', self::$serverPort);
+        $destination = $this->tempDir . '/sfx';
+
+        try {
+            (new SfxDownloader())->fetch($url, $this->tempDir, str_repeat('0', 64));
+            self::fail('Expected a RuntimeException for the first checksum mismatch.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('SHA-256 mismatch', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($destination);
+
+        $path = (new SfxDownloader())->fetch($url, $this->tempDir, hash('sha256', 'sfx-content'));
+        self::assertSame($destination, $path);
+        self::assertStringEqualsFile($path, 'sfx-content');
     }
 
     /**
@@ -261,13 +288,18 @@ final class SfxDownloaderTest extends TestCase
             $entryName => 'malicious-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage($expectedMessage);
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the malicious zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($expectedMessage, $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -280,13 +312,18 @@ final class SfxDownloaderTest extends TestCase
             'subdir/../../evil.bin' => 'malicious-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('path traversal');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the traversal zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('path traversal', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -312,13 +349,44 @@ final class SfxDownloaderTest extends TestCase
             'sub/evil.bin' => 'escaped-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('resolves outside the destination directory');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
+    }
+
+    /**
+     * A corrupt archive whose ZipArchive::open() fails must be unlinked even
+     * when no checksum is configured, so a later fetch() re-downloads
+     * instead of failing on the same bad bytes forever.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesCorruptArchiveWhenOpenFails(): void
+    {
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        file_put_contents($zipPath, str_repeat('not-a-zip-', 100));
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the corrupt archive.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Failed to open zip archive', $e->getMessage());
+        }
+
+        // The corrupt artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -417,13 +485,18 @@ final class SfxDownloaderTest extends TestCase
         $zip->addEmptyDir('subdir');
         $zip->close();
 
-        $this->expectException(SfxExtractionException::class);
-        $this->expectExceptionMessage('Could not locate extracted SFX file');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/orphan.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected SfxExtractionException for an archive with no usable entry.');
+        } catch (SfxExtractionException $e) {
+            self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/orphan.sfx.zip',
-            $this->tempDir,
-        );
+        // The useless archive must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
