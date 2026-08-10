@@ -78,6 +78,10 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 unset($this->pathByWd[$event['wd']]);
                 if ($path !== null) {
                     unset($this->watchedPaths[$path]);
+                    // A reported failure is only relevant while the path is
+                    // tracked; if the directory reappears and fails again, the
+                    // new failure must be reported, not silently suppressed.
+                    unset($this->loggedWatchFailures[$path]);
                 }
                 continue;
             }
@@ -155,7 +159,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             return true;
         }
 
-        $wd = \inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO);
+        $wd = @\inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO);
 
         if ($wd === false) {
             if (!isset($this->loggedWatchFailures[$path])) {
