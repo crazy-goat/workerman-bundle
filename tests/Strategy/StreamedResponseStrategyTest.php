@@ -266,4 +266,47 @@ final class StreamedResponseStrategyTest extends TestCase
 
         $this->assertSame($initialLevel, ob_get_level(), 'OB level should be restored after exception');
     }
+
+    /**
+     * A HEAD request must not carry a body (RFC 9110 §9.3.2). The strategy
+     * sends only the head (the same status line and Transfer-Encoding: chunked
+     * header the GET would carry) — no chunks and no chunked terminator — and
+     * never executes the stream callback (issue #683).
+     */
+    public function testHeadRequestSendsHeadOnlyWithNoBody(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(1))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $callbackRan = false;
+        $streamedResponse = new StreamedResponse(function () use (&$callbackRan): void {
+            $callbackRan = true;
+            echo 'must not run for HEAD';
+        });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.1', 'HEAD');
+
+        $this->assertFalse($callbackRan, 'HEAD must not execute the stream callback');
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+
+        $this->assertCount(1, $sendCalls, 'HEAD must send only the head — no chunks, no chunked terminator');
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
+        $this->assertTrue($sendCalls[0]['raw']);
+        $this->assertStringNotContainsString("0\r\n\r\n", $sendCalls[0]['data'], 'HEAD must not emit the chunked terminator body');
+        $this->assertSame('', explode("\r\n\r\n", (string) $sendCalls[0]['data'], 2)[1] ?? '', 'HEAD must not emit a body after the head terminator');
+
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue($this->connection->context->responseSentDirectly);
+    }
 }

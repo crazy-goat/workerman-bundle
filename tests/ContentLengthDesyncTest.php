@@ -368,6 +368,40 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame($fixtureContent, $parts[1] ?? '', 'Body must be the full fixture content');
     }
 
+    /**
+     * End-to-end wire test for a HEAD request on a BinaryFileResponse using
+     * Workerman's actual Http::encode(). Symfony's prepare() sets
+     * Content-Length to the file size for HEAD (Range handling is GET-only);
+     * ResponseConverter preserves it for HEAD and BinaryFileResponseStrategy
+     * emits a bodyless HeadResponse instead of calling withFile(). Asserts:
+     * exactly one Content-Length: <fileSize>, no body, status 200
+     * (RFC 9110 §9.3.2 — issue #683).
+     */
+    public function testHeadBinaryFileResponseEmitsFileSizeContentLengthAndNoBody(): void
+    {
+        $fixtureContent = str_repeat('x', 5000);
+        $file = $this->createFixtureFile('head_encode.txt', $fixtureContent);
+
+        $converter = $this->createConverter();
+        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare($this->createSymfonyRequest(method: 'HEAD'));
+
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', 'HEAD');
+
+        // For a non-file (HeadResponse) response, Http::encode() returns the
+        // serialized string instead of sending it via $connection->send().
+        $wire = Http::encode($workermanResponse, $this->connection);
+
+        $this->assertStringContainsString('HTTP/1.1 200 OK', $wire);
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 5000', $wire, 'HEAD Content-Length must be the file size');
+
+        $parts = explode("\r\n\r\n", $wire, 2);
+        $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
+    }
+
     private function createConverter(): ResponseConverter
     {
         return new ResponseConverter([
@@ -385,10 +419,10 @@ final class ContentLengthDesyncTest extends TestCase
         return $path;
     }
 
-    private function createSymfonyRequest(?string $range = null): \Symfony\Component\HttpFoundation\Request
+    private function createSymfonyRequest(?string $range = null, string $method = 'GET'): \Symfony\Component\HttpFoundation\Request
     {
         $request = new \Symfony\Component\HttpFoundation\Request(
-            server: ['REQUEST_METHOD' => 'GET', 'HTTP_HOST' => 'localhost'],
+            server: ['REQUEST_METHOD' => $method, 'HTTP_HOST' => 'localhost'],
         );
 
         if ($range !== null) {

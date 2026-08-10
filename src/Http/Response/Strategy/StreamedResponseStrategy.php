@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 
-use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
+use CrazyGoat\WorkermanBundle\Http\Response\RequestMethodAwareResponseConverterStrategyInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
@@ -17,7 +17,7 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  * chunk directly to $connection->send(). This avoids buffering the entire
  * response body in memory, which is critical for long-running event-loop workers.
  */
-final readonly class StreamedResponseStrategy implements ResponseConverterStrategyInterface
+final readonly class StreamedResponseStrategy implements RequestMethodAwareResponseConverterStrategyInterface
 {
     private const MIN_CHUNK_SIZE = 8192;
 
@@ -31,8 +31,20 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
         return $response instanceof StreamedResponse;
     }
 
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, string $requestMethod = 'GET'): WorkermanResponse
     {
+        // A HEAD request must not carry a body (RFC 9110 §9.3.2). Symfony's
+        // prepare() sets the streamed flag for HEAD so sendContent() would emit
+        // nothing, but the regular path still sends the chunked terminator
+        // ("0\r\n\r\n") — a 5-byte message body. Emit the same head the GET
+        // would carry with no body and no terminator instead (issue #683). A
+        // StreamedResponse has no known content length, so HeadResponse (which
+        // rewrites Content-Length) does not apply; mirroring the GET framing
+        // satisfies RFC 9110 §9.3.2 "same header fields".
+        if (strcasecmp($requestMethod, 'HEAD') === 0) {
+            return $this->convertHead($response, $headers, $connection, $protocolVersion);
+        }
+
         $isHttp10 = $protocolVersion === '1.0';
         $sendChunkSize = max($this->chunkSize, self::MIN_CHUNK_SIZE);
 
@@ -75,6 +87,25 @@ final readonly class StreamedResponseStrategy implements ResponseConverterStrate
         if (!$isHttp10) {
             $connection->send("0\r\n\r\n", true);
         }
+
+        if ($connection->context instanceof \stdClass) {
+            $connection->context->responseSentDirectly = true;
+        }
+
+        return new WorkermanResponse($response->getStatusCode(), $headers, '');
+    }
+
+    /**
+     * Send only the head for a HEAD request: the same status line and headers
+     * the GET would carry (Transfer-Encoding: chunked for HTTP/1.1,
+     * Connection: close for HTTP/1.0), with no body and no chunked terminator.
+     *
+     * @param array<string, string|list<string|null>> $headers
+     */
+    private function convertHead(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
+    {
+        $head = $this->buildHeaderString($headers, $response->getStatusCode(), $protocolVersion);
+        $connection->send($head, true);
 
         if ($connection->context instanceof \stdClass) {
             $connection->context->responseSentDirectly = true;
