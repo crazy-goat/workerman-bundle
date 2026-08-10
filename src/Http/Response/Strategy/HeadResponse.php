@@ -32,16 +32,26 @@ final class HeadResponse extends WorkermanResponse
     {
         $wire = parent::__toString();
 
-        // Workerman appends the computed body length as the last header line;
-        // replace that tail with the application-provided value so the HEAD
-        // response carries exactly one, correct Content-Length. When the tail
-        // does not match (e.g. the text/event-stream branch omits it), keep
-        // the transport output unchanged.
+        // Workerman appends the computed body length as a header line;
+        // replace that value with the application-provided one so the HEAD
+        // response carries exactly one, correct Content-Length. Two
+        // serialization shapes exist: the regular branch emits
+        // "Content-Length: N" last (just before the terminating empty line),
+        // while the empty-headers fast path appends "Connection: keep-alive"
+        // after it. When neither tail matches (e.g. the text/event-stream
+        // branch omits Content-Length), keep the transport output unchanged.
         $replaced = preg_replace(
             '/\r\nContent-Length: \d+\r\n\r\n$/',
             "\r\nContent-Length: {$this->contentLength}\r\n\r\n",
             $wire,
         );
+        if ($replaced === $wire) {
+            $replaced = preg_replace(
+                '/\r\nContent-Length: \d+\r\nConnection: keep-alive\r\n\r\n$/',
+                "\r\nContent-Length: {$this->contentLength}\r\nConnection: keep-alive\r\n\r\n",
+                $wire,
+            );
+        }
 
         return $replaced ?? $wire;
     }

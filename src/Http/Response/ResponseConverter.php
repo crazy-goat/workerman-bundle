@@ -83,8 +83,9 @@ final readonly class ResponseConverter
         $normalized = [];
         foreach ($response->headers->all() as $name => $values) {
             $normalizedName = $this->normalizeHeaderName($name);
+            $lowerName = strtolower($normalizedName);
 
-            if (in_array(strtolower($normalizedName), self::TRANSPORT_HEADERS, true) && (!$isHead || strtolower($normalizedName) !== 'content-length')) {
+            if (in_array($lowerName, self::TRANSPORT_HEADERS, true) && (!$isHead || $lowerName !== 'content-length')) {
                 continue;
             }
 

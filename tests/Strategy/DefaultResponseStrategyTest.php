@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Workerman\Connection\TcpConnection;
@@ -168,5 +169,25 @@ final class DefaultResponseStrategyTest extends TestCase
 
         $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
         $this->assertStringContainsString("Content-Length: 0\r\n", $wire);
+    }
+
+    public function testHeadResponseWithOnlyContentLengthHeaderHitsEmptyHeadersFastPath(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response('', \Symfony\Component\HttpFoundation\Response::HTTP_OK);
+
+        $workermanResponse = $strategy->convert(
+            $symfonyResponse,
+            ['Content-Length' => '999'],
+            $this->connection,
+            '1.1',
+        );
+
+        $wire = (string) $workermanResponse;
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 999\r\nConnection: keep-alive\r\n\r\n", $wire);
+        $this->assertStringNotContainsString('Content-Length: 0', $wire);
     }
 }
