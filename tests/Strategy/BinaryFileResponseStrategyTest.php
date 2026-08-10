@@ -703,6 +703,46 @@ final class BinaryFileResponseStrategyTest extends TestCase
         }
     }
 
+    public function testStaleHandlerFromPreviousDownloadIsInert(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $firstFile = sys_get_temp_dir() . '/stale_first_' . uniqid() . '.txt';
+        $secondFile = sys_get_temp_dir() . '/stale_second_' . uniqid() . '.txt';
+        file_put_contents($firstFile, 'first');
+        file_put_contents($secondFile, 'second');
+
+        $reflection = new \ReflectionClass(BinaryFileResponse::class);
+        $deleteFlag = $reflection->getProperty('deleteFileAfterSend');
+
+        $responses = [new BinaryFileResponse($firstFile, Response::HTTP_OK), new BinaryFileResponse($secondFile, Response::HTTP_OK)];
+        foreach ($responses as $response) {
+            $deleteFlag->setValue($response, true);
+        }
+
+        // First download drains and self-removes.
+        $strategy->convert($responses[0], [], $this->connection, '1.1');
+        $staleDrain = $this->connection->onBufferDrain;
+        assert(is_callable($staleDrain));
+        $staleDrain($this->connection);
+        $this->assertFileDoesNotExist($firstFile);
+
+        // Second download on the same keep-alive connection installs a fresh pair.
+        $strategy->convert($responses[1], [], $this->connection, '1.1');
+        $currentDrain = $this->connection->onBufferDrain;
+        $this->assertNotNull($currentDrain);
+
+        // Re-invoking the stale (already-fired) handler must be a no-op: it
+        // must not delete the newer download's file nor clobber its handler.
+        $staleDrain($this->connection);
+        $this->assertSame($currentDrain, $this->connection->onBufferDrain, 'stale handler must not clobber the active one');
+        $this->assertFileExists($secondFile, 'stale handler must not delete a newer download\'s pending file');
+
+        assert(is_callable($currentDrain));
+        $currentDrain($this->connection);
+        $this->assertFileDoesNotExist($secondFile);
+    }
+
     public function testCleanupStateDetachesFromContextAfterFiring(): void
     {
         $strategy = new BinaryFileResponseStrategy();
