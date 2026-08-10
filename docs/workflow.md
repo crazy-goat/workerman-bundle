@@ -77,9 +77,10 @@ a higher milestone.
 `php bin/pick-issue.php` enforces this:
 
 - exit code `0` → candidates printed, proceed to step 2
-- exit code `3` (`RELEASE NEEDED`) → the target milestone is empty; cut the
-  release (tag + `gh release create`), close the milestone, then re-run the
-  script so the next milestone becomes the target
+- exit code `3` (`RELEASE NEEDED`) → the target milestone is empty; cut
+  the release and close the milestone, then re-run the script so the next
+  milestone becomes the target — see
+  [release-workflow.md](release-workflow.md) for the full release steps
 
 ---
 

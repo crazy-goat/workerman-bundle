@@ -5,6 +5,7 @@ This directory contains documentation for the WorkermanBundle.
 ## Index
 
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
+- [release-workflow.md](release-workflow.md) — cutting a release (changelog PR, tag, release notes, milestone close)
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations
 - [helpers/](helpers/README.md) — Knowledge base maintained by subagents (FAQ, decisions)
