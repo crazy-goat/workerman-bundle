@@ -20,7 +20,7 @@ usage: gh-branch <ISSUE-NUMBER> [TYPE] [--push] [--dry-run] [--force]
 
 Create or switch to <TYPE>/issue-<N>-<slug>, based on the default remote branch.
 
-  TYPE        optional; inferred from labels, then [Type] title prefix; default fix
+  TYPE        optional; inferred from [Type] title prefix, then labels; default fix
               allowed: $TYPES
   --push      also push with upstream
   --dry-run   print the branch name without touching git
