@@ -105,7 +105,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '5',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $head = (string) $workermanResponse;
 
@@ -135,7 +135,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => (string) strlen($body),
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $wire = (string) $workermanResponse;
         $this->assertSame(1, substr_count($wire, 'Content-Length:'));
@@ -157,7 +157,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '999',
         ]);
 
-        $converter->convert($streamedResponse, $this->connection, '1.1');
+        $converter->convert($streamedResponse, $this->connection, '1.1', 'GET');
 
         $sent = implode('', $this->getSent());
         $this->assertSame(0, substr_count($sent, 'Content-Length:'), 'Streamed path must not emit Content-Length even if the app set one');
@@ -177,7 +177,7 @@ final class ContentLengthDesyncTest extends TestCase
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('a', '1'));
         $response->headers->setCookie(new \Symfony\Component\HttpFoundation\Cookie('b', '2'));
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $head = (string) $workermanResponse;
 
@@ -215,7 +215,7 @@ final class ContentLengthDesyncTest extends TestCase
             'Content-Length' => '999',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $head = (string) $workermanResponse;
 
@@ -237,7 +237,7 @@ final class ContentLengthDesyncTest extends TestCase
             'ETag' => '"abc"',
         ]);
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $head = (string) $workermanResponse;
 
@@ -247,11 +247,13 @@ final class ContentLengthDesyncTest extends TestCase
     }
 
     /**
-     * A HEAD request must emit no body and a consistent Content-Length.
-     * Symfony's prepare() empties the body for HEAD; the transport then
-     * computes Content-Length: 0 from the empty body.
+     * A HEAD request with an application-provided Content-Length must emit no
+     * body and exactly one Content-Length: the app value (the length the
+     * corresponding GET would produce, RFC 9110 §9.3.2) — not the 0 the
+     * transport computes from the empty body (issue #643). Symfony's
+     * prepare() empties the body for HEAD but keeps the header.
      */
-    public function testHeadRequestEmitsNoBodyAndSingleContentLength(): void
+    public function testHeadRequestEmitsAppContentLengthAndNoBody(): void
     {
         $converter = $this->createConverter();
 
@@ -260,17 +262,37 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
 
-        $workermanResponse = $converter->convert($response, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'HEAD');
+
+        $output = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($output, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 999', $output, 'HEAD must carry the app-provided length');
+        $this->assertStringNotContainsString('Content-Length: 0', $output);
+
+        // No body after the head terminator.
+        $parts = explode("\r\n\r\n", $output, 2);
+        $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * A HEAD request without an application-provided Content-Length keeps the
+     * transport-computed value: exactly one Content-Length: 0.
+     */
+    public function testHeadRequestWithoutAppContentLengthEmitsZero(): void
+    {
+        $converter = $this->createConverter();
+
+        $response = new Response('hello world');
+        $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
+
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'HEAD');
 
         $output = (string) $workermanResponse;
 
         $this->assertSame(1, substr_count($output, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
         $this->assertStringContainsString('Content-Length: 0', $output);
-        $this->assertStringNotContainsString('Content-Length: 999', $output);
-
-        // No body after the head terminator.
-        $parts = explode("\r\n\r\n", $output, 2);
-        $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
+        $this->assertSame('', explode("\r\n\r\n", $output, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
     /**
@@ -290,7 +312,7 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $binaryResponse->prepare($this->createSymfonyRequest(range: 'bytes=0-99'));
 
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', 'GET');
 
         // Drive the real Workerman serializer. For files < 2MB, encode() sends
         // head + body in one send() call and returns ''.
@@ -330,7 +352,7 @@ final class ContentLengthDesyncTest extends TestCase
         ]);
         $binaryResponse->prepare($this->createSymfonyRequest());
 
-        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1');
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', 'GET');
 
         $return = Http::encode($workermanResponse, $this->connection);
         $this->assertSame('', $return);

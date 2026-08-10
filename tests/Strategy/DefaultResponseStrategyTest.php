@@ -91,4 +91,82 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertStringContainsString("X-Test: value\r\n", $wire);
         $this->assertStringEndsWith("\r\n{$body}", $wire);
     }
+
+    /**
+     * An empty-body response carrying an application-provided Content-Length
+     * (the HEAD contract from ResponseConverter, issue #643) must emit exactly
+     * one Content-Length with the app value — not the 0 the transport
+     * computes from the empty body, and not a duplicate.
+     */
+    public function testEmptyBodyWithAppContentLengthEmitsSingleAppValue(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response('', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'Content-Length' => '999',
+            'X-Custom' => 'kept',
+        ]);
+
+        $workermanResponse = $strategy->convert(
+            $symfonyResponse,
+            ['Content-Length' => '999', 'X-Custom' => 'kept'],
+            $this->connection,
+            '1.1',
+        );
+
+        $wire = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 999\r\n", $wire);
+        $this->assertStringNotContainsString('Content-Length: 0', $wire);
+        $this->assertStringContainsString("X-Custom: kept\r\n", $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'empty body on the wire');
+    }
+
+    /**
+     * A non-empty body with an app-provided Content-Length must keep the
+     * transport-strip guarantee of issue #579: exactly one Content-Length,
+     * computed from the real body.
+     */
+    public function testNonEmptyBodyWithAppContentLengthStripsIt(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response('hello world', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'Content-Length' => '5',
+        ]);
+
+        $workermanResponse = $strategy->convert(
+            $symfonyResponse,
+            ['Content-Length' => '5'],
+            $this->connection,
+            '1.1',
+        );
+
+        $wire = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 11\r\n", $wire);
+        $this->assertStringNotContainsString("Content-Length: 5\r\n", $wire);
+    }
+
+    /**
+     * A non-digit application Content-Length (or a header that failed
+     * single-value flattening) must be stripped, never echoed onto the wire.
+     */
+    public function testInvalidAppContentLengthIsStripped(): void
+    {
+        $strategy = new DefaultResponseStrategy();
+        $symfonyResponse = new Response('', \Symfony\Component\HttpFoundation\Response::HTTP_OK);
+
+        $workermanResponse = $strategy->convert(
+            $symfonyResponse,
+            ['Content-Length' => 'not-a-length'],
+            $this->connection,
+            '1.1',
+        );
+
+        $wire = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 0\r\n", $wire);
+    }
 }

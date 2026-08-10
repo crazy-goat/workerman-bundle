@@ -33,9 +33,9 @@ final readonly class ResponseConverter
         $this->strategies = iterator_to_array($strategies, false);
     }
 
-    public function convert(SymfonyResponse $response, TcpConnection $connection, string $protocolVersion): WorkermanResponse
+    public function convert(SymfonyResponse $response, TcpConnection $connection, string $protocolVersion, string $requestMethod): WorkermanResponse
     {
-        $headers = $this->extractHeaders($response);
+        $headers = $this->extractHeaders($response, $requestMethod);
 
         foreach ($this->strategies as $strategy) {
             if ($strategy->supports($response)) {
@@ -60,6 +60,15 @@ final readonly class ResponseConverter
      *    Content-Range is NOT stripped: Workerman sets it via header() (which
      *    overwrites), and Symfony's value is correct for ranged responses.
      *
+     *    One exception: for HEAD requests the application-provided
+     *    Content-Length is preserved. A HEAD response legitimately carries the
+     *    length the corresponding GET would produce over an empty body (RFC
+     *    9110 §9.3.2, Symfony's Response::prepare() keeps the header for
+     *    HEAD), and the transport would compute 0 from the empty body (issue
+     *    #643). DefaultResponseStrategy serializes this case as a single,
+     *    correct Content-Length; the other strategies drop the header again
+     *    defensively.
+     *
      * 2. Single-valued headers are flattened from list<string|null> to a string.
      *    Workerman's Response::withHeaders() merges recursively, so passing a
      *    list for a header that encode() also sets produces an array of both
@@ -68,13 +77,14 @@ final readonly class ResponseConverter
      *
      * @return array<string, string|list<string|null>>
      */
-    private function extractHeaders(SymfonyResponse $response): array
+    private function extractHeaders(SymfonyResponse $response, string $requestMethod): array
     {
+        $isHead = strcasecmp($requestMethod, 'HEAD') === 0;
         $normalized = [];
         foreach ($response->headers->all() as $name => $values) {
             $normalizedName = $this->normalizeHeaderName($name);
 
-            if (in_array(strtolower($normalizedName), self::TRANSPORT_HEADERS, true)) {
+            if (in_array(strtolower($normalizedName), self::TRANSPORT_HEADERS, true) && (!$isHead || strtolower($normalizedName) !== 'content-length')) {
                 continue;
             }
 

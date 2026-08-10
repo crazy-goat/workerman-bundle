@@ -3,6 +3,12 @@
 Subagents: read this before starting a task, append new entries after
 finishing (see [README.md](README.md) for rules).
 
+## HTTP responses
+
+### HEAD + app-set Content-Length: re-adding the header duplicates it; rewrite the serialized tail instead
+
+Workerman's `Response::__toString()` **unconditionally appends** its computed `Content-Length: <strlen(body)>` (only `Transfer-Encoding` input suppresses it), so for a HEAD response (empty body) merely un-stripping the application's Content-Length in `ResponseConverter` emits *two* conflicting `Content-Length` headers — the exact #579 desync hazard. The fix (#643) keeps the strip for non-HEAD, preserves the app value for HEAD, and `DefaultResponseStrategy` hands it to `HeadResponse` (a `WorkermanResponse` subclass) which rewrites the trailing computed value at serialization time. Also: `BinaryFileResponseStrategy` must re-strip the preserved header or `Http::encode()`'s `array_merge_recursive` duplicates it again; Symfony's `prepare()` already removes Content-Length for 1xx/204/304 before the converter sees the response, so no extra guards were needed there.
+
 ## SFX downloads
 
 ### A failed-checksum or unusable artifact must be unlinked, or every later build fails the same way
