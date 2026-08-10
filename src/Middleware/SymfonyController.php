@@ -19,10 +19,34 @@ use Workerman\Protocols\Http\Response;
 
 final class SymfonyController
 {
+    /**
+     * Maximum number of distinct validated hosts cached per worker.
+     *
+     * Symfony's {@see SymfonyRequest::getHost()} appends every newly-seen
+     * matching host to a static list (Request::$trustedHosts) and scans it
+     * linearly on every lookup. That list is only ever cleared by
+     * {@see SymfonyRequest::setTrustedHosts()}, so with a wildcard trusted
+     * host pattern a remote client can grow it without bound — one retained
+     * string per distinct matching host, for the worker's lifetime, plus
+     * quadratic lookup cost. This constant — not client input — bounds the
+     * bundle-side cache and, through the reset-on-miss strategy below,
+     * Symfony's internal list as well (issue #560).
+     */
+    private const MAX_VALIDATED_HOSTS = 64;
+
     private ?SymfonyRequest $symfonyRequest = null;
     private ?SymfonyResponse $symfonyResponse = null;
     private ?ResetInterface $servicesResetter = null;
     private bool $servicesResetterInitialized = false;
+
+    /**
+     * Validated hosts cached per worker, bounded by {@see MAX_VALIDATED_HOSTS}.
+     * Only hosts that passed {@see SymfonyRequest::getHost()} are stored; a
+     * cache hit skips the {@see SymfonyRequest::setTrustedHosts()} reset.
+     *
+     * @var array<string, true>
+     */
+    private array $validatedHosts = [];
 
     /**
      * @param string[] $trustedHosts List of regex patterns for trusted hostnames
@@ -38,19 +62,40 @@ final class SymfonyController
     /**
      * Process the request through Symfony kernel and return Workerman response.
      * Note: kernel->terminate() is NOT called here - use terminateIfNeeded() after sending response.
-     * On first invocation with trusted_hosts configured, applies Symfony's global trusted host patterns.
+     *
+     * When trusted_hosts is configured, Symfony's global trusted host patterns
+     * are applied on the first request and re-applied only when a host is not
+     * in the per-worker validated-host cache (a cache miss). Re-applying via
+     * setTrustedHosts() resets Symfony's internal Request::$trustedHosts memo,
+     * so the memo cache benefits from cross-request reuse while staying bounded
+     * by {@see MAX_VALIDATED_HOSTS} — see the constraint in issue #560.
      */
     public function __invoke(Request $request, TcpConnection $connection): Response
     {
-        if ($this->trustedHosts !== []) {
-            SymfonyRequest::setTrustedHosts($this->trustedHosts);
-        }
-
         $this->symfonyRequest = RequestConverter::toSymfonyRequest($request);
 
-        // Early validation: reject non-matching Host headers before kernel boot
-        // This prevents the kernel from processing requests with spoofed Host headers
+        // Early validation: reject non-matching Host headers before kernel boot.
+        // This prevents the kernel from processing requests with spoofed Host
+        // headers. The patterns are re-applied on a cache miss so the reset
+        // inside setTrustedHosts() still bounds Symfony's validated-host list.
+        //
+        // setTrustedHosts() writes global static state; each server has its own
+        // controller instance, so a per-instance cache is correct for the
+        // single-server case. If a process ever runs several servers with
+        // different trusted_hosts, the last writer wins globally (pre-existing
+        // limitation of Symfony's static API, not worsened here).
         if ($this->trustedHosts !== []) {
+            $host = $this->extractHostForCache($this->symfonyRequest);
+            // When a trusted proxy forwards X-Forwarded-Host, getHost()
+            // validates a different value than the direct Host header used as
+            // the cache key, so skip the cache and reset on every request
+            // (still bounded, just without the cross-request memo benefit).
+            $cacheable = !$this->symfonyRequest->isFromTrustedProxy();
+
+            if (!$cacheable || !isset($this->validatedHosts[$host])) {
+                SymfonyRequest::setTrustedHosts($this->trustedHosts);
+            }
+
             try {
                 $this->symfonyRequest->getHost();
             } catch (SuspiciousOperationException) {
@@ -58,6 +103,15 @@ final class SymfonyController
                 $this->symfonyRequest = null;
 
                 return new Response(400);
+            }
+
+            // Cache only hosts that passed validation; invalid hosts must not
+            // populate the cache (they would never yield a useful hit).
+            if ($cacheable && !isset($this->validatedHosts[$host])) {
+                $this->validatedHosts[$host] = true;
+                if (\count($this->validatedHosts) > self::MAX_VALIDATED_HOSTS) {
+                    \array_shift($this->validatedHosts);
+                }
             }
         }
 
@@ -143,5 +197,27 @@ final class SymfonyController
                 ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
             );
         }
+    }
+
+    /**
+     * Extract the normalized host used as the validated-host cache key.
+     *
+     * Mirrors the host resolution of {@see SymfonyRequest::getHost()} for the
+     * non-trusted-proxy path (Host header → SERVER_NAME → SERVER_ADDR), so the
+     * cache key matches the value getHost() validates. When a trusted proxy is
+     * in use, getHost() reads X-Forwarded-Host instead; the caller skips the
+     * cache in that case (see {@see __invoke}).
+     */
+    private function extractHostForCache(SymfonyRequest $request): string
+    {
+        $host = (string) $request->headers->get('HOST');
+        if ($host === '') {
+            $host = (string) $request->server->get('SERVER_NAME', '');
+        }
+        if ($host === '') {
+            $host = (string) $request->server->get('SERVER_ADDR', '');
+        }
+
+        return \strtolower((string) \preg_replace('/:\d+$/', '', \trim($host)));
     }
 }
