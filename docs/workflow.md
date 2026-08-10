@@ -14,8 +14,8 @@ comments, related code). Delegate it to a subagent with its own context.
 ```bash
 # The subagent receives a task like:
 # "List the top 5 most impactful open issues in crazy-goat/workerman-bundle.
-#  For each, return: number, title, labels, one-paragraph rationale,
-#  and a recommended branch name (feat/issue-<N>-<kebab> or fix/issue-<N>-<kebab>).
+#  For each, return: number, title, labels, one-paragraph rationale.
+#  Do NOT propose branch names — bin/gh-branch derives them in step 2.
 #  Prioritize: enhancement, code-quality, good-first-issue,
 #  stability/data-correctness/performance, blockers, user-facing (README/API docs)."
 ```
@@ -86,17 +86,30 @@ a higher milestone.
 
 ## 2. Create a Fresh Feature Branch
 
-```bash
-# Make sure you're on master with the latest changes
-git checkout master
-git pull origin master
+Run the helper — the branch name is derived from the issue, nobody (human or
+LLM) has to invent it:
 
-# Create a feature branch
-git checkout -b feat/issue-<NUMBER>-<short-description>
+```bash
+bin/gh-branch <NUMBER>             # creates/switches to <type>/issue-<N>-<slug>
+bin/gh-branch <NUMBER> feat        # force type (fix|feat|docs|perf|refactor|chore|test|build|ci)
+bin/gh-branch <NUMBER> --push      # also push with upstream
+branch=$(bin/gh-branch <NUMBER>)   # capture the name (printed to stdout) for later steps
 ```
 
-**Branch naming convention:** `feat/issue-<NUMBER>-<kebab-case>`
-or `fix/issue-<NUMBER>-<kebab-case>` (e.g. `feat/issue-491-update-readme`)
+The `fix`/`feat`/… type is inferred from a `[Type]` title prefix
+(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, …), falling back to issue
+labels (`bug`/`security`→`fix`, `enhancement`→`feat`, `documentation`→`docs`,
+…), and finally to `fix`. The branch is created from the
+fresh remote default branch, so no manual fetch/pull is needed. If the branch
+already exists (locally or on origin) it switches to it instead; a dirty
+working tree or being on a non-default branch aborts **creation** — use
+`--force` to proceed anyway (uncommitted changes are then carried to the new
+branch, exactly as with `git switch -c`). Use `--dry-run` to see the name
+without touching git.
+
+**Branch naming convention:** `fix/issue-<NUMBER>-<kebab-case>`
+or `feat/issue-<NUMBER>-<kebab-case>` (e.g. `feat/issue-491-update-readme`) —
+the script produces exactly this shape.
 
 Existing examples in this repository:
 - `feature/295-servermanager-magic-timeout-constants`
@@ -469,9 +482,9 @@ extend `docs/troubleshooting.md` or ask the user before adding a new entry.
 #    php bin/pick-issue.php --milestone=0.7.0 --top=5 --json
 #    alternative: delegate full triage to a subagent ("List top 5 impactful\u2026")
 
-# 2. Feature branch
-git checkout master && git pull origin master
-git checkout -b feat/issue-<NUMBER>-<description>
+# 2. Feature branch — name derived by the helper (type from labels/prefix)
+bin/gh-branch <NUMBER>            # e.g. fix/issue-491-update-readme
+branch=$(bin/gh-branch <NUMBER>)  # capture name for the subagent task below
 
 # 3. Implementation (worker/coder subagent)
 #    subagent: "Implement issue #<NUMBER>..."

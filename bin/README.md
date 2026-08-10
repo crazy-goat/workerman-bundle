@@ -34,6 +34,37 @@ git push --no-verify
 Parses a PHPUnit Clover XML file and exits non-zero when total line coverage
 is below a threshold. Used by `composer coverage:check`.
 
+### `gh-branch`
+
+Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,
+so the branch name never needs to be invented by hand or by an LLM (see
+`docs/workflow.md`, step 2). The type is inferred from a `[Type]` title prefix
+(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, …), then from issue labels
+(`bug`/`security`→`fix`, `enhancement`→`feat`, `documentation`→`docs`, …),
+and defaults to `fix`; an explicit type argument always wins. The branch is
+created from the **fresh** default remote branch (never from a stale local
+`master`).
+
+**Usage:**
+```bash
+bin/gh-branch 491                 # create/switch to the issue branch
+bin/gh-branch 491 feat            # force type override
+bin/gh-branch 491 --push          # create + push with upstream
+bin/gh-branch 491 --dry-run       # print branch name only (no git mutation)
+bin/gh-branch 491 --force         # create despite dirty tree / non-default branch
+```
+
+Creation is refused on a dirty working tree or when not on the default
+branch — `--force` overrides (uncommitted changes are carried to the new
+branch, exactly as with `git switch -c`).
+
+Prints the branch name to stdout, so it can be captured
+(`branch=$(bin/gh-branch 491)`). All messages go to stderr.
+
+Requires the `gh` CLI (authenticated); GitHub-issue repos only — nothing
+Jira/decodo related. Exit codes: 0 = ok, 1 = environment/issue/dirty-tree
+error, 2 = usage error.
+
 ### `pick-issue.php`
 
 Ranks the open issues of the lowest open milestone and prints the top

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New developer helper `bin/gh-branch`: creates or switches to the
+  `<type>/issue-<N>-<slug>` branch for a GitHub issue in one command — the
+  type (`fix`/`feat`/`docs`/…) is inferred from the issue's `[Type]` title
+  prefix or labels, the branch is created from the fresh remote default
+  branch, and the branch name is printed to stdout so it can be captured
+  (`branch=$(bin/gh-branch 491)`). Optional `--push`, `--dry-run` and
+  `--force` flags. Wired into `docs/workflow.md` (step 2) so that neither
+  humans nor LLMs have to invent branch names.
+
 ### Fixed
 
 - `SfxDownloader::fetch()` no longer leaves a failed-checksum artifact on disk: when SHA-256 verification of a downloaded artifact fails, the artifact is unlinked before the exception is rethrown, so the next `fetch()` re-downloads instead of re-verifying the same bad bytes forever. The same cleanup now applies to zip-extraction failures (corrupt archive, malicious entry, extraction error) — `extractZip()` failures unlink the archive and rethrow the original exception, and the checksum path mentions the removal when it succeeded so a retry is obviously safe ([#642](https://github.com/crazy-goat/workerman-bundle/issues/642))
