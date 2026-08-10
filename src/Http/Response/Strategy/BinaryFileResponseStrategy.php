@@ -40,6 +40,13 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
         // regular WorkermanResponse (with or without withFile()); the status
         // line and Connection header are handled by Workerman and by
         // HttpRequestHandler::sendResponse().
+        //
+        // ResponseConverter preserves the application-provided Content-Length
+        // for HEAD requests (issue #643), but the file path must never carry
+        // it: Http::encode() merges its own file Content-Length via
+        // array_merge_recursive, which would emit a duplicate header.
+        unset($headers['Content-Length']);
+
         /** @var BinaryFileResponse $response */
         $workermanResponse = new WorkermanResponse(
             $response->getStatusCode(),

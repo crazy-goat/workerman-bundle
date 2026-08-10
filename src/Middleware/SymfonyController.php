@@ -121,7 +121,7 @@ final class SymfonyController
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
-            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion());
+            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion(), $this->symfonyRequest->getMethod());
         } catch (\Throwable $e) {
             $this->resetServices();
             $this->symfonyRequest = null;
