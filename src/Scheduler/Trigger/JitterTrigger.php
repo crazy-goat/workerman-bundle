@@ -21,6 +21,16 @@ final readonly class JitterTrigger implements TriggerInterface
         return sprintf('%s with 0-%d second jitter', $this->trigger, $this->maxSeconds);
     }
 
+    /**
+     * The decorated trigger, exposed so schedulers can detect the
+     * underlying schedule type (e.g. to apply fixed-rate rebasing to a
+     * periodical schedule).
+     */
+    public function innerTrigger(): TriggerInterface
+    {
+        return $this->trigger;
+    }
+
     public function getNextRunDate(\DateTimeImmutable $now): \DateTimeImmutable|null
     {
         $seconds = $this->randomizer->getInt(0, $this->maxSeconds);

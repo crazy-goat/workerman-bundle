@@ -199,6 +199,15 @@ protocol) is added.
 
 ## Scheduler / date-time
 
+### JitterTrigger wraps the real trigger — unwrap it before type-checking the schedule
+
+`TriggerFactory::create()` returns a `JitterTrigger($trigger, $jitter)` whenever `jitter > 0`, so
+checks like `$trigger instanceof PeriodicalTrigger` silently miss jittered periodical schedules.
+`schedulerCallback()` in `SchedulerWorker` unwraps via the `JitterTrigger::innerTrigger()`
+accessor before applying the fixed-rate rebasing (issue #565), and `JitterTrigger` exposes
+`innerTrigger()` for exactly this. Any future code branching on the trigger type must unwrap
+`JitterTrigger` first — or jittered tasks silently take the wrong path.
+
 ### DateInterval has no fractional-second parser — set `f` yourself or use `'500 ms'`
 
 `new \DateInterval('PT0.5S')` and `DateInterval::createFromDateString('0.5 seconds')` both throw

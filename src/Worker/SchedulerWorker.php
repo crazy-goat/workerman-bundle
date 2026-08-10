@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
@@ -127,9 +128,10 @@ final class SchedulerWorker
     /**
      * Schedule the next run of a task.
      *
-     * PeriodicalTrigger tasks are rebased on their scheduled target time
-     * (fixed-rate contract, see PeriodicalTrigger), so per-run overhead does
-     * not accumulate; the elapsed delay is computed in fractional seconds.
+     * PeriodicalTrigger tasks (also when wrapped in a JitterTrigger) are
+     * rebased on their scheduled target time (fixed-rate contract, see
+     * PeriodicalTrigger), so per-run overhead does not accumulate; the
+     * elapsed delay is computed in fractional seconds.
      *
      * @param \DateTimeImmutable|null $now Test-only hook: the reference clock
      *                                     (defaults to the current time).
@@ -146,7 +148,14 @@ final class SchedulerWorker
             return;
         }
 
-        if ($trigger instanceof PeriodicalTrigger) {
+        // Jitter only decorates the schedule: unwrap it so the underlying
+        // periodical grid is detected and rebased on its scheduled targets.
+        $scheduleTrigger = $trigger;
+        while ($scheduleTrigger instanceof JitterTrigger) {
+            $scheduleTrigger = $scheduleTrigger->innerTrigger();
+        }
+
+        if ($scheduleTrigger instanceof PeriodicalTrigger) {
             while ($nextRunDate <= $currentDate) {
                 $nextRunDate = $trigger->getNextRunDate($nextRunDate);
                 if (!($nextRunDate instanceof \DateTimeImmutable)) {

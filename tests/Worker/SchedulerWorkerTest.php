@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
@@ -613,6 +614,53 @@ final class SchedulerWorkerTest extends TestCase
 
         $this->assertCount(1, $capturedDelays);
         $this->assertEqualsWithDelta(0.5, $capturedDelays[0], 1e-6, 'Sub-second interval must not be truncated to whole seconds');
+    }
+
+    /**
+     * A JitterTrigger-wrapped PeriodicalTrigger must hold the same
+     * fixed-rate grid (issue #565): the random jitter decorates each run
+     * about its grid slot, but the schedule is still rebased on the
+     * previous scheduled target, so delays shrink to absorb overhead
+     * instead of accumulating drift. Deterministic via a seeded Randomizer.
+     */
+    public function testJitteredPeriodicalTriggerKeepsFixedRateCadence(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        // Seeded Mt19937: getInt(0, 1) rolls are 1, 1, 0, 1, 0, 0.
+        $trigger = new JitterTrigger(
+            new PeriodicalTrigger(60),
+            1,
+            new \Random\Randomizer(new \Random\Engine\Mt19937(1234)),
+        );
+        $service = new ServiceMethod('jittered_cadence_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        // First run: grid origin 12:00:00 -> target 12:01:00, jitter +1 s -> 12:01:01.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
+        // 45 s late: target 12:01:01 + 60 s, jitter +1 s -> 12:02:02; from-now
+        // would fire ~61 s later, the fixed-rate grid fires it 17 s later.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
+        // 50 s late: target 12:02:02 + 60 s, jitter +0 s -> 12:03:02; fires 12 s later.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
+
+        // From-now semantics would give roughly [61.0, 61.0, 60.0]; fixed-rate
+        // keeps the delays shrinking onto the grid.
+        $this->assertSame([61.0, 17.0, 12.0], $capturedDelays);
     }
 
     /**
