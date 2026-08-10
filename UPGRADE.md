@@ -24,7 +24,7 @@ limited:
   `cli_set_process_title()` does not rewrite the argv visible there.
 - On **non-Linux hosts (macOS, BSD)** there is no command-line fallback
   at all: without a fingerprint file, `stop`, `reload` and `status`
-  always report `Workerman is not running`, even while the server is up.
+  always report `Workerman is not running.`, even while the server is up.
 
 Consequence: upgrading the bundle while a server started by an older
 version is still running can silently turn the control commands into
@@ -39,7 +39,7 @@ no-ops.
    from then on.
 
 **If you already upgraded with a running master** and the commands report
-`Workerman is not running`: recover by terminating the old master by
+`Workerman is not running.`: recover by terminating the old master by
 hand. Read the PID from the pid file, verify with
 `ps -p <pid> -o pid,comm,args` that it is the process you started, and
 `kill` it (never use a bare `pkill -f WorkerMan` — it would kill
@@ -53,7 +53,7 @@ control plane.
 — and with it the fingerprint sidecar — is written by the master process
 itself a moment later (`MasterWorker::saveMasterPid()`, issue #584). A
 `status`, `stop` or `reload` in that short window reports
-`Workerman is not running`; wait for the pid file (and its
+`Workerman is not running.`; wait for the pid file (and its
 `.fingerprint` sidecar) to appear, then retry.
 
 ### Config cache and runtime user

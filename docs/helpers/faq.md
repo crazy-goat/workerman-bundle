@@ -115,7 +115,7 @@ To skip in an emergency: `git push --no-verify`.
 
 ## Control plane / master identification
 
-### `stop`/`reload`/`status` report "Workerman is not running" after a 0.25.0 upgrade
+### `stop`/`reload`/`status` report "Workerman is not running." after a 0.25.0 upgrade
 
 Master identification fails closed since 0.25.0 (issue #584): without the
 `.fingerprint` sidecar next to the pid file, control commands refuse to

@@ -113,7 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document the operator impact of the hardened master identification
   (previous entry): upgrading while a server started by a pre-0.25
   version is still running can make `stop` / `reload` / `status` report
-  "Workerman is not running" (no fingerprint sidecar exists yet — and on
+  "Workerman is not running." (no fingerprint sidecar exists yet — and on
   non-Linux hosts there is no command-line fallback at all), and the same
   report can appear in the short window after `start -d` until the master
   writes its pid file and fingerprint. `UPGRADE.md` gains an "Upgrading

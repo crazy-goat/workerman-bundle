@@ -595,7 +595,7 @@ fingerprint is written on every start — but three situations trip it:
   argv behaviour or an unreadable `/proc`, and on non-Linux hosts always
   fails closed. Stop the server **before** upgrading; if you already upgraded,
   terminate the old master by hand and start the new version once — see
-  [UPGRADE.md](UPGRADE.md#upgrading-to-025).
+  [UPGRADE.md](../UPGRADE.md#upgrading-to-025).
 - **Non-Linux hosts.** The cmdline fallback is Linux-only, so without a
   fingerprint file every control command reports "Workerman is not
   running" even when the server is up. On macOS/BSD the fingerprint is
@@ -609,7 +609,7 @@ fingerprint is written on every start — but three situations trip it:
 - **Daemon-start window.** `start -d` returns before the master has
   written its pid file; the fingerprint appears only when the master
   reaches `MasterWorker::saveMasterPid()` a moment later. A `stop`,
-  `reload` or `status` in that window reports "Workerman is not running"
+  `reload` or `status` in that window reports "Workerman is not running."
   — wait for `<pid_file>.fingerprint` to appear, then retry.
 
 ### When this matters
