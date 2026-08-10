@@ -34,6 +34,22 @@ exactly, and activity is whole-second granular.
 `StaticFilesMiddleware` caps the negative realpath cache so long-lived
 workers do not grow it unboundedly when files are missing (#570, #607).
 
+### Trusted-host patterns are applied once and re-applied only on cache miss (#560)
+
+`SymfonyController` maintains a per-worker, bounded (64-entry) validated-host
+cache. `Request::setTrustedHosts()` is called only on a cache miss (a host not
+seen — or evicted — by this worker), not on every request. The reset inside
+`setTrustedHosts()` is what bounds Symfony's internal `Request::$trustedHosts`
+list: with a wildcard trusted-host pattern that list would otherwise grow by one
+entry per distinct matching host for the worker's lifetime (unbounded memory +
+quadratic `in_array` lookup). The previous per-request call was wasteful but was
+the only thing resetting that list — fixing the waste without a bound would have
+been strictly worse. `getTrustedHosts()` returns the *patterns*, not the
+validated-host cache, so the regression test reads `Request::$trustedHosts` via
+reflection. When a trusted proxy forwards `X-Forwarded-Host`, the cache is
+skipped (reset every request) because the cache key (direct Host header) would
+not match the value `getHost()` validates.
+
 ## Security policy
 
 The following hardening measures were consolidated through the security

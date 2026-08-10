@@ -1487,4 +1487,256 @@ final class SymfonyControllerTest extends TestCase
         // A second lifecycle call must be a no-op after the early return cleanup.
         $controller->terminateIfNeeded();
     }
+
+    public function testSetTrustedHostsIsNotCalledOnCacheHit(): void
+    {
+        // setTrustedHosts() must be skipped on a validated-host cache hit.
+        // The H1, H2, H1 sequence proves it: on the third request (H1, a cache
+        // hit) the reset is skipped, so Symfony's internal Request::$trustedHosts
+        // still holds H2 from request 2; getHost() does not find H1 in it,
+        // re-validates via the pattern, and appends H1 → 2 entries. With the
+        // old per-request reset, request 3 would wipe the list and re-add only
+        // H1 → 1 entry. Two entries prove the reset was skipped.
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\\.test\\.local$'],
+        );
+
+        $this->assertSame(200, $controller($this->requestWithHost('h1.test.local'), $this->connection)->getStatusCode());
+        $this->assertSame(200, $controller($this->requestWithHost('h2.test.local'), $this->connection)->getStatusCode());
+        $this->assertSame(200, $controller($this->requestWithHost('h1.test.local'), $this->connection)->getStatusCode());
+
+        $this->assertSame(2, $this->trustedHostsCacheCount(), 'reset must be skipped on a cache hit');
+    }
+
+    public function testValidatedHostListStaysBoundedForManyDistinctHosts(): void
+    {
+        // Regression test for the unbounded memory leak this fix could
+        // introduce (issue #560): with a wildcard pattern, drive 10 000
+        // requests carrying distinct matching hosts. The naive fix (stop
+        // resetting without a bound) would let Symfony's internal
+        // Request::$trustedHosts grow to 10 000 entries. The bounded cache
+        // keeps it small — each cache miss resets it via setTrustedHosts().
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\\.test\\.local$'],
+        );
+
+        $memoryBefore = \memory_get_usage();
+        for ($i = 1; $i <= 10000; ++$i) {
+            $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
+        }
+        $cacheCount = $this->trustedHostsCacheCount();
+        $memoryAfter = \memory_get_usage();
+
+        $this->assertLessThan(
+            128,
+            $cacheCount,
+            'Symfony Request::$trustedHosts must stay bounded, not grow towards 10000',
+        );
+        // Memory must not grow linearly with the number of distinct hosts.
+        // The bounded cache retains at most 64 host strings (~3 KB); the
+        // generous 1 MB ceiling catches an unbounded leak while tolerating
+        // PHP allocator noise.
+        $this->assertLessThan(
+            1024 * 1024,
+            $memoryAfter - $memoryBefore,
+            'Memory growth must be sublinear in the number of distinct hosts',
+        );
+    }
+
+    public function testHostResolutionStaysBoundedAfterManyDistinctHosts(): void
+    {
+        // Host resolution (the in_array fast path in Request::getHost()) must
+        // stay O(bound), not O(distinct hosts seen). After 10 000 distinct
+        // hosts, a repeat cached-host lookup must be as fast as after a
+        // handful — because Request::$trustedHosts is bounded by the cache.
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\\.test\\.local$'],
+        );
+
+        // Warm the cache with a known host, then flood with 10 000 distinct hosts.
+        $controller($this->requestWithHost('cached.test.local'), $this->connection);
+        for ($i = 1; $i <= 10000; ++$i) {
+            $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
+        }
+
+        // The validated-host list is bounded, so a repeat request is O(bound).
+        $this->assertLessThan(128, $this->trustedHostsCacheCount());
+
+        $start = \hrtime(true);
+        for ($i = 0; $i < 1000; ++$i) {
+            $controller($this->requestWithHost('cached.test.local'), $this->connection);
+        }
+        $elapsedNs = \hrtime(true) - $start;
+
+        // 1000 repeat requests must complete in well under a second. With an
+        // unbounded 10 000-entry in_array scan the cost would be quadratic;
+        // the bounded cache keeps it flat.
+        $this->assertLessThan(
+            1_000_000_000,
+            $elapsedNs,
+            'Repeat-host resolution must stay bounded after 10 000 distinct hosts',
+        );
+    }
+
+    public function testEvictedHostIsStillValidatedOnLaterRequest(): void
+    {
+        // A host that was validated, then evicted from the bounded cache, must
+        // still be validated correctly on a later request (cache miss →
+        // setTrustedHosts reset → pattern re-match).
+        $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\\.test\\.local$'],
+        );
+
+        // Fill the cache (MAX_VALIDATED_HOSTS = 64) with distinct hosts.
+        for ($i = 1; $i <= 64; ++$i) {
+            $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
+        }
+        // The 65th distinct host evicts the oldest (h1) from the cache.
+        $controller($this->requestWithHost('h65.test.local'), $this->connection);
+
+        // h1 is now evicted — verify via the controller's private cache.
+        $this->assertNotContains('h1.test.local', $this->validatedHostsCache($controller));
+
+        // Re-request the evicted host: it is a cache miss, so setTrustedHosts()
+        // resets and getHost() re-validates via the pattern — must still pass.
+        $response = $controller($this->requestWithHost('h1.test.local'), $this->connection);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('h1.test.local', $kernel->receivedRequest?->getHost());
+    }
+
+    public function testTrustedHostsUnconfiguredDoesNotAccumulate(): void
+    {
+        // With trusted_hosts unconfigured, the controller must never call
+        // setTrustedHosts(), so neither patterns nor the validated-host cache
+        // accumulate — unchanged from before the fix.
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController($kernel, $this->createResponseConverter());
+
+        for ($i = 1; $i <= 100; ++$i) {
+            $controller($this->requestWithHost("h{$i}.example.com"), $this->connection);
+        }
+
+        $this->assertSame([], SymfonyRequest::getTrustedHosts(), 'no patterns must be set');
+        $this->assertSame(0, $this->trustedHostsCacheCount(), 'validated-host cache must stay empty');
+    }
+
+    public function testTrustedHostsAcceptThenRejectThenAcceptAcrossRequests(): void
+    {
+        // Host rejection/acceptance must be unchanged across multiple sequential
+        // requests on the same controller instance: matching → 200, non-matching
+        // → 400, matching again → 200.
+        $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^example\\.com$'],
+        );
+
+        $this->assertSame(200, $controller($this->requestWithHost('example.com'), $this->connection)->getStatusCode());
+        $this->assertSame(400, $controller($this->requestWithHost('attacker.com'), $this->connection)->getStatusCode());
+        $this->assertSame(200, $controller($this->requestWithHost('example.com'), $this->connection)->getStatusCode());
+        $this->assertSame('example.com', $kernel->receivedRequest?->getHost());
+    }
+
+    public function testTrustedProxySkipsCacheAndResetsEveryRequest(): void
+    {
+        // When the request comes from a trusted proxy, getHost() validates
+        // the value of X-Forwarded-Host rather than the direct Host header
+        // used as the cache key. The controller must therefore skip the
+        // validated-host cache and keep calling setTrustedHosts() on every
+        // request — that reset is what keeps Symfony's internal list bounded
+        // (issue #560 constraint).
+        $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\.example\.com$'],
+        );
+
+        SymfonyRequest::setTrustedProxies(['127.0.0.1'], SymfonyRequest::HEADER_X_FORWARDED_HOST);
+        try {
+            // First request: host resolves from X-Forwarded-Host, not Host.
+            $response = $controller(
+                $this->requestWithHost('direct.example.com', 'x1.example.com'),
+                $this->connection,
+            );
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('x1.example.com', $kernel->receivedRequest?->getHost());
+
+            // Second request with a different X-Forwarded-Host: the cache must
+            // be skipped again, so Symfony's internal list stays at one entry
+            // (reset on every request) instead of accumulating.
+            $response = $controller(
+                $this->requestWithHost('direct.example.com', 'x2.example.com'),
+                $this->connection,
+            );
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('x2.example.com', $kernel->receivedRequest->getHost());
+        } finally {
+            SymfonyRequest::setTrustedProxies([], 0);
+        }
+
+        $this->assertSame(
+            1,
+            $this->trustedHostsCacheCount(),
+            'trusted-proxy path must reset the validated-host list on every request',
+        );
+        $this->assertSame([], $this->validatedHostsCache($controller), 'bundle cache must stay empty behind a trusted proxy');
+    }
+
+    private function requestWithHost(string $host, ?string $forwardedHost = null): Request
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: {$host}\r\n";
+        if ($forwardedHost !== null) {
+            $buffer .= "X-Forwarded-Host: {$forwardedHost}\r\n";
+        }
+
+        return new Request($buffer . "\r\n");
+    }
+
+    /**
+     * Read the size of Symfony's internal validated-host cache (Request::$trustedHosts).
+     *
+     * This protected static list is the one that grows without bound with the
+     * naive fix; getTrustedHosts() returns the patterns, not this cache, so
+     * reflection is the only way to observe it.
+     */
+    private function trustedHostsCacheCount(): int
+    {
+        $property = (new \ReflectionClass(SymfonyRequest::class))->getProperty('trustedHosts');
+        $value = $property->getValue();
+        \assert(\is_array($value));
+
+        return \count($value);
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function validatedHostsCache(SymfonyController $controller): array
+    {
+        $property = (new \ReflectionClass(SymfonyController::class))->getProperty('validatedHosts');
+        $value = $property->getValue($controller);
+        \assert(\is_array($value));
+
+        return $value;
+    }
 }

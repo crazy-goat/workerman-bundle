@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `SymfonyController` no longer calls `Request::setTrustedHosts()` on every
+  request when `trusted_hosts` is configured. It now maintains a per-worker,
+  bounded (64-entry) validated-host cache and re-applies the patterns only on a
+  cache miss, so Symfony's internal `Request::$trustedHosts` memo benefits from
+  cross-request reuse in a long-lived worker while staying bounded. Without the
+  bound, a wildcard trusted-host pattern would let a remote client grow that
+  static list by one entry per distinct matching host for the worker's lifetime
+  (unbounded memory plus quadratic `in_array` lookup cost) — the very call this
+  optimisation removes was the only thing resetting it
+  ([#560](https://github.com/crazy-goat/workerman-bundle/issues/560))
+
 - `InotifyMonitorWatcher` no longer discards `IN_IGNORED` bookkeeping (or directory-create
   events) while a reload is pending: the guard previously dropped the whole event batch
   after `inotify_read()`, so `pathByWd` / `watchedPaths` kept entries for directories the
