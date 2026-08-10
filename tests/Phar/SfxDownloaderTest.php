@@ -23,6 +23,9 @@ final class SfxDownloaderTest extends TestCase
 
     private string $tempDir;
 
+    /** @var list<string> Directories created outside $this->tempDir that tearDown() must remove */
+    private array $cleanupDirs = [];
+
     public static function setUpBeforeClass(): void
     {
         self::$serverPort = self::allocatePort();
@@ -51,6 +54,10 @@ final class SfxDownloaderTest extends TestCase
     protected function tearDown(): void
     {
         $this->rmdirRecursive($this->tempDir);
+        foreach ($this->cleanupDirs as $dir) {
+            $this->rmdirRecursive($dir);
+        }
+        $this->cleanupDirs = [];
     }
 
     private function rmdirRecursive(string $dir): void
@@ -67,13 +74,89 @@ final class SfxDownloaderTest extends TestCase
                 continue;
             }
             $path = $dir . '/' . $item;
-            if (is_dir($path)) {
+            if (is_link($path)) {
+                // Never follow a symlink into its target: the tree may
+                // contain links planted by the tests to outside directories.
+                unlink($path);
+            } elseif (is_dir($path)) {
                 $this->rmdirRecursive($path);
             } else {
                 unlink($path);
             }
         }
         rmdir($dir);
+    }
+
+    /**
+     * Create a zip archive containing a single symlink entry.
+     *
+     * ZipArchive has no API to mark an entry as a symlink, so the archive is
+     * assembled by hand: one STORED entry whose Unix external attributes
+     * carry the symlink mode (S_IFLNK | 0777) and whose content is the link
+     * target path.
+     */
+    private function createZipWithSymlinkEntry(string $zipPath, string $linkName, string $linkTarget): void
+    {
+        $name = $linkName;
+        $content = $linkTarget;
+        $crc = hexdec(hash('crc32b', $content));
+        $size = strlen($content);
+
+        // One STORED entry: local file header followed by the raw content at
+        // offset 0; the central directory points back to that header.
+        $localHeader = pack(
+            'VvvvvvVVVvv',
+            0x04034b50, // local file header signature
+            20,         // version needed to extract
+            0x0800,     // general purpose bit flags (UTF-8)
+            0,          // compression method: stored
+            0,          // last mod time
+            0,          // last mod date
+            $crc,
+            $size,      // compressed size
+            $size,      // uncompressed size
+            strlen($name),
+            0,          // extra field length
+        ) . $name;
+
+        // version made by: 0x031E (Unix, 3.0); symlink mode (S_IFLNK | 0777)
+        // lives in the upper 16 bits of the external attributes.
+        $externalAttrs = (0120000 | 0777) << 16;
+
+        $centralDirectory = pack(
+            'VvvvvvvVVVvvvvvVV',
+            0x02014b50,   // central directory signature
+            0x031E,       // version made by (Unix, 3.0)
+            20,           // version needed to extract
+            0x0800,       // general purpose bit flags (UTF-8)
+            0,            // compression method: stored
+            0,            // last mod time
+            0,            // last mod date
+            $crc,
+            $size,
+            $size,
+            strlen($name),
+            0,            // extra field length
+            0,            // file comment length
+            0,            // disk number start
+            0,            // internal attributes
+            $externalAttrs,
+            0,            // local header offset
+        ) . $name;
+
+        $endOfCentralDirectory = pack(
+            'VvvvvVVv',
+            0x06054b50,   // end of central directory signature
+            0,            // disk number
+            0,            // disk with central directory
+            1,            // entries on this disk
+            1,            // total entries
+            strlen($centralDirectory),
+            strlen($localHeader) + strlen($content), // central directory offset
+            0,            // comment length
+        );
+
+        file_put_contents($zipPath, $localHeader . $content . $centralDirectory . $endOfCentralDirectory);
     }
 
     /**
@@ -204,6 +287,61 @@ final class SfxDownloaderTest extends TestCase
             'https://example.invalid/phpmicro.sfx.zip',
             $this->tempDir,
         );
+    }
+
+    /**
+     * An entry that would resolve outside the destination directory via a
+     * pre-existing symlink inside the destination tree must be rejected: the
+     * name rules alone cannot see it (no "..", no absolute path), so the
+     * destination-containment backstop has to catch it.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRejectsEntryEscapingViaSymlinkedSubdirectory(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('resolves outside the destination directory');
+
+        (new SfxDownloader())->fetch(
+            'https://example.invalid/phpmicro.sfx.zip',
+            $this->tempDir,
+        );
+    }
+
+    /**
+     * A crafted archive containing a symlink entry must not produce a symlink
+     * on disk: ZipArchive::extractTo() materialises link entries as regular
+     * files containing the link target, which the current extraction design
+     * depends on.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipDoesNotCreateSymlinkFromSymlinkEntry(): void
+    {
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithSymlinkEntry($zipPath, 'phpmicro.sfx', '../../outside/passwd');
+
+        $result = (new SfxDownloader())->fetch(
+            'https://example.invalid/phpmicro.sfx.zip',
+            $this->tempDir,
+        );
+
+        self::assertFileExists($result);
+        self::assertFalse(is_link($result), 'A symlink entry must not produce a symlink on disk.');
+        self::assertSame('../../outside/passwd', file_get_contents($result));
     }
 
     /**
