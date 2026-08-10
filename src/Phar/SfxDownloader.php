@@ -60,12 +60,37 @@ final readonly class SfxDownloader
         // Verify the downloaded artifact before any extractor runs over its
         // bytes: a tampered archive must never reach ZipArchive.
         if (is_string($expectedSha256) && $expectedSha256 !== '') {
-            self::verifyChecksum($destination, $expectedSha256);
+            try {
+                self::verifyChecksum($destination, $expectedSha256);
+            } catch (\RuntimeException $e) {
+                // Never leave a failed artifact behind: without unlink(),
+                // every subsequent fetch() re-verifies the same bad bytes
+                // and never retries the download.
+                if (is_file($destination)) {
+                    unlink($destination);
+                }
+                throw new \RuntimeException(sprintf(
+                    '%s The failed artifact was removed, so the next fetch() will re-download it.',
+                    $e->getMessage(),
+                ), $e->getCode(), $e);
+            }
         }
 
         // If the upstream artifact is a zip, extract it.
         if (str_ends_with($destination, '.zip')) {
-            $destination = $this->extractZip($destination, $destinationDir);
+            try {
+                $destination = $this->extractZip($destination, $destinationDir);
+            } catch (SfxExtractionException $e) {
+                // An archive with no usable SFX entry would poison every
+                // later fetch() the same way a bad checksum would: remove it.
+                if (is_file($destination)) {
+                    unlink($destination);
+                }
+                throw new SfxExtractionException(sprintf(
+                    '%s The archive was removed, so the next fetch() will re-download it.',
+                    $e->getMessage(),
+                ), $e->getCode(), $e);
+            }
         }
 
         if (!is_file($destination)) {
