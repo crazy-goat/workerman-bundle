@@ -230,3 +230,19 @@ same fixed absolute date on every call — the relative string is parsed once at
 stub-configuration time. If the code under test calls `getNextRunDate()` repeatedly
 (loop or rebound scheduling), stub relative to an injected argument instead, e.g.
 `willReturnCallback(fn(\DateTimeImmutable $now) => $now->modify('+1 second'))`.
+
+## Closures / garbage collection
+
+### Mutual by-reference capture (`&$a` / `&$b`) between two closures is a reference cycle
+
+Two closures that capture each other **by reference** can never be freed by
+refcounting — only the cycle collector reclaims them. In a long-lived
+Workerman worker that means ~2.4 KB of uncollectable garbage per download and
+a forced full collection every ~3 300 events (or an unbounded leak under
+`gc_disable()`). Solution: both closures capture one small shared state
+object **by value** — capturing the same object handle is not a cycle — and
+self-removal uses a flag on the state instead of identity comparison against
+the closure itself. Corollary: never store a closure *inside* an object that
+closure captures; that is a cycle again (store data, not handlers).
+Reference: `BinaryFileResponseStrategy::scheduleFileCleanup()` +
+`FileCleanupState` (issue #573).
