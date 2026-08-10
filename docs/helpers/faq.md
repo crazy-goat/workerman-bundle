@@ -196,3 +196,31 @@ asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://`, `https://`,
 (issue #590); keep them in sync with the
 enum unless real `tcp://` support (a `Tcp` case with transport `tcp` and no
 protocol) is added.
+
+## Scheduler / date-time
+
+### JitterTrigger wraps the real trigger — unwrap it before type-checking the schedule
+
+`TriggerFactory::create()` returns a `JitterTrigger($trigger, $jitter)` whenever `jitter > 0`, so
+checks like `$trigger instanceof PeriodicalTrigger` silently miss jittered periodical schedules.
+`schedulerCallback()` in `SchedulerWorker` unwraps via the `JitterTrigger::innerTrigger()`
+accessor before applying the fixed-rate rebasing (issue #565), and `JitterTrigger` exposes
+`innerTrigger()` for exactly this. Any future code branching on the trigger type must unwrap
+`JitterTrigger` first — or jittered tasks silently take the wrong path.
+
+### DateInterval has no fractional-second parser — set `f` yourself or use `'500 ms'`
+
+`new \DateInterval('PT0.5S')` and `DateInterval::createFromDateString('0.5 seconds')` both throw
+(`Unknown or bad format`). Fractional intervals only work via a unit name string
+(`createFromDateString('500 ms')` → `s=0, f=0.5`) or by setting the property
+manually (`$i = new \DateInterval('PT0S'); $i->f = 0.5;`). `DateTimeImmutable::add()`
+honours `f` and preserves microseconds, so `format('U.u')` round-trips sub-second
+precision. Used for the sub-second `PeriodicalTrigger` support (issue #565).
+
+### `new \DateTimeImmutable('+1 second')` in a mock `willReturn` is evaluated once
+
+A stub configured as `->willReturn(new \DateTimeImmutable('+1 second'))` returns the
+same fixed absolute date on every call — the relative string is parsed once at
+stub-configuration time. If the code under test calls `getNextRunDate()` repeatedly
+(loop or rebound scheduling), stub relative to an injected argument instead, e.g.
+`willReturnCallback(fn(\DateTimeImmutable $now) => $now->modify('+1 second'))`.

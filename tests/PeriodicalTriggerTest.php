@@ -117,6 +117,19 @@ final class PeriodicalTriggerTest extends TestCase
         $this->assertSame('2024-01-15 14:30:00', $nextRun->format('Y-m-d H:i:s'));
     }
 
+    public function testGetNextRunDatePreservesSubSecondPrecision(): void
+    {
+        $interval = \DateInterval::createFromDateString('500 ms');
+        $this->assertNotFalse($interval);
+        $trigger = new PeriodicalTrigger($interval);
+        $now = new \DateTimeImmutable('2024-01-15 12:00:00');
+
+        $nextRun = $trigger->getNextRunDate($now);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
+        $this->assertSame('2024-01-15 12:00:00.500000', $nextRun->format('Y-m-d H:i:s.u'));
+    }
+
     /**
      * @dataProvider intervalFormatProvider
      */

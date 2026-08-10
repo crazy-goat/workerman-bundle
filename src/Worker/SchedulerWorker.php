@@ -6,6 +6,8 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use CrazyGoat\WorkermanBundle\Util\ProcessTerminator;
@@ -20,6 +22,9 @@ final class SchedulerWorker
 
     /** @var array<string, resource> */
     private array $pidFileHandles = [];
+
+    /** @var array<string, \DateTimeImmutable> Scheduled target times per task (fixed-rate rebasing). */
+    private array $nextRunDates = [];
 
     /**
      * @param mixed[] $schedulerConfig
@@ -120,23 +125,54 @@ final class SchedulerWorker
         self::$sigkillNormalCompletion = $value;
     }
 
-    private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void
+    /**
+     * Schedule the next run of a task.
+     *
+     * PeriodicalTrigger tasks (also when wrapped in a JitterTrigger) are
+     * rebased on their scheduled target time (fixed-rate contract, see
+     * PeriodicalTrigger), so per-run overhead does not accumulate; the
+     * elapsed delay is computed in fractional seconds.
+     *
+     * @param \DateTimeImmutable|null $now Test-only hook: the reference clock
+     *                                     (defaults to the current time).
+     */
+    private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler, ?\DateTimeImmutable $now = null): void
     {
         static $tickCallbacks = [];
 
-        $currentDate = new \DateTimeImmutable();
-        $nextRunDate = $trigger->getNextRunDate($currentDate);
-        if ($nextRunDate instanceof \DateTimeImmutable) {
-            $interval = $nextRunDate->getTimestamp() - $currentDate->getTimestamp();
-            $key = $service->toString();
-            if (!isset($tickCallbacks[$key])) {
-                $tickCallbacks[$key] = [
-                    $this->onTickTimer(...),
-                    [$trigger, $service, $taskName, $handler],
-                ];
-            }
-            $this->worker::$globalEvent?->delay($interval, $tickCallbacks[$key][0], $tickCallbacks[$key][1]);
+        $currentDate = $now ?? new \DateTimeImmutable();
+        $key = $service->toString();
+
+        $nextRunDate = $trigger->getNextRunDate($this->nextRunDates[$key] ?? $currentDate);
+        if (!($nextRunDate instanceof \DateTimeImmutable)) {
+            return;
         }
+
+        // Jitter only decorates the schedule: unwrap it so the underlying
+        // periodical grid is detected and rebased on its scheduled targets.
+        $scheduleTrigger = $trigger;
+        while ($scheduleTrigger instanceof JitterTrigger) {
+            $scheduleTrigger = $scheduleTrigger->innerTrigger();
+        }
+
+        if ($scheduleTrigger instanceof PeriodicalTrigger) {
+            while ($nextRunDate <= $currentDate) {
+                $nextRunDate = $trigger->getNextRunDate($nextRunDate);
+                if (!($nextRunDate instanceof \DateTimeImmutable)) {
+                    return;
+                }
+            }
+            $this->nextRunDates[$key] = $nextRunDate;
+        }
+
+        $interval = (float) $nextRunDate->format('U.u') - (float) $currentDate->format('U.u');
+        if (!isset($tickCallbacks[$key])) {
+            $tickCallbacks[$key] = [
+                $this->onTickTimer(...),
+                [$trigger, $service, $taskName, $handler],
+            ];
+        }
+        $this->worker::$globalEvent?->delay($interval, $tickCallbacks[$key][0], $tickCallbacks[$key][1]);
     }
 
     private function onTickTimer(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler): void

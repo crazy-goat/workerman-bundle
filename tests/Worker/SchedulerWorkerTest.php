@@ -6,6 +6,8 @@ namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerInterface;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
@@ -504,6 +506,162 @@ final class SchedulerWorkerTest extends TestCase
     }
 
     // --- Tick callback args test (Issue #293) ---
+
+    /**
+     * Fixed-rate cadence (issue #565): the next run of a PeriodicalTrigger
+     * task is computed from the previous run's scheduled time, not from the
+     * current time, so the fire times stay on the interval grid even when
+     * rescheduling happens late. The delays shrink to absorb the overhead
+     * instead of growing.
+     */
+    public function testPeriodicalTriggerKeepsFixedRateCadence(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        $trigger = new PeriodicalTrigger(60);
+        $service = new ServiceMethod('cadence_test_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        // First run scheduled from the origin (12:00:00) -> fires at 12:01:00.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
+        // Rescheduled 45 s late: from-now would fire 75 s later; fixed-rate fires 15 s later (12:02:00).
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
+        // Rescheduled 50 s late: fixed-rate fires 10 s later (12:03:00).
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
+
+        $this->assertSame([60.0, 15.0, 10.0], $capturedDelays);
+    }
+
+    /**
+     * A reschedule arriving after several slots have passed (lock
+     * contention, long run) must skip the missed ticks and resume on the
+     * next grid slot with a single delay — no burst of catch-up executions.
+     */
+    public function testPeriodicalTriggerLateRescheduleSkipsMissedTicks(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        $trigger = new PeriodicalTrigger(60);
+        $service = new ServiceMethod('lock_test_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        // First run scheduled at 12:00:00, fires at 12:01:00.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
+        // Lock held by the 12:01 run until 12:06:30: slots 12:02..12:06 are
+        // missed, the next one is 12:07:00 (single 30 s delay).
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:06:30'));
+
+        $this->assertSame([60.0, 30.0], $capturedDelays);
+    }
+
+    /**
+     * Sub-second intervals (a DateInterval carrying a fraction) must be
+     * honoured: the delay is fractional, not truncated to 0 whole seconds.
+     */
+    public function testSubSecondIntervalSchedulesFloatDelay(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        $interval = new \DateInterval('PT0S');
+        $interval->f = 0.5;
+        $trigger = new PeriodicalTrigger($interval);
+        $service = new ServiceMethod('subsecond_test_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
+
+        $this->assertCount(1, $capturedDelays);
+        $this->assertEqualsWithDelta(0.5, $capturedDelays[0], 1e-6, 'Sub-second interval must not be truncated to whole seconds');
+    }
+
+    /**
+     * A JitterTrigger-wrapped PeriodicalTrigger must hold the same
+     * fixed-rate grid (issue #565): the random jitter decorates each run
+     * about its grid slot, but the schedule is still rebased on the
+     * previous scheduled target, so delays shrink to absorb overhead
+     * instead of accumulating drift. Deterministic via a seeded Randomizer.
+     */
+    public function testJitteredPeriodicalTriggerKeepsFixedRateCadence(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        // Seeded Mt19937: getInt(0, 1) rolls are 1, 1, 0, 1, 0, 0.
+        $trigger = new JitterTrigger(
+            new PeriodicalTrigger(60),
+            1,
+            new \Random\Randomizer(new \Random\Engine\Mt19937(1234)),
+        );
+        $service = new ServiceMethod('jittered_cadence_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        // First run: grid origin 12:00:00 -> target 12:01:00, jitter +1 s -> 12:01:01.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
+        // 45 s late: target 12:01:01 + 60 s, jitter +1 s -> 12:02:02; from-now
+        // would fire ~61 s later, the fixed-rate grid fires it 17 s later.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
+        // 50 s late: target 12:02:02 + 60 s, jitter +0 s -> 12:03:02; fires 12 s later.
+        $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
+
+        // From-now semantics would give roughly [61.0, 61.0, 60.0]; fixed-rate
+        // keeps the delays shrinking onto the grid.
+        $this->assertSame([61.0, 17.0, 12.0], $capturedDelays);
+    }
 
     /**
      * Test that scheduleCallback passes task parameters as $args to delay()
