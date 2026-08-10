@@ -38,11 +38,12 @@ is below a threshold. Used by `composer coverage:check`.
 
 Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,
 so the branch name never needs to be invented by hand or by an LLM (see
-`docs/workflow.md`, step 2). The type is inferred from issue labels
+`docs/workflow.md`, step 2). The type is inferred from a `[Type]` title prefix
+(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, …), then from issue labels
 (`bug`/`security`→`fix`, `enhancement`→`feat`, `documentation`→`docs`, …),
-then from a `[Type]` title prefix, and defaults to `fix`; an explicit type
-argument always wins. The branch is created from the **fresh** default remote
-branch (never from a stale local `master`).
+and defaults to `fix`; an explicit type argument always wins. The branch is
+created from the **fresh** default remote branch (never from a stale local
+`master`).
 
 **Usage:**
 ```bash

@@ -96,9 +96,10 @@ bin/gh-branch <NUMBER> --push      # also push with upstream
 branch=$(bin/gh-branch <NUMBER>)   # capture the name (printed to stdout) for later steps
 ```
 
-The `fix`/`feat`/… type is inferred from issue labels (`bug`/`security`→`fix`,
-`enhancement`→`feat`, `documentation`→`docs`, …), falling back to a
-`[Type]`-prefixed title, and finally to `fix`. The branch is created from the
+The `fix`/`feat`/… type is inferred from a `[Type]` title prefix
+(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, …), falling back to issue
+labels (`bug`/`security`→`fix`, `enhancement`→`feat`, `documentation`→`docs`,
+…), and finally to `fix`. The branch is created from the
 fresh remote default branch, so no manual fetch/pull is needed. If the branch
 already exists (locally or on origin) it switches to it instead; a dirty
 working tree or being on a non-default branch aborts **creation** — use
