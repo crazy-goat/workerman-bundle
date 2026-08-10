@@ -247,10 +247,16 @@ done on `master` — they are made on the release branch `v0.25.0`:
 ```bash
 git checkout v0.25.0 && git pull origin v0.25.0
 git checkout -b fix/<ticket>-<description>   # branch off the release branch
-# ... fix + changelog entry under a new "## [0.25.1] - YYYY-MM-DD" heading ...
+# ... fix + changelog entry under [Unreleased] (same pattern as the main flow) ...
 git push -u origin fix/<ticket>-<description>
 gh pr create --base v0.25.0 --head fix/<ticket>-<description> --title "fix: ..."
 ```
+
+Follow the same changelog pattern as the main flow: first add the entry
+under `[Unreleased]` (which the release-branch changelog inherits), then
+promote it to a new `## [0.25.1] - YYYY-MM-DD` heading — placed between
+`[Unreleased]` and `[0.25.0]`, Keep a Changelog's reverse-chronological
+order — when cutting the patch.
 
 Merge the PR into `v0.25.0` (CI runs on the PR as usual), then tag the
 patch from the release branch:
@@ -261,9 +267,12 @@ git tag -a v0.25.1 -m "Release 0.25.1"
 git push origin v0.25.1     # release.yaml fires: draft release → fix notes → publish
 ```
 
-The fix also needs to reach `master` (and newer release branches) — via
-`git cherry-pick` in a follow-up PR, or directly if the same fix targets
-the next release line.
+The fix also needs to reach `master` (and newer release branches) via a
+`git cherry-pick` in a follow-up PR. The cherry-picked commit carries the
+`[0.25.1]` changelog heading, which does **not** belong on `master` (its
+changelog tracks the next release line): keep master's entry under
+`[Unreleased]` instead — resolve the `CHANGELOG.md` conflict accordingly
+when the pick lands.
 
 ---
 
