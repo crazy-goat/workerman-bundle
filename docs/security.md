@@ -187,11 +187,13 @@ workerman:
               - workerman.middleware.static_files
 ```
 
-When `allowed_extensions` is set, only files with one of the listed extensions are served — all others return 404. Files without an extension, including names ending in a dot, are not served. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
+When `$allowedExtensions` is set, only files with one of the listed extensions are served — all others return 404. Files without an extension, including names ending in a dot, are not served. The denylist (dotfiles, `.php`, etc.) takes precedence and is always enforced regardless of the allowlist setting.
+
+> **Note:** The `servers[].static_files.allowed_extensions` YAML key exists only for the deprecated `serve_files`/`root_dir` path and has **no effect** on a `StaticFilesMiddleware` registered as a service, which is the setup shown above — a service-registered middleware reads its allowlist exclusively from the `$allowedExtensions` constructor argument. Setting the YAML key while using a service-registered middleware does nothing except surface the deprecation notice for the `static_files` node (announced in `config:dump-reference` and emitted when the config is processed).
 
 ### Symlink Protection
 
-By default, `StaticFilesMiddleware` refuses to serve files that are accessed through a symlink under the static root directory (`follow_symlinks: false`). This prevents an attacker or a compromised tool from creating a symlink inside the public directory to expose files outside the intended root.
+By default, `StaticFilesMiddleware` refuses to serve files that are accessed through a symlink under the static root directory (`$followSymlinks: false`). This prevents an attacker or a compromised tool from creating a symlink inside the public directory to expose files outside the intended root.
 
 To restore the previous behaviour and allow symlinks to be followed, set `$followSymlinks: true`:
 
@@ -215,13 +217,13 @@ workerman:
               - workerman.middleware.static_files
 ```
 
-When `follow_symlinks` is `false` (default), any path component inside the root directory that is a symlink will cause the request to be treated as a non-existent file, passing control to the next middleware.
+When `$followSymlinks` is `false` (default), any path component inside the root directory that is a symlink will cause the request to be treated as a non-existent file, passing control to the next middleware.
 
 ### Security Considerations
 
 - **Keep `$rootDirectory` isolated**: Point `$rootDirectory` to a dedicated public directory (e.g., `%kernel.project_dir%/public`). Never set it to the project root or a directory containing `.env`, source code, or VCS metadata.
-- **Prefer the allowlist over the denylist**: without `allowed_extensions`, the default posture is "serve everything except the denylist above" — safe for a directory that contains only public assets, but the denylist is a last line of defence, not a guarantee. Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
-- **Use the allowlist**: Configure `allowed_extensions` to only permit the file types your application actually serves as static assets.
+- **Prefer the allowlist over the denylist**: without `$allowedExtensions`, the default posture is "serve everything except the denylist above" — safe for a directory that contains only public assets, but the denylist is a last line of defence, not a guarantee. Configure `$allowedExtensions` to only permit the file types your application actually serves as static assets.
+- **Use the allowlist**: Configure `$allowedExtensions` to only permit the file types your application actually serves as static assets.
 - **Disable symlinks**: Keep `$followSymlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
 
