@@ -540,6 +540,12 @@ final class InotifyMonitorWatcherTest extends TestCase
     {
         $tmpDir = $this->createTempDir();
 
+        // Created BEFORE the watcher starts, so the root watch never queues a
+        // known-wd IN_CREATE|IN_ISDIR for it: the only events referencing it
+        // are the ones from the unrecorded watch below.
+        $unrecordedDir = $tmpDir . '/unrecorded';
+        mkdir($unrecordedDir, 0700);
+
         $worker = $this->createMock(Worker::class);
         $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
         $this->setUpEventLoop();
@@ -552,8 +558,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         // Register a watch directly on the watcher's descriptor, bypassing the
         // bookkeeping maps: its events then carry a descriptor onNotify() has
         // never seen.
-        $unrecordedDir = $tmpDir . '/unrecorded';
-        mkdir($unrecordedDir, 0700);
         \inotify_add_watch($fd, $unrecordedDir, self::IN_CREATE | self::IN_ISDIR);
 
         $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -653,6 +657,15 @@ final class InotifyMonitorWatcherTest extends TestCase
         $tmpDir = $this->createTempDir();
         $logFile = $tmpDir . '/workerman.log';
         $originalLogFile = Worker::$logFile;
+        $originalOutputStream = Worker::$outputStream;
+        // Worker::log() -> safeEcho() requires a writable stream; in a unit
+        // test no stream has been initialised, so give it one (same convention
+        // as MasterWorkerTest::testFingerprintRenameFailureIsLogged).
+        $testStream = \fopen('php://temp', 'w+');
+        if ($testStream === false) {
+            self::fail('Unable to open temp stream for test');
+        }
+        Worker::$outputStream = $testStream;
         Worker::$logFile = $logFile;
 
         try {
@@ -704,6 +717,7 @@ final class InotifyMonitorWatcherTest extends TestCase
             $this->assertSame(1, substr_count($log, 'ghost'), 'the warning must be logged at most once per path');
         } finally {
             Worker::$logFile = $originalLogFile;
+            Worker::$outputStream = $originalOutputStream;
         }
     }
 
