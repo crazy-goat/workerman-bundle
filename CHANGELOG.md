@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `response_chunk_size` option now configures only streamed responses; it no longer affects regular buffered responses, and the (final, DI-registered) `DefaultResponseStrategy` no longer accepts a constructor chunk-size argument ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
 
+- **BC break for custom response strategies**: `ResponseConverterStrategyInterface::convert()` gained a fourth parameter and the `$headers` argument shape changed. The signature went from `convert(SymfonyResponse $response, array $headers, TcpConnection $connection): WorkermanResponse` to `convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse`; the new parameter carries the request's HTTP protocol version (e.g. `1.1` or `1.0`) so strategies that build their own status line can derive it. The `$headers` shape also widened from `array<string, list<string|null>>` to `array<string, string|list<string|null>>` — single-valued headers arrive flattened to `string` (nulls filtered), only `Set-Cookie` keeps a list. Any custom strategy registered with `workerman.response_converter.strategy` must be updated before upgrading: an unmodified strategy stops satisfying the interface and fatals at runtime ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556), [#579](https://github.com/crazy-goat/workerman-bundle/issues/579))
+
 ### Fixed
 
 - `ProcessTest` event-marker assertions no longer fail spuriously when the daemon stalls or restarts: the start- and error-marker files are reset before each test and the helper now waits for a **freshly appended** entry (15 s budget) instead of returning on the first non-empty file, so stale entries from previous runs or a >4 s daemon gap can no longer satisfy the recency check ([#645](https://github.com/crazy-goat/workerman-bundle/issues/645))
@@ -27,15 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `StaticFilesMiddleware` no longer 404s every file in a subdirectory when `static_files.allowed_extensions` is configured: the allowlist and the residue-extension checks are file-only rules and are now applied exclusively to the last path component, while every component still gets the dotfile, leak-extension and blocked-name checks ([#637](https://github.com/crazy-goat/workerman-bundle/issues/637))
 
+- Make the CI coverage gate effective: the threshold was `0.0` (passing
+  trivially at ~82% actual coverage) and the check ran twice per matrix leg.
+  The threshold (80%) is now defined once in `composer.json`
+  (`coverage:check`), the duplicate invocation in
+  `.github/workflows/tests.yaml` is removed, and the gate runs only on the
+  lowest supported matrix leg (PHP 8.2 / Symfony 6.4) — per-leg coverage
+  reports are still uploaded as artifacts
+  ([#589](https://github.com/crazy-goat/workerman-bundle/issues/589))
+
 - Run the `services_resetter` on every request path — including kernel boot/handle exceptions, trusted-host rejections, and kernels that do not implement `TerminableInterface` — so request-scoped Symfony service state cannot leak between requests in a long-running Workerman process ([#572](https://github.com/crazy-goat/workerman-bundle/issues/572))
 
 - `MemoryRebootStrategy` now bases its reload verdict on the memory reading taken **after** the `gc_collect_cycles()` it triggers, so a worker whose memory drops back under `limit` as a result of the collection is no longer reloaded unnecessarily. When the worker is already above `limit`, the collection runs synchronously instead of being scheduled on a later event-loop tick; the deferred `Timer::add(0, ...)` path is kept for the preventive "above `gc_limit`, below `limit`" case, and a collection blocked by `gc_cooldown` leaves the verdict on the current reading. Memory is measured with `memory_get_usage()` (emalloc accounting) — stated explicitly in the config docs, since the allocator arena behind `memory_get_usage(true)` would mask the effect of the collection ([#561](https://github.com/crazy-goat/workerman-bundle/issues/561))
 
 - Stop manually splitting buffered responses into 8 KiB sends. `DefaultResponseStrategy` now returns the complete body to Workerman's transport, avoiding redundant `substr()` copies and write syscalls; preserve the request's HTTP protocol version on converted responses ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
 
-- Cancel `ServerWorker`'s per-connection timeout and keep-alive timers on connection close, centralize timer cleanup in one helper shared by `onMessage` and `onClose`, and keep `BinaryFileResponseStrategy` temp-file cleanup chained correctly with the worker-level `onClose` base callback ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571))
-
-- Replace per-request connection timers with one worker-level sweeper and activity timestamps, preventing cancelled `Select` timer entries from retaining memory under sustained keep-alive traffic ([#555](https://github.com/crazy-goat/workerman-bundle/issues/555)). Note: when `ServerWorker` is constructed directly with `connectionTimeout: 0`, the timeout is now disabled (previously it armed an immediate close); the YAML configuration still enforces a minimum of 1 second.
+- Replace per-request connection timers with one worker-level sweeper and activity timestamps, preventing cancelled `Select` timer entries from retaining memory under sustained keep-alive traffic ([#555](https://github.com/crazy-goat/workerman-bundle/issues/555)). The earlier per-connection timer-cleanup approach ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571)) is superseded: `onClose` no longer cancels per-connection timers — it clears the connection context so the sweeper skips closed connections — and `BinaryFileResponseStrategy` temp-file cleanup still chains with the worker-level `onClose` base callback. Note: when `ServerWorker` is constructed directly with `connectionTimeout: 0`, the timeout is now disabled (previously it armed an immediate close); the YAML configuration still enforces a minimum of 1 second.
 
 ### Security
 
@@ -162,17 +171,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `StreamedResponseStrategy::buildHeaderString()` are kept as
   belt-and-braces
   ([#579](https://github.com/crazy-goat/workerman-bundle/issues/579))
-
-### Fixed
-
-- Make the CI coverage gate effective: the threshold was `0.0` (passing
-  trivially at ~82% actual coverage) and the check ran twice per matrix leg.
-  The threshold (80%) is now defined once in `composer.json`
-  (`coverage:check`), the duplicate invocation in
-  `.github/workflows/tests.yaml` is removed, and the gate runs only on the
-  lowest supported matrix leg (PHP 8.2 / Symfony 6.4) — per-leg coverage
-  reports are still uploaded as artifacts
-  ([#589](https://github.com/crazy-goat/workerman-bundle/issues/589))
 
 ## [0.24.1] - 2026-07-28
 
