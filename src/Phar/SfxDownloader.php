@@ -336,8 +336,11 @@ final readonly class SfxDownloader
      *
      * Stages:
      *  1. Open the zip archive with integrity checks.
-     *  2. List all entry names (validating each against zip-slip).
-     *  3. Extract all entries to the destination directory.
+     *  2. List all entry names (validating each against zip-slip) — a failing
+     *     entry aborts before anything is extracted (all-or-nothing).
+     *  3. Extract all entries to the destination directory, one at a time:
+     *     each entry is re-validated by name and its resolved target must
+     *     stay inside the destination directory (containment backstop).
      *  4. Locate the SFX entry:
      *     a. Try the entry whose basename matches the zip filename (minus .zip).
      *     b. Fall back to the first regular file entry from the archive.
@@ -402,14 +405,94 @@ final readonly class SfxDownloader
     }
 
     /**
-     * Extract all zip entries to the destination directory.
+     * Extract all zip entries to the destination directory, one entry at a time.
      *
-     * @throws \RuntimeException if extraction fails
+     * Every entry is checked immediately before it is extracted: the name
+     * rules from {@see validateEntryName()} are applied to exactly the
+     * entries that get extracted, and the resolved target must stay inside
+     * the destination directory (containment backstop). Note that
+     * ZipArchive::extractTo() materialises symlink entries as regular files
+     * rather than creating links — the containment check guards the
+     * destination's pre-existing state, which name rules alone cannot see.
+     *
+     * @throws \RuntimeException if the destination cannot be resolved, an
+     *                           entry fails validation, escapes the destination,
+     *                           or extraction fails
      */
     private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir): void
     {
-        if (!$zip->extractTo($destinationDir)) {
-            throw new \RuntimeException(sprintf('Failed to extract zip archive "%s" to "%s".', $zipPath, $destinationDir));
+        $resolvedDestination = realpath($destinationDir);
+        if ($resolvedDestination === false) {
+            throw new \RuntimeException(sprintf('Unable to resolve destination directory "%s".', $destinationDir));
+        }
+        $destinationBase = rtrim($resolvedDestination, '/\\');
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (!is_string($name) || $name === '') {
+                throw new \RuntimeException(sprintf(
+                    'Zip archive "%s" contains an entry with an unreadable name (index %d); refusing to extract it.',
+                    $zipPath,
+                    $i,
+                ));
+            }
+
+            // Name-level zip-slip rules stay the first line of defence; they
+            // run here against exactly the entry being extracted.
+            $this->validateEntryName($name);
+
+            $this->assertEntryContainedIn($destinationBase, $name, $zipPath);
+
+            if (!$zip->extractTo($destinationDir, $name)) {
+                throw new \RuntimeException(sprintf(
+                    'Failed to extract entry "%s" from zip archive "%s".',
+                    $name,
+                    $zipPath,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Assert that an entry's target resolves inside the destination directory.
+     *
+     * The entry name has already passed {@see validateEntryName()}, so a
+     * lexical escape ("..", absolute path, drive letter, backslash) is not
+     * possible; this check is the containment backstop for escapes that
+     * lexical rules cannot see — most importantly a pre-existing symlink
+     * inside the destination tree (entry "sub/evil.bin" where "sub" is a
+     * symlink to a directory outside the destination). The deepest
+     * already-existing ancestor of the target is resolved with realpath()
+     * and must itself be inside the destination; the destination directory
+     * exists at this point, so the ancestor walk always terminates.
+     *
+     * @throws \RuntimeException if the entry resolves outside the destination
+     */
+    private function assertEntryContainedIn(string $destinationBase, string $entryName, string $zipPath): void
+    {
+        $target = $destinationBase . DIRECTORY_SEPARATOR . rtrim($entryName, '/');
+        $ancestor = $target;
+
+        do {
+            $resolved = realpath($ancestor);
+            if ($resolved !== false) {
+                $ancestor = $resolved;
+                break;
+            }
+            $parent = dirname($ancestor);
+            if ($parent === $ancestor) {
+                break;
+            }
+            $ancestor = $parent;
+        } while (true);
+
+        if (!str_starts_with($ancestor . DIRECTORY_SEPARATOR, $destinationBase . DIRECTORY_SEPARATOR)) {
+            throw new \RuntimeException(sprintf(
+                'Zip entry "%s" in archive "%s" resolves outside the destination directory "%s" and is rejected.',
+                $entryName,
+                $zipPath,
+                $destinationBase,
+            ));
         }
     }
 

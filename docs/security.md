@@ -329,7 +329,9 @@ The `SfxDownloader` downloads and extracts `phpmicro.sfx` from upstream HTTPS mi
 - **Backslashes**: Entry names containing backslashes (`\`) are rejected.
 - **Absolute paths**: Entry names starting with `/` or a Windows drive letter (`C:\`) are rejected.
 - **Path traversal**: Entry names containing `..` segments after normalization are rejected.
-- **Destination containment**: Each entry is checked to ensure it resolves to a path inside the destination directory.
+- **Destination containment**: Entries are extracted one at a time, and every extracted entry's resolved target must stay inside the destination directory. The deepest already-existing ancestor of each target is resolved with `realpath()` and checked against the resolved destination, so an entry such as `sub/evil.bin` cannot escape through a pre-existing symlink (`sub` → outside directory) planted inside the destination tree — an escape the name-level rules alone cannot see. Every entry that is extracted passes both the name rules and the containment check.
+
+Note that `ZipArchive::extractTo()` materialises symlink entries as regular files rather than creating links, so an archive cannot plant a symlink at extraction time; the containment check guards the destination's pre-existing state instead.
 
 If any entry fails validation, the build aborts with a `\RuntimeException`.
 
