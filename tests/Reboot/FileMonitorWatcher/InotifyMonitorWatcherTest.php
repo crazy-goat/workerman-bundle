@@ -418,6 +418,309 @@ final class InotifyMonitorWatcherTest extends TestCase
         }
     }
 
+    /**
+     * @requires extension inotify
+     */
+    public function testInIgnoredCleanupRunsWhileReloadIsPending(): void
+    {
+        $tmpDir = $this->createTempDir();
+        mkdir($tmpDir . '/subdir', 0700);
+
+        $delayCount = 0;
+        $eventLoop = $this->createMock(EventInterface::class);
+        $eventLoop->method('onReadable')->willReturnCallback(function (): void {
+        });
+        $eventLoop->method('delay')->willReturnCallback(function () use (&$delayCount): int {
+            ++$delayCount;
+
+            return $delayCount;
+        });
+
+        Worker::$globalEvent = $eventLoop;
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+
+        $watcher->start();
+        $this->invokeDeferredWalk($watcher);
+
+        // Arm a pending reload with a matching file change.
+        file_put_contents($tmpDir . '/a.php', '<?php');
+        $this->waitForInotifyEvents();
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        $this->invokeOnNotify($watcher, $fd);
+
+        $this->assertNotNull(
+            $this->getPrivateProperty($watcher, 'reloadCallback'),
+            'precondition: a reload must be pending before the subdirectory is deleted',
+        );
+        $delaysBefore = $delayCount;
+
+        // Delete a watched subdirectory while the reload is still pending.
+        rmdir($tmpDir . '/subdir');
+        clearstatcache();
+        $this->waitForInotifyEvents();
+        $this->invokeOnNotify($watcher, $fd);
+
+        $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+        $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+        $this->assertNotContains(
+            $tmpDir . '/subdir',
+            $pathByWd,
+            'IN_IGNORED cleanup must run while a reload is pending',
+        );
+        $this->assertArrayNotHasKey(
+            $tmpDir . '/subdir',
+            $watchedPaths,
+            'watchedPaths must be cleaned while a reload is pending',
+        );
+        $this->assertNotNull(
+            $this->getPrivateProperty($watcher, 'reloadCallback'),
+            'the pending reload must stay armed',
+        );
+        $this->assertSame($delaysBefore, $delayCount, 'no additional reload may be scheduled');
+        $this->assertMapsConsistent($watcher);
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testDeletedDirectoryIsWatchedAgainAfterRecreation(): void
+    {
+        $tmpDir = $this->createTempDir();
+        mkdir($tmpDir . '/subdir', 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+        $this->invokeDeferredWalk($watcher);
+
+        rmdir($tmpDir . '/subdir');
+        clearstatcache();
+        $this->waitForInotifyEvents();
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        $this->invokeOnNotify($watcher, $fd);
+
+        $this->assertNotContains(
+            $tmpDir . '/subdir',
+            $this->getPrivateProperty($watcher, 'pathByWd'),
+            'deleted directory must be cleaned from pathByWd',
+        );
+        $this->assertArrayNotHasKey(
+            $tmpDir . '/subdir',
+            $this->getPrivateProperty($watcher, 'watchedPaths'),
+            'deleted directory must be cleaned from watchedPaths',
+        );
+
+        mkdir($tmpDir . '/subdir', 0700);
+        $this->waitForInotifyEvents();
+        $this->invokeOnNotify($watcher, $fd);
+
+        $this->assertContains(
+            $tmpDir . '/subdir',
+            $this->getPrivateProperty($watcher, 'pathByWd'),
+            'recreated directory must be watched again',
+        );
+        $this->assertArrayHasKey(
+            $tmpDir . '/subdir',
+            $this->getPrivateProperty($watcher, 'watchedPaths'),
+            'recreated directory must be recorded as watched',
+        );
+        $this->assertMapsConsistent($watcher);
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testEventWithUnknownWatchDescriptorIsSkipped(): void
+    {
+        $tmpDir = $this->createTempDir();
+
+        // Created BEFORE the watcher starts, so the root watch never queues a
+        // known-wd IN_CREATE|IN_ISDIR for it: the only events referencing it
+        // are the ones from the unrecorded watch below.
+        $unrecordedDir = $tmpDir . '/unrecorded';
+        mkdir($unrecordedDir, 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        \assert(\is_resource($fd));
+
+        // Register a watch directly on the watcher's descriptor, bypassing the
+        // bookkeeping maps: its events then carry a descriptor onNotify() has
+        // never seen.
+        \inotify_add_watch($fd, $unrecordedDir, self::IN_CREATE | self::IN_ISDIR);
+
+        $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
+        $watchedPathsBefore = $this->getPrivateProperty($watcher, 'watchedPaths');
+
+        mkdir($unrecordedDir . '/child', 0700);
+        $this->waitForInotifyEvents();
+        $this->invokeOnNotify($watcher, $fd);
+
+        $this->assertSame(
+            $pathByWdBefore,
+            $this->getPrivateProperty($watcher, 'pathByWd'),
+            'an event for an unknown watch descriptor must not register a watch',
+        );
+        $this->assertSame(
+            $watchedPathsBefore,
+            $this->getPrivateProperty($watcher, 'watchedPaths'),
+            'an event for an unknown watch descriptor must not touch watchedPaths',
+        );
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testMovedInDirectoryWithPreExistingChildrenIsWatched(): void
+    {
+        $tmpDir = $this->createTempDir();
+
+        $staging = sys_get_temp_dir() . '/inotify_staging_' . bin2hex(random_bytes(4));
+        mkdir($staging . '/nested', 0700, true);
+        file_put_contents($staging . '/nested/cache.php', '<?php');
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+
+        // A directory moved into the tree arrives as IN_MOVED_TO|IN_ISDIR with
+        // its children already present (they were created outside any watch).
+        rename($staging, $tmpDir . '/moved');
+        $this->waitForInotifyEvents();
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        $this->invokeOnNotify($watcher, $fd);
+
+        $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+        $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+        $this->assertContains($tmpDir . '/moved', $pathByWd, 'moved-in directory must be watched');
+        $this->assertContains(
+            $tmpDir . '/moved/nested',
+            $pathByWd,
+            'pre-existing child of a moved-in directory must be watched',
+        );
+        $this->assertArrayHasKey($tmpDir . '/moved', $watchedPaths);
+        $this->assertArrayHasKey($tmpDir . '/moved/nested', $watchedPaths);
+        $this->assertMapsConsistent($watcher);
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testMovingWatchedDirectoryKeepsMapsConsistent(): void
+    {
+        $tmpDir = $this->createTempDir();
+        mkdir($tmpDir . '/alpha', 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+        $this->invokeDeferredWalk($watcher);
+
+        // The watch follows the inode, so the kernel reports the same watch
+        // descriptor for the new location; the old path must not linger.
+        rename($tmpDir . '/alpha', $tmpDir . '/beta');
+        clearstatcache();
+        $this->waitForInotifyEvents();
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        $this->invokeOnNotify($watcher, $fd);
+
+        $this->assertContains($tmpDir . '/beta', $this->getPrivateProperty($watcher, 'pathByWd'));
+        $this->assertNotContains($tmpDir . '/alpha', $this->getPrivateProperty($watcher, 'pathByWd'));
+        $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+        $this->assertArrayHasKey($tmpDir . '/beta', $watchedPaths);
+        $this->assertArrayNotHasKey($tmpDir . '/alpha', $watchedPaths);
+        $this->assertMapsConsistent($watcher);
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testFailedAddWatchWritesNoMapsAndLogsWarningOnce(): void
+    {
+        $tmpDir = $this->createTempDir();
+        $logFile = $tmpDir . '/workerman.log';
+        $originalLogFile = Worker::$logFile;
+        $originalOutputStream = Worker::$outputStream;
+        // Worker::log() -> safeEcho() requires a writable stream; in a unit
+        // test no stream has been initialised, so give it one (same convention
+        // as MasterWorkerTest::testFingerprintRenameFailureIsLogged).
+        $testStream = \fopen('php://temp', 'w+');
+        if ($testStream === false) {
+            self::fail('Unable to open temp stream for test');
+        }
+        Worker::$outputStream = $testStream;
+        Worker::$logFile = $logFile;
+
+        try {
+            $worker = $this->createMock(Worker::class);
+            $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+            $this->setUpEventLoop();
+
+            $watcher->start();
+
+            $fd = $this->getPrivateProperty($watcher, 'fd');
+
+            // Create a directory and remove it again before the queued event is
+            // processed: the IN_CREATE|IN_ISDIR then hits a path that no longer
+            // exists, so inotify_add_watch() fails.
+            mkdir($tmpDir . '/ghost', 0700);
+            $this->waitForInotifyEvents();
+            rmdir($tmpDir . '/ghost');
+            clearstatcache();
+            $this->waitForInotifyEvents();
+
+            $this->invokeOnNotify($watcher, $fd);
+
+            $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+            $this->assertSame(
+                [$tmpDir],
+                array_values($pathByWd),
+                'a failed add_watch must not pollute pathByWd',
+            );
+            $this->assertArrayNotHasKey(
+                $tmpDir . '/ghost',
+                $this->getPrivateProperty($watcher, 'watchedPaths'),
+                'a failed add_watch must not mark the path as watched',
+            );
+
+            $log = (string) file_get_contents($logFile);
+            $this->assertStringContainsString('ghost', $log, 'the warning must name the failed path');
+            $this->assertStringContainsString('max_user_watches', $log, 'the warning must point to the watch limit');
+
+            // Repeat the same failing cycle: the warning is emitted once per path.
+            mkdir($tmpDir . '/ghost', 0700);
+            $this->waitForInotifyEvents();
+            rmdir($tmpDir . '/ghost');
+            clearstatcache();
+            $this->waitForInotifyEvents();
+
+            $this->invokeOnNotify($watcher, $fd);
+
+            $log = (string) file_get_contents($logFile);
+            $this->assertSame(1, substr_count($log, 'ghost'), 'the warning must be logged at most once per path');
+        } finally {
+            Worker::$logFile = $originalLogFile;
+            Worker::$outputStream = $originalOutputStream;
+        }
+    }
+
     // ---- Helper methods ----
 
     private function setUpEventLoop(): void
@@ -503,6 +806,23 @@ final class InotifyMonitorWatcherTest extends TestCase
         $regexProp->setValue($instance, $compilePatterns->invoke($instance, $filePattern));
 
         return $instance;
+    }
+
+    private function assertMapsConsistent(InotifyMonitorWatcher $watcher): void
+    {
+        $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+        $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+
+        $this->assertCount(
+            count($pathByWd),
+            $watchedPaths,
+            'pathByWd and watchedPaths must have equal sizes',
+        );
+
+        foreach ($pathByWd as $wd => $path) {
+            $this->assertIsInt($wd, 'watch descriptors must be integers');
+            $this->assertArrayHasKey($path, $watchedPaths, sprintf('path "%s" must be recorded as watched', $path));
+        }
     }
 
     private function removeDirectory(string $dir): void

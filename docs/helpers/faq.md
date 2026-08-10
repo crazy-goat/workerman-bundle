@@ -30,6 +30,15 @@ them instead of restating the pattern in issues or PRs.
 
 ## Test suite
 
+### Testing an `inotify_add_watch()` failure without exhausting watch limits
+
+To exercise `InotifyMonitorWatcher::watchDir()`'s failure branch, queue a
+`IN_CREATE|IN_ISDIR` event and delete the directory before the event is
+processed: `inotify_add_watch()` then fails deterministically with ENOENT.
+Do not try to exhaust `/proc/sys/fs/inotify/max_user_watches` — it is
+host-specific and slow. (Inotify events are queued synchronously at syscall
+time, so `mkdir` → `rmdir` → `invokeOnNotify` is race-free.)
+
 ### grpc extension on macOS: stop timeouts, zombie masters, no worker restarts
 
 If the `grpc` extension is loaded (Homebrew PHP), its shutdown handler
