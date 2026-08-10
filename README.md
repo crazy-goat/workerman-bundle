@@ -243,7 +243,7 @@ for the full threat model.
 
 > **Note:** 0.25.0 also hardens master-process identification for
 > `stop` / `reload` / `status`: with a server started by an older version
-> still running, those commands may report "Workerman is not running.".
+> still running, those commands may report "Workerman is not running."
 > Stop the server before upgrading — see
 > [Upgrading to 0.25](UPGRADE.md#upgrading-to-025).
 

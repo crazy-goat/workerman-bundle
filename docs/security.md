@@ -598,7 +598,7 @@ fingerprint is written on every start — but three situations trip it:
   [UPGRADE.md](../UPGRADE.md#upgrading-to-025).
 - **Non-Linux hosts.** The cmdline fallback is Linux-only, so without a
   fingerprint file every control command reports "Workerman is not
-  running" even when the server is up. On macOS/BSD the fingerprint is
+  running." even when the server is up. On macOS/BSD the fingerprint is
   the only verification channel (PID + UID; the start-time check is
   Linux-only): do not delete `<pid_file>.fingerprint` by hand on a
   working deployment, and run the console as the same user that started
