@@ -703,6 +703,37 @@ final class BinaryFileResponseStrategyTest extends TestCase
         }
     }
 
+    public function testCleanupStateDetachesFromContextAfterFiring(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/detach_state_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'detach me');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $this->assertNull($this->connection->context);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue(
+            isset($this->connection->context->pendingCleanup),
+            'cleanup state must be attached while a download is pending',
+        );
+
+        $onBufferDrain = $this->connection->onBufferDrain;
+        assert(is_callable($onBufferDrain));
+        $onBufferDrain($this->connection);
+
+        $this->assertFalse(
+            isset($this->connection->context->pendingCleanup),
+            'spent cleanup state must be detached from keep-alive connections',
+        );
+        $this->assertFileDoesNotExist($tempFile);
+    }
+
     public function testCloseAfterMultiplePendingDownloadsDeletesAllFiles(): void
     {
         $strategy = new BinaryFileResponseStrategy();

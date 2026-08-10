@@ -141,6 +141,11 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
                     ($state->previousOnBufferDrain)($conn);
                 }
                 $state->pending = [];
+                // Detach the spent cleanup state: keep-alive connections must
+                // not carry it for their lifetime.
+                if ($conn->context instanceof \stdClass) {
+                    unset($conn->context->pendingCleanup);
+                }
             };
 
             $connection->onClose = static function (TcpConnection $conn) use ($state, $cleanup): void {
@@ -160,6 +165,11 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
                     ($state->previousOnClose)($conn);
                 }
                 $state->pending = [];
+                // Detach the spent cleanup state: keep-alive connections must
+                // not carry it for their lifetime.
+                if ($conn->context instanceof \stdClass) {
+                    unset($conn->context->pendingCleanup);
+                }
             };
         }
 
