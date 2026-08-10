@@ -1140,6 +1140,38 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertNotSame($pipelineBefore, $pipelineAfter, 'getPipeline should return a new Closure after withRootDirectory()');
     }
 
+    public function testDeprecatedStaticFilesConfigAllowlistStillFiltersExtensions(): void
+    {
+        $root = sys_get_temp_dir() . '/workerman-static-files-' . bin2hex(random_bytes(4));
+        mkdir($root, 0777, true);
+        file_put_contents($root . '/asset.txt', 'allowlisted content');
+        file_put_contents($root . '/secret.css', 'disallowed content');
+
+        try {
+            // Mirrors ServerWorker::configureHandler() on the deprecated
+            // serve_files path: static_files config feeds
+            // withStaticFileConfig(), then withRootDirectory() builds the
+            // StaticFilesMiddleware from both.
+            $this->handler->withStaticFileConfig(['allowed_extensions' => ['txt']]);
+            $this->handler->withRootDirectory($root);
+
+            $connection = new MockTcpConnection();
+            ($this->handler)($connection, new Request("GET /asset.txt HTTP/1.1\r\nHost: test\r\n\r\n"));
+
+            $this->assertStringContainsString('allowlisted content', $connection->sentData[0]);
+
+            $connection = new MockTcpConnection();
+            ($this->handler)($connection, new Request("GET /secret.css HTTP/1.1\r\nHost: test\r\n\r\n"));
+
+            $this->assertStringContainsString('404 Not Found', $connection->sentData[0]);
+            $this->assertStringNotContainsString('disallowed content', $connection->sentData[0]);
+        } finally {
+            @unlink($root . '/asset.txt');
+            @unlink($root . '/secret.css');
+            @rmdir($root);
+        }
+    }
+
     // ──────────────────────────────────────────────
     // Multiple middlewares header propagation
     // ──────────────────────────────────────────────
