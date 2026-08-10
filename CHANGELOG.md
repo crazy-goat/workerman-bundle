@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `InotifyMonitorWatcher` no longer discards `IN_IGNORED` bookkeeping (or directory-create
+  events) while a reload is pending: the guard previously dropped the whole event batch
+  after `inotify_read()`, so `pathByWd` / `watchedPaths` kept entries for directories the
+  kernel had stopped watching, and a stale `watchedPaths` entry silently suppressed
+  re-watching a recreated directory ([#575](https://github.com/crazy-goat/workerman-bundle/issues/575))
+- `InotifyMonitorWatcher` now checks the `inotify_add_watch()` return value: on failure it
+  writes to neither bookkeeping map and logs a warning naming the path and
+  `/proc/sys/fs/inotify/max_user_watches` (once per path), instead of corrupting
+  `pathByWd[0]` with a false descriptor and permanently marking the path as watched
+  ([#575](https://github.com/crazy-goat/workerman-bundle/issues/575))
+- `InotifyMonitorWatcher` now skips events carrying an unknown watch descriptor (no more
+  `null` concatenation into a bogus watch path) and watches directories moved into the
+  tree — including their pre-existing children — which previously arrived as
+  `IN_MOVED_TO|IN_ISDIR` and were missed entirely ([#575](https://github.com/crazy-goat/workerman-bundle/issues/575))
+
 ## [0.25.0] - 2026-08-10
 
 ### Added
