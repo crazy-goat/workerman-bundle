@@ -309,4 +309,46 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertInstanceOf(\stdClass::class, $this->connection->context);
         $this->assertTrue($this->connection->context->responseSentDirectly);
     }
+
+    /**
+     * HTTP/1.0 variant of the HEAD test: the head carries Connection: close
+     * instead of Transfer-Encoding: chunked (the same framing the GET sends),
+     * with no body (issue #683).
+     */
+    public function testHeadRequestHttp10SendsHeadOnlyWithNoBody(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(1))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $callbackRan = false;
+        $streamedResponse = new StreamedResponse(function () use (&$callbackRan): void {
+            $callbackRan = true;
+            echo 'must not run for HEAD';
+        });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.0', 'HEAD');
+
+        $this->assertFalse($callbackRan, 'HEAD must not execute the stream callback');
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+
+        $this->assertCount(1, $sendCalls, 'HEAD must send only the head — no body bytes');
+        $this->assertStringStartsWith('HTTP/1.0 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString('Connection: close', $sendCalls[0]['data']);
+        $this->assertStringNotContainsString('Transfer-Encoding', $sendCalls[0]['data']);
+        $this->assertTrue($sendCalls[0]['raw']);
+        $this->assertSame('', explode("\r\n\r\n", (string) $sendCalls[0]['data'], 2)[1] ?? '', 'HEAD must not emit a body after the head terminator');
+
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue($this->connection->context->responseSentDirectly);
+    }
 }

@@ -70,6 +70,29 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
     }
 
+    /**
+     * A HEAD request on a BinaryFileResponse must emit no body while carrying
+     * the file size as Content-Length and the same header fields as the GET
+     * (RFC 9110 §9.3.2, issue #683) — end-to-end through the real daemon.
+     */
+    public function testHeadBinaryFileResponse(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('HEAD', 'http://127.0.0.1:9999/response_test_file');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('', (string) $response->getBody(), 'HEAD must not send the file body');
+        $this->assertSame(
+            (string) filesize(__DIR__ . '/Fixtures/test_download.txt'),
+            $response->getHeaderLine('Content-Length'),
+            'HEAD Content-Length must be the file size',
+        );
+        $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
+        $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
+        $this->assertSame('bytes', $response->getHeaderLine('Accept-Ranges'), 'HEAD must carry Accept-Ranges like the GET file path');
+    }
+
     public function testBinaryFileResponseWithRangeRequest(): void
     {
         $client = new Client(['http_errors' => false]);

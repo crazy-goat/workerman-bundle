@@ -128,6 +128,15 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         $contentLength = $this->resolveHeadContentLength($response, $headers, $tempFileObject);
         unset($headers['Content-Length']);
 
+        if (!$tempFileObject instanceof \SplTempFileObject) {
+            // Mirror the GET path, where Workerman's encode() emits
+            // "Accept-Ranges: bytes" for file responses — RFC 9110 §9.3.2
+            // requires HEAD to carry the same header fields as the GET would.
+            // Temp files are served via withBody() and get no Accept-Ranges
+            // on the GET path either, so only real files set it here.
+            $headers['Accept-Ranges'] = 'bytes';
+        }
+
         // deleteFileAfterSend on HEAD: the file body is never sent, so the
         // onBufferDrain cleanup used by the GET path would not fire reliably.
         // Delete synchronously, matching Symfony's BinaryFileResponse (which

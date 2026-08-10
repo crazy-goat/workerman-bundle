@@ -841,6 +841,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $wire = (string) $workermanResponse;
         $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
         $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'HEAD Content-Length must be the file size');
+        $this->assertStringContainsString('Accept-Ranges: bytes', $wire, 'HEAD must carry the same Accept-Ranges as the GET file path (RFC 9110 §9.3.2)');
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
@@ -871,6 +872,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $wire = (string) $workermanResponse;
         $this->assertStringContainsString('Content-Length: 16', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'Temp files get no Accept-Ranges on the GET path either (withBody(), not withFile())');
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
