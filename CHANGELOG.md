@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `null` concatenation into a bogus watch path) and watches directories moved into the
   tree — including their pre-existing children — which previously arrived as
   `IN_MOVED_TO|IN_ISDIR` and were missed entirely ([#575](https://github.com/crazy-goat/workerman-bundle/issues/575))
+- `BinaryFileResponseStrategy::scheduleFileCleanup()` no longer creates a closure reference
+  cycle on every `deleteFileAfterSend` download: the `onBufferDrain` / `onClose` cleanup
+  handlers previously captured each other **by reference**, so every download left ~2.4 KB
+  that reference counting could never reclaim — garbage that only the cycle collector
+  could free (a forced full collection every ~3 300 downloads under default settings, an
+  unbounded leak under `gc_disable()`). The handlers now share a per-connection state
+  object (`FileCleanupState`, stored in `$connection->context`), which also bounds the
+  callback chain: any number of pending downloads on one keep-alive connection share a
+  single handler pair and their temp files are deleted together on the first drain or
+  close ([#573](https://github.com/crazy-goat/workerman-bundle/issues/573))
 
 ## [0.25.0] - 2026-08-10
 

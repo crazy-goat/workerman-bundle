@@ -604,4 +604,213 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $this->assertFileDoesNotExist($tempFile);
     }
+
+    public function testDeleteFileAfterSendDoesNotCreateReferenceCycles(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/gc_probe_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'gc probe');
+
+        $deleteFlag = new \ReflectionProperty(BinaryFileResponse::class, 'deleteFileAfterSend');
+        $convert = static function () use ($strategy, $tempFile, $deleteFlag): void {
+            $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+            $deleteFlag->setValue($binaryResponse, true);
+
+            $connection = new class extends TcpConnection {
+                public function __construct()
+                {
+                    // Bypass parent constructor — we only need the public properties.
+                }
+            };
+
+            $strategy->convert($binaryResponse, [], $connection, '1.1');
+        };
+
+        try {
+            gc_disable();
+
+            // Warmup: absorb first-time class loading / allocator setup.
+            $convert();
+            $baselineMemory = memory_get_usage();
+            $baselineRoots = gc_status()['roots'];
+
+            for ($i = 0; $i < 3000; $i++) {
+                $convert();
+            }
+
+            // With no cycles, reference counting alone reclaims everything:
+            // the GC root buffer must stay flat and memory must not grow
+            // linearly (~2.4 KB per download in the old by-ref-capture code).
+            $this->assertSame($baselineRoots, gc_status()['roots'], 'no new GC roots may accumulate per download');
+            $this->assertLessThan($baselineMemory + 131072, memory_get_usage(), 'memory must not grow linearly per download');
+        } finally {
+            gc_enable();
+            gc_collect_cycles();
+            @unlink($tempFile);
+        }
+    }
+
+    public function testMultiplePendingDownloadsDoNotNestCallbacks(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFiles = [];
+        try {
+            $firstDrain = null;
+            $firstClose = null;
+            for ($i = 0; $i < 5; $i++) {
+                $tempFile = sys_get_temp_dir() . '/pending_batch_' . uniqid() . '.txt';
+                file_put_contents($tempFile, 'pending ' . $i);
+                $tempFiles[] = $tempFile;
+
+                $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+                $reflection = new \ReflectionClass($binaryResponse);
+                $property = $reflection->getProperty('deleteFileAfterSend');
+                $property->setValue($binaryResponse, true);
+
+                $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+
+                if ($i === 0) {
+                    $firstDrain = $this->connection->onBufferDrain;
+                    $firstClose = $this->connection->onClose;
+                } else {
+                    // A second pending download must not wrap the handlers
+                    // again — one shared pair per connection, not a chain of
+                    // depth K.
+                    $this->assertSame($firstDrain, $this->connection->onBufferDrain);
+                    $this->assertSame($firstClose, $this->connection->onClose);
+                }
+            }
+
+            $this->assertNotNull($firstDrain);
+            $this->assertNotNull($firstClose);
+            assert(is_callable($firstDrain));
+            $firstDrain($this->connection);
+
+            // One drain deleted every pending temp file exactly once.
+            foreach ($tempFiles as $tempFile) {
+                $this->assertFileDoesNotExist($tempFile);
+            }
+            $this->assertNull($this->connection->onBufferDrain, 'handlers must self-remove after the batch drain');
+            $this->assertNull($this->connection->onClose, 'onClose fallback must be removed after the batch drain');
+        } finally {
+            foreach ($tempFiles as $tempFile) {
+                if (is_file($tempFile)) {
+                    unlink($tempFile);
+                }
+            }
+        }
+    }
+
+    public function testStaleHandlerFromPreviousDownloadIsInert(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $firstFile = sys_get_temp_dir() . '/stale_first_' . uniqid() . '.txt';
+        $secondFile = sys_get_temp_dir() . '/stale_second_' . uniqid() . '.txt';
+        file_put_contents($firstFile, 'first');
+        file_put_contents($secondFile, 'second');
+
+        $reflection = new \ReflectionClass(BinaryFileResponse::class);
+        $deleteFlag = $reflection->getProperty('deleteFileAfterSend');
+
+        $responses = [new BinaryFileResponse($firstFile, Response::HTTP_OK), new BinaryFileResponse($secondFile, Response::HTTP_OK)];
+        foreach ($responses as $response) {
+            $deleteFlag->setValue($response, true);
+        }
+
+        // First download drains and self-removes.
+        $strategy->convert($responses[0], [], $this->connection, '1.1');
+        $staleDrain = $this->connection->onBufferDrain;
+        assert(is_callable($staleDrain));
+        $staleDrain($this->connection);
+        $this->assertFileDoesNotExist($firstFile);
+
+        // Second download on the same keep-alive connection installs a fresh pair.
+        $strategy->convert($responses[1], [], $this->connection, '1.1');
+        $currentDrain = $this->connection->onBufferDrain;
+        $this->assertNotNull($currentDrain);
+
+        // Re-invoking the stale (already-fired) handler must be a no-op: it
+        // must not delete the newer download's file nor clobber its handler.
+        $staleDrain($this->connection);
+        $this->assertSame($currentDrain, $this->connection->onBufferDrain, 'stale handler must not clobber the active one');
+        $this->assertFileExists($secondFile, 'stale handler must not delete a newer download\'s pending file');
+
+        assert(is_callable($currentDrain));
+        $currentDrain($this->connection);
+        $this->assertFileDoesNotExist($secondFile);
+    }
+
+    public function testCleanupStateDetachesFromContextAfterFiring(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/detach_state_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'detach me');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $this->assertNull($this->connection->context);
+        $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue(
+            isset($this->connection->context->pendingCleanup),
+            'cleanup state must be attached while a download is pending',
+        );
+
+        $onBufferDrain = $this->connection->onBufferDrain;
+        assert(is_callable($onBufferDrain));
+        $onBufferDrain($this->connection);
+
+        $this->assertFalse(
+            isset($this->connection->context->pendingCleanup),
+            'spent cleanup state must be detached from keep-alive connections',
+        );
+        $this->assertFileDoesNotExist($tempFile);
+    }
+
+    public function testCloseAfterMultiplePendingDownloadsDeletesAllFiles(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFiles = [];
+        try {
+            for ($i = 0; $i < 3; $i++) {
+                $tempFile = sys_get_temp_dir() . '/pending_close_' . uniqid() . '.txt';
+                file_put_contents($tempFile, 'pending close ' . $i);
+                $tempFiles[] = $tempFile;
+
+                $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+                $reflection = new \ReflectionClass($binaryResponse);
+                $property = $reflection->getProperty('deleteFileAfterSend');
+                $property->setValue($binaryResponse, true);
+
+                $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+            }
+
+            // Early disconnect before any drain: the close fallback must
+            // delete every pending file exactly once.
+            $onClose = $this->connection->onClose;
+            $this->assertNotNull($onClose);
+            assert(is_callable($onClose));
+            $onClose($this->connection);
+
+            foreach ($tempFiles as $tempFile) {
+                $this->assertFileDoesNotExist($tempFile);
+            }
+            $this->assertNull($this->connection->onClose, 'onClose must self-remove after firing');
+            $this->assertNull($this->connection->onBufferDrain, 'buffer-drain callback must be removed when onClose fires first');
+        } finally {
+            foreach ($tempFiles as $tempFile) {
+                if (is_file($tempFile)) {
+                    unlink($tempFile);
+                }
+            }
+        }
+    }
 }

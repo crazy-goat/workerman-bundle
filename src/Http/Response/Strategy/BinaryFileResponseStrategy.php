@@ -89,68 +89,90 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
      */
     private function scheduleFileCleanup(string $filePath, TcpConnection $connection): void
     {
-        $previousOnClose = $connection->onClose;
-        $previousOnBufferDrain = $connection->onBufferDrain;
-        $logger = $this->logger;
+        $state = null;
+        if ($connection->context instanceof \stdClass
+            && isset($connection->context->pendingCleanup)
+            && $connection->context->pendingCleanup instanceof FileCleanupState
+            && $connection->context->pendingCleanup->installed
+        ) {
+            $state = $connection->context->pendingCleanup;
+        }
 
-        $cleanup = static function () use ($filePath, $logger): void {
-            if (is_file($filePath) && !unlink($filePath)) {
-                $logger->warning('Failed to delete temporary file after send', [
-                    'path' => $filePath,
-                    'error' => error_get_last()['message'] ?? 'Unknown error',
-                ]);
-            }
-        };
+        if (!$state instanceof FileCleanupState) {
+            $state = new FileCleanupState(
+                previousOnClose: is_callable($connection->onClose) ? $connection->onClose : null,
+                previousOnBufferDrain: is_callable($connection->onBufferDrain) ? $connection->onBufferDrain : null,
+                installed: true,
+            );
+            $connection->context ??= new \stdClass();
+            $connection->context->pendingCleanup = $state;
 
-        $onBufferDrain = static function (TcpConnection $conn) use (
-            $cleanup,
-            &$onBufferDrain,
-            &$onClose,
-            $previousOnBufferDrain,
-            $previousOnClose,
-        ): void {
-            // Self-remove: this callback must not fire on subsequent requests
-            // over the same keep-alive connection.
-            if ($conn->onBufferDrain === $onBufferDrain) {
-                $conn->onBufferDrain = is_callable($previousOnBufferDrain) ? $previousOnBufferDrain : null;
-            }
-            // Restore original onClose now that the file is deleted.
-            if ($conn->onClose === $onClose) {
-                $conn->onClose = $previousOnClose;
-            }
+            $logger = $this->logger;
+            $cleanup = static function () use ($state, $logger): void {
+                foreach ($state->pending as $pendingPath) {
+                    if (is_file($pendingPath) && !unlink($pendingPath)) {
+                        $logger->warning('Failed to delete temporary file after send', [
+                            'path' => $pendingPath,
+                            'error' => error_get_last()['message'] ?? 'Unknown error',
+                        ]);
+                    }
+                }
+            };
 
-            $cleanup();
+            // Both handlers capture the shared state object instead of each
+            // other (the old mutual by-reference capture created a closure
+            // reference cycle on every download — issue #573).
+            $connection->onBufferDrain = static function (TcpConnection $conn) use ($state, $cleanup): void {
+                if (!$state->installed) {
+                    return;
+                }
+                $state->installed = false;
+                // Self-remove: this callback must not fire on subsequent
+                // requests over the same keep-alive connection.
+                $conn->onBufferDrain = $state->previousOnBufferDrain;
+                // Restore the original onClose now that the pending files
+                // are deleted.
+                $conn->onClose = $state->previousOnClose;
 
-            // Chain to any previous onBufferDrain callback.
-            if (is_callable($previousOnBufferDrain)) {
-                $previousOnBufferDrain($conn);
-            }
-        };
+                $cleanup();
 
-        $onClose = static function (TcpConnection $conn) use (
-            $cleanup,
-            &$onBufferDrain,
-            &$onClose,
-            $previousOnBufferDrain,
-            $previousOnClose,
-        ): void {
-            // Self-remove: prevent double-firing if both drain and close trigger.
-            if ($conn->onClose === $onClose) {
-                $conn->onClose = $previousOnClose;
-            }
-            if ($conn->onBufferDrain === $onBufferDrain) {
-                $conn->onBufferDrain = is_callable($previousOnBufferDrain) ? $previousOnBufferDrain : null;
-            }
+                // Chain to any previous onBufferDrain callback.
+                if (is_callable($state->previousOnBufferDrain)) {
+                    ($state->previousOnBufferDrain)($conn);
+                }
+                $state->pending = [];
+                // Detach the spent cleanup state: keep-alive connections must
+                // not carry it for their lifetime.
+                if ($conn->context instanceof \stdClass) {
+                    unset($conn->context->pendingCleanup);
+                }
+            };
 
-            $cleanup();
+            $connection->onClose = static function (TcpConnection $conn) use ($state, $cleanup): void {
+                if (!$state->installed) {
+                    return;
+                }
+                $state->installed = false;
+                // Self-remove: prevent double-firing if both drain and close
+                // trigger.
+                $conn->onClose = $state->previousOnClose;
+                $conn->onBufferDrain = $state->previousOnBufferDrain;
 
-            // Chain to any previous onClose callback.
-            if (is_callable($previousOnClose)) {
-                $previousOnClose($conn);
-            }
-        };
+                $cleanup();
 
-        $connection->onBufferDrain = $onBufferDrain;
-        $connection->onClose = $onClose;
+                // Chain to any previous onClose callback.
+                if (is_callable($state->previousOnClose)) {
+                    ($state->previousOnClose)($conn);
+                }
+                $state->pending = [];
+                // Detach the spent cleanup state: keep-alive connections must
+                // not carry it for their lifetime.
+                if ($conn->context instanceof \stdClass) {
+                    unset($conn->context->pendingCleanup);
+                }
+            };
+        }
+
+        $state->pending[] = $filePath;
     }
 }
