@@ -4,6 +4,67 @@ This document lists breaking changes between releases and describes how to migra
 
 ---
 
+## Upgrading to 0.25
+
+### Master identification now fails closed — stop before upgrading
+
+Since 0.25.0 the bundle verifies the identity of the Workerman master
+process before sending `stop` / `reload` / `status` signals: a PID that
+cannot be verified is refused instead of being signalled (issue #584,
+[hardening details](docs/security.md#master-process-fingerprint-pid-file-hardening)).
+Verification needs the `.fingerprint` sidecar that the new version writes
+next to the pid file on every start. Servers started by older versions
+have no such sidecar, and the fallback that replaces it is strictly
+limited:
+
+- On **Linux** the fallback matches the exact process title Workerman
+  assigns to its master (`WorkerMan: master process ...`). It usually
+  works, but fails closed when `/proc/$pid/cmdline` is unreadable
+  (hidepid, master owned by another user) or on PHP >= 8.5 builds whose
+  `cli_set_process_title()` does not rewrite the argv visible there.
+- On **non-Linux hosts (macOS, BSD)** there is no command-line fallback
+  at all: without a fingerprint file, `stop`, `reload` and `status`
+  always report `Workerman is not running.`, even while the server is up.
+
+Consequence: upgrading the bundle while a server started by an older
+version is still running can silently turn the control commands into
+no-ops.
+
+**Recommended upgrade path**
+
+1. Stop the server **before** deploying the new code (with the old code
+   the old identification still works).
+2. Deploy and start the new version — the fingerprint sidecar is written
+   automatically (foreground and daemon mode), and control commands work
+   from then on.
+
+**If you already upgraded with a running master** and the commands report
+`Workerman is not running.`: recover by terminating the old master by
+hand. Read the PID from the pid file, verify with
+`ps -p <pid> -o pid,comm,args` that it is the process you started, and
+`kill` it (never use a bare `pkill -f WorkerMan` — it would kill
+unrelated Workerman applications on the host). Remove any leftover pid
+file, then start the new version once. A single start restores the
+control plane.
+
+### `start -d` returns before the master has written its pid file
+
+`start -d` returns as soon as the double fork completes, but the pid file
+— and with it the fingerprint sidecar — is written by the master process
+itself a moment later (`MasterWorker::saveMasterPid()`, issue #584). A
+`status`, `stop` or `reload` in that short window reports
+`Workerman is not running.`; wait for the pid file (and its
+`.fingerprint` sidecar) to appear, then retry.
+
+### Config cache and runtime user
+
+The other upgrade-relevant 0.25.0 change: the configuration cache file
+must be owned by the process that loads it (a cache warmed up by a
+different user is refused at boot). See
+[Config cache and runtime user](README.md#config-cache-and-runtime-user).
+
+---
+
 ## Upgrading to 0.17
 
 ### `Utils::reboot()` deprecated in favour of `Utils::reload()`
