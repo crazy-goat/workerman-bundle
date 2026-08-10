@@ -102,8 +102,8 @@ final readonly class BinaryFileResponseStrategy implements ResponseConverterStra
             $state = new FileCleanupState(
                 previousOnClose: is_callable($connection->onClose) ? $connection->onClose : null,
                 previousOnBufferDrain: is_callable($connection->onBufferDrain) ? $connection->onBufferDrain : null,
+                installed: true,
             );
-            $state->installed = true;
             $connection->context ??= new \stdClass();
             $connection->context->pendingCleanup = $state;
 
