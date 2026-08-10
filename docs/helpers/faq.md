@@ -103,6 +103,11 @@ runs PHPUnit, then stops the daemon. Phpunit itself is run with
 `php -d phar.readonly=0`. If tests were interrupted, stop the daemon
 manually as above.
 
+Composer runs `test` scripts with a 300 s process timeout; on slow hosts
+(notably grpc/macOS, see the grpc section above) PHPUnit can be killed
+mid-run. Raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test` or
+set `config.process-timeout` in `composer.json`.
+
 ### CI enforces an 80% line-coverage floor
 
 Defined once in `composer.json` (`coverage:check` →
