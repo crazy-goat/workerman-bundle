@@ -251,3 +251,9 @@ the closure itself. Corollary: never store a closure *inside* an object that
 closure captures; that is a cycle again (store data, not handlers).
 Reference: `BinaryFileResponseStrategy::scheduleFileCleanup()` +
 `FileCleanupState` (issue #573).
+
+## Symfony config tree
+
+### `setDeprecated()` fires only when the key is actually present in config
+
+Symfony's `ArrayNode::finalizeValue()` (vendor/symfony/config/Definition/ArrayNode.php) triggers a child node's deprecation only in the `array_key_exists($name, $value)` branch — an absent key takes the node's default and `continue`s silently. So marking a node deprecated while it keeps `addDefaultsIfNotSet()` / a default value is safe: users who never set the key see no deprecation, users who do set it get the notice. This is how `servers[].static_files` was deprecated alongside `serve_files`/`root_dir` (issue #591) without spamming every config load. The `static_files` deprecation also doubles as the "visible signal" for the allowlist trap: setting `static_files.allowed_extensions` with a service-registered `StaticFilesMiddleware` is still a no-op for the middleware, but no longer silent.
