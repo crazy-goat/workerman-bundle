@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+#
+# gh-branch — create or switch to <type>/issue-<N>-<slug> branch from a GitHub issue.
+# For GitHub-issue repos only (nothing Jira/decodo related). See docs/workflow.md step 2.
+#
+# Type is inferred from a [Type]-prefixed title, then from issue labels
+# (bug/security -> fix, enhancement -> feat, documentation -> docs, ...), and
+# defaults to fix. An explicit type argument always wins.
+#
+# Prints the branch name to stdout (last line) so it can be captured:
+#     branch=$(bin/gh-branch 491)
+
+set -euo pipefail
+
+TYPES="fix feat docs perf refactor chore test build ci"
+
+usage() {
+  cat <<EOF
+usage: gh-branch <ISSUE-NUMBER> [TYPE] [--push] [--dry-run]
+
+Create or switch to <TYPE>/issue-<N>-<slug>, based on the default remote branch.
+
+  TYPE        optional; inferred from labels, then [Type] title prefix; default fix
+              allowed: $TYPES
+  --push      also push with upstream
+  --dry-run   print the branch name without touching git
+  --force     create even with a dirty tree or when not on the default branch
+
+Prints the branch name to stdout, all messages to stderr.
+EOF
+}
+
+die() {
+  echo "gh-branch: $*" >&2
+  exit 1
+}
+
+# --- parse arguments ---
+NUMBER=""
+TYPE=""
+TYPE_ARG_SET=""
+PUSH=0
+DRY=0
+FORCE=0
+
+for arg in "$@"; do
+  a="${arg#\#}"
+  if [[ "$a" =~ ^[0-9]+$ ]]; then
+    NUMBER="$a"
+  elif [[ " $TYPES " == *" $arg "* ]]; then
+    TYPE="$arg"
+    TYPE_ARG_SET=1
+  elif [[ "$arg" == "--push" ]]; then
+    PUSH=1
+  elif [[ "$arg" == "--dry-run" ]]; then
+    DRY=1
+  elif [[ "$arg" == "--force" ]]; then
+    FORCE=1
+  elif [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+    usage
+    exit 0
+  else
+    die "unknown argument: $arg"$'\n'"$(usage)"
+  fi
+done
+
+[[ -n "$NUMBER" ]] || die "missing issue number"$'\n'"$(usage)"
+
+# --- environment checks ---
+command -v gh >/dev/null 2>&1 || die "'gh' CLI not found (brew install gh, then gh auth login)"
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git repository"
+gh repo view >/dev/null 2>&1 || die "not a GitHub repository (or gh not authenticated — check 'gh auth status')"
+
+# --- fetch issue ---
+title=$(gh issue view "$NUMBER" --json title -q .title) \
+  || die "cannot fetch issue #$NUMBER — wrong number?"
+state=$(gh issue view "$NUMBER" --json state -q .state)
+labels=$(gh issue view "$NUMBER" --json labels -q '[.labels[].name] | join(",")')
+
+[[ "$state" != "OPEN" ]] && echo "gh-branch: warning: issue #$NUMBER is $state (not OPEN)" >&2
+
+# --- infer type: explicit arg > title prefix > labels > fix ---
+SOURCE="default"
+if [[ -z "$TYPE" ]]; then
+  case "$title" in
+    "[Bug]"*|"[Security]"*)        TYPE=fix ;;
+    "[Feat]"*|"[Feature]"*)        TYPE=feat ;;
+    "[Doc]"*|"[Docs]"*)            TYPE=docs ;;
+    "[Perf]"*|"[Performance]"*)    TYPE=perf ;;
+    "[Refactor]"*)                 TYPE=refactor ;;
+    "[Chore]"*)                    TYPE=chore ;;
+    "[Test]"*|"[Tests]"*)          TYPE=test ;;
+  esac
+  [[ -n "$TYPE" ]] && SOURCE="title prefix"
+fi
+if [[ -z "$TYPE" ]]; then
+  case ",$labels," in
+    *,bug,*)                  TYPE=fix ;;
+    *,security,*)             TYPE=fix ;;
+    *,enhancement,*)          TYPE=feat ;;
+    *,documentation,*)        TYPE=docs ;;
+    *,technical-debt,*|*,code-quality,*) TYPE=refactor ;;
+    *,performance,*)          TYPE=perf ;;
+    *,php82,*)                TYPE=chore ;;
+  esac
+  [[ -n "$TYPE" ]] && SOURCE="labels"
+fi
+TYPE="${TYPE:-fix}"
+[[ -n "$TYPE_ARG_SET" ]] && SOURCE="explicit"
+
+# --- slugify title: strip [Type] prefix, lowercase, keep [a-z0-9-], max 40 ---
+slug=$(printf '%s' "$title" \
+  | sed -E 's/^\[[^]]*\][[:space:]]*//' \
+  | tr '[:upper:]' '[:lower:]' \
+  | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+  | cut -c1-40 \
+  | sed -E 's/-+$//')
+
+branch="$TYPE/issue-$NUMBER"
+[[ -n "$slug" ]] && branch="$branch-$slug"
+
+if (( ${#branch} > 100 )); then
+  die "branch name too long (${#branch} chars): $branch"
+fi
+
+echo "gh-branch: issue #$NUMBER ($state): $title" >&2
+echo "gh-branch: branch: $branch (type from ${SOURCE:-default})" >&2
+
+if [[ "$DRY" == 1 ]]; then
+  printf '%s\n' "$branch"
+  exit 0
+fi
+
+# --- switch to existing / create from fresh origin default ---
+current=$(git symbolic-ref --short -q HEAD 2>/dev/null || true)
+if [[ "$current" == "$branch" ]]; then
+  echo "gh-branch: already on $branch" >&2
+elif git show-ref --verify --quiet "refs/heads/$branch"; then
+  echo "gh-branch: switching to existing local branch" >&2
+  git switch "$branch"
+elif git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+  echo "gh-branch: fetching existing remote branch" >&2
+  git fetch origin "$branch"
+  git switch "$branch"
+else
+  if [[ -n "$(git status --porcelain)" ]] && [[ "$FORCE" != 1 ]]; then
+    die "working tree is dirty — commit or stash first (or use --force)"
+  fi
+  default=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+  if [[ -n "$current" && "$current" != "$default" ]] && [[ "$FORCE" != 1 ]]; then
+    die "on branch '$current', not on the default branch '$default' — switch first (or use --force)"
+  fi
+  echo "gh-branch: creating $branch from origin/$default" >&2
+  git fetch origin "$default"
+  git switch -c "$branch" "origin/$default"
+fi
+
+if [[ "$PUSH" == 1 ]]; then
+  git push -u origin "$branch"
+  echo "gh-branch: pushed with upstream" >&2
+fi
+
+printf '%s\n' "$branch"
