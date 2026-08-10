@@ -110,6 +110,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `start -d` deployments never had a fingerprint
   ([#584](https://github.com/crazy-goat/workerman-bundle/issues/584))
 
+- Document the operator impact of the hardened master identification
+  (previous entry): upgrading while a server started by a pre-0.25
+  version is still running can make `stop` / `reload` / `status` report
+  "Workerman is not running" (no fingerprint sidecar exists yet — and on
+  non-Linux hosts there is no command-line fallback at all), and the same
+  report can appear in the short window after `start -d` until the master
+  writes its pid file and fingerprint. `UPGRADE.md` gains an "Upgrading
+  to 0.25" section and `docs/security.md` an "Operator impact" block
+  with the recovery steps
+  ([#640](https://github.com/crazy-goat/workerman-bundle/issues/640))
+
 - Fix unbounded memory growth in `StaticFilesMiddleware`'s realpath cache.
   The symlink-rejection path inserted into the shared worker cache without
   enforcing `CACHE_MAX_SIZE`, and negative entries only expired on a repeat

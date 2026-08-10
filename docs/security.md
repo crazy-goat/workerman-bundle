@@ -583,6 +583,35 @@ If the fingerprint file does not exist (e.g. after upgrading from a version that
 
 Verification is **fail-closed**: when the cmdline cannot be read (a process owned by another user under `hidepid`, a non-Linux host without `/proc`), `isMasterRunning()` logs a warning and returns `false` — the caller refuses to signal. Earlier revisions returned `true` in this situation (fail-open in the direction of sending a signal); that behaviour is gone (issue #584).
 
+### Operator impact
+
+The fail-closed behaviour is invisible in normal operation — the
+fingerprint is written on every start — but three situations trip it:
+
+- **Upgrading with a running master.** Versions before 0.25.0 never wrote
+  a fingerprint sidecar. If the code is upgraded while a master started
+  by an older version is still running, `stop`, `reload` and `status`
+  can only use the cmdline fallback — which fails closed with PHP >= 8.5
+  argv behaviour or an unreadable `/proc`, and on non-Linux hosts always
+  fails closed. Stop the server **before** upgrading; if you already upgraded,
+  terminate the old master by hand and start the new version once — see
+  [UPGRADE.md](UPGRADE.md#upgrading-to-025).
+- **Non-Linux hosts.** The cmdline fallback is Linux-only, so without a
+  fingerprint file every control command reports "Workerman is not
+  running" even when the server is up. On macOS/BSD the fingerprint is
+  the only verification channel (PID + UID; the start-time check is
+  Linux-only): do not delete `<pid_file>.fingerprint` by hand on a
+  working deployment, and run the console as the same user that started
+  the server. Non-`/proc` liveness checks (e.g. `ps -o comm=`) are
+  deliberately **not** implemented: they cannot match the process title
+  cross-user, and a looser match would re-open the identity-verification
+  hole of issue #584.
+- **Daemon-start window.** `start -d` returns before the master has
+  written its pid file; the fingerprint appears only when the master
+  reaches `MasterWorker::saveMasterPid()` a moment later. A `stop`,
+  `reload` or `status` in that window reports "Workerman is not running"
+  — wait for `<pid_file>.fingerprint` to appear, then retry.
+
 ### When this matters
 
 - **Multi-user hosts**: Shared CI runners, containers with multiple service accounts, or any environment where an attacker could spawn a process whose command line contains "WorkerMan" (or any plain PHP process — earlier revisions accepted any cmdline containing "php").

@@ -113,6 +113,24 @@ Installed by `php bin/install-git-hook.php` (post-install/post-update).
 Every push runs php-cs-fixer (dry-run), phpstan and rector (dry-run).
 To skip in an emergency: `git push --no-verify`.
 
+## Control plane / master identification
+
+### `stop`/`reload`/`status` report "Workerman is not running" after a 0.25.0 upgrade
+
+Master identification fails closed since 0.25.0 (issue #584): without the
+`.fingerprint` sidecar next to the pid file, control commands refuse to
+signal. This bites in three situations: (1) the server was started by an
+older version and the code was upgraded without stopping it first — stop
+*before* upgrading; (2) macOS/BSD, where the cmdline fallback does not
+exist — the fingerprint (written on every 0.25.0+ start) is the only
+identity check, so a single restart restores the control plane; (3) the
+instant after `start -d` returns, before the master writes pid file and
+fingerprint — wait for both files to appear, then retry. Recovery when
+the old master cannot be verified: read the PID from the pid file, verify
+with `ps -p <pid> -o pid,comm,args`, kill it by hand (never a bare
+`pkill -f WorkerMan`), remove any stale pid file, and start once. Full
+guidance: UPGRADE.md "Upgrading to 0.25" (issue #640).
+
 ## GitHub CLI
 
 ### `gh issue list` returns at most 30 issues by default
