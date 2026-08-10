@@ -86,10 +86,11 @@ final class SymfonyController
         // limitation of Symfony's static API, not worsened here).
         if ($this->trustedHosts !== []) {
             $host = $this->extractHostForCache($this->symfonyRequest);
-            // When a trusted proxy forwards X-Forwarded-Host, getHost()
-            // validates a different value than the direct Host header used as
-            // the cache key, so skip the cache and reset on every request
-            // (still bounded, just without the cross-request memo benefit).
+            // When the request comes from a trusted proxy, getHost() may
+            // validate X-Forwarded-Host instead of the direct Host header
+            // used as the cache key, so skip the cache and reset on every
+            // request (still bounded, just without the cross-request memo
+            // benefit).
             $cacheable = !$this->symfonyRequest->isFromTrustedProxy();
 
             if (!$cacheable || !isset($this->validatedHosts[$host])) {
@@ -210,14 +211,8 @@ final class SymfonyController
      */
     private function extractHostForCache(SymfonyRequest $request): string
     {
-        $host = (string) $request->headers->get('HOST');
-        if ($host === '') {
-            $host = (string) $request->server->get('SERVER_NAME', '');
-        }
-        if ($host === '') {
-            $host = (string) $request->server->get('SERVER_ADDR', '');
-        }
+        $host = $request->headers->get('HOST') ?: $request->server->get('SERVER_NAME') ?: $request->server->get('SERVER_ADDR', '');
 
-        return \strtolower((string) \preg_replace('/:\d+$/', '', \trim($host)));
+        return \strtolower((string) \preg_replace('/:\d+$/', '', \trim((string) $host)));
     }
 }

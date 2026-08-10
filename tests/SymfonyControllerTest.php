@@ -1655,9 +1655,61 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame('example.com', $kernel->receivedRequest?->getHost());
     }
 
-    private function requestWithHost(string $host): Request
+    public function testTrustedProxySkipsCacheAndResetsEveryRequest(): void
     {
-        return new Request("GET /test HTTP/1.1\r\nHost: {$host}\r\n\r\n");
+        // When the request comes from a trusted proxy, getHost() validates
+        // the value of X-Forwarded-Host rather than the direct Host header
+        // used as the cache key. The controller must therefore skip the
+        // validated-host cache and keep calling setTrustedHosts() on every
+        // request — that reset is what keeps Symfony's internal list bounded
+        // (issue #560 constraint).
+        $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
+        $controller = new SymfonyController(
+            $kernel,
+            $this->createResponseConverter(),
+            null,
+            ['^.+\.example\.com$'],
+        );
+
+        SymfonyRequest::setTrustedProxies(['127.0.0.1'], SymfonyRequest::HEADER_X_FORWARDED_HOST);
+        try {
+            // First request: host resolves from X-Forwarded-Host, not Host.
+            $response = $controller(
+                $this->requestWithHost('direct.example.com', 'x1.example.com'),
+                $this->connection,
+            );
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('x1.example.com', $kernel->receivedRequest?->getHost());
+
+            // Second request with a different X-Forwarded-Host: the cache must
+            // be skipped again, so Symfony's internal list stays at one entry
+            // (reset on every request) instead of accumulating.
+            $response = $controller(
+                $this->requestWithHost('direct.example.com', 'x2.example.com'),
+                $this->connection,
+            );
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('x2.example.com', $kernel->receivedRequest->getHost());
+        } finally {
+            SymfonyRequest::setTrustedProxies([], 0);
+        }
+
+        $this->assertSame(
+            1,
+            $this->trustedHostsCacheCount(),
+            'trusted-proxy path must reset the validated-host list on every request',
+        );
+        $this->assertSame([], $this->validatedHostsCache($controller), 'bundle cache must stay empty behind a trusted proxy');
+    }
+
+    private function requestWithHost(string $host, ?string $forwardedHost = null): Request
+    {
+        $buffer = "GET /test HTTP/1.1\r\nHost: {$host}\r\n";
+        if ($forwardedHost !== null) {
+            $buffer .= "X-Forwarded-Host: {$forwardedHost}\r\n";
+        }
+
+        return new Request($buffer . "\r\n");
     }
 
     /**
