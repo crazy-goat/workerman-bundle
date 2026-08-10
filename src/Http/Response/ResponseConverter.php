@@ -39,6 +39,17 @@ final readonly class ResponseConverter
 
         foreach ($this->strategies as $strategy) {
             if ($strategy->supports($response)) {
+                // Method-aware strategies (file/streamed) need the request
+                // method to apply method-specific framing rules, e.g. omitting
+                // the body for HEAD (RFC 9110 §9.3.2, issue #683). Strategies
+                // that only implement the base interface keep the 4-argument
+                // convert() — the instanceof dispatch keeps
+                // ResponseConverterStrategyInterface backward-compatible for
+                // external/custom strategies.
+                if ($strategy instanceof RequestMethodAwareResponseConverterStrategyInterface) {
+                    return $strategy->convert($response, $headers, $connection, $protocolVersion, $requestMethod);
+                }
+
                 return $strategy->convert($response, $headers, $connection, $protocolVersion);
             }
         }

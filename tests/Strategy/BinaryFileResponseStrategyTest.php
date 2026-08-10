@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -811,6 +812,225 @@ final class BinaryFileResponseStrategyTest extends TestCase
                     unlink($tempFile);
                 }
             }
+        }
+    }
+
+    /**
+     * A HEAD request must not stream the file body (RFC 9110 §9.3.2). The
+     * strategy emits a bodyless HeadResponse carrying the file size as
+     * Content-Length and never calls withFile() (issue #683).
+     */
+    public function testHeadRequestEmitsBodylessResponseWithFileSizeContentLength(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+
+        $fileSize = (int) filesize($this->testFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Type' => ['text/plain'],
+            'Content-Length' => (string) $fileSize,
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file, 'HEAD must not attach a file (no withFile())');
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'HEAD Content-Length must be the file size');
+        $this->assertStringContainsString('Accept-Ranges: bytes', $wire, 'HEAD must carry the same Accept-Ranges as the GET file path (RFC 9110 §9.3.2)');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * A HEAD request for a temp-file BinaryFileResponse must not read the
+     * temp file into memory (the GET path buffers it via withBody()) — only
+     * the size is needed for the bodyless HeadResponse (issue #683).
+     */
+    public function testHeadRequestWithTempFileDoesNotReadBodyAndEmitsTempSize(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = new \SplTempFileObject();
+        $tempFile->fwrite('Temp file content');
+
+        $binaryResponse = new BinaryFileResponse($this->testFile);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('tempFileObject');
+        $property->setValue($binaryResponse, $tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Length' => '16',
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertNull($workermanResponse->file);
+        $this->assertSame('', $workermanResponse->rawBody(), 'HEAD must not read the temp file into memory');
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('Content-Length: 16', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'Temp files get no Accept-Ranges on the GET path either (withBody(), not withFile())');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * A HEAD request on a deleteFileAfterSend file must delete the file
+     * immediately: the GET path's onBufferDrain cleanup would not fire for a
+     * bodyless response, so a deferred delete would leak on keep-alive
+     * connections. No async cleanup callbacks are installed (issue #683).
+     */
+    public function testHeadRequestWithDeleteFileAfterSendDeletesImmediately(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/head_delete_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Delete me on HEAD!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('deleteFileAfterSend');
+        $property->setValue($binaryResponse, true);
+
+        $this->assertFileExists($tempFile);
+
+        $fileSize = (int) filesize($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Length' => (string) $fileSize,
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertFileDoesNotExist($tempFile, 'HEAD + deleteFileAfterSend must delete the file immediately');
+        $this->assertNull($this->connection->onBufferDrain, 'HEAD must not install the async buffer-drain cleanup');
+        $this->assertNull($this->connection->onClose, 'HEAD must not install the async onClose cleanup');
+    }
+
+    /**
+     * A HEAD request for a file that vanished before convert mirrors the GET
+     * path's 404 (Workerman's withFile() turns an absent file into a 404):
+     * a 404 HeadResponse with no body (issue #683).
+     */
+    public function testHeadRequestWithMissingFileReturns404HeadResponse(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/head_missing_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'I will vanish!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+        unlink($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame(404, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file);
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD 404 must not emit a body');
+    }
+
+    /**
+     * When the preserved Content-Length header is absent (prepare() did not
+     * set it — e.g. the file vanished and was restored, or a caller bypassed
+     * prepare()), the HEAD path falls back to the actual file size so the
+     * emitted length matches what the GET path would frame (issue #683).
+     */
+    public function testHeadRequestFallsBackToFileSizeWhenContentLengthHeaderAbsent(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+
+        $fileSize = (int) filesize($this->testFile);
+
+        // No Content-Length in $headers (simulates prepare() not setting it).
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Type' => ['text/plain'],
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'Fallback must compute the file size');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * When the preserved Content-Length header is absent for a temp-file
+     * response, the HEAD path falls back to the temp file's fstat size
+     * (issue #683).
+     */
+    public function testHeadRequestWithTempFileFallsBackToFstatWhenContentLengthAbsent(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $content = 'Temp fallback content';
+        $tempFile = new \SplTempFileObject();
+        $tempFile->fwrite($content);
+
+        $binaryResponse = new BinaryFileResponse($this->testFile);
+        $reflection = new \ReflectionClass($binaryResponse);
+        $property = $reflection->getProperty('tempFileObject');
+        $property->setValue($binaryResponse, $tempFile);
+
+        // No Content-Length in $headers — fallback reads the temp file fstat size.
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('Content-Length: ' . strlen($content), $wire, 'Fallback must read the temp file fstat size');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * A HEAD request on a deleteFileAfterSend file whose unlink fails must log
+     * a warning, mirroring the GET path's scheduleFileCleanup behaviour
+     * (issue #683).
+     */
+    public function testHeadRequestDeleteFileAfterSendLogsWarningWhenUnlinkFails(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                'Failed to delete temporary file after send',
+                $this->callback(fn(array $context): bool => isset($context['path']) && is_string($context['path'])),
+            );
+
+        $strategy = new BinaryFileResponseStrategy(logger: $logger);
+
+        $dir = sys_get_temp_dir() . '/head_unlink_test_' . uniqid();
+        mkdir($dir, 0777);
+        $tempFile = $dir . '/file.txt';
+        file_put_contents($tempFile, 'should fail to unlink on HEAD');
+        chmod($dir, 0555);
+
+        try {
+            $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK);
+            $reflection = new \ReflectionClass($binaryResponse);
+            $property = $reflection->getProperty('deleteFileAfterSend');
+            $property->setValue($binaryResponse, true);
+
+            // Suppress PHP warning from unlink() on the read-only directory.
+            set_error_handler(static fn(): true => true);
+            try {
+                $strategy->convert($binaryResponse, [
+                    'Content-Length' => (string) filesize($tempFile),
+                ], $this->connection, '1.1', 'HEAD');
+            } finally {
+                restore_error_handler();
+            }
+        } finally {
+            chmod($dir, 0777);
+            @unlink($tempFile);
+            rmdir($dir);
         }
     }
 }
