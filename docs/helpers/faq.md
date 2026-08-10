@@ -7,7 +7,7 @@ finishing (see [README.md](README.md) for rules).
 
 ### A failed-checksum or unusable artifact must be unlinked, or every later build fails the same way
 
-`SfxDownloader::fetch()` short-circuits on `is_file($destination)` and re-verifies existing bytes, so a downloaded artifact that fails SHA-256 verification (or a zip with no usable SFX entry) poisons every subsequent fetch until removed by hand — the download is never retried. `fetch()` now unlinks the failed artifact on both paths and says so in the exception message (#642). Same class of behavior as `writeStream()`, which unlinks the partial artifact on transfer abort (e6fa1b2, #585): never leave bytes behind that a later run will trust.
+`SfxDownloader::fetch()` short-circuits on `is_file($destination)` and re-verifies existing bytes, so a downloaded artifact that fails SHA-256 verification (or a zip with no usable SFX entry) poisons every subsequent fetch until removed by hand — the download is never retried. `fetch()` now unlinks the failed artifact on both paths (#642). Only the checksum path appends an explicit 'the failed artifact was removed' note to the exception message — and only when the unlink actually succeeded; zip-extraction failures rethrow the original exception (type and message preserved) after unlinking. Same class of behavior as `writeStream()`, which unlinks the partial artifact on transfer abort (e6fa1b2, #585): never leave bytes behind that a later run will trust.
 
 ## Static files
 

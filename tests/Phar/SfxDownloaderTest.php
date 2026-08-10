@@ -288,13 +288,18 @@ final class SfxDownloaderTest extends TestCase
             $entryName => 'malicious-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage($expectedMessage);
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the malicious zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($expectedMessage, $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -307,13 +312,18 @@ final class SfxDownloaderTest extends TestCase
             'subdir/../../evil.bin' => 'malicious-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('path traversal');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the traversal zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('path traversal', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -339,13 +349,44 @@ final class SfxDownloaderTest extends TestCase
             'sub/evil.bin' => 'escaped-content',
         ]);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('resolves outside the destination directory');
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
 
-        (new SfxDownloader())->fetch(
-            'https://example.invalid/phpmicro.sfx.zip',
-            $this->tempDir,
-        );
+        // The poisoned artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
+    }
+
+    /**
+     * A corrupt archive whose ZipArchive::open() fails must be unlinked even
+     * when no checksum is configured, so a later fetch() re-downloads
+     * instead of failing on the same bad bytes forever.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesCorruptArchiveWhenOpenFails(): void
+    {
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        file_put_contents($zipPath, str_repeat('not-a-zip-', 100));
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the corrupt archive.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Failed to open zip archive', $e->getMessage());
+        }
+
+        // The corrupt artifact must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
     }
 
     /**
@@ -452,7 +493,6 @@ final class SfxDownloaderTest extends TestCase
             self::fail('Expected SfxExtractionException for an archive with no usable entry.');
         } catch (SfxExtractionException $e) {
             self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
-            self::assertStringContainsString('removed', $e->getMessage());
         }
 
         // The useless archive must not survive for a later fetch() to trust.

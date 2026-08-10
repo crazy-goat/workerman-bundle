@@ -65,14 +65,17 @@ final readonly class SfxDownloader
             } catch (\RuntimeException $e) {
                 // Never leave a failed artifact behind: without unlink(),
                 // every subsequent fetch() re-verifies the same bad bytes
-                // and never retries the download.
+                // and never retries the download. Only claim the removal in
+                // the message when it actually succeeded.
+                $removed = false;
                 if (is_file($destination)) {
-                    unlink($destination);
+                    $removed = @unlink($destination);
                 }
-                throw new \RuntimeException(sprintf(
-                    '%s The failed artifact was removed, so the next fetch() will re-download it.',
-                    $e->getMessage(),
-                ), $e->getCode(), $e);
+                $message = $e->getMessage();
+                if ($removed) {
+                    $message .= ' The failed artifact was removed, so the next fetch() will re-download it.';
+                }
+                throw new \RuntimeException($message, $e->getCode(), $e);
             }
         }
 
@@ -80,16 +83,15 @@ final readonly class SfxDownloader
         if (str_ends_with($destination, '.zip')) {
             try {
                 $destination = $this->extractZip($destination, $destinationDir);
-            } catch (SfxExtractionException $e) {
-                // An archive with no usable SFX entry would poison every
-                // later fetch() the same way a bad checksum would: remove it.
+            } catch (\RuntimeException $e) {
+                // A failed extraction — corrupt archive, malicious entry,
+                // or no usable SFX entry — would poison every later fetch()
+                // the same way a bad checksum would: remove the archive and
+                // rethrow the original exception unchanged.
                 if (is_file($destination)) {
                     unlink($destination);
                 }
-                throw new SfxExtractionException(sprintf(
-                    '%s The archive was removed, so the next fetch() will re-download it.',
-                    $e->getMessage(),
-                ), $e->getCode(), $e);
+                throw $e;
             }
         }
 
