@@ -1,33 +1,112 @@
 # Knowledge Base (docs/helpers/)
 
-This directory is a persistent knowledge base maintained by subagents
-(`worker` / `coder` while implementing, `review` while reviewing). Lessons
-learned here carry over to future tasks, so the same mistakes are not made
-twice and past decisions do not need to be re-derived.
+A persistent, **single-writer** knowledge base. Lessons learned here carry over
+to future tasks, so the same mistakes are not made twice and past decisions do
+not need to be re-derived.
 
 ## Files
 
-- [faq.md](faq.md) — frequently asked questions, recurring pitfalls and
-  their solutions (test daemon ports, pre-push hook, coverage gate, `gh`
-  default limits, long-running worker gotchas)
-- [decisions.md](decisions.md) — important project decisions with rationale
-  (architecture choices, security policies, conventions) and a reference to
-  the issue/PR/commit that introduced them
+- [faq.md](faq.md) — recurring pitfalls and their solutions (test daemon ports,
+  pre-push hook, coverage gate, `gh` default limits, long-running worker
+  gotchas). Entry ids `FAQ-NNN`.
+- [decisions.md](decisions.md) — project decisions with rationale (architecture
+  choices, security policy, conventions) and a reference to the issue/PR/commit
+  that introduced them. Entry ids `DEC-NNN`.
+
+Both files are linted by [`bin/kb-lint.php`](../../bin/README.md#kb-lintphp),
+which runs inside `composer lint`.
 
 ## Rules
 
-1. **Read before you start.** Any subagent about to implement or review
-   changes reads `docs/helpers/faq.md` and `docs/helpers/decisions.md` first
-   and follows any guidance that applies to the task.
-2. **Append after you finish.** After implementation or review, append
-   short entries for anything non-obvious you learned: a pitfall you hit
-   (and its solution) or a decision you made (and why).
-3. **One topic per entry.** Keep entries short: the problem, the
-   solution/decision, optionally an issue/PR/commit reference. Do not
-   restate what is already documented in the README or `docs/`.
-   `docs/troubleshooting.md` already covers long-running worker state
-   pollution — link to it instead of duplicating it.
-4. **In doubt, ask.** If unsure whether an entry belongs in the knowledge
-   base (or where), ask the user before adding it.
-5. **Commit entries as part of the change** they were learned from — do not
-   leave the knowledge base behind in the working tree.
+1. **Read before you start — the index, not the file.** Every file opens with a
+   generated **tag index**. Load the index, pick the tags matching the files in
+   your diff, then read only those `###` entries. Reading either file end to end
+   is a waste of context and is not what the index is for.
+2. **Only the retro step writes here.** `coder` / `coder-high` and
+   `review` / `review-critical` **propose** candidate entries in their report —
+   title, suggested tags, trigger, one paragraph — and the retro step decides
+   what lands and commits it. Two writers gave us duplicates, unlabelled entries
+   and a file nobody could load selectively (issue #686). The retro step
+   (`docs/workflow.md`, steps 15/16, added by phase 4 of that issue) is the
+   single writer — a subagent that "just appends" outside those two steps is
+   doing the wrong thing. Letting every subagent write directly was itself
+   considered and rejected; see `docs/process-notices.md` (N-05) for the
+   trigger that would reopen the question.
+3. **One topic per entry.** The problem, the solution/decision, optionally an
+   issue/PR/commit reference. Do not restate what the README or `docs/` already
+   says — `docs/troubleshooting.md` already covers long-running worker state
+   pollution, so link to it instead of duplicating it.
+4. **Prefer a gate over an entry.** If an automated check (regression test,
+   PHPStan rule, lint rule) could catch the class of defect, add the check. The
+   knowledge base is a buffer for what cannot be automated yet, not a
+   destination.
+5. **In doubt, ask.** If it is unclear whether something belongs here (or
+   where), ask the user.
+
+## Entry front matter
+
+Markdown has no per-section front matter, so every entry carries a **single-line
+HTML comment immediately after its `###` heading**. It renders as nothing and
+parses with one regex:
+
+```markdown
+### Some entry title
+<!-- kb: id=FAQ-012 date=2026-08-11 tags=http,head,content-length trigger="HEAD response headers" hits=0 status=active -->
+
+The body of the entry.
+```
+
+Grammar: `<!-- kb:` followed by space-separated `key=value` pairs, closed by
+`-->`, all on **one** line. A value is either bare (no whitespace) or
+double-quoted. The comment must be the very next line after the heading. No
+value may contain `-->`, quoted or not: an HTML comment ends at its first one,
+so the rest of the entry would render as visible text.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | `FAQ-NNN` in `faq.md`, `DEC-NNN` in `decisions.md`; unique across both files and never reused |
+| `date` | yes | ISO-8601 `YYYY-MM-DD` — when the entry was learned (the referenced issue/PR, or the commit that introduced it) |
+| `tags` | yes | comma-separated `[a-z0-9-]` tags, no spaces; these feed the tag index |
+| `trigger` | yes | quoted phrase answering "when should an agent load this?" |
+| `hits` | yes | how many cycles actually used the entry; the retro increments it |
+| `status` | yes | `active` \| `promoted` \| `stale` |
+| `gate` | only for `promoted` | the test/rule that replaced the entry |
+
+## Tag index
+
+Each file has a generated index between the markers
+`<!-- kb-index:start -->` and `<!-- kb-index:end -->`, mapping every tag to the
+entry ids that carry it. It is regenerated by:
+
+```bash
+php bin/kb-lint.php --fix
+```
+
+`composer lint` fails when the index is out of sync with the entries, so it is
+never stale. Loading one entry looks like this:
+
+```bash
+sed -n '/^<!-- kb-index:start/,/^<!-- kb-index:end/p' docs/helpers/faq.md   # the index
+awk '/^### /{p=0} /id=FAQ-002/{p=1} p' docs/helpers/faq.md                  # one entry
+```
+
+## Decay
+
+The knowledge base is capped at **300 lines per file** (the generated index does
+not count, nor does the `## Tag index` heading and the blank lines around it).
+`bin/kb-lint.php` warns above that; the retro step brings it back under by
+applying two rules:
+
+- **`promoted`** — the lesson is now encoded as a test, a PHPStan rule or a lint
+  rule. The entry collapses to a one-liner naming the gate in `gate="…"`; the
+  detail lives in the check itself. `kb-lint` enforces the collapse (at most two
+  body lines) and refuses a `promoted` entry without a `gate`.
+- **`stale`** — 0 `hits` over 20 cycles. `kb-lint.php` does not compute this
+  from `hits` itself: the retro is the one that judges an entry stale (0 hits
+  over `STALE_AFTER_CYCLES` cycles) and sets `status=stale`; `kb-lint` then
+  only lists entries already marked that way, in a machine-checkable form the
+  retro can act on, and removes them at the next pass. If nobody loaded it in
+  20 cycles it is not knowledge, it is sediment.
+
+An entry is never edited in place to say something different: change the
+content, change the `date`, and say what changed and why (see `DEC-009`).

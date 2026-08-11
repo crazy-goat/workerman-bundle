@@ -2,6 +2,11 @@ name: Tests
 
 on:
   pull_request:
+    # `ready_for_review` is NOT in the default set. Without it, a PR that is
+    # pushed while still a draft has `pow: skipped` on every run, and clicking
+    # "Ready for review" produces no new run for the same head SHA — so the
+    # proof-of-work gate would never run before merge.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   lint:
@@ -32,7 +37,10 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
-    needs: lint
+    # `pow` is seconds of work and fails only on evidence of tampering, so it
+    # is a cheap guard in front of nine matrix legs. It deliberately does NOT
+    # gate on an unfinished cycle — see the comment on that job.
+    needs: [lint, pow]
     strategy:
       fail-fast: false
       matrix:
@@ -107,6 +115,128 @@ jobs:
           path: var/coverage.xml
           if-no-files-found: ignore
 
+  # The gate is split in two, along the severity line the script already draws.
+  #
+  # This job runs in the DEFAULT mode, where only a `violation` — evidence of
+  # tampering: a rewritten ledger, an edited or deleted round comment, a
+  # replayed proof of work, a silent review re-roll, a protected path off a
+  # process/ branch — is fatal. An `incomplete` cycle is not, because the proof
+  # of work legitimately does not exist until step 11.5. That makes the check
+  # meaningful on a draft too, so it runs on every PR from the first push, with
+  # no `needs:`, and finishes in seconds.
+  #
+  # `tests` depends on it: if the evidence has been tampered with, there is no
+  # point spending nine matrix legs on the change. It must never gate on
+  # "unfinished", which is why this job is not --strict — that would skip the
+  # whole matrix for the entire normal cycle.
+  pow:
+    name: Proof of work
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The gate walks the ledger history commit by commit and diffs against
+          # origin/master, so the full history is required.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      # No `composer install`: without --verify-reality the gate is a standalone
+      # script over git and the GitHub API, with no autoloader and no vendor/.
+      - name: Verify the proof of work with the master copy of the gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The gate is materialised into $RUNNER_TEMP, whose parent is not the
+          # checkout, so the repository it operates on is named explicitly.
+          CHECK_POW_ROOT: ${{ github.workspace }}
+        run: |
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master || true
+          gate="$RUNNER_TEMP/gate"
+          mkdir -p "$gate"
+          # bin/check-pow.php requires bin/pow-common.php from its own directory,
+          # so BOTH files must be materialised — and both from the same ref, or
+          # the PR would supply half of its own gate.
+          if git show origin/master:bin/check-pow.php > "$gate/check-pow.php" 2>/dev/null \
+             && git show origin/master:bin/pow-common.php > "$gate/pow-common.php" 2>/dev/null; then
+            echo "::notice::validating this PR with the origin/master copy of bin/check-pow.php"
+          else
+            echo "::warning::origin/master has no bin/check-pow.php yet — falling back to the in-tree copy"
+            cp bin/check-pow.php bin/pow-common.php "$gate/"
+          fi
+          php "$gate/check-pow.php" \
+            --pr="${{ github.event.pull_request.number }}" \
+            --branch="${{ github.event.pull_request.head.ref }}"
+
+  # The merge gate: --strict, so an unfinished cycle fails too, plus POW-08,
+  # which recomputes lint/tests/coverage and compares them with the manifest.
+  # That is the only expensive check and it is moot when the suite is red, so
+  # this waits for `tests` rather than racing it for runners. A draft PR is
+  # work in progress by definition — the proof of work is only complete after
+  # step 11.5 — so completeness is only enforced once the PR is ready.
+  pow-reality:
+    name: Proof of work (manifest vs reality)
+    runs-on: ubuntu-latest
+    needs: [lint, tests]
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: '8.2'
+          extensions: zip, inotify, pcntl, posix
+          coverage: pcov
+          ini-values: pcov.directory=src,phar.readonly=0
+          tools: composer:v2
+
+      - name: Create var directory
+        run: mkdir -p var
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # This step deliberately re-runs `composer lint` and `composer test:coverage`
+      # even though the `lint` job and one matrix leg already ran them. POW-08
+      # compares the manifest's declared `lint_exit`/`test_exit` (exact integers)
+      # and `coverage` (a float, 0.05pp tolerance) against values CI computed
+      # itself. Substituting `needs.lint.result` / `needs.tests.result` would
+      # replace those with a tri-state — "declared 3, actual 1" would read as
+      # "both non-success", which is precisely the falsification the check
+      # exists to catch — and reusing the matrix leg's uploaded clover artifact
+      # would make the gate depend on an artifact name the same PR can rename.
+      # The duplication is the price of "CI recomputes it itself".
+      - name: Recompute lint, tests and coverage and compare with the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_POW_ROOT: ${{ github.workspace }}
+          # `--verify-reality` recomputes the test run itself; using the coverage
+          # script means one run yields both the exit code and var/coverage.xml,
+          # which is what the declared `coverage` is compared against.
+          CHECK_POW_TEST_CMD: composer test:coverage
+        run: |
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master || true
+          gate="$RUNNER_TEMP/gate"
+          mkdir -p "$gate"
+          if git show origin/master:bin/check-pow.php > "$gate/check-pow.php" 2>/dev/null \
+             && git show origin/master:bin/pow-common.php > "$gate/pow-common.php" 2>/dev/null; then
+            echo "::notice::validating this PR with the origin/master copy of bin/check-pow.php"
+          else
+            echo "::warning::origin/master has no bin/check-pow.php yet — falling back to the in-tree copy"
+            cp bin/check-pow.php bin/pow-common.php "$gate/"
+          fi
+          php "$gate/check-pow.php" --strict --verify-reality \
+            --pr="${{ github.event.pull_request.number }}" \
+            --branch="${{ github.event.pull_request.head.ref }}"
+
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
@@ -129,7 +259,7 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, tests, benchmark]
+    needs: [lint, tests, benchmark, pow, pow-reality]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -137,6 +267,10 @@ jobs:
         run: |
           if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.tests.result }}" != "success" ]; then exit 1; fi
+          # Both halves of the proof-of-work gate are skipped on draft PRs; a
+          # skip is not a failure, anything else is.
+          if [ "${{ needs.pow.result }}" != "success" ] && [ "${{ needs.pow.result }}" != "skipped" ]; then exit 1; fi
+          if [ "${{ needs.pow-reality.result }}" != "success" ] && [ "${{ needs.pow-reality.result }}" != "skipped" ]; then exit 1; fi
           # Benchmark is intentionally advisory: CI runner timing varies too
           # much to gate merges on it — log status but do not block merge
           echo "Benchmark status: ${{ needs.benchmark.result }}"
