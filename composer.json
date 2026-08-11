@@ -100,7 +100,11 @@
         "lint": [
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
-            "vendor/bin/rector process --dry-run"
+            "vendor/bin/rector process --dry-run",
+            "php bin/check-pow.php"
+        ],
+        "check-pow": [
+            "php bin/check-pow.php"
         ],
         "post-install-cmd": [
             "php bin/install-git-hook.php"

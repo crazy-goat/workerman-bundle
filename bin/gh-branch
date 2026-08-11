@@ -4,15 +4,17 @@
 # For GitHub-issue repos only (nothing Jira/decodo related). See docs/workflow.md step 2.
 #
 # Type is inferred from a [Type]-prefixed title, then from issue labels
-# (bug/security -> fix, enhancement -> feat, documentation -> docs, ...), and
-# defaults to fix. An explicit type argument always wins.
+# (bug/security -> fix, enhancement -> feat, documentation -> docs,
+# process -> process, ...), and defaults to fix. An explicit type argument
+# always wins. The process/ prefix is the only one bin/check-pow.php accepts
+# for changes to the workflow tooling itself (see docs/workflow.md).
 #
 # Prints the branch name to stdout (last line) so it can be captured:
 #     branch=$(bin/gh-branch 491)
 
 set -euo pipefail
 
-TYPES="fix feat docs perf refactor chore test build ci"
+TYPES="fix feat docs perf refactor chore test build ci process"
 
 usage() {
   cat <<EOF
@@ -22,6 +24,8 @@ Create or switch to <TYPE>/issue-<N>-<slug>, based on the default remote branch.
 
   TYPE        optional; inferred from [Type] title prefix, then labels; default fix
               allowed: $TYPES
+              'process' is required for changes to bin/pow.php, bin/check-pow.php,
+              .github/workflows/* or composer.json's scripts block
   --push      also push with upstream
   --dry-run   print the branch name without touching git
   --force     create even with a dirty tree or when not on the default branch
@@ -99,6 +103,7 @@ if [[ -z "$TYPE" ]]; then
     "[Refactor]"*)                 TYPE=refactor ;;
     "[Chore]"*)                    TYPE=chore ;;
     "[Test]"*|"[Tests]"*)          TYPE=test ;;
+    "[Process]"*)                  TYPE=process ;;
   esac
   [[ -n "$TYPE" ]] && SOURCE="title prefix"
 fi
@@ -111,6 +116,7 @@ if [[ -z "$TYPE" ]]; then
     *,technical-debt,*|*,code-quality,*) TYPE=refactor ;;
     *,performance,*)          TYPE=perf ;;
     *,php82,*)                TYPE=chore ;;
+    *,process,*)              TYPE=process ;;
   esac
   [[ -n "$TYPE" ]] && SOURCE="labels"
 fi

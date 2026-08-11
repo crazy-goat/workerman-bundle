@@ -107,6 +107,55 @@ jobs:
           path: var/coverage.xml
           if-no-files-found: ignore
 
+  pow:
+    name: Proof of work
+    runs-on: ubuntu-latest
+    needs: lint
+    # A draft PR is work in progress by definition — the proof of work is only
+    # complete after workflow step 11.5, which happens once the PR is ready.
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The gate walks the ledger history commit by commit and diffs against
+          # origin/master, so the full history is required.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: '8.2'
+          extensions: zip, inotify, pcntl, posix
+          coverage: pcov
+          ini-values: pcov.directory=src,phar.readonly=0
+          tools: composer:v2
+
+      - name: Create var directory
+        run: mkdir -p var
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Verify the proof of work with the master copy of the gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # `--verify-reality` recomputes the test run itself; using the coverage
+          # script means one run yields both the exit code and var/coverage.xml,
+          # which is what the declared `coverage` is compared against.
+          CHECK_POW_TEST_CMD: composer test:coverage
+        run: |
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master || true
+          if git show origin/master:bin/check-pow.php > "$RUNNER_TEMP/check-pow.php" 2>/dev/null; then
+            echo "::notice::validating this PR with the origin/master copy of bin/check-pow.php"
+          else
+            echo "::warning::origin/master has no bin/check-pow.php yet — falling back to the in-tree copy"
+            cp bin/check-pow.php "$RUNNER_TEMP/check-pow.php"
+          fi
+          php "$RUNNER_TEMP/check-pow.php" --strict --verify-reality \
+            --pr="${{ github.event.pull_request.number }}" \
+            --branch="${{ github.event.pull_request.head.ref }}"
+
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
@@ -129,7 +178,7 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, tests, benchmark]
+    needs: [lint, tests, benchmark, pow]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -137,6 +186,9 @@ jobs:
         run: |
           if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.tests.result }}" != "success" ]; then exit 1; fi
+          # The proof-of-work gate is skipped on draft PRs; a skip is not a
+          # failure, anything else is.
+          if [ "${{ needs.pow.result }}" != "success" ] && [ "${{ needs.pow.result }}" != "skipped" ]; then exit 1; fi
           # Benchmark is intentionally advisory: CI runner timing varies too
           # much to gate merges on it — log status but do not block merge
           echo "Benchmark status: ${{ needs.benchmark.result }}"

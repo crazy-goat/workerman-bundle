@@ -10,9 +10,14 @@ For the Workerman server commands, use your **application's** `bin/console`
 
 ### `install-git-hook.php`
 
-Installs a pre-push git hook that runs `composer lint` before each push.
-The hook is automatically installed by Composer via the `post-install-cmd`
-and `post-update-cmd` scripts.
+Installs a pre-push git hook that runs `composer lint` and then
+`php bin/check-pow.php` before each push. The hook is automatically installed
+by Composer via the `post-install-cmd` and `post-update-cmd` scripts.
+
+The proof-of-work gate in the hook **warns always but blocks only** on a branch
+matching `^(fix|feat|process)/issue-<N>` — a hook that blocks every push is a
+hook people bypass with `--no-verify`, which would make the whole gate fiction.
+The hard gate is CI (see `check-pow.php` below).
 
 **Manual reinstall:**
 ```bash
@@ -39,16 +44,24 @@ is below a threshold. Used by `composer coverage:check`.
 Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,
 so the branch name never needs to be invented by hand or by an LLM (see
 `docs/workflow.md`, step 2). The type is inferred from a `[Type]` title prefix
-(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, …), then from issue labels
-(`bug`/`security`→`fix`, `enhancement`→`feat`, `documentation`→`docs`, …),
-and defaults to `fix`; an explicit type argument always wins. The branch is
-created from the **fresh** default remote branch (never from a stale local
-`master`).
+(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, `[Process]`→`process`, …),
+then from issue labels (`bug`/`security`→`fix`, `enhancement`→`feat`,
+`documentation`→`docs`, `process`→`process`, …), and defaults to `fix`; an
+explicit type argument always wins. The branch is created from the **fresh**
+default remote branch (never from a stale local `master`).
+
+Allowed types: `fix`, `feat`, `docs`, `perf`, `refactor`, `chore`, `test`,
+`build`, `ci`, `process`. **`process` is not optional** for changes to the
+workflow tooling itself — `bin/pow.php`, `bin/check-pow.php`,
+`.github/workflows/*` and the `scripts` block of `composer.json` are protected
+paths and `bin/check-pow.php` rejects a diff touching them from any other
+branch prefix (see `check-pow.php` below).
 
 **Usage:**
 ```bash
 bin/gh-branch 491                 # create/switch to the issue branch
 bin/gh-branch 491 feat            # force type override
+bin/gh-branch 686 process         # workflow/tooling change (protected paths)
 bin/gh-branch 491 --push          # create + push with upstream
 bin/gh-branch 491 --dry-run       # print branch name only (no git mutation)
 bin/gh-branch 491 --force         # create despite dirty tree / non-default branch
@@ -141,3 +154,87 @@ Two environment variables exist for the test suite and are not needed in
 normal use: `POW_ROOT` points the script at another repository root (default:
 the parent of `bin/`), and `POW_NO_GH=1` disables every `gh` call, which makes
 `--round` require `--dry-run`.
+
+### `check-pow.php`
+
+Verifies the proof of work of the current pull request (see
+`docs/workflow.md`, "Proof-of-work gate"). It is the enforcement half of
+`pow.php`: nothing the orchestrator writes in prose is trusted, only
+externally attested facts — a GitHub comment body and its server-assigned
+timestamps, a harness artifact on disk, `git show` of an earlier commit, a
+recomputed exit code.
+
+**Usage:**
+```bash
+php bin/check-pow.php                        # advisory (what composer lint runs)
+composer check-pow                           # the same, as a composer script
+php bin/check-pow.php --strict               # "cannot determine" becomes a failure
+php bin/check-pow.php --strict --verify-reality   # + recompute lint/test/coverage
+php bin/check-pow.php --pr=700 --branch=fix/issue-686-x   # explicit target
+php bin/check-pow.php --self-check           # re-exec the origin/master copy first
+```
+
+**Skip or enforce.** The gate **enforces** when the branch matches
+`^(fix|feat|process)/issue-<N>` or when the diff touches a protected path.
+Everything else — another branch, no pull request for the branch, `gh`
+missing/unauthenticated/offline — is a **one-line skip with exit 0**, so
+`composer lint` never breaks for ordinary work. `--strict` (used by CI) turns
+every "cannot determine" into a failure, because in CI an unreadable fact is
+indistinguishable from a hidden one.
+
+Findings carry a severity that decides who fails on them:
+
+| Severity | Meaning | Fails |
+| --- | --- | --- |
+| `FAIL` | evidence of tampering | always |
+| `PENDING` | the cycle is not finished yet | `--strict` only |
+| `UNKNOWN` | a fact could not be read | `--strict` only |
+| `NOTE` | informational | never |
+
+That split is what keeps the script usable mid-cycle: the proof of work is
+legitimately incomplete until workflow step 11.5, but a tampered comment or a
+leaked scratch buffer is never legitimate.
+
+**What it enforces** (each check has a distinct, greppable id):
+
+| Id | Check |
+| --- | --- |
+| `POW-01` | the PR has `closingIssuesReferences` — **no work without an issue** |
+| `POW-02` | `docs/proof_of_work/<NNNN>-<slug>/` exists for that issue and holds a readable `manifest.json` |
+| `POW-03` | the manifest is complete for its profile: enough rounds, no `open` ledger entry, a verdict, and an `escalation.md` for any verdict other than `CLEAN` |
+| `POW-04` | nothing but `.gitkeep` from `docs/proof_of_work/current/` is in the diff |
+| `POW-05` | the comment chain: every `comment_id` still exists, the re-fetched body hashes to `comment_sha256`, `updated_at == created_at` (an edit is detectable), the `prev` chain is intact (a deletion breaks it), and `created_at` increases strictly across rounds |
+| `POW-06` | the ledger is append-only: for consecutive commits touching it, the older `findings.md` is a byte prefix of the newer one |
+| `POW-07` | no silent re-rolls: every `coder`/`review` artifact in `.pi-subagents/artifacts/` inside the branch time window appears in `rounds[]` or in `aborted[]` with a reason (skipped where the directory does not exist, e.g. CI) |
+| `POW-08` | manifest vs reality: `--verify-reality` recomputes lint/test and compares `lint_exit`/`test_exit`, and compares `coverage` against `var/coverage.xml` (tolerance 0.05pp); a mismatch fails as `manifest falsified` |
+| `POW-09` | the `no-pow` escape hatch, see below |
+| `POW-10` | protected paths: a diff touching `bin/pow.php`, `bin/check-pow.php`, `.github/workflows/*` or the `scripts` block of `composer.json` requires a `process/` branch **and** a maintainer approval on the PR |
+
+**The gate runs from `master`.** A pull request must not be able to weaken the
+gate that judges it, so CI materialises the master copy first:
+
+```bash
+git show origin/master:bin/check-pow.php > "$RUNNER_TEMP/check-pow.php" \
+  && php "$RUNNER_TEMP/check-pow.php" --strict --verify-reality --pr=<n> --branch=<name>
+```
+
+`--self-check` does the same from the command line. When
+`origin/master:bin/check-pow.php` does not exist yet — the pull request that
+introduces the gate — both fall back to the in-tree copy with a loud notice.
+
+**Escape hatch.** The PR label `no-pow` (release PRs, reverts) skips checks
+`POW-01`–`POW-08`, but only when the PR also carries a maintainer approval on
+record *and* the bypass is named in `docs/process-changelog.md`. The bypass is
+always printed loudly — a bypass is a documented exception, never a silent one.
+
+Requires the `gh` CLI (authenticated) for everything that reads GitHub; the
+local checks (`POW-04`, `POW-06`, `POW-07`, the branch half of `POW-10`) work
+offline. Exit codes: 0 = pass or skip, 1 = gate violation, 2 = usage error.
+
+Environment variables, none needed in normal use: `CHECK_POW_ROOT` points the
+script at another repository root, `CHECK_POW_SKIP=1` makes it exit 0
+immediately (it is set automatically for the subprocesses `--verify-reality`
+spawns, so the `composer lint` it runs does not recurse), `CHECK_POW_GH_FIXTURE`
+replaces every `gh` call with a JSON file (used by the test suite), and
+`CHECK_POW_LINT_CMD` / `CHECK_POW_TEST_CMD` override the commands
+`--verify-reality` recomputes with.
