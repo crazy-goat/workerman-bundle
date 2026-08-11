@@ -296,6 +296,24 @@ After fixing, invoke the review subagent again for round `<x>+1`. It writes
 
 Repeat steps 5 → 6 until the review reports no open findings.
 
+**Commit the review's files after every round — including a clean one.** The
+review subagent writes `review-<x>.md` and appends to `findings-review.md` but
+never commits (it is read-only by contract). After a round with fixes, step
+5's `git add -A` sweeps those files up; after a **clean** round there is no
+fix commit, so the main session must commit them itself — otherwise the
+round's record silently never makes it into the merged PR:
+
+```bash
+# after EVERY round, clean or not — before moving on to linting or the PR
+# being marked ready (the files live in the working tree until committed)
+git add docs/proof_of_work/<NNNN>-<slug>/
+git commit -m "docs: record review round <x> for #<NUMBER>"
+```
+
+Missing this shows up only after the merge, when the fix has to be carried to
+`master` through a second PR (master is PR-protected, so a direct push is not
+an option). Uncommitted review files are not proof of work yet.
+
 Four rounds is a lot. A loop that has not converged by then usually needs a
 decision rather than another iteration — narrow the issue and file the rest
 separately, throw the approach away and re-plan, or ask the user. Say which
@@ -688,6 +706,9 @@ mkdir -p docs/proof_of_work/<NNNN>-<slug>
 
 # 4. Code review (subagent) — reads findings-review.md first, then looks for new issues
 #    writes review-1.md + findings-review.md
+#    AFTER EVERY ROUND (clean or not): commit the review's files — a clean
+#    round has no fix commit to sweep them up, so commit them explicitly:
+#    git add docs/proof_of_work/<NNNN>-<slug>/ && git commit -m "docs: record review round <x>"
 
 # 5-6. Fix, answer every finding, re-review (review-2.md, review-3.md, …)
 #    a finding that an automated check could have caught: write the check
