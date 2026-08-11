@@ -15,14 +15,18 @@ whole file.
 - `ci` — DEC-007
 - `cookies` — DEC-010
 - `coverage` — DEC-007
+- `docs` — DEC-012
+- `gh` — DEC-011
 - `git-hooks` — DEC-008
 - `http` — DEC-001, DEC-002, DEC-005, DEC-010
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
 - `long-running` — DEC-003
+- `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009
-- `process` — DEC-009
+- `pr` — DEC-011
+- `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
 - `security` — DEC-005, DEC-006, DEC-010
 - `static-files` — DEC-004
@@ -158,3 +162,29 @@ freshness and the line budget; the decay rules live in
 values are `urldecode()`d), and cookie names are not decoded at all. Decoding
 is ordered after splitting so an encoded `%3B` can never re-open the #217
 smuggling class.
+
+### The PR opens after implementation and local gates — `gh pr create` refuses a branch with no commits ahead of base
+<!-- kb: id=DEC-011 date=2026-08-11 tags=gh,pr,process trigger="opening a pull request before the first implementation commit exists" hits=0 status=active -->
+
+`gh pr create` — draft or not — fails with "GraphQL: No commits between
+`master` and `<branch>`" when the head has no commits ahead of base:
+GitHub will not create an empty-diff PR. A draft-first step therefore needed
+a junk seed commit that polluted history, and CI on the empty branch ran the
+full matrix for nothing (the #670 cycle; cancelled by the implementation
+push minutes later). Since #704 (PR #705) the workflow opens the PR only
+after implementation and local gates pass — `docs/workflow.md` step 9. The
+issue link works regardless: `closingIssuesReferences` comes from the body's
+`Closes #N` line from the first push.
+
+### Raw angle-bracket placeholders in prose render as nothing on GitHub — backtick them
+<!-- kb: id=DEC-012 date=2026-08-11 tags=docs,markdown trigger="writing or reviewing Markdown prose that quotes shell placeholders" hits=0 status=active -->
+
+GitHub's renderer treats a bare `<word>` in prose as an inline HTML tag and
+renders it as nothing, so a raw `<branch>` in a sentence silently disappears
+from the rendered doc — it bit the #704 edit of `docs/workflow.md`,
+`docs/process-notices.md` and `docs/process-changelog.md` and was fixed by
+backticking. Convention: wrap shell placeholders in backticks everywhere
+outside fenced code blocks. A fence- and backtick-aware scan of the tracked
+`.md` files finds 0 raw occurrences today; keep it that way when editing
+docs — the angle-bracket tokens belong in fenced blocks or backticks, never
+bare in prose.
