@@ -11,7 +11,9 @@ re-litigated once it has, instead of being forgotten. A trigger is a condition
 > `bin/check-pow.php`, the manifest, the ledger, branch profiles, the retro
 > loop — all of which was removed in phase 6 (see entry #3 in
 > [process-changelog.md](process-changelog.md)). Their triggers mostly refer
-> to tooling that no longer exists and cannot fire. They are kept because the
+> to tooling that no longer exists and cannot fire — **N-12 is the exception:**
+> its trigger has since effectively fired and that notice is superseded (see
+> N-12, #704). They are kept because the
 > reasoning is still worth reading before anyone proposes the same thing
 > again, not because they are live policy.
 
@@ -267,7 +269,9 @@ durable home after all.
 *issue* rather than the pull request, since the issue is the stable
 identifier referenced throughout the cycle.
 
-**Rejected because (phase 1):** the draft PR is created immediately after
+**Rejected because (phase 1):** it was rejected at the time, but that
+rejection is **superseded (phase 7, #704)** and is no longer live policy.
+The phase-1 rationale: the draft PR is created immediately after
 the branch (step 2.5), before implementation starts, specifically so round
 comments have a home from round 1 and CI starts earlier. The PR is also
 where `closingIssuesReferences` lives (`POW-01`'s anchor) and where CI
@@ -275,10 +279,31 @@ status, the diff and the review conversation already converge — splitting
 the narrative across both the issue and the PR would mean checking two
 threads to reconstruct one cycle.
 
-**Trigger:** a cycle produces a pull request only after most of the round
-comments would have already been needed (e.g. a workflow variant that
-delays PR creation) on ≥2 cycles — evidence the "PR exists from the start"
-assumption this decision relies on no longer holds.
+Why it is no longer live: (1) "Round comments have a home from round 1"
+— since PR #697 the proof of work is four Markdown files committed under
+`docs/proof_of_work/`, which have a durable home in the repository
+regardless of any PR, so the argument that motivated PR-before-
+implementation is gone. (2) "CI starts earlier" — CI on an empty branch
+validates nothing: in the #670 cycle the draft ran the full matrix (PHP
+8.2–8.5 × Symfony 6.4–8.0) on the seed commit and the implementation push
+3 minutes later cancelled it (`concurrency: cancel-in-progress`) — wasted
+runs, not earlier detection. (3) The step's practical premise was false:
+`gh pr create --draft` fails with "GraphQL: No commits between master and
+`<branch>`" on a branch with no new commits, so the cycle needed a junk seed
+commit that polluted history. What survives: `closingIssuesReferences`
+comes from the body's `Closes #<NUMBER>` line at workflow step 9, and the
+PR remains the convergence point (diff, CI status, review conversation)
+once there *is* content — which is why the workflow now creates the PR
+after implementation and local gates.
+
+**Trigger:** this trigger has effectively fired: since #697 the cycle's
+narrative has lived in the committed files under `docs/proof_of_work/`, not
+in PR round comments, so the "PR exists from the start" assumption this
+decision relied on no longer holds — and workflow step 2.5 was removed in
+#704. If round comments ever return as the proof-of-work home, or a
+workflow variant again delays PR creation past the first reviews, re-
+evaluate this alternative — posting round comments on the issue instead
+of the PR — with the current facts.
 
 ## N-13 — A maintainer-approval requirement on `POW-09`/`POW-10`
 

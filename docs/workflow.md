@@ -1,4 +1,4 @@
-# Workflow: Issue → Feature Branch → Draft PR → Implementation → Review Rounds → CI → Merge
+# Workflow: Issue → Feature Branch → Implementation → Review Rounds → PR → CI → Merge
 
 This document describes the complete workflow for handling issues in the
 [crazy-goat/workerman-bundle](https://github.com/crazy-goat/workerman-bundle)
@@ -132,26 +132,9 @@ Existing examples in this repository:
 - `fix/270-runtime-directory-restrictive-mode`
 - `docs/282-bin-directory-unexplained`
 
----
-
-## 2.5 Open the Draft PR
-
-The draft PR is created **right after the branch**, before a single line is
-written. It starts CI earlier and makes `closingIssuesReferences` exist from
-the first push instead of from step 9.
-
-```bash
-git push -u origin "$branch"          # an empty branch is enough
-gh pr create --draft \
-  --title "feat: <short description> (closes #<NUMBER>)" \
-  --body "Closes #<NUMBER>
-
-Work in progress." \
-  --base master --assignee @me
-```
-
 Then make the directory this cycle's proof of work lives in — `<NNNN>` is the
-zero-padded issue number, `<slug>` a short kebab-case description:
+zero-padded issue number, `<slug>` a short kebab-case description. It does
+not depend on a PR, so create it now:
 
 ```bash
 mkdir -p docs/proof_of_work/<NNNN>-<slug>
@@ -304,8 +287,8 @@ fix commit, so the main session must commit them itself — otherwise the
 round's record silently never makes it into the merged PR:
 
 ```bash
-# after EVERY round, clean or not — before moving on to linting or the PR
-# being marked ready (the files live in the working tree until committed)
+# after EVERY round, clean or not — before moving on to linting (the
+# files live in the working tree until committed)
 git add docs/proof_of_work/<NNNN>-<slug>/
 git commit -m "docs: record review round <x> for #<NUMBER>"
 ```
@@ -360,7 +343,7 @@ git add -A
 git commit -m "style: auto-fix lint issues"
 ```
 
-**Only mark the PR ready for review when all lints and tests pass locally.**
+**Only open the pull request (step 9) when all lints and tests pass locally.**
 
 ---
 
@@ -376,13 +359,22 @@ git commit -m "style: auto-fix lint issues"
 
 ---
 
-## 9. Mark the Pull Request Ready for Review
+## 9. Open the Pull Request
 
-The PR already exists — it was opened as a draft in step 2.5. Fill in the
-body and take it out of draft:
+The PR is created here — **after** implementation and after step 7's linters
+and tests pass locally. There is nothing for a PR to converge (the diff, CI
+status, the review conversation) before there is content: a PR opened on a
+branch with no new commits runs CI on nothing — in the #670 cycle the full
+matrix ran on the seed commit and the implementation push cancelled it 3
+minutes later (`concurrency: cancel-in-progress`) — and `gh pr create`
+refuses such a branch outright ("No commits between master and `<branch>`").
+The issue is linked from the first push regardless:
+`closingIssuesReferences` comes from the `Closes #<NUMBER>` line in the
+body, not from when the PR was opened:
 
 ```bash
-gh pr edit --title "feat: <short description> (closes #<NUMBER>)" \
+gh pr create \
+  --title "feat: <short description> (closes #<NUMBER>)" \
   --body "## Description
 
 Closes #<NUMBER>
@@ -402,10 +394,12 @@ Closes #<NUMBER>
 ## Code Review
 
 - [ ] Passed subagent code review
-- [ ] Every finding answered"
-
-gh pr ready
+- [ ] Every finding answered" \
+  --base master --assignee @me
 ```
+
+The PR is created ready — the review rounds (steps 4-6) already happened on
+the branch itself, and CI runs on the PR from its first push.
 
 > **Note:** If you don't use `gh`, create the PR manually via GitHub UI.
 > `master` carries no GitHub branch protection (solo maintainer, single
@@ -692,10 +686,7 @@ Otherwise `review` is enough.
 # 2. Feature branch — name derived by the helper (type from labels/prefix)
 branch="$(bin/gh-branch <NUMBER>)"
 #    workflow/tooling changes: bin/gh-branch <NUMBER> process
-
-# 2.5 Draft PR first, then the proof-of-work directory
 git push -u origin "$branch"
-gh pr create --draft --title "…(closes #<NUMBER>)" --body "Closes #<NUMBER>" --base master --assignee @me
 mkdir -p docs/proof_of_work/<NNNN>-<slug>
 
 # 3. Implementation (worker/coder subagent)
@@ -719,8 +710,8 @@ composer lint && composer test
 
 # 8. Update CHANGELOG.md
 
-# 9. Fill in the PR body and take it out of draft
-gh pr edit --title "…" --body "…" && gh pr ready
+# 9. Open the pull request — after implementation and local gates (created ready)
+gh pr create --title "…(closes #<NUMBER>)" --body "…" --base master --assignee @me
 
 # 10-11. CI
 gh pr checks --watch
