@@ -31,22 +31,31 @@ final class PeriodicalTrigger implements TriggerInterface
                 if ($dateInterval === false) {
                     throw new InvalidTriggerException('Invalid numeric interval');
                 }
-                $this->interval = $dateInterval;
-                $this->description = sprintf('every %d', $interval);
+                $description = sprintf('every %d', $interval);
             } elseif (\is_string($interval) && str_starts_with($interval, 'P')) {
-                $this->interval = new \DateInterval($interval);
-                $this->description = sprintf('DateInterval (%s)', $interval);
+                $dateInterval = new \DateInterval($interval);
+                $description = sprintf('DateInterval (%s)', $interval);
             } elseif (\is_string($interval)) {
                 $dateInterval = \DateInterval::createFromDateString($interval);
                 if ($dateInterval === false) {
                     throw new InvalidTriggerException(sprintf('Invalid string interval "%s"', $interval));
                 }
-                $this->interval = $dateInterval;
-                $this->description = sprintf('every %s', $interval);
+                $description = sprintf('every %s', $interval);
             } else {
-                $this->interval = $interval;
-                $this->description = 'DateInterval';
+                $dateInterval = $interval;
+                $description = 'DateInterval';
             }
+
+            // A zero or negative interval would make getNextRunDate() return
+            // null forever, silently never scheduling the task. Reject it at
+            // construction time so misconfiguration fails fast at startup.
+            $now = new \DateTimeImmutable();
+            if ($now->add($dateInterval) <= $now) {
+                throw new InvalidTriggerException('Interval must be a positive duration');
+            }
+
+            $this->interval = $dateInterval;
+            $this->description = $description;
         } catch (\Throwable $e) {
             $original = $interval instanceof \DateInterval ? 'instance of \DateInterval' : (string) $interval;
             throw new InvalidTriggerException(sprintf('Invalid interval "%s": %s', $original, $e->getMessage()), 0, $e);

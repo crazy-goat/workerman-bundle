@@ -238,6 +238,20 @@ final class SchedulerWorkerTest extends TestCase
         );
     }
 
+    public function testZeroIntervalTaskIsSkippedWithIncorrectTriggerLog(): void
+    {
+        // Int 0 is already caught by the empty() check earlier; a
+        // non-empty zero-length interval exercises the PeriodicalTrigger
+        // constructor validation instead (issue #667).
+        $output = $this->invokeOnWorkerStartWithConfig(
+            ['my_service' => ['schedule' => 'PT0S']],
+        );
+
+        $this->assertStringContainsString('Task "my_service" skipped.', $output);
+        $this->assertStringContainsString('Trigger "PT0S" is incorrect', $output);
+        $this->assertStringNotContainsString('Task "my_service" scheduled', $output);
+    }
+
     // --- Behavioral tests via isolated runner ---
 
     private const RUNNER_SCRIPT = __DIR__ . '/../Fixtures/scheduler_worker_runner.php';
