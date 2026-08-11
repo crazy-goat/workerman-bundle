@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `SfxDownloader::fetch()` no longer leaves a failed-checksum artifact on disk: when SHA-256 verification of a downloaded artifact fails, the artifact is unlinked before the exception is rethrown, so the next `fetch()` re-downloads instead of re-verifying the same bad bytes forever. The same cleanup now applies to zip-extraction failures (corrupt archive, malicious entry, extraction error) — `extractZip()` failures unlink the archive and rethrow the original exception, and the checksum path mentions the removal when it succeeded so a retry is obviously safe ([#642](https://github.com/crazy-goat/workerman-bundle/issues/642))
 
+- `SfxDownloader::fetch()` now reports it when the zip-extraction cleanup
+  itself cannot remove a corrupt failed archive: if the `@unlink()` of a bad
+  artifact fails (read-only mount, ownership change, SELinux), the failure is
+  logged via `error_log()` so the operator knows the artifact is still on disk.
+  Previously the rethrown exception was byte-identical either way, so the
+  self-perpetuating loop from #642 could persist silently — every later
+  `fetch()` failed on the same bad archive with no signal
+  ([#670](https://github.com/crazy-goat/workerman-bundle/issues/670))
+
 - `PeriodicalTrigger` tasks no longer drift: the next run is computed from the previous run's **scheduled** time (fixed-rate grid anchored at the moment the task was first scheduled) instead of from the current time after the previous fork, so per-run overhead no longer accumulates. A late reschedule (slow or lock-blocked run) skips missed ticks by whole intervals and resumes on the next grid slot instead of firing catch-up executions, and the delay is computed in fractional seconds so sub-second intervals (e.g. a `DateInterval` with a fraction, `createFromDateString('500 ms')`) are honoured instead of being truncated to whole seconds. The fixed-rate grid also applies when a `jitter` is configured: jitter decorates each grid slot with its random offset instead of accumulating drift ([#565](https://github.com/crazy-goat/workerman-bundle/issues/565))
 
 - `PeriodicalTrigger` with a zero or negative interval (int `0`, negative
