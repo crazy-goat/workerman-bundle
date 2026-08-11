@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidTriggerException;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use PHPUnit\Framework\TestCase;
 
@@ -60,6 +61,40 @@ final class PeriodicalTriggerTest extends TestCase
         $this->expectExceptionMessage('Invalid interval');
 
         new PeriodicalTrigger('not a valid interval');
+    }
+
+    /**
+     * A zero or negative interval would make getNextRunDate() return null
+     * forever, silently never scheduling the task (issue #667): it must be
+     * rejected at construction time instead.
+     *
+     * @dataProvider nonPositiveIntervalProvider
+     */
+    public function testNonPositiveIntervalThrowsException(string|int|\DateInterval $interval): void
+    {
+        $this->expectException(InvalidTriggerException::class);
+        $this->expectExceptionMessage('positive duration');
+
+        new PeriodicalTrigger($interval);
+    }
+
+    /**
+     * @return array<string, array{string|int|\DateInterval}>
+     */
+    public static function nonPositiveIntervalProvider(): array
+    {
+        $inverted = new \DateInterval('P1D');
+        $inverted->invert = 1;
+
+        return [
+            'zero seconds int' => [0],
+            'negative int' => [-5],
+            'zero iso duration' => ['PT0S'],
+            'zero relative string' => ['0 seconds'],
+            'negative relative string' => ['-1 second'],
+            'zero DateInterval' => [new \DateInterval('PT0S')],
+            'inverted DateInterval' => [$inverted],
+        ];
     }
 
     public function testGetNextRunDateReturnsFutureDate(): void
