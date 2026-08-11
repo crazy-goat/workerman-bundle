@@ -86,6 +86,18 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 continue;
             }
 
+            if ($this->isFlagSet($event['mask'], IN_MOVED_FROM | IN_ISDIR)) {
+                $parentPath = $this->pathByWd[$event['wd']] ?? null;
+                if ($parentPath !== null) {
+                    // The kernel watch follows the moved inode, so no
+                    // IN_IGNORED ever fires: drop the stale bookkeeping for
+                    // the old location (and the watched directories it
+                    // contained) instead.
+                    $this->forgetWatchedTree($parentPath . '/' . $event['name']);
+                }
+                continue;
+            }
+
             if (
                 $this->isFlagSet($event['mask'], IN_CREATE | IN_ISDIR)
                 || $this->isFlagSet($event['mask'], IN_MOVED_TO | IN_ISDIR)
@@ -150,6 +162,23 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
     }
 
     /**
+     * Drop the bookkeeping for a directory that left the watched tree.
+     *
+     * The kernel watch follows the inode across the move, so no IN_IGNORED
+     * fires for it or for the watched directories it contained; their
+     * entries are stale and must be forgotten here.
+     */
+    private function forgetWatchedTree(string $path): void
+    {
+        unset($this->watchedPaths[$path], $this->loggedWatchFailures[$path]);
+        foreach ($this->pathByWd as $wd => $watchedPath) {
+            if ($watchedPath === $path || str_starts_with($watchedPath, $path . '/')) {
+                unset($this->pathByWd[$wd], $this->watchedPaths[$watchedPath], $this->loggedWatchFailures[$watchedPath]);
+            }
+        }
+    }
+
+    /**
      * Add a watch for one directory. Idempotent per path; safe to call from
      * every entry point (start, deferred walk, event processing).
      */
@@ -159,7 +188,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             return true;
         }
 
-        $wd = @\inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO);
+        $wd = @\inotify_add_watch($this->fd, $path, IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO | IN_MOVED_FROM);
 
         if ($wd === false) {
             if (!isset($this->loggedWatchFailures[$path])) {

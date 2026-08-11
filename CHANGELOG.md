@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `null` concatenation into a bogus watch path) and watches directories moved into the
   tree — including their pre-existing children — which previously arrived as
   `IN_MOVED_TO|IN_ISDIR` and were missed entirely ([#575](https://github.com/crazy-goat/workerman-bundle/issues/575))
+- `InotifyMonitorWatcher` watch masks now include `IN_MOVED_FROM`: a watched directory moved out of the
+  source tree is dropped from `pathByWd` / `watchedPaths` (the kernel watch follows the moved inode, so
+  no `IN_IGNORED` ever fires — previously the stale entry lingered until the external directory was
+  deleted) and is re-watched when moved back in. Watch masks no longer omit the move source, so a
+  matching file moved out of the tree also schedules a reload, like a deletion
+  ([#662](https://github.com/crazy-goat/workerman-bundle/issues/662))
 - `BinaryFileResponseStrategy::scheduleFileCleanup()` no longer creates a closure reference
   cycle on every `deleteFileAfterSend` download: the `onBufferDrain` / `onClose` cleanup
   handlers previously captured each other **by reference**, so every download left ~2.4 KB

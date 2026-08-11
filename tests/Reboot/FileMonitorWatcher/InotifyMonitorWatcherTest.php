@@ -652,6 +652,104 @@ final class InotifyMonitorWatcherTest extends TestCase
     /**
      * @requires extension inotify
      */
+    public function testMovedOutDirectoryIsDroppedAndRewatchedOnReturn(): void
+    {
+        $tmpDir = $this->createTempDir();
+        mkdir($tmpDir . '/subdir', 0700);
+        mkdir($tmpDir . '/subdir/nested', 0700);
+
+        $outside = sys_get_temp_dir() . '/inotify_outside_' . bin2hex(random_bytes(4));
+        mkdir($outside, 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+        $this->invokeDeferredWalk($watcher);
+
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        \assert(\is_resource($fd));
+
+        try {
+            // A watched directory moved out of the tree: the kernel watch
+            // follows the inode (no IN_IGNORED), so only IN_MOVED_FROM can
+            // clear the stale bookkeeping.
+            rename($tmpDir . '/subdir', $outside . '/subdir');
+            clearstatcache();
+            $this->waitForInotifyEvents();
+            $this->invokeOnNotify($watcher, $fd);
+
+            $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+            $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+            $this->assertNotContains($tmpDir . '/subdir', $pathByWd, 'moved-out directory must leave pathByWd');
+            $this->assertNotContains($tmpDir . '/subdir/nested', $pathByWd, 'its watched children must leave pathByWd too');
+            $this->assertArrayNotHasKey($tmpDir . '/subdir', $watchedPaths, 'moved-out directory must leave watchedPaths');
+            $this->assertArrayNotHasKey(
+                $tmpDir . '/subdir/nested',
+                $watchedPaths,
+                'its watched children must leave watchedPaths too',
+            );
+            $this->assertMapsConsistent($watcher);
+
+            // Moving it back in re-watches it: the surviving watch is
+            // re-mapped to the restored path.
+            rename($outside . '/subdir', $tmpDir . '/subdir');
+            clearstatcache();
+            $this->waitForInotifyEvents();
+            $this->invokeOnNotify($watcher, $fd);
+
+            $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
+            $watchedPaths = $this->getPrivateProperty($watcher, 'watchedPaths');
+            $this->assertContains($tmpDir . '/subdir', $pathByWd, 'moved-back directory must be watched again');
+            $this->assertContains($tmpDir . '/subdir/nested', $pathByWd, 'moved-back child must be watched again');
+            $this->assertArrayHasKey($tmpDir . '/subdir', $watchedPaths);
+            $this->assertArrayHasKey($tmpDir . '/subdir/nested', $watchedPaths);
+            $this->assertMapsConsistent($watcher);
+        } finally {
+            $this->removeDirectory($outside);
+        }
+    }
+
+    /**
+     * @requires extension inotify
+     */
+    public function testMovedOutMatchingFileTriggersReload(): void
+    {
+        $tmpDir = $this->createTempDir();
+        // Created before start(), so the only queued event is the move itself.
+        file_put_contents($tmpDir . '/gone.php', '<?php');
+
+        $outside = sys_get_temp_dir() . '/inotify_outside_' . bin2hex(random_bytes(4));
+        mkdir($outside, 0700);
+
+        $worker = $this->createMock(Worker::class);
+        $watcher = $this->createWatcherWithSourceDir($worker, $tmpDir, ['*.php']);
+        $this->setUpEventLoop();
+
+        $watcher->start();
+
+        try {
+            // A matching file moved out of the tree arrives as a plain
+            // IN_MOVED_FROM (no IN_ISDIR) and must behave like a deletion.
+            rename($tmpDir . '/gone.php', $outside . '/gone.php');
+            $this->waitForInotifyEvents();
+
+            $fd = $this->getPrivateProperty($watcher, 'fd');
+            $this->invokeOnNotify($watcher, $fd);
+
+            $this->assertNotNull(
+                $this->getPrivateProperty($watcher, 'reloadCallback'),
+                'a matching file moved out of the tree must schedule a reload',
+            );
+        } finally {
+            $this->removeDirectory($outside);
+        }
+    }
+
+    /**
+     * @requires extension inotify
+     */
     public function testFailedAddWatchWritesNoMapsAndLogsWarningOnce(): void
     {
         $tmpDir = $this->createTempDir();
