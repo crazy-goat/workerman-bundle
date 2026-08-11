@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CONTRIBUTING.md` no longer claims "PHPStan level 6" — the project has run
+  PHPStan at **level 8** (`phpstan.neon.dist`) all along, so a contributor
+  writing to level 6 would be surprised by CI. The level is now pinned by a
+  test (`tests/BinDirectoryTest.php::testContributingPhpstanLevelMatchesConfig`)
+  so the figure cannot drift stale a second time. The CI Configuration section
+  also gains the previously undocumented `ci` aggregator job (the one that
+  actually gates merges); the `pow`/`pow-reality` jobs the issue mentioned
+  were removed in [#697](https://github.com/crazy-goat/workerman-bundle/issues/697)
+  and are deliberately not re-documented
+  ([#693](https://github.com/crazy-goat/workerman-bundle/issues/693))
+
 - The fail-open cache-permission warning from the config cache check now
   reaches the application logs on the `workerman:server start`/`restart`
   path. `Runner` accepts an optional `?LoggerInterface` constructor argument
