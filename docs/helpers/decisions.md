@@ -120,30 +120,27 @@ Lowering it is forbidden outright.
 <!-- kb: id=DEC-008 date=2026-08-11 tags=lint,git-hooks,policy trigger="adding a new check, or wiring one into CI or the hook" hits=0 status=active -->
 
 `bin/install-git-hook.php` installs a pre-push hook that runs `composer lint`
-— php-cs-fixer, phpstan, rector (dry-run), the proof-of-work gate
-(`bin/check-pow.php`) and the knowledge-base linter (`bin/kb-lint.php`). A new
-repository-wide check is added to the `lint` script, and gets a standalone
-`composer <name>` script only as a convenience alias; nothing invokes the
-individual tools directly, so `lint` stays the one thing CI, the hook and a
-contributor all run.
+— php-cs-fixer, phpstan, rector (dry-run) and the knowledge-base linter
+(`bin/kb-lint.php`). A new repository-wide check is added to the `lint` script,
+and gets a standalone `composer <name>` script only as a convenience alias;
+nothing invokes the individual tools directly, so `lint` stays the one thing
+CI, the hook and a contributor all run.
 
-Updated for #686: a check inside `lint` must be **safe to fail nowhere**.
-Composer aborts an array script on the first non-zero command, so a check that
-can fail mid-cycle blocks every push on every branch — the `--no-verify`
-failure mode the pre-push hook exists to avoid. `lint` therefore runs the gate
-as `check-pow.php --advisory` (reports, always exits 0), and the hook adds a
-single blocking run guarded by the issue-branch pattern. Canonical entry point
-and advisory hook are reconciled by *mode*, not by taking the check out of
-`lint`.
+A check inside `lint` must be **safe to run at any point in a cycle**. Composer
+aborts an array script on the first non-zero command, so a check that can fail
+mid-cycle blocks every push on every branch — the `--no-verify` failure mode
+the pre-push hook exists to avoid. A check that cannot meet that bar does not
+belong in `lint`.
 
-### The retro step is the only writer of this knowledge base
+### The main session is the only writer of this knowledge base
 <!-- kb: id=DEC-009 date=2026-08-11 tags=knowledge-base,process,policy trigger="learning something worth recording during implementation or review" hits=0 status=active -->
 
 Two writers (coder and review) produced duplicates, unlabelled entries and a
 file that had to be read in full for every task, so since issue #686 the
-knowledge base has a **single writer**: the retro step. Implementation and
-review subagents *propose* candidate entries in their report — id, tags,
-trigger, one paragraph — and the retro decides what lands. Reading is
+knowledge base has a **single writer**: the main session, at the end of the
+cycle (workflow step 14). Implementation and review subagents *propose*
+candidate entries in their report — id, tags, trigger, one paragraph — and the
+main session decides what lands. Reading is
 unchanged and mandatory: tag index first, then only the entries matching the
 files in the diff. `bin/kb-lint.php` enforces front matter, unique ids, index
 freshness and the line budget; the decay rules live in

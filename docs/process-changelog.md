@@ -1,24 +1,10 @@
 # Process Changelog
 
 This file records changes to the **process** — `docs/workflow.md`,
-`docs/helpers/`, `bin/`, `.pi/agents/` — as opposed to
+`docs/helpers/`, `bin/`, the agent prompts — as opposed to
 [CHANGELOG.md](../CHANGELOG.md), which records changes to the bundle itself.
-It is written in two places:
-
-- **Step 16** (`docs/workflow.md`) appends an entry the moment a `knowledge`
-  retro outcome is committed. An `automation`/`workflow` outcome instead
-  becomes a GitHub issue labelled `process`; its entry here is added once that
-  issue's own PR merges, following the same one-entry-per-process-change rule.
-- **Step 17** comes back after 5 cycles, checks each entry's success
-  criterion against `bin/pow-metrics.php` and the repository, and fills in the
-  `Outcome`.
-
-`bin/check-pow.php` also **reads** this file, for the `no-pow` escape hatch
-(`POW-09`): a bypass is valid only when some line here names both `no-pow`
-and the exact issue or PR number involved — matched per line, with a word
-boundary (`#700` does not match `#7001`, and a line that merely mentions the
-number elsewhere is not a record). See "Proof-of-work gate" in
-[workflow.md](workflow.md).
+Append an entry when the process changes; come back and fill in the outcome
+once there is enough evidence to judge it.
 
 ## Format
 
@@ -28,10 +14,10 @@ One entry per process change, in the order they land:
 - **Issue** / **PR** — the tracking numbers
 - **What** — the process change, one line
 - **Why** — the problem it addresses
-- **Success criterion** — a statement step 17 can check **without
-  interpretation** against `bin/pow-metrics.php` output or the repository
-  ("escape rate below 20% over the next 5 cycles", not "works well")
-- **Outcome** — `pending` | `kept` | `reverted`, filled in by step 17
+- **Success criterion** — a statement that can be checked **without
+  interpretation** against the repository ("`tests/LintScopeTest.php` passes
+  on Linux CI", not "works well")
+- **Outcome** — `pending` | `kept` | `reverted`
 
 ## Entries
 
@@ -57,7 +43,12 @@ One entry per process change, in the order they land:
   `docs/proof_of_work/<NNNN>-<slug>/manifest.json` that
   `bin/check-pow.php --strict` accepts on the first attempt — i.e. this is the
   last cycle-zero exemption the proof-of-work format itself ever needs.
-- **Outcome:** pending
+- **Outcome:** **reverted** — the criterion failed on the very first cycle it
+  was applied to. #662 (PR #689) produced a complete manifest with two
+  recorded rounds and an intact comment chain, and `--strict` rejected it over
+  a `coverage` field the local run had no PCOV to fill. The manifest, the
+  ledger and the gate that read them are removed in entry #3; nothing that
+  would satisfy this criterion still exists.
 
 ### #2 — Bootstrap: mining review history for the first gates
 
@@ -122,4 +113,43 @@ One entry per process change, in the order they land:
   the case-collision half is invisible on a case-insensitive local
   checkout) — checkable directly from the issue tracker and CI, no
   interpretation needed.
+- **Outcome:** pending
+
+### #3 — The proof of work becomes four Markdown files, and nothing checks them
+
+- **Date:** 2026-08-11
+- **Issue:** #686 (phase 6)
+- **PR:** #697
+- **What:** deleted `bin/pow.php`, `bin/check-pow.php`, `bin/pow-common.php`
+  and `bin/pow-metrics.php` (~4,600 lines) with their tests (~3,300 lines),
+  both proof-of-work CI jobs, the `manifest.json` schema, the append-only
+  `findings.md` ledger, the sha256 comment chain, branch profiles and round
+  caps, the `no-pow` escape hatch, and workflow steps 4b, 4c, 13.5, 15, 16
+  and 17. What remains is four kinds of file per cycle —
+  `findings-coder.md`, `findings-review.md`, `code-decision-<x>.md`,
+  `review-<x>.md` — written by the agents that do the work and read by a
+  human. `docs/workflow.md` went from 1,481 lines to under 800.
+- **Why:** the machinery cost more than the evidence it protected was worth.
+  Three things settled it. It **blocked correct work**: PR #689 for #662 was
+  green on lint, tests and benchmark and was failed by `--strict` over an
+  unset `coverage` field (see entry #1's outcome). It was **not actually
+  closing the hole it existed for**: `--round` accepted the truncated output
+  of a SIGTERM-killed run because nothing read `exitCode` from the artifact
+  (#696), so a review going badly could be killed and recorded as a completed
+  round — the exact "silent re-roll" `POW-07` was built to prevent, and
+  `POW-07` could never run in CI anyway because the artifact directory is
+  gitignored. And it was **welded to one harness**: four code sites hardcoded
+  `.pi-subagents/artifacts/`, and the one check that could not be ported —
+  enumerating runs the orchestrator would rather not mention — was the only
+  one carrying real weight.
+- **What is lost, stated plainly:** nothing now detects a fabricated round, an
+  edited finding or a manifest that lies about its exit codes. That was a real
+  property and it is gone. The judgement is that a solo maintainer reading
+  four short files during review catches the same things at a fraction of the
+  cost, and that a gate which fails honest work while missing the dishonest
+  case was buying less than it appeared to.
+- **Success criterion:** over the next 5 cycles, no PR is blocked by
+  proof-of-work bookkeeping while lint, tests and benchmark are green — and
+  each merged cycle's directory contains at least `findings-review.md` and one
+  `review-<x>.md`. Checkable from the CI history and `ls docs/proof_of_work/`.
 - **Outcome:** pending

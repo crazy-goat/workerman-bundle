@@ -1,12 +1,19 @@
 # Process Notices — Rejected Alternatives
 
-A registry of process alternatives that were considered and rejected while
-building the self-improving workflow (issue #686) and its retro loop
-(`docs/workflow.md`, step 15). Each entry exists so the same alternative is
-not silently re-litigated in a future retro without first checking whether
-its trigger has actually fired — and so it *can* be re-litigated once it has,
-instead of being forgotten. A trigger is a condition **measurable** from
-`bin/pow-metrics.php` output or the repository itself, never a feeling.
+A registry of process alternatives that were considered and rejected. Each
+entry exists so the same alternative is not silently re-litigated without
+first checking whether its trigger has actually fired — and so it *can* be
+re-litigated once it has, instead of being forgotten. A trigger is a condition
+**measurable** from the repository itself, never a feeling.
+
+> **N-01 to N-13 are history.** They were written while building the
+> machine-checked proof of work of issue #686 — `bin/pow.php`,
+> `bin/check-pow.php`, the manifest, the ledger, branch profiles, the retro
+> loop — all of which was removed in phase 6 (see entry #3 in
+> [process-changelog.md](process-changelog.md)). Their triggers mostly refer
+> to tooling that no longer exists and cannot fire. They are kept because the
+> reasoning is still worth reading before anyone proposes the same thing
+> again, not because they are live policy.
 
 Format: **Proposed** — what was suggested. **Rejected because** — the
 reasoning at the time. **Trigger** — the measurable condition that would

@@ -1,9 +1,0 @@
-{
-  "runId": "bbbb2222",
-  "agent": "coder",
-  "task": "Implement issue #4242.",
-  "model": "test-vendor/Test Model:medium",
-  "exitCode": 0,
-  "durationMs": 1000,
-  "timestamp": 1786387405442
-}

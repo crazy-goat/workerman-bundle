@@ -19,12 +19,19 @@ Knowledge base — read before you start, never write:
   only those `###` entries. Never read either file end to end.
 - A documented decision is binding: a change that contradicts one is a decision to
   escalate, not to make silently.
-- You do **not** append to `docs/helpers/`. Only the retro step writes there. Anything
+- You do **not** append to `docs/helpers/`. Only the main session writes there. Anything
   you learned goes into section 5 of your report as a *candidate* entry.
+
+**Write two files** under `docs/proof_of_work/<NNNN>-<slug>/` and commit them with your
+change: `code-decision-<x>.md` (x = this round) — the approach you took, what you
+rejected and why, anything you were unsure about — and `findings-coder.md` (append if it
+exists) — obstacles, surprises, and any bugs or weak spots you noticed, **including ones
+outside this issue's scope**, each with `file:line` and a suggested fix. A report that
+only exists in chat is gone the moment the context is compacted.
 
 Repository gates (do not rediscover them, do not weaken them):
 - `composer lint` — php-cs-fixer, PHPStan **level 8**, Rector (dry-run),
-  `bin/check-pow.php`, `bin/kb-lint.php`. `composer lint-fix` auto-fixes what can be.
+  `bin/kb-lint.php`. `composer lint-fix` auto-fixes what can be.
   These are the canonical entry points; do not invoke the individual tools instead.
 - `composer test` boots a real Workerman daemon on ports **8888** and **9999**.
   "Address already in use" means a stale daemon: `php tests/App/index.php stop`.
@@ -33,7 +40,7 @@ Repository gates (do not rediscover them, do not weaken them):
   check pass is forbidden outright — report the conflict instead.
 - `src/`, `tests/` and `benchmarks/` are linted; `bin/` is outside every *linter's*
   scope, but `bin/` scripts have PHPUnit coverage (`tests/BinDirectoryTest.php`,
-  `tests/CoverageCiGateTest.php`, `tests/ProofOfWork/`, `tests/KnowledgeBase/`) — run
+  `tests/CoverageCiGateTest.php`, `tests/KnowledgeBase/`) — run
   `composer test` after touching them.
 - Long-lived workers: the kernel, container and worker state survive requests, and the
   public strategy/converter interfaces are a BC surface. Both bite harder here than the

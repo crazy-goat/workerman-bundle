@@ -9,28 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The contribution workflow is now a closed loop: every cycle leaves a
-  **proof of work** that CI can verify, and recurring defects are escalated
-  into automated gates instead of into prose. `bin/pow.php` records a cycle —
-  the round narrative is published as PR comments generated from harness
-  artifacts (never authored by the orchestrator, and an unknown `run_id` is
-  refused), while only `manifest.json`, an append-only `findings.md` ledger
-  and, when the round cap forces an oracle verdict, `escalation.md` are
-  committed under `docs/proof_of_work/<NNNN>-<slug>/`. `bin/check-pow.php`
-  enforces it in CI with twelve checks (`POW-00`–`POW-11`) — no work without an issue, an intact
-  comment chain (a tampered, edited or deleted comment is detectable), an
-  append-only ledger, no silent review re-rolls, a manifest whose declared
-  lint/test/coverage values CI recomputes itself, and a protected-path rule
-  for the workflow tooling. The gate runs from `master`, so a pull request
-  cannot weaken the gate that judges it. Six subagents move into `.pi/agents/`
-  so their prompts are versioned and change through a reviewed PR; the
+- Every contribution cycle now leaves a **proof of work**: four kinds of
+  Markdown file under `docs/proof_of_work/<NNNN>-<slug>/` — `findings-coder.md`
+  and `findings-review.md`, plus `code-decision-<x>.md` and `review-<x>.md` per
+  round of the inner loop. They are written by the subagents that do the work,
+  committed on the branch, and read by a human during review. The
   `docs/helpers/` knowledge base gains per-entry front matter, a generated tag
-  index and a single writer, linted by `bin/kb-lint.php`. `bin/pow-metrics.php`
-  derives the retro's metrics — notably the escape rate — from the committed
-  manifests alone. `docs/process-changelog.md` and `docs/process-notices.md`
-  record process changes and the alternatives that were rejected, each with a
-  measurable trigger for revisiting it
+  index and a single writer, linted by `bin/kb-lint.php`.
+  `docs/process-changelog.md` and `docs/process-notices.md` record process
+  changes and the alternatives that were rejected
   ([#686](https://github.com/crazy-goat/workerman-bundle/issues/686))
+
+  An earlier iteration of this, never released, enforced the same idea with a
+  manifest schema, an append-only ledger, a sha256 chain over PR comments and
+  twelve CI-checked gate rules across roughly 4,000 lines of PHP. It worked and
+  it was not worth what it cost to maintain — see entry #3 in
+  `docs/process-changelog.md`
 
 - Two convention tests derived from mining 88 past code-review artifacts for
   recurring defect classes: `tests/MarkdownLinkTest.php` resolves every
