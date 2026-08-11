@@ -37,7 +37,10 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
-    needs: lint
+    # `pow` is seconds of work and fails only on evidence of tampering, so it
+    # is a cheap guard in front of nine matrix legs. It deliberately does NOT
+    # gate on an unfinished cycle — see the comment on that job.
+    needs: [lint, pow]
     strategy:
       fail-fast: false
       matrix:
@@ -112,19 +115,23 @@ jobs:
           path: var/coverage.xml
           if-no-files-found: ignore
 
-  # The gate is split in two on purpose. Everything except POW-08 is pure git
-  # plus a handful of GitHub API reads — seconds of work — so it runs beside
-  # `lint` with no `needs:` and gives the fastest possible answer to "is this
-  # proof of work attested?". POW-08 is the only expensive check, because it
-  # recomputes lint/test/coverage itself, so it waits for `tests` and runs on
-  # its own. Tampering is reported early; the costly reality check does not
-  # hold it up.
+  # The gate is split in two, along the severity line the script already draws.
+  #
+  # This job runs in the DEFAULT mode, where only a `violation` — evidence of
+  # tampering: a rewritten ledger, an edited or deleted round comment, a
+  # replayed proof of work, a silent review re-roll, a protected path off a
+  # process/ branch — is fatal. An `incomplete` cycle is not, because the proof
+  # of work legitimately does not exist until step 11.5. That makes the check
+  # meaningful on a draft too, so it runs on every PR from the first push, with
+  # no `needs:`, and finishes in seconds.
+  #
+  # `tests` depends on it: if the evidence has been tampered with, there is no
+  # point spending nine matrix legs on the change. It must never gate on
+  # "unfinished", which is why this job is not --strict — that would skip the
+  # whole matrix for the entire normal cycle.
   pow:
     name: Proof of work
     runs-on: ubuntu-latest
-    # A draft PR is work in progress by definition — the proof of work is only
-    # complete after workflow step 11.5, which happens once the PR is ready.
-    if: github.event.pull_request.draft == false
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -161,15 +168,19 @@ jobs:
             echo "::warning::origin/master has no bin/check-pow.php yet — falling back to the in-tree copy"
             cp bin/check-pow.php bin/pow-common.php "$gate/"
           fi
-          php "$gate/check-pow.php" --strict \
+          php "$gate/check-pow.php" \
             --pr="${{ github.event.pull_request.number }}" \
             --branch="${{ github.event.pull_request.head.ref }}"
 
+  # The merge gate: --strict, so an unfinished cycle fails too, plus POW-08,
+  # which recomputes lint/tests/coverage and compares them with the manifest.
+  # That is the only expensive check and it is moot when the suite is red, so
+  # this waits for `tests` rather than racing it for runners. A draft PR is
+  # work in progress by definition — the proof of work is only complete after
+  # step 11.5 — so completeness is only enforced once the PR is ready.
   pow-reality:
     name: Proof of work (manifest vs reality)
     runs-on: ubuntu-latest
-    # Only POW-08 lives here, and it is moot if the suite is red anyway, so this
-    # waits for `tests` instead of racing it for runners.
     needs: [lint, tests]
     if: github.event.pull_request.draft == false
     steps:

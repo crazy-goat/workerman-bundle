@@ -205,12 +205,55 @@ final class GithubWorkflowsTest extends TestCase
         return implode("\n", $lines);
     }
 
-    public function testProofOfWorkGateIsSkippedOnDraftPullRequests(): void
+    /**
+     * Only the completeness half skips on a draft. Tampering is meaningful from
+     * the first push, and gating it on "ready for review" would leave the whole
+     * draft phase unwatched.
+     */
+    public function testOnlyTheCompletenessHalfIsSkippedOnDraftPullRequests(): void
     {
+        $this->assertStringContainsString(
+            'if: github.event.pull_request.draft == false',
+            $this->jobBlock('pow-reality'),
+            'A draft has no finished proof of work yet, so completeness is only enforced once the PR is ready',
+        );
+        $this->assertStringNotContainsString(
+            'draft == false',
+            $this->jobBlock('pow'),
+            'The tamper checks are meaningful on a draft too — skipping them there leaves the draft phase unwatched',
+        );
+    }
+
+    /**
+     * The whole reason `tests` can depend on `pow` at all: the fast job runs in
+     * the default mode, where only a violation is fatal. Adding `--strict` here
+     * would make an unfinished cycle skip the entire matrix for most of the
+     * cycle, since the proof of work does not exist until step 11.5.
+     */
+    public function testTheGuardInFrontOfTheMatrixFailsOnlyOnTampering(): void
+    {
+        $pow = $this->jobBlock('pow');
+
         $this->assertMatchesRegularExpression(
-            '/pow:(?:(?!^  \w).)*if: github\.event\.pull_request\.draft == false/sm',
-            $this->workflowContent,
-            'The pow job must not run while the PR is a draft — the proof of work is only complete at step 11.5',
+            '/php "\$gate\/check-pow\.php" \\\\\n\s+--pr=/',
+            $pow,
+            'The fast job must run in the default mode — --strict would gate the matrix on an unfinished cycle',
+        );
+        $this->assertStringNotContainsString(
+            '--strict',
+            $pow,
+            'An incomplete cycle is the normal state during steps 3-11 and must never skip the tests',
+        );
+
+        $this->assertStringContainsString(
+            'needs: [lint, pow]',
+            $this->jobBlock('tests'),
+            'Evidence of tampering should stop the matrix before it burns nine legs',
+        );
+        $this->assertStringContainsString(
+            '--strict',
+            $this->jobBlock('pow-reality'),
+            'Completeness is still enforced before merge, just not in front of the matrix',
         );
     }
 
