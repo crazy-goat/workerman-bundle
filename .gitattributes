@@ -6,3 +6,4 @@
 /.php-cs-fixer.dist.php export-ignore
 /docs/superpowers export-ignore
 /docs/proof_of_work export-ignore
+/.pi export-ignore

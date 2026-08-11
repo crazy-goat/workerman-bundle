@@ -188,8 +188,10 @@ session stays free to orchestrate, review findings, and handle the next steps.
 ```bash
 # The subagent receives a task like:
 # "Implement issue #<NUMBER> on branch feat/issue-<NUMBER>-<description>.
-#  Read docs/helpers/ (faq.md, decisions.md) first — it documents
-#  recurring pitfalls and project decisions that apply to this task.
+#  Read docs/helpers/ first, via the TAG INDEX: load the index at the top of
+#  faq.md / decisions.md, pick the tags matching the files you will touch, and
+#  read only those entries — never the whole file.
+#  You do NOT write to docs/helpers/; propose candidate entries in your report.
 #  Read the issue body first, then make the smallest correct change.
 #  Run the relevant tests for the changed behavior.
 #  Commit and push when done.
@@ -267,8 +269,10 @@ that is the whole point of the ledger being append-only.
 ```bash
 # The subagent receives a task like:
 # "Code review the changes in files: <list of files>.
-#  Read docs/helpers/ (faq.md, decisions.md) first and flag any
-#  violations of documented decisions.
+#  Read docs/helpers/ first, via the TAG INDEX (index + only the entries whose
+#  tags match the files in the diff), and flag any violations of documented
+#  decisions by entry id. You do NOT write to docs/helpers/ — propose
+#  candidate entries in your report.
 #  Then read docs/proof_of_work/current/findings.md and, for every entry
 #  whose effective status is 'open', state explicitly: still present /
 #  fixed / not a real finding (with evidence).
@@ -291,9 +295,10 @@ php bin/pow.php --finding --id=F-01 --round=1 \
 Severities are `high`, `medium`, `low`, `nit`. IDs are `F-01`, `F-02`, … and
 are **never reused**: an ID belongs to one finding for the whole cycle.
 
-After the review, the subagent should append any non-obvious findings to
-`docs/helpers/` (see "Knowledge Base (docs/helpers/)" below) — typically as
-part of the fix commits that follow.
+Anything non-obvious the review learned is reported as a **candidate**
+knowledge-base entry (title, tags, trigger, one paragraph). The review does not
+write to `docs/helpers/` — only the retro step does, see
+"Knowledge Base (docs/helpers/)" below.
 
 > **Why a subagent:** code review reads the full diff plus surrounding code,
 > runs static analysis, and produces a structured findings list. Delegating
@@ -393,11 +398,12 @@ otherwise the script exits with
 Before opening a PR, verify that all linters and tests pass on your machine:
 
 ```bash
-# Run all linters (php-cs-fixer dry-run, phpstan, rector dry-run) and the
-# advisory proof-of-work gate (php bin/check-pow.php)
+# Run all linters (php-cs-fixer dry-run, phpstan, rector dry-run), the
+# advisory proof-of-work gate (php bin/check-pow.php) and the knowledge-base
+# linter (php bin/kb-lint.php)
 composer lint
 
-# Auto-fix fixable issues (php-cs-fixer, rector)
+# Auto-fix fixable issues (php-cs-fixer, rector, kb-lint --fix)
 composer lint-fix
 
 # Run tests (boots a real Workerman daemon on ports 8888 and 9999)
@@ -650,9 +656,10 @@ must confirm:
    number), or (c) skip - not real or by-design and documented.
 
 The verification subagent must not modify files and must not create/close/
-edit issues itself. Like steps 3 and 4, it reads `docs/helpers/`
-(faq.md, decisions.md) first. Only findings that pass verification (real +
-untracked) are offered to the user / created.
+edit issues itself. Like steps 3 and 4, it reads `docs/helpers/` first — tag
+index plus the entries matching the files in the diff — and writes nothing
+there. Only findings that pass verification (real + untracked) are offered to
+the user / created.
 
 **Then ask:** "Create GitHub issue(s) for these findings?"
 
@@ -842,22 +849,81 @@ Full reference: [bin/README.md](../bin/README.md#check-powphp).
 
 ## Knowledge Base (docs/helpers/)
 
-`worker`/`coder` (implementation) and `review` (code review) subagents
-maintain a persistent knowledge base in `docs/helpers/` so lessons learned
-carry over to future tasks:
+A persistent knowledge base so lessons learned carry over to future tasks:
 
-- `docs/helpers/faq.md` — frequently asked questions, recurring pitfalls
-  (test daemon ports, pre-push lint hook, coverage gate, `gh` default
-  limits) and their solutions
-- `docs/helpers/decisions.md` — important project decisions with rationale
-  (response strategy, security policy, coverage floor)
-- `docs/helpers/README.md` — structure and rules for the knowledge base
+- `docs/helpers/faq.md` — recurring pitfalls and their solutions (test daemon
+  ports, pre-push lint hook, coverage gate, `gh` default limits). Ids `FAQ-NNN`.
+- `docs/helpers/decisions.md` — project decisions with rationale (response
+  strategy, security policy, coverage floor). Ids `DEC-NNN`.
+- `docs/helpers/README.md` — entry format, single-writer rule, decay rules
 
-Subagents **read** the knowledge base before starting a task and **append**
-short entries after finishing (one topic: the problem, the
-solution/decision, optionally an issue/commit reference). Entries are
-committed as part of the regular fix/feat commits — no extra PRs. In doubt,
-extend `docs/troubleshooting.md` or ask the user before adding a new entry.
+**Read the index, not the file.** Every file opens with a generated **tag
+index** mapping tags to entry ids. A subagent loads the index, picks the tags
+matching the files in its diff, and reads only those `###` entries. Reading 300
+lines of FAQ for a two-file change is exactly what the index exists to prevent.
+
+**One writer.** Only the **retro step (15/16)** writes to `docs/helpers/`.
+`coder`/`coder-high` and `review`/`review-critical` **propose** candidate
+entries in their report — title, tags, trigger, one paragraph — and the retro
+decides what lands. Two writers produced duplicates, unlabelled entries and a
+file that had to be read in full (issue #686). The retro step itself arrives
+with phase 4 of that issue; until then the rule still binds — a subagent that
+appends to the knowledge base is doing the wrong thing.
+
+**Prefer a gate over an entry.** If a regression test, PHPStan rule or lint rule
+could catch the class of defect, add the check. The knowledge base is a buffer
+for what cannot be automated yet, not a destination.
+
+Every entry carries single-line front matter (`id`, `date`, `tags`, `trigger`,
+`hits`, `status`) in an HTML comment right after its heading.
+`php bin/kb-lint.php` validates it, regenerates the tag index (`--fix`), warns
+above 300 lines per file and lists `stale` entries; it runs inside
+`composer lint`. Full reference:
+[docs/helpers/README.md](helpers/README.md) and
+[bin/README.md](../bin/README.md#kb-lintphp).
+
+---
+
+## Agent Map
+
+Which agent runs at which step. Agents marked **project-scoped** live in
+[`.pi/agents/`](../.pi/agents) inside this repository, so their prompts are
+versioned and **changing one now requires a reviewed PR** (loop C of issue
+#686) — they are no longer per-machine files in `~/.agents/`. The rest are
+still user-scoped.
+
+| Step | Agent | Scope | Role |
+| --- | --- | --- | --- |
+| 1 | `delegate` | user | triage open issues, return a ranked shortlist |
+| 1b | `scout` | **project** | fast recon: relevant files, flows, KB tags to load |
+| 1c | `context-builder` | user | compress the issue + code into a handoff brief |
+| 2b | `planner` | user | plan the change before any edit |
+| 2c | `oracle` | user | judgement call on approach when the plan is contested |
+| 3 | `coder` / `coder-high` / `worker` | **project** (`coder`, `coder-high`) | implement; return files changed, biggest problem, discovered bugs, candidate KB entries |
+| 4 | `review` / `review-critical` | **project** | ledger-first code review |
+| 4b | `reviewer` | **project** | classify findings: which automated check would have caught this? — *introduced by phase 4* |
+| 11 | `delegate` | user | compress CI logs into actionable failures |
+| 13.5 | `reviewer` | **project** | audit the proof of work in a fresh context — *introduced by phase 4* |
+| 14 | `reviewer` | **project** | verify candidate findings before opening GitHub issues |
+| 15a | `oracle` | user | retro: diagnose over ≥3 manifests — *introduced by phase 4* |
+| 15b | `reviewer` | **project** | retro: independently verify the oracle's evidence — *introduced by phase 4* |
+| 16 | `coder` | **project** | commit the `knowledge` outcome, file the rest as `process` issues — *introduced by phase 4* |
+| 17 | `delegate` | user | after 5 cycles, check whether earlier process changes stuck — *introduced by phase 4* |
+
+Steps 4b, 13.5, 15, 16 and 17 do not exist yet; they are listed so the map is
+the single place that answers "who runs where", and phase 4 of issue #686 fills
+in their mechanics.
+
+**`review-critical` is mandatory**, not a judgement call, when the diff touches
+any of:
+
+- `src/Http`
+- security-relevant code or policy
+- process supervision (fork/signal handling, master identification, supervisor)
+- more than **200 changed lines**
+- a public interface (`ResponseConverterStrategyInterface` and friends)
+
+Otherwise `review` is enough.
 
 ---
 
@@ -899,7 +965,7 @@ php bin/pow.php --verdict=CLEAN
 #    ACCEPT must justify EVERY open finding by ID or pow.php rejects it
 
 # 7. Run linters and tests locally, then record the exit codes
-composer lint && composer test          # composer lint also runs check-pow (advisory)
+composer lint && composer test          # lint also runs check-pow (advisory) + kb-lint
 php bin/pow.php --set lint_exit=0 --set test_exit=0
 #    CI recomputes these and fails the `pow` job as "manifest falsified" on a mismatch
 
@@ -960,9 +1026,15 @@ Capture the `runId` of every run: it is the prefix of
 `bin/pow.php --round` can prove the round happened. Runs that were thrown
 away are recorded with `--abort=<runId>:<reason>`, never silently dropped.
 
-**Knowledge base:** implementation and review subagents read
-`docs/helpers/` before starting and append learnings after finishing
-(see "Knowledge Base (docs/helpers/)" above).
+**Knowledge base:** implementation and review subagents read `docs/helpers/`
+before starting — the tag index plus the entries matching the files in the diff
+— and **propose** candidate entries in their report. They never append: the
+retro step is the single writer (see "Knowledge Base (docs/helpers/)" above).
+
+**Agent scope:** `scout`, `coder`, `coder-high`, `review`, `review-critical` and
+`reviewer` are project-scoped in [`.pi/agents/`](../.pi/agents); their prompts
+are part of the repository and change through a reviewed PR. See
+"[Agent Map](#agent-map)".
 
 ---
 

@@ -238,3 +238,48 @@ spawns, so the `composer lint` it runs does not recurse), `CHECK_POW_GH_FIXTURE`
 replaces every `gh` call with a JSON file (used by the test suite), and
 `CHECK_POW_LINT_CMD` / `CHECK_POW_TEST_CMD` override the commands
 `--verify-reality` recomputes with.
+
+### `kb-lint.php`
+
+Lints the subagent knowledge base in `docs/helpers/` (`faq.md`, `decisions.md`)
+and regenerates its tag index. Wired into `composer lint`; `composer lint-fix`
+runs it with `--fix`. See
+[docs/helpers/README.md](../docs/helpers/README.md) for the entry format and the
+decay rules it enforces.
+
+**Usage:**
+```bash
+php bin/kb-lint.php            # what composer lint runs
+composer kb-lint               # the same, as a composer script
+php bin/kb-lint.php --fix      # regenerate the tag index of every KB file
+php bin/kb-lint.php --json     # machine-readable output
+php bin/kb-lint.php --root=/path/to/checkout
+```
+
+**What it checks:**
+
+| Check | Severity |
+| --- | --- |
+| every `###` entry is followed by a single-line `<!-- kb: … -->` front-matter comment | error |
+| required keys present (`id`, `date`, `tags`, `trigger`, `hits`, `status`), no unknown keys | error |
+| `id` matches `FAQ-NNN` / `DEC-NNN` for its file and is unique **across both files** | error |
+| `date` is an ISO-8601 calendar date, `hits` a non-negative integer, `tags` lowercase `[a-z0-9-]` | error |
+| `status` is one of `active` / `promoted` / `stale` | error |
+| a `promoted` entry names its `gate=` and collapses to at most two body lines | error |
+| the tag index between `<!-- kb-index:start -->` / `<!-- kb-index:end -->` matches the entries | error (fixed by `--fix`) |
+| a file is over the 300-line budget — the generated index does not count | warning |
+| near-duplicate entries | warning |
+| `stale` entries (0 hits in 20 cycles) | listed |
+
+Near-duplicate detection is a cheap heuristic, not a proof: entry titles and
+bodies are lowercased, split on non-alphanumerics, stripped of stop words and
+of tokens shorter than three characters, and two entries are reported when
+their **overlap coefficient** — `|A ∩ B| / min(|A|, |B|)`, so a short entry
+fully contained in a long one still scores high — reaches **0.75**. Entries
+with fewer than 15 distinct tokens are too noisy to compare and are skipped, as
+are `promoted` entries, which are one-line pointers by design.
+
+Works entirely offline. Exit codes: 0 = clean (warnings may still be printed),
+1 = lint failure, 2 = usage error. `KB_LINT_ROOT` points the script at another
+repository root (the `--root=` option wins over it); nothing else is needed in
+normal use.
