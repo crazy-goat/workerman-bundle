@@ -181,7 +181,7 @@ One entry per process change, in the order they land:
 
 - **Date:** 2026-08-11
 - **Issue:** #704
-- **PR:** TBD
+- **PR:** #705
 - **What:** removed workflow step 2.5 (a draft PR opened immediately after
   branch creation, before any code) and moved PR creation into step 9: the
   PR is now opened — ready, not draft — after implementation and after step
