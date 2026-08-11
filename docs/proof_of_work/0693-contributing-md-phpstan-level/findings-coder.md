@@ -10,7 +10,7 @@
   `tests`, `benchmark` and `ci`.
 - **Action:** did not add pow/pow-reality docs (would be wrong). Fixed only
   the genuinely stale PHPStan level claim and added the missing `ci`
-  aggregator bullet. A follow-up GitHhub issue could note that #693's CI half
+  aggregator bullet. A follow-up GitHub issue could note that #693's CI half
   is already resolved by the time anyone picks it up.
 
 ## Other observations
