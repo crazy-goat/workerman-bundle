@@ -11,7 +11,9 @@ re-litigated once it has, instead of being forgotten. A trigger is a condition
 > `bin/check-pow.php`, the manifest, the ledger, branch profiles, the retro
 > loop — all of which was removed in phase 6 (see entry #3 in
 > [process-changelog.md](process-changelog.md)). Their triggers mostly refer
-> to tooling that no longer exists and cannot fire. They are kept because the
+> to tooling that no longer exists and cannot fire — **N-12 is the exception:**
+> its trigger has since effectively fired and that notice is superseded (see
+> N-12, #704). They are kept because the
 > reasoning is still worth reading before anyone proposes the same thing
 > again, not because they are live policy.
 
