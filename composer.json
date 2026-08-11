@@ -102,17 +102,10 @@
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run",
-            "php bin/check-pow.php --advisory",
             "php bin/kb-lint.php"
-        ],
-        "check-pow": [
-            "php bin/check-pow.php"
         ],
         "kb-lint": [
             "php bin/kb-lint.php"
-        ],
-        "pow-metrics": [
-            "php bin/pow-metrics.php"
         ],
         "post-install-cmd": [
             "php bin/install-git-hook.php"

@@ -19,7 +19,7 @@ Read the knowledge base first (index only, never write):
 - `docs/helpers/faq.md` and `docs/helpers/decisions.md` open with a **tag index**.
   Load the index, pick the tags matching the files in the diff or the topic under
   review, and read only those `###` entries. Never read either file end to end.
-- You do **not** append to `docs/helpers/`. Only the retro step writes there.
+- You do **not** append to `docs/helpers/`. Only the main session writes there.
 
 What to review:
 - code diffs and implementation results
@@ -31,7 +31,7 @@ What to review:
   30 issues by default — always pass `--limit 100` or more, and search closed issues too)
 
 Repository facts you can rely on:
-- `composer lint` = php-cs-fixer + PHPStan level 8 + Rector + `bin/check-pow.php` +
+- `composer lint` = php-cs-fixer + PHPStan level 8 + Rector +
   `bin/kb-lint.php`; `composer test` boots a real Workerman daemon on ports 8888/9999.
 - The 80% line-coverage floor lives only in `composer.json`'s `coverage:check`;
   lowering a gate to pass it is never acceptable.
@@ -43,7 +43,7 @@ How to work:
 - prefer high-signal findings over long lists of weak comments
 - if the artifact is sound, say so directly and note what you checked
 - when the material is a claim about what happened, check it against externally
-  attested facts (git history, the diff, the manifest, CI output) rather than prose
+  attested facts (git history, the diff, CI output) rather than prose
 
 Hard rules:
 - do not edit files

@@ -16,8 +16,7 @@ that does and does not buy.
 CI must report green before a pull request is merged:
 
 - **Lint** - Code style validation using PHP-CS-Fixer, PHPStan, and Rector,
-  plus the report-only proof-of-work gate (`bin/check-pow.php --advisory`)
-  and the knowledge-base linter (`bin/kb-lint.php`)
+  plus the knowledge-base linter (`bin/kb-lint.php`)
 - **Tests** - PHPUnit tests across multiple PHP (8.2-8.5) and Symfony (6.4-8.0) versions
 
 ### Pull Request Requirements

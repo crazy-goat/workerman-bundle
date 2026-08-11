@@ -7,15 +7,22 @@ namespace CrazyGoat\WorkermanBundle\Test\Process;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Convention test for the phase-4 process artifacts of issue #686:
- * `docs/process-changelog.md`, `docs/process-notices.md`, and the new steps
- * documented in `docs/workflow.md`.
+ * Convention test for the process artifacts of issue #686:
+ * `docs/process-changelog.md`, `docs/process-notices.md`, and the
+ * proof-of-work format documented in `docs/workflow.md`.
  *
  * @coversNothing
  */
 final class ProcessDocsTest extends TestCase
 {
     private const NOTICE_IDS = ['N-01', 'N-02', 'N-03', 'N-04', 'N-05', 'N-06', 'N-07', 'N-08', 'N-09', 'N-10', 'N-11', 'N-12', 'N-13'];
+
+    /**
+     * The whole proof of work, after the machinery that used to enforce it was
+     * removed. Both documents must name all four, or an agent reading either
+     * one learns an incomplete format.
+     */
+    private const POW_FILES = ['findings-coder.md', 'findings-review.md', 'code-decision-', 'review-'];
 
     private string $projectDir;
 
@@ -29,20 +36,6 @@ final class ProcessDocsTest extends TestCase
     public function testProcessChangelogExists(): void
     {
         self::assertFileExists($this->projectDir . '/docs/process-changelog.md');
-    }
-
-    public function testProcessChangelogHasTheCycleZeroEntryNamingTheIssueAndPr(): void
-    {
-        $content = $this->read('docs/process-changelog.md');
-
-        self::assertStringContainsString('Cycle zero', $content);
-        self::assertStringContainsString('#686', $content);
-        self::assertStringContainsString('#687', $content);
-        self::assertMatchesRegularExpression(
-            '/no-pow.{0,80}#687.{0,40}#686|no-pow.{0,80}#686.{0,40}#687/s',
-            $content,
-            'the bypass line must name both no-pow and the exact issue/PR number, on one line, for bin/check-pow.php\'s POW-09 to match it',
-        );
     }
 
     public function testProcessChangelogDefinesItsFormatUpFront(): void
@@ -63,9 +56,9 @@ final class ProcessDocsTest extends TestCase
         $section = $this->extractChangelogEntry($content, '#2');
         self::assertNotNull($section, 'entry #2 must be its own section');
 
-        // The phase 4 acceptance criterion is "a retro over the existing
-        // artifacts returns >=3 gate candidates" — assert the entry names at
-        // least three, not just gestures at "some".
+        // The acceptance criterion was "a retro over the existing artifacts
+        // returns >=3 gate candidates" — assert the entry names at least
+        // three, not just gestures at "some".
         self::assertStringContainsString('tests/MarkdownLinkTest.php', $section);
         self::assertStringContainsString('tests/ChangelogStructureTest.php', $section);
         self::assertStringContainsString('tests/LintScopeTest.php', $section);
@@ -75,6 +68,25 @@ final class ProcessDocsTest extends TestCase
         // reason, not merely omitted from what shipped.
         self::assertMatchesRegularExpression('/[Dd]eferred/', $section);
         self::assertStringContainsString('fails by design', $section);
+    }
+
+    /**
+     * Removing the proof-of-work machinery is itself a process change, and the
+     * one most likely to be mistaken later for "it was never there". The entry
+     * must survive, and it must be honest about what the repository gave up
+     * rather than reading as a pure win.
+     */
+    public function testProcessChangelogRecordsWhatTheSimplificationGaveUp(): void
+    {
+        $section = $this->extractChangelogEntry($this->read('docs/process-changelog.md'), '#3');
+
+        self::assertNotNull($section, 'the proof-of-work simplification must be recorded as entry #3');
+        self::assertStringContainsString('bin/check-pow.php', $section, 'the entry must name what was deleted');
+        self::assertMatchesRegularExpression(
+            '/What is lost|no longer detect|nothing now detects/i',
+            $section,
+            'a process change that removes a safeguard must say so plainly',
+        );
     }
 
     public function testProcessNoticesExists(): void
@@ -99,35 +111,54 @@ final class ProcessDocsTest extends TestCase
         }
     }
 
-    public function testWorkflowDocumentsAllPhaseFourSteps(): void
+    /**
+     * Most of these triggers name tooling that no longer exists, so they can
+     * never fire. Keeping the notices without saying that would leave a reader
+     * treating dead policy as live.
+     */
+    public function testProcessNoticesSaysItsTriggersReferToRemovedTooling(): void
+    {
+        $header = substr($this->read('docs/process-notices.md'), 0, (int) strpos($this->read('docs/process-notices.md'), '## N-01'));
+
+        self::assertMatchesRegularExpression(
+            '/history|no longer exist|cannot fire|removed/i',
+            $header,
+            'the notices file must warn that N-01..N-13 describe a mechanism that was removed',
+        );
+    }
+
+    public function testWorkflowDocumentsTheFourProofOfWorkFiles(): void
     {
         $content = $this->read('docs/workflow.md');
 
-        foreach ([
-            '## 4b. Classify Findings',
-            '## 4c. Escalate to a Gate',
-            '## 13.5. Audit the Proof of Work',
-            '## 15. Retro',
-            '## 16. Apply',
-            '## 17. Verify the Change Stuck',
-        ] as $heading) {
-            self::assertStringContainsString($heading, $content, 'docs/workflow.md must document "' . $heading . '"');
+        foreach (self::POW_FILES as $file) {
+            self::assertStringContainsString($file, $content, 'docs/workflow.md must document ' . $file);
         }
     }
 
-    public function testWorkflowStatesTheRuleOfTwo(): void
+    public function testProofOfWorkReadmeDocumentsTheFourFiles(): void
     {
-        $content = $this->read('docs/workflow.md');
+        $content = $this->read('docs/proof_of_work/README.md');
 
-        self::assertStringContainsString('rule of two', $content);
+        foreach (self::POW_FILES as $file) {
+            self::assertStringContainsString($file, $content, 'docs/proof_of_work/README.md must document ' . $file);
+        }
     }
 
-    public function testWorkflowReferencesPowMetricsForTheRetro(): void
+    /**
+     * The scripts are gone; a document still telling an agent to run them
+     * sends it to a file that does not exist, which is worse than saying
+     * nothing.
+     */
+    public function testNoProcessDocumentStillInstructsRunningTheDeletedTooling(): void
     {
-        $content = $this->read('docs/workflow.md');
-
-        self::assertStringContainsString('bin/pow-metrics.php', $content);
-        self::assertStringContainsString('--min-cycles', $content);
+        foreach (['docs/workflow.md', 'docs/proof_of_work/README.md', 'bin/README.md', 'CONTRIBUTING.md'] as $doc) {
+            self::assertDoesNotMatchRegularExpression(
+                '/(php|composer) +bin\/(pow|check-pow|pow-metrics|pow-common)/',
+                $this->read($doc),
+                $doc . ' must not tell anyone to run a script this repository no longer has',
+            );
+        }
     }
 
     private function extractNoticeSection(string $content, string $id): ?string

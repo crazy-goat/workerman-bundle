@@ -242,7 +242,13 @@ final class KnowledgeBaseTest extends TestCase
             self::assertStringContainsString('`' . $agent . '`', $content, $agent . ' is missing from the agent map');
         }
 
-        self::assertStringContainsString('.pi/agents/', $content, 'the map must say which agents are project-scoped');
+        // The map names roles, not a harness. It used to point at `.pi/agents/`,
+        // which welded the documented process to one specific tool.
+        self::assertStringNotContainsString(
+            '.pi/agents/',
+            $content,
+            'the agent map must name roles, not one harness\'s prompt directory',
+        );
         self::assertStringContainsString('review-critical` is mandatory', $content);
         self::assertStringNotContainsString(
             'append learnings after finishing',
