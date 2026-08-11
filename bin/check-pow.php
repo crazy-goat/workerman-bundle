@@ -17,43 +17,51 @@ declare(strict_types=1);
  *
  * Options:
  *   --strict           turn every "cannot determine" into a failure (CI)
+ *   --advisory         report only, always exit 0 (what `composer lint` runs)
  *   --verify-reality   recompute lint/test/coverage and compare them with the
  *                      values declared in the manifest (expensive; CI only)
  *   --pr=<n>           validate this pull request instead of looking one up
  *   --branch=<name>    validate this branch instead of the checked-out one
- *   --self-check       re-exec the copy of this script on origin/master, so a
- *                      pull request cannot weaken its own gate
  *   -h, --help         show this help
  *
  * Exit codes:
- *   0  pass, or gracefully skipped (nothing to enforce)
+ *   0  pass, gracefully skipped (nothing to enforce), or --advisory
  *   1  gate violation
  *   2  usage error
  *
  * Scope: the gate ENFORCES when the branch matches ^(fix|feat|process)/issue-\d+
  * or when the diff touches a protected path. It SKIPS — one notice, exit 0 —
- * on any other branch, when no pull request exists for the branch, and when
- * `gh` is missing, unauthenticated or offline. `--strict` turns those skips
- * into failures, because in CI "cannot determine" is indistinguishable from
- * "hidden".
+ * on a base branch (master/main), on any other branch, when no pull request
+ * exists for the branch, and when `gh` is missing, unauthenticated or offline.
+ * `--strict` turns those skips into failures, because in CI "cannot determine"
+ * is indistinguishable from "hidden".
  *
  * Severity of a finding decides who fails on it:
- *   violation     evidence of tampering — always exit 1
+ *   violation     evidence of tampering — exit 1 unless --advisory
  *   incomplete    the cycle is not finished yet — exit 1 only with --strict
  *   undetermined  a fact could not be read — exit 1 only with --strict
  *   notice        informational, never fails
- * That split is what keeps `composer lint` usable in the middle of a cycle:
+ * That split is what keeps the pre-push hook usable in the middle of a cycle:
  * the POW is legitimately incomplete until step 11.5, but a tampered comment
- * or a leaked scratch buffer is never legitimate.
+ * or a leaked scratch buffer is never legitimate. `composer lint` goes one step
+ * further and runs `--advisory`, so no state of a cycle in progress can turn
+ * the canonical entry point red (see DEC-008).
+ *
+ * The gate that judges a pull request is materialised from `origin/master` by
+ * CI (see .github/workflows/tests.yaml), so a pull request cannot weaken it.
+ * That is the single mechanism; there is deliberately no in-script equivalent,
+ * because locally `master` is whatever the developer's clone happens to hold.
  *
  * Environment:
  *   CHECK_POW_ROOT         repository root to operate on (default: parent of bin/)
  *   CHECK_POW_SKIP=1       exit 0 immediately; set automatically for the
  *                          subprocesses spawned by --verify-reality so the
  *                          `composer lint` it runs does not recurse into this
- *                          script again
+ *                          script again. IGNORED under --strict — the mode CI
+ *                          uses — so it can never disable the real gate.
  *   CHECK_POW_GH_FIXTURE   path to a JSON file replacing every `gh` call
- *                          (test hook, see tests/ProofOfWork/CheckPowScriptTest.php)
+ *                          (test hook, see tests/ProofOfWork/CheckPowScriptTest.php).
+ *                          IGNORED when CI/GITHUB_ACTIONS is truthy.
  *   CHECK_POW_LINT_CMD     shell command used by --verify-reality instead of
  *                          `composer lint`
  *   CHECK_POW_TEST_CMD     shell command used by --verify-reality instead of
@@ -62,11 +70,7 @@ declare(strict_types=1);
  *                          file the coverage comparison needs)
  */
 
-/** Branches the gate enforces on. Capture group 2 is the issue number. */
-const CPOW_ISSUE_BRANCH = '#^(fix|feat|process)/issue-(\d+)#';
-
-/** Minimum recorded rounds per profile — mirrors bin/pow.php's --finish validation. */
-const CPOW_MIN_ROUNDS = ['full' => 2, 'light' => 1];
+require_once __DIR__ . '/pow-common.php';
 
 /** Coverage is a float derived from a clover file; compare with a tolerance. */
 const CPOW_COVERAGE_TOLERANCE = 0.05;
@@ -77,16 +81,13 @@ const CPOW_MAINTAINER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 /** Agents whose runs must be accounted for in the manifest (round or aborted). */
 const CPOW_ROUND_AGENT = '#^(coder|review)#';
 
-/** Base ref candidates, most specific first. */
-const CPOW_BASE_REFS = ['origin/master', 'master', 'origin/main', 'main'];
-
 /** Files that may only change through a `process/` branch with an approval. */
-const CPOW_PROTECTED_FILES = ['bin/pow.php', 'bin/check-pow.php'];
+const CPOW_PROTECTED_FILES = ['bin/pow.php', 'bin/pow-common.php', 'bin/check-pow.php'];
 
 /** Path prefixes under the same rule. */
 const CPOW_PROTECTED_PREFIXES = ['.github/workflows/'];
 
-const CPOW_FLAGS = ['strict', 'verify-reality', 'self-check', 'help'];
+const CPOW_FLAGS = ['strict', 'advisory', 'verify-reality', 'help'];
 
 const CPOW_VALUE_OPTIONS = ['pr', 'branch'];
 
@@ -116,8 +117,6 @@ function cpowNotice(string $message): void
  */
 function cpowRun(array|string $cmd, ?string $cwd = null, bool $markChild = false): array
 {
-    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $pipes = [];
     $env = null;
 
     if ($markChild) {
@@ -126,18 +125,11 @@ function cpowRun(array|string $cmd, ?string $cwd = null, bool $markChild = false
         $env['CHECK_POW_SKIP'] = '1';
     }
 
-    $process = @proc_open($cmd, $descriptors, $pipes, $cwd, $env);
-
-    if (!is_resource($process)) {
-        return ['code' => 127, 'out' => '', 'err' => 'unable to start: ' . (is_array($cmd) ? implode(' ', $cmd) : $cmd)];
-    }
-
-    $out = (string) stream_get_contents($pipes[1]);
-    $err = (string) stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-
-    return ['code' => proc_close($process), 'out' => $out, 'err' => $err];
+    // powcRun drains both pipes concurrently. Reading one to EOF first
+    // deadlocks the moment the child fills the other pipe's 64 KB buffer, and
+    // --verify-reality runs `composer lint` and `composer test:coverage` —
+    // precisely the two commands that produce that much output.
+    return powcRun($cmd, $cwd, $env);
 }
 
 /**
@@ -145,12 +137,20 @@ function cpowRun(array|string $cmd, ?string $cwd = null, bool $markChild = false
  */
 function cpowLines(string $text): array
 {
-    return array_values(array_filter(
-        array_map('trim', explode("\n", $text)),
-        static fn(string $line): bool => $line !== '',
-    ));
+    return powcLines($text);
 }
 
+/**
+ * The repository under test.
+ *
+ * `dirname(__DIR__)` is wrong for the one invocation that matters most: CI
+ * materialises this script into $RUNNER_TEMP (so a pull request cannot supply
+ * its own gate), where the parent directory is not the checkout. The gate then
+ * found no git repository, no proof of work and no pull request, and the job
+ * failed on POW-00/POW-02 whatever the branch had actually recorded. So when
+ * the script's own parent is not a working tree, the working tree of the
+ * current directory wins.
+ */
 function cpowRoot(): string
 {
     $configured = (string) getenv('CHECK_POW_ROOT');
@@ -159,7 +159,7 @@ function cpowRoot(): string
         $configured = (string) getenv('POW_ROOT');
     }
 
-    $root = $configured !== '' ? $configured : dirname(__DIR__);
+    $root = $configured !== '' ? $configured : cpowDetectRoot();
     $real = realpath($root);
 
     if ($real === false || !is_dir($real)) {
@@ -167,6 +167,26 @@ function cpowRoot(): string
     }
 
     return $real;
+}
+
+function cpowDetectRoot(): string
+{
+    $beside = dirname(__DIR__);
+
+    if (is_dir($beside . '/.git') || is_file($beside . '/.git')) {
+        return $beside;
+    }
+
+    $result = cpowRun(['git', 'rev-parse', '--show-toplevel']);
+    $top = trim($result['out']);
+
+    if ($result['code'] === 0 && $top !== '' && is_dir($top)) {
+        cpowNotice('running from outside the repository — operating on ' . $top);
+
+        return $top;
+    }
+
+    return $beside;
 }
 
 /**
@@ -212,10 +232,10 @@ function cpowHasLevel(array $report, string $level): bool
 /**
  * @param list<array{level: string, id: string, message: string}> $report
  */
-function cpowPrintReport(array $report, bool $strict): int
+function cpowPrintReport(array $report, bool $strict, bool $advisory = false): int
 {
     $labels = [
-        'violation' => 'FAIL',
+        'violation' => $advisory ? 'WARN' : 'FAIL',
         'incomplete' => $strict ? 'FAIL' : 'PENDING',
         'undetermined' => $strict ? 'FAIL' : 'UNKNOWN',
         'notice' => 'NOTE',
@@ -235,12 +255,14 @@ function cpowPrintReport(array $report, bool $strict): int
 
     fwrite(STDOUT, sprintf(
         "check-pow: %s (%d finding(s), %s mode)\n",
-        $failed ? 'FAILED' : 'ok',
+        $failed && !$advisory ? 'FAILED' : 'ok',
         count($report),
-        $strict ? 'strict' : 'advisory',
+        $advisory ? 'report-only' : ($strict ? 'strict' : 'advisory'),
     ));
 
-    return $failed ? 1 : 0;
+    // --advisory never fails: it is what `composer lint` runs, and lint must
+    // stay green for everyone who is not in the middle of a cycle (DEC-008).
+    return $failed && !$advisory ? 1 : 0;
 }
 
 // --------------------------------------------------------------------------
@@ -256,7 +278,7 @@ function cpowCurrentBranch(string $root): string
 
 function cpowBaseRef(string $root): ?string
 {
-    foreach (CPOW_BASE_REFS as $candidate) {
+    foreach (POWC_BASE_REFS as $candidate) {
         if (cpowRun(['git', 'rev-parse', '--verify', '--quiet', $candidate], $root)['code'] === 0) {
             return $candidate;
         }
@@ -266,15 +288,55 @@ function cpowBaseRef(string $root): ?string
 }
 
 /**
- * @return list<string>
+ * The files this branch adds or changes on top of the base.
+ *
+ * git's exit code is part of the answer: `git diff <base>...HEAD` fails with
+ * "fatal: no merge base" (exit 128, empty stdout) in a shallow clone, and
+ * silently returning an empty list there turned POW-04 and POW-10 off without
+ * a word — exactly the "cannot determine is indistinguishable from hidden"
+ * case --strict exists to catch.
+ *
+ * Untracked-but-not-ignored files are unioned in: a brand-new protected file
+ * is otherwise invisible to the gate until it is committed.
+ *
+ * @return array{ok: bool, reason: string, files: list<string>}
  */
 function cpowChangedFiles(string $root, ?string $base): array
 {
     if ($base === null) {
-        return [];
+        return ['ok' => false, 'reason' => 'no base ref (origin/master, master, origin/main, main)', 'files' => []];
     }
 
-    return cpowLines(cpowRun(['git', 'diff', '--name-only', $base . '...HEAD'], $root)['out']);
+    $diff = cpowRun(['git', 'diff', '--name-only', $base . '...HEAD'], $root);
+
+    if ($diff['code'] !== 0) {
+        return [
+            'ok' => false,
+            'reason' => 'git diff ' . $base . '...HEAD exited ' . $diff['code'] . ': ' . trim($diff['err']),
+            'files' => [],
+        ];
+    }
+
+    $files = cpowLines($diff['out']);
+    $untracked = cpowRun(['git', 'ls-files', '--others', '--exclude-standard'], $root);
+
+    if ($untracked['code'] !== 0) {
+        return [
+            'ok' => false,
+            'reason' => 'git ls-files --others exited ' . $untracked['code'] . ': ' . trim($untracked['err']),
+            'files' => $files,
+        ];
+    }
+
+    foreach (cpowLines($untracked['out']) as $file) {
+        if (!in_array($file, $files, true)) {
+            $files[] = $file;
+        }
+    }
+
+    sort($files);
+
+    return ['ok' => true, 'reason' => '', 'files' => $files];
 }
 
 function cpowShow(string $root, string $ref, string $path): ?string
@@ -288,12 +350,39 @@ function cpowShow(string $root, string $ref, string $path): ?string
 // gh (or its fixture)
 // --------------------------------------------------------------------------
 
+/** True for anything but unset, "", "0", "false" and "no". */
+function cpowEnvTruthy(string $name): bool
+{
+    $value = strtolower(trim((string) getenv($name)));
+
+    return !in_array($value, ['', '0', 'false', 'no'], true);
+}
+
+/**
+ * Latches whether the `gh` fixture kill switch is honoured. Set once by
+ * cpowMain() before anything can read the fixture.
+ */
+function cpowFixtureDisabled(?bool $set = null): bool
+{
+    static $disabled = false;
+
+    if ($set !== null) {
+        $disabled = $set;
+    }
+
+    return $disabled;
+}
+
 /**
  * @return array<string, mixed>|null
  */
 function cpowFixture(): ?array
 {
     static $fixture = false;
+
+    if (cpowFixtureDisabled()) {
+        return null;
+    }
 
     if ($fixture !== false) {
         /** @var array<string, mixed>|null $fixture */
@@ -369,22 +458,33 @@ function cpowResolvePr(string $root, ?int $number, string $branch): array
     }
 
     if ($number === null) {
-        $list = cpowGh(['pr', 'list', '--head', $branch, '--state', 'all', '--limit', '1', '--json', 'number'], $root);
+        // Open first: a reused branch name can otherwise resolve to a closed
+        // pull request from a previous cycle, and the gate would then validate
+        // that PR's comments instead of this one's.
+        foreach (['open', 'all'] as $state) {
+            $list = cpowGh(['pr', 'list', '--head', $branch, '--state', $state, '--limit', '1', '--json', 'number'], $root);
 
-        if ($list['code'] !== 0) {
-            return ['status' => 'unavailable', 'pr' => null, 'reason' => 'gh pr list failed: ' . trim($list['err'])];
+            if ($list['code'] !== 0) {
+                return ['status' => 'unavailable', 'pr' => null, 'reason' => 'gh pr list failed: ' . trim($list['err'])];
+            }
+
+            $decoded = json_decode(trim($list['out']) === '' ? '[]' : $list['out'], true);
+
+            if (!is_array($decoded) || $decoded === []) {
+                continue;
+            }
+
+            $first = reset($decoded);
+            $candidate = is_array($first) && isset($first['number']) ? (int) $first['number'] : 0;
+
+            if ($candidate > 0) {
+                $number = $candidate;
+
+                break;
+            }
         }
 
-        $decoded = json_decode(trim($list['out']) === '' ? '[]' : $list['out'], true);
-
-        if (!is_array($decoded) || $decoded === []) {
-            return ['status' => 'none', 'pr' => null, 'reason' => 'no pull request for branch ' . $branch];
-        }
-
-        $first = reset($decoded);
-        $number = is_array($first) && isset($first['number']) ? (int) $first['number'] : null;
-
-        if ($number === null || $number <= 0) {
+        if ($number === null) {
             return ['status' => 'none', 'pr' => null, 'reason' => 'no pull request for branch ' . $branch];
         }
     }
@@ -467,6 +567,41 @@ function cpowLabels(array $pr): array
 }
 
 /**
+ * Labels of an issue, for re-deriving the profile the manifest claims.
+ *
+ * @return array{status: 'ok'|'unavailable', labels: list<string>}
+ */
+function cpowIssueLabels(string $root, int $issue): array
+{
+    $fixture = cpowFixture();
+
+    if ($fixture !== null) {
+        $issues = is_array($fixture['issues'] ?? null) ? $fixture['issues'] : [];
+        $entry = $issues[(string) $issue] ?? null;
+
+        return is_array($entry)
+            ? ['status' => 'ok', 'labels' => cpowLabels($entry)]
+            : ['status' => 'unavailable', 'labels' => []];
+    }
+
+    if (!cpowGhAvailable($root)) {
+        return ['status' => 'unavailable', 'labels' => []];
+    }
+
+    $result = cpowGh(['issue', 'view', (string) $issue, '--json', 'labels'], $root);
+
+    if ($result['code'] !== 0) {
+        return ['status' => 'unavailable', 'labels' => []];
+    }
+
+    $decoded = cpowDecode($result['out']);
+
+    return $decoded === null
+        ? ['status' => 'unavailable', 'labels' => []]
+        : ['status' => 'ok', 'labels' => cpowLabels($decoded)];
+}
+
+/**
  * @param array<string, mixed> $pr
  *
  * @return list<int>
@@ -490,12 +625,21 @@ function cpowClosingIssues(array $pr): array
 }
 
 /**
- * An approval "on record" is a submitted APPROVED review by someone with write
- * access. A comment saying "looks good" is not an approval.
+ * The most recent approval "on record": a submitted APPROVED review by someone
+ * with write access. A comment saying "looks good" is not an approval.
+ *
+ * An absent or non-string `authorAssociation` means "not a maintainer". It used
+ * to mean "assume the best", so any APPROVED review — a drive-by from a fork —
+ * authorised rewriting the gate.
+ *
+ * `submittedAt` is read from the review object itself; `gh pr view --json`
+ * has no top-level `submittedAt` field, the timestamp ships inside `reviews`.
  *
  * @param array<string, mixed> $pr
+ *
+ * @return array{login: string, submitted_at: string}|null
  */
-function cpowMaintainerApproval(array $pr): ?string
+function cpowMaintainerApproval(array $pr): ?array
 {
     $reviews = $pr['reviews'] ?? [];
 
@@ -503,24 +647,56 @@ function cpowMaintainerApproval(array $pr): ?string
         return null;
     }
 
+    $latest = null;
+
     foreach ($reviews as $review) {
         if (!is_array($review) || ($review['state'] ?? null) !== 'APPROVED') {
             continue;
         }
 
-        $association = is_string($review['authorAssociation'] ?? null) ? $review['authorAssociation'] : null;
-
-        if ($association !== null && !in_array($association, CPOW_MAINTAINER_ASSOCIATIONS, true)) {
+        if (!is_string($review['authorAssociation'] ?? null)
+            || !in_array($review['authorAssociation'], CPOW_MAINTAINER_ASSOCIATIONS, true)) {
             continue;
         }
 
         $author = $review['author'] ?? null;
-        $login = is_array($author) && is_string($author['login'] ?? null) ? $author['login'] : 'unknown';
+        $submitted = is_string($review['submittedAt'] ?? null) ? $review['submittedAt'] : '';
+        $approval = [
+            'login' => is_array($author) && is_string($author['login'] ?? null) ? $author['login'] : 'unknown',
+            'submitted_at' => $submitted,
+        ];
 
-        return $login;
+        if ($latest === null || strtotime($submitted) > strtotime($latest['submitted_at'])) {
+            $latest = $approval;
+        }
     }
 
-    return null;
+    return $latest;
+}
+
+/**
+ * Author date of the newest commit touching one of the protected paths, so a
+ * stale approval cannot authorise a later rewrite of the gate.
+ *
+ * @param list<string> $paths
+ *
+ * @return array{ok: bool, timestamp: int|null}
+ */
+function cpowNewestCommitDate(string $root, ?string $base, array $paths): array
+{
+    if ($base === null || $paths === []) {
+        return ['ok' => false, 'timestamp' => null];
+    }
+
+    $result = cpowRun(['git', 'log', '-1', '--format=%at', $base . '..HEAD', '--', ...$paths], $root);
+
+    if ($result['code'] !== 0) {
+        return ['ok' => false, 'timestamp' => null];
+    }
+
+    $stamp = trim($result['out']);
+
+    return ['ok' => true, 'timestamp' => $stamp === '' ? null : (int) $stamp];
 }
 
 // --------------------------------------------------------------------------
@@ -569,55 +745,15 @@ function cpowManifest(string $dir): ?array
 }
 
 /**
- * Effective (last-row) status per finding ID — the same rule bin/pow.php uses.
+ * The ledger, parsed by exactly the parser bin/pow.php writes it with.
  *
- * @return array<string, string>
+ * @return array{state: array<string, array{first_round: int, status: string, loc: string, desc: string, severity: string}>, errors: list<string>}
  */
-function cpowLedgerState(string $ledger): array
+function cpowLedger(string $ledger): array
 {
-    $state = [];
+    $parsed = powcParseLedger($ledger);
 
-    foreach (explode("\n", $ledger) as $line) {
-        $line = trim($line);
-
-        if (!str_starts_with($line, '|')) {
-            continue;
-        }
-
-        $cells = preg_split('/(?<!\\\\)\|/', $line);
-
-        if ($cells === false || count($cells) < 9) {
-            continue;
-        }
-
-        $cells = array_map('trim', array_slice($cells, 1, 7));
-
-        if ($cells[0] === 'ID' || $cells[0] === '' || str_starts_with($cells[0], '---')) {
-            continue;
-        }
-
-        $state[$cells[0]] = $cells[5];
-    }
-
-    return $state;
-}
-
-/**
- * @return list<string>
- */
-function cpowOpenIds(string $ledger): array
-{
-    $open = [];
-
-    foreach (cpowLedgerState($ledger) as $id => $status) {
-        if ($status === 'open') {
-            $open[] = (string) $id;
-        }
-    }
-
-    natsort($open);
-
-    return array_values($open);
+    return ['state' => powcLedgerState($parsed['rows']), 'errors' => $parsed['errors']];
 }
 
 /**
@@ -660,14 +796,19 @@ function cpowCoverageOf(string $cloverFile): ?float
 /**
  * POW-10 — protected paths.
  *
- * A diff touching bin/pow.php, bin/check-pow.php, .github/workflows/* or the
- * `scripts` block of composer.json rewrites the gate itself, so it needs the
- * `process/` branch prefix plus a maintainer approval.
+ * A diff touching bin/pow.php, bin/pow-common.php, bin/check-pow.php,
+ * .github/workflows/* or the `scripts` block of composer.json rewrites the gate
+ * itself, so it needs the `process/` branch prefix plus a maintainer approval.
+ *
+ * Detection only — the two reporting halves run after the scope gate, so the
+ * gate never speaks about a branch it has no business judging.
  *
  * @param list<string>                                          $files
  * @param list<array{level: string, id: string, message: string}> $report
+ *
+ * @return list<string> the protected paths this diff touches
  */
-function cpowCheckProtectedPaths(string $root, ?string $base, array $files, string $branch, array &$report): bool
+function cpowProtectedPaths(string $root, ?string $base, array $files, array &$report): array
 {
     $touched = [];
 
@@ -691,10 +832,17 @@ function cpowCheckProtectedPaths(string $root, ?string $base, array $files, stri
         }
     }
 
-    if ($touched === []) {
-        return false;
-    }
+    return $touched;
+}
 
+/**
+ * POW-10, branch half.
+ *
+ * @param list<string>                                          $touched
+ * @param list<array{level: string, id: string, message: string}> $report
+ */
+function cpowCheckProtectedBranch(array $touched, string $branch, array &$report): void
+{
     if (!str_starts_with($branch, 'process/')) {
         cpowAdd($report, 'violation', 'POW-10', sprintf(
             'the diff touches protected path(s) %s but the branch is "%s" — gate and tooling changes '
@@ -702,11 +850,67 @@ function cpowCheckProtectedPaths(string $root, ?string $base, array $files, stri
             implode(', ', $touched),
             $branch,
         ));
-    } else {
-        cpowAdd($report, 'notice', 'POW-10', 'protected path(s) touched from a process/ branch: ' . implode(', ', $touched));
+
+        return;
     }
 
-    return true;
+    cpowAdd($report, 'notice', 'POW-10', 'protected path(s) touched from a process/ branch: ' . implode(', ', $touched));
+}
+
+/**
+ * POW-10, approval half. An approval submitted before the newest commit
+ * touching a protected path did not see that commit, so it cannot authorise it.
+ *
+ * @param array<string, mixed>                                  $pr
+ * @param list<string>                                          $touched
+ * @param list<array{level: string, id: string, message: string}> $report
+ */
+function cpowCheckProtectedApproval(string $root, ?string $base, array $pr, int $prNumber, array $touched, bool $strict, array &$report): void
+{
+    $approval = cpowMaintainerApproval($pr);
+
+    if ($approval === null) {
+        cpowAdd($report, $strict ? 'violation' : 'incomplete', 'POW-10', sprintf(
+            'PR #%d touches a protected path but carries no maintainer approval',
+            $prNumber,
+        ));
+
+        return;
+    }
+
+    $paths = array_values(array_filter($touched, static fn(string $path): bool => !str_contains($path, ' ')));
+    $newest = cpowNewestCommitDate($root, $base, $paths);
+    $approvedAt = $approval['submitted_at'] === '' ? false : strtotime($approval['submitted_at']);
+
+    if (!$newest['ok'] || $newest['timestamp'] === null) {
+        cpowAdd($report, 'notice', 'POW-10', 'protected-path change approved by ' . $approval['login']
+            . ' (the date of the newest protected-path commit could not be read, so the approval was not aged)');
+
+        return;
+    }
+
+    if ($approvedAt === false) {
+        cpowAdd($report, $strict ? 'violation' : 'incomplete', 'POW-10', sprintf(
+            'the approval by %s carries no submittedAt, so it cannot be shown to postdate the protected-path change',
+            $approval['login'],
+        ));
+
+        return;
+    }
+
+    if ($approvedAt < $newest['timestamp']) {
+        cpowAdd($report, 'violation', 'POW-10', sprintf(
+            'the approval by %s was submitted at %s, before the newest protected-path commit (%s) — a stale '
+            . 'approval cannot authorise a later rewrite of the gate; re-request the review',
+            $approval['login'],
+            $approval['submitted_at'],
+            gmdate('Y-m-d\TH:i:s\Z', $newest['timestamp']),
+        ));
+
+        return;
+    }
+
+    cpowAdd($report, 'notice', 'POW-10', 'protected-path change approved by ' . $approval['login'] . ' at ' . $approval['submitted_at']);
 }
 
 /**
@@ -762,56 +966,137 @@ function cpowCheckScratchBuffer(array $files, array &$report): void
 }
 
 /**
- * POW-03 — the manifest must be complete for its profile.
+ * POW-02b — the manifest identifies THIS cycle, in THIS schema.
+ *
+ * Without this the whole proof of work of an unrelated, already-merged issue
+ * can be replayed: rename its directory to match the new issue number and every
+ * other check still passes, because the comments it points at are real and
+ * hash correctly. The manifest's own `issue`/`branch` are what bind it.
  *
  * @param array<string, mixed>                                  $manifest
  * @param list<array{level: string, id: string, message: string}> $report
  */
-function cpowCheckManifest(string $dir, array $manifest, array &$report): void
+function cpowCheckManifestIdentity(array $manifest, int $issue, string $branch, string $relativeDir, array &$report): void
 {
-    $profile = is_string($manifest['profile'] ?? null) ? $manifest['profile'] : 'full';
-    $minimum = CPOW_MIN_ROUNDS[$profile] ?? 2;
-    $rounds = is_array($manifest['rounds'] ?? null) ? $manifest['rounds'] : [];
+    $version = $manifest['pow_version'] ?? null;
 
-    if (count($rounds) < $minimum) {
-        cpowAdd($report, 'incomplete', 'POW-03', sprintf(
-            'manifest incomplete: %d round(s) recorded, the %s profile needs at least %d',
-            count($rounds),
-            $profile,
-            $minimum,
+    if (!is_int($version)) {
+        cpowAdd($report, 'violation', 'POW-02', $relativeDir . '/manifest.json declares no pow_version (this gate reads version ' . POWC_VERSION . ')');
+    } elseif ($version !== POWC_VERSION) {
+        cpowAdd($report, 'violation', 'POW-02', sprintf(
+            '%s/manifest.json declares pow_version %d, this gate reads version %d',
+            $relativeDir,
+            $version,
+            POWC_VERSION,
         ));
     }
+
+    $declaredIssue = $manifest['issue'] ?? null;
+
+    if (!is_int($declaredIssue) || $declaredIssue !== $issue) {
+        cpowAdd($report, 'violation', 'POW-02', sprintf(
+            '%s/manifest.json records issue %s but this pull request closes #%d — a proof of work from another '
+            . 'issue was replayed (renaming the directory does not rebind it)',
+            $relativeDir,
+            is_int($declaredIssue) ? '#' . $declaredIssue : var_export($declaredIssue, true),
+            $issue,
+        ));
+    }
+
+    $declaredBranch = $manifest['branch'] ?? null;
+
+    if (!is_string($declaredBranch) || $declaredBranch !== $branch) {
+        cpowAdd($report, 'violation', 'POW-02', sprintf(
+            '%s/manifest.json records branch %s but the branch under test is "%s"',
+            $relativeDir,
+            is_string($declaredBranch) ? '"' . $declaredBranch . '"' : var_export($declaredBranch, true),
+            $branch,
+        ));
+    }
+}
+
+/**
+ * POW-03 — the manifest must be complete for the profile it is entitled to.
+ *
+ * The profile is re-derived here rather than read: `bin/pow.php` works hard to
+ * make it unfakeable, and trusting `manifest.profile` threw that away — editing
+ * one string dropped the minimum round count from 2 to 1.
+ *
+ * @param array<string, mixed>                                  $manifest
+ * @param list<array{level: string, id: string, message: string}> $report
+ */
+function cpowCheckManifest(string $root, string $dir, array $manifest, int $issue, string $branch, array &$report): void
+{
+    $declared = is_string($manifest['profile'] ?? null) ? $manifest['profile'] : '';
+    $profile = cpowDeriveProfile($root, $issue, $branch, $report);
+
+    if ($declared !== $profile) {
+        cpowAdd($report, 'violation', 'POW-03', sprintf(
+            'manifest declares profile "%s" but branch "%s" and the labels of issue #%d entitle it to "%s" — '
+            . 'the profile decides the minimum number of rounds and is not the orchestrator\'s to choose',
+            $declared === '' ? '(none)' : $declared,
+            $branch,
+            $issue,
+            $profile,
+        ));
+    }
+
+    $rounds = is_array($manifest['rounds'] ?? null) ? $manifest['rounds'] : [];
 
     $ledgerFile = $dir . '/findings.md';
     $ledger = is_file($ledgerFile) ? (string) file_get_contents($ledgerFile) : '';
+    $parsed = cpowLedger($ledger);
 
-    if ($ledger === '') {
-        cpowAdd($report, 'incomplete', 'POW-03', 'manifest incomplete: findings.md is missing or empty');
+    foreach ($parsed['errors'] as $error) {
+        cpowAdd($report, 'violation', 'POW-03', 'findings.md is malformed — a row nobody can read is a finding nobody sees: ' . $error);
     }
 
-    $open = cpowOpenIds($ledger);
-    $verdict = is_string($manifest['verdict'] ?? null) ? $manifest['verdict'] : null;
-    $escalation = is_file($dir . '/escalation.md') && trim((string) file_get_contents($dir . '/escalation.md')) !== '';
+    $escalationFile = $dir . '/escalation.md';
+    $escalation = is_file($escalationFile) ? (string) file_get_contents($escalationFile) : '';
 
-    if ($open !== []) {
-        cpowAdd($report, 'incomplete', 'POW-03', sprintf(
-            'manifest incomplete: the ledger still has open finding(s) %s at finish time',
-            implode(', ', $open),
+    // The same completeness rule bin/pow.php --finish refuses to publish
+    // without, so the gate can never accept a cycle the recorder rejected.
+    $problems = powcCompletenessProblems(
+        $profile,
+        count($rounds),
+        trim($ledger) !== '',
+        is_int($manifest['lint_exit'] ?? null) ? $manifest['lint_exit'] : null,
+        is_int($manifest['test_exit'] ?? null) ? $manifest['test_exit'] : null,
+        is_string($manifest['verdict'] ?? null) ? $manifest['verdict'] : null,
+        $escalation,
+        powcOpenIds($parsed['state']),
+    );
+
+    foreach ($problems as $problem) {
+        cpowAdd($report, 'incomplete', 'POW-03', 'manifest incomplete: ' . $problem);
+    }
+}
+
+/**
+ * The profile a cycle is entitled to, derived from facts the orchestrator does
+ * not own: `light` only from a light branch prefix on an issue that carries no
+ * `process` label. When `gh` cannot answer, `full` — the strict choice — wins.
+ *
+ * @param list<array{level: string, id: string, message: string}> $report
+ */
+function cpowDeriveProfile(string $root, int $issue, string $branch, array &$report): string
+{
+    if (powcProfileFromPrefix($branch) !== 'light') {
+        return 'full';
+    }
+
+    $labels = cpowIssueLabels($root, $issue);
+
+    if ($labels['status'] !== 'ok') {
+        cpowAdd($report, 'notice', 'POW-03', sprintf(
+            'the labels of issue #%d could not be read — assuming the full profile',
+            $issue,
         ));
+
+        return 'full';
     }
 
-    if ($verdict === null) {
-        cpowAdd($report, 'incomplete', 'POW-03', 'manifest incomplete: no verdict recorded and no escalation.md');
-
-        return;
-    }
-
-    if ($verdict !== 'CLEAN' && !$escalation) {
-        cpowAdd($report, 'incomplete', 'POW-03', sprintf(
-            'manifest incomplete: verdict %s requires a non-empty escalation.md',
-            $verdict,
-        ));
-    }
+    return in_array('process', $labels['labels'], true) ? 'full' : 'light';
 }
 
 /**
@@ -820,7 +1105,7 @@ function cpowCheckManifest(string $dir, array $manifest, array &$report): void
  * @param array<string, mixed>                                  $manifest
  * @param list<array{level: string, id: string, message: string}> $report
  */
-function cpowCheckCommentChain(string $root, array $manifest, array &$report): void
+function cpowCheckCommentChain(string $root, array $manifest, int $prNumber, array &$report): void
 {
     $rounds = is_array($manifest['rounds'] ?? null) ? array_values($manifest['rounds']) : [];
 
@@ -903,6 +1188,24 @@ function cpowCheckCommentChain(string $root, array $manifest, array &$report): v
         $remoteCreated = is_string($comment['created_at'] ?? null) ? $comment['created_at'] : '';
         $remoteUpdated = is_string($comment['updated_at'] ?? null) ? $comment['updated_at'] : '';
 
+        // The comment must live on THIS pull request. Without this binding a
+        // whole proof of work can be lifted from a merged issue: its comments
+        // are real, so every hash and timestamp still checks out. `issue_url`
+        // rides along in the REST payload, so it costs no extra API call.
+        $issueUrl = is_string($comment['issue_url'] ?? null) ? $comment['issue_url'] : '';
+
+        if ($issueUrl === '') {
+            cpowAdd($report, 'undetermined', 'POW-05', $label . ': comment ' . $id . ' carries no issue_url — it cannot be bound to PR #' . $prNumber);
+        } elseif (!str_ends_with(rtrim($issueUrl, '/'), '/issues/' . $prNumber)) {
+            cpowAdd($report, 'violation', 'POW-05', sprintf(
+                '%s: comment %d belongs to %s, not to PR #%d — this proof of work was replayed from another pull request',
+                $label,
+                $id,
+                $issueUrl,
+                $prNumber,
+            ));
+        }
+
         // GitHub may hand the body back with CRLF line endings; normalising is
         // the only tolerance allowed — every other byte must match.
         $sha = hash('sha256', $body);
@@ -955,9 +1258,34 @@ function cpowCheckLedgerHistory(string $root, ?string $base, string $relativeDir
 
     $path = $relativeDir . '/findings.md';
     $log = cpowRun(['git', 'log', '--format=%H', '--reverse', $base . '..HEAD', '--', $path], $root);
+
+    if ($log['code'] !== 0) {
+        cpowAdd($report, 'undetermined', 'POW-06', sprintf(
+            'git log %s..HEAD -- %s exited %d: %s',
+            $base,
+            $path,
+            $log['code'],
+            trim($log['err']),
+        ));
+
+        return;
+    }
+
     $commits = cpowLines($log['out']);
 
     if (count($commits) < 2) {
+        // The documented flow commits findings.md once, at step 11.5, so this
+        // is the normal case and POW-06 has nothing to compare. Say so: an
+        // inert check that looks like a passing check is worse than no check.
+        // The append-only property is anchored by POW-05's comment chain, which
+        // does not depend on how many commits the ledger arrived in.
+        cpowAdd($report, 'notice', 'POW-06', sprintf(
+            '%s has %d commit(s) on this branch — the append-only comparison needs two, so it did not run '
+            . '(the ledger\'s real anchor is the POW-05 comment chain)',
+            $path,
+            count($commits),
+        ));
+
         return;
     }
 
@@ -997,7 +1325,12 @@ function cpowCheckReRolls(string $root, ?string $base, array $manifest, array &$
     $artifacts = $root . '/.pi-subagents/artifacts';
 
     if (!is_dir($artifacts)) {
-        cpowAdd($report, 'notice', 'POW-07', 'no .pi-subagents/artifacts/ here (CI) — the re-roll check is skipped');
+        // `.pi-subagents/` is gitignored, so it never exists on a runner. This
+        // check is therefore a LOCAL advisory one, not a CI gate — see
+        // bin/README.md. Saying "skipped" is the honest report; pretending it
+        // passed would be the lie.
+        cpowAdd($report, 'notice', 'POW-07', 'no .pi-subagents/artifacts/ here (always the case in CI) — '
+            . 'the re-roll check is local-only and did not run');
 
         return;
     }
@@ -1008,7 +1341,23 @@ function cpowCheckReRolls(string $root, ?string $base, array $manifest, array &$
         return;
     }
 
-    $stamps = cpowLines(cpowRun(['git', 'log', '--format=%ct', '--reverse', $base . '..HEAD'], $root)['out']);
+    // %at (author date), not %ct (committer date): `git rebase` rewrites the
+    // committer date to now, and docs/workflow.md documents rebasing as
+    // routine, so a rebase silently emptied the window.
+    $log = cpowRun(['git', 'log', '--format=%at', '--reverse', $base . '..HEAD'], $root);
+
+    if ($log['code'] !== 0) {
+        cpowAdd($report, 'undetermined', 'POW-07', sprintf(
+            'git log %s..HEAD exited %d: %s',
+            $base,
+            $log['code'],
+            trim($log['err']),
+        ));
+
+        return;
+    }
+
+    $stamps = cpowLines($log['out']);
 
     if ($stamps === []) {
         cpowAdd($report, 'notice', 'POW-07', 'no commits on the branch yet — the re-roll check is skipped');
@@ -1016,7 +1365,9 @@ function cpowCheckReRolls(string $root, ?string $base, array $manifest, array &$
         return;
     }
 
-    $windowStart = (int) $stamps[0];
+    // The earliest author date on the branch, not the first entry: a cherry-pick
+    // can leave the list unsorted, and the earlier window is the stricter one.
+    $windowStart = min(array_map('intval', $stamps));
     $known = [];
 
     foreach ((is_array($manifest['rounds'] ?? null) ? $manifest['rounds'] : []) as $round) {
@@ -1160,14 +1511,19 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
     fwrite(STDERR, "check-pow: a bypass is a documented exception, never a silent one.\n");
     fwrite(STDERR, str_repeat('!', 72) . "\n");
 
-    $approver = cpowMaintainerApproval($pr);
+    $approval = cpowMaintainerApproval($pr);
 
-    if ($approver === null) {
+    if ($approval === null) {
         cpowAdd($report, 'violation', 'POW-09', 'the `no-pow` label requires a maintainer approval on the pull request — there is none on record');
     } else {
-        cpowAdd($report, 'notice', 'POW-09', 'bypass approved by ' . $approver);
+        cpowAdd($report, 'notice', 'POW-09', 'bypass approved by ' . $approval['login']);
     }
 
+    // TODO(#686 phase 4): docs/process-changelog.md is created by phase 4 of
+    // issue #686 together with its cycle-zero entry. Until that lands the file
+    // does not exist, so this branch degrades the hatch to `undetermined` under
+    // --strict — i.e. a `no-pow` PR fails CI rather than passing silently,
+    // which is the right way round for a sequencing gap.
     $changelog = $root . '/docs/process-changelog.md';
 
     if (!is_file($changelog)) {
@@ -1177,100 +1533,36 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
     }
 
     $contents = (string) file_get_contents($changelog);
-    $needles = ['#' . $number];
+    $numbers = [$number];
 
     foreach ($issues as $issue) {
-        $needles[] = '#' . $issue;
+        $numbers[] = $issue;
     }
 
-    foreach ($needles as $needle) {
-        if (str_contains($contents, $needle)) {
-            cpowAdd($report, 'notice', 'POW-09', 'bypass recorded in docs/process-changelog.md (' . $needle . ')');
+    foreach (explode("\n", $contents) as $line) {
+        // "no-pow" on the line as well as the number: a changelog that happens
+        // to mention #700 for an unrelated reason is not a bypass record. The
+        // number is matched on a word boundary, so #700 no longer matches
+        // #7001, and a line saying "not #700" no longer satisfies the check.
+        if (!str_contains($line, 'no-pow')) {
+            continue;
+        }
 
-            return true;
+        foreach ($numbers as $candidate) {
+            if (preg_match('/(?<![0-9])#' . $candidate . '(?![0-9])/', $line) === 1) {
+                cpowAdd($report, 'notice', 'POW-09', 'bypass recorded in docs/process-changelog.md (#' . $candidate . ')');
+
+                return true;
+            }
         }
     }
 
     cpowAdd($report, 'violation', 'POW-09', sprintf(
-        'the `no-pow` bypass is not recorded in docs/process-changelog.md — add an entry naming %s',
-        implode(' or ', $needles),
+        'the `no-pow` bypass is not recorded in docs/process-changelog.md — add a line naming `no-pow` and %s',
+        implode(' or ', array_map(static fn(int $n): string => '#' . $n, $numbers)),
     ));
 
     return true;
-}
-
-// --------------------------------------------------------------------------
-// Bootstrap: run the master copy of this script
-// --------------------------------------------------------------------------
-
-/**
- * Re-execs `origin/master:bin/check-pow.php`, so a pull request cannot weaken
- * the gate that judges it. Falls back — loudly — to the in-tree copy when
- * master does not carry the script yet (the pull request introducing it).
- *
- * @param list<string> $argv
- */
-function cpowBootstrap(string $root, array $argv): void
-{
-    if ((string) getenv('CHECK_POW_BOOTSTRAPPED') === '1') {
-        return;
-    }
-
-    foreach (['origin/master', 'master'] as $ref) {
-        $source = cpowShow($root, $ref, 'bin/check-pow.php');
-
-        if ($source === null || trim($source) === '') {
-            continue;
-        }
-
-        $tmp = tempnam(sys_get_temp_dir(), 'check-pow-');
-
-        if ($tmp === false || file_put_contents($tmp, $source) === false) {
-            cpowNotice('unable to materialise ' . $ref . ':bin/check-pow.php — using the in-tree copy');
-
-            return;
-        }
-
-        cpowNotice('running the ' . $ref . ' copy of bin/check-pow.php (a PR cannot weaken its own gate)');
-
-        $forwarded = [];
-
-        foreach (array_slice($argv, 1) as $arg) {
-            if ($arg !== '--self-check') {
-                $forwarded[] = $arg;
-            }
-        }
-
-        /** @var array<string, string> $env */
-        $env = getenv();
-        $env['CHECK_POW_BOOTSTRAPPED'] = '1';
-
-        $process = @proc_open(
-            [PHP_BINARY, $tmp, ...$forwarded],
-            [1 => STDOUT, 2 => STDERR],
-            $pipes,
-            $root,
-            $env,
-        );
-
-        if (!is_resource($process)) {
-            @unlink($tmp);
-            cpowNotice('unable to run the ' . $ref . ' copy — using the in-tree copy');
-
-            return;
-        }
-
-        $code = proc_close($process);
-        @unlink($tmp);
-
-        exit($code);
-    }
-
-    fwrite(STDERR, str_repeat('!', 72) . "\n");
-    cpowNotice('origin/master has no bin/check-pow.php yet — FALLING BACK to the in-tree copy.');
-    cpowNotice('this pull request is judged by its own version of the gate; that is only');
-    cpowNotice('acceptable for the change that introduces the gate.');
-    fwrite(STDERR, str_repeat('!', 72) . "\n");
 }
 
 // --------------------------------------------------------------------------
@@ -1286,15 +1578,19 @@ function cpowUsage(): void
 
         Options:
           --strict           "cannot determine" becomes a failure (CI uses this)
+          --advisory         report only, always exit 0 (what `composer lint` runs)
           --verify-reality   recompute lint/test/coverage and compare them with the
                              values declared in the manifest (expensive)
           --pr=<n>           validate this pull request instead of looking one up
           --branch=<name>    validate this branch instead of the checked-out one
-          --self-check       re-exec the origin/master copy of this script first
           -h, --help         show this help
 
         The gate enforces on ^(fix|feat|process)/issue-<N> branches and on any diff
         touching a protected path; everything else is a one-line skip with exit 0.
+
+        CI runs the origin/master copy of this script (see
+        .github/workflows/tests.yaml), so a pull request cannot weaken the gate
+        that judges it.
 
         Exit codes: 0 pass or skip, 1 gate violation, 2 usage error.
 
@@ -1304,11 +1600,11 @@ function cpowUsage(): void
 /**
  * @param list<string> $argv
  *
- * @return array{strict: bool, verify-reality: bool, self-check: bool, pr: int|null, branch: string|null}
+ * @return array{strict: bool, advisory: bool, verify-reality: bool, pr: int|null, branch: string|null}
  */
 function cpowParseArgs(array $argv): array
 {
-    $options = ['strict' => false, 'verify-reality' => false, 'self-check' => false, 'pr' => null, 'branch' => null];
+    $options = ['strict' => false, 'advisory' => false, 'verify-reality' => false, 'pr' => null, 'branch' => null];
 
     foreach (array_slice($argv, 1) as $arg) {
         if ($arg === '-h' || $arg === '--help') {
@@ -1355,29 +1651,52 @@ function cpowParseArgs(array $argv): array
         $options['branch'] = $value;
     }
 
-    /** @var array{strict: bool, verify-reality: bool, self-check: bool, pr: int|null, branch: string|null} $options */
+    if ($options['strict'] === true && $options['advisory'] === true) {
+        cpowFail('--strict and --advisory are contradictory');
+    }
+
+    /** @var array{strict: bool, advisory: bool, verify-reality: bool, pr: int|null, branch: string|null} $options */
     return $options;
 }
 
 /**
- * @param array{strict: bool, verify-reality: bool, self-check: bool, pr: int|null, branch: string|null} $options
- * @param list<string>                                                                                   $argv
+ * @param array{strict: bool, advisory: bool, verify-reality: bool, pr: int|null, branch: string|null} $options
  */
-function cpowMain(array $options, array $argv): int
+function cpowMain(array $options): int
 {
-    if ((string) getenv('CHECK_POW_SKIP') === '1') {
+    $strict = $options['strict'];
+    $advisory = $options['advisory'];
+
+    /** @var list<array{level: string, id: string, message: string}> $report */
+    $report = [];
+
+    // CHECK_POW_SKIP exists for one reason: --verify-reality spawns
+    // `composer lint`, which would otherwise recurse into this script. That
+    // child is never --strict, and CI always is, so honouring the switch only
+    // outside --strict keeps the recursion guard and takes away the kill
+    // switch. Same idea for the `gh` fixture, which is a test hook and has no
+    // business answering for GitHub on a runner.
+    $skipRequested = (string) getenv('CHECK_POW_SKIP') === '1';
+    $onRunner = cpowEnvTruthy('CI') || cpowEnvTruthy('GITHUB_ACTIONS');
+    $fixtureRequested = (string) getenv('CHECK_POW_GH_FIXTURE') !== '';
+
+    cpowFixtureDisabled($fixtureRequested && $onRunner);
+
+    if ($skipRequested && $strict) {
+        cpowAdd($report, 'violation', 'POW-11', 'CHECK_POW_SKIP=1 is set but ignored under --strict — the gate cannot be switched off from the environment');
+    }
+
+    if ($fixtureRequested && $onRunner) {
+        cpowAdd($report, 'violation', 'POW-11', 'CHECK_POW_GH_FIXTURE is set but ignored on a CI runner — GitHub is not answered from a local JSON file here');
+    }
+
+    if ($skipRequested && !$strict) {
         fwrite(STDOUT, "check-pow: skipped (CHECK_POW_SKIP=1)\n");
 
         return 0;
     }
 
     $root = cpowRoot();
-    $strict = $options['strict'];
-
-    if ($options['self-check']) {
-        cpowBootstrap($root, $argv);
-    }
-
     $branch = $options['branch'] ?? cpowCurrentBranch($root);
 
     if ($branch === '') {
@@ -1386,22 +1705,43 @@ function cpowMain(array $options, array $argv): int
         return $strict ? 1 : 0;
     }
 
+    // A base branch is never gated against itself: with a stale origin/master
+    // the whole of master reads as "the diff", so every protected file in the
+    // repository looks freshly touched from a non-process/ branch.
+    if (in_array($branch, POWC_BASE_BRANCHES, true)) {
+        fwrite(STDOUT, sprintf("check-pow: skipped — \"%s\" is a base branch, there is nothing to gate it against\n", $branch));
+
+        return cpowPrintReport($report, $strict, $advisory);
+    }
+
     $base = cpowBaseRef($root);
-    $files = cpowChangedFiles($root, $base);
+    $changed = cpowChangedFiles($root, $base);
+    $files = $changed['files'];
 
-    /** @var list<array{level: string, id: string, message: string}> $report */
-    $report = [];
+    if (!$changed['ok']) {
+        // "The diff could not be read" and "the diff is clean" must never look
+        // the same: POW-04 and POW-10 both read this list, and returning an
+        // empty one turned both checks off silently in a shallow clone.
+        cpowAdd($report, 'undetermined', 'POW-00', 'the changed-file list is incomplete, so POW-04 and POW-10 are not conclusive: ' . $changed['reason']);
+    }
 
-    $protectedTouched = cpowCheckProtectedPaths($root, $base, $files, $branch, $report);
-    $isIssueBranch = preg_match(CPOW_ISSUE_BRANCH, $branch, $branchMatch) === 1;
+    $protectedTouched = cpowProtectedPaths($root, $base, $files, $report);
+    $isIssueBranch = preg_match(powcIssueBranchPattern(), $branch, $branchMatch) === 1;
 
-    if (!$isIssueBranch && !$protectedTouched) {
+    if (!$isIssueBranch && $protectedTouched === []) {
         fwrite(STDOUT, sprintf(
             "check-pow: skipped — \"%s\" is not an issue branch and no protected path is touched\n",
             $branch,
         ));
 
-        return 0;
+        return cpowPrintReport($report, $strict, $advisory);
+    }
+
+    // POW-10, first half. Reported only now that the scope gate has decided we
+    // are enforcing at all, so the ordering cannot make the gate speak about a
+    // branch it has no business judging.
+    if ($protectedTouched !== []) {
+        cpowCheckProtectedBranch($protectedTouched, $branch, $report);
     }
 
     $branchIssue = $isIssueBranch ? (int) $branchMatch[2] : null;
@@ -1411,7 +1751,7 @@ function cpowMain(array $options, array $argv): int
     if ($resolved['status'] !== 'ok' || $resolved['pr'] === null) {
         cpowAdd($report, 'undetermined', 'POW-00', 'no pull request to validate: ' . $resolved['reason']);
 
-        return cpowPrintReport($report, $strict);
+        return cpowPrintReport($report, $strict, $advisory);
     }
 
     $pr = $resolved['pr'];
@@ -1420,21 +1760,12 @@ function cpowMain(array $options, array $argv): int
     // POW-10, second half: the approval is only knowable through gh, and it
     // does not exist yet while the change is still being written — so it is a
     // hard gate in CI (strict) and a warning locally.
-    if ($protectedTouched) {
-        $approver = cpowMaintainerApproval($pr);
-
-        if ($approver === null) {
-            cpowAdd($report, $strict ? 'violation' : 'incomplete', 'POW-10', sprintf(
-                'PR #%d touches a protected path but carries no maintainer approval',
-                $prNumber,
-            ));
-        } else {
-            cpowAdd($report, 'notice', 'POW-10', 'protected-path change approved by ' . $approver);
-        }
+    if ($protectedTouched !== []) {
+        cpowCheckProtectedApproval($root, $base, $pr, $prNumber, $protectedTouched, $strict, $report);
     }
 
     if (cpowCheckBypass($root, $pr, $strict, $report)) {
-        return cpowPrintReport($report, $strict);
+        return cpowPrintReport($report, $strict, $advisory);
     }
 
     // POW-01 — no work without an issue.
@@ -1452,7 +1783,7 @@ function cpowMain(array $options, array $argv): int
     if ($issue === null) {
         cpowAdd($report, 'undetermined', 'POW-02', 'no issue number could be derived from the PR or the branch');
 
-        return cpowPrintReport($report, $strict);
+        return cpowPrintReport($report, $strict, $advisory);
     }
 
     if ($branchIssue !== null && $closing !== [] && !in_array($branchIssue, $closing, true)) {
@@ -1477,7 +1808,7 @@ function cpowMain(array $options, array $argv): int
             $issue,
         ));
 
-        return cpowPrintReport($report, $strict);
+        return cpowPrintReport($report, $strict, $advisory);
     }
 
     $relativeDir = substr($dir, strlen($root) + 1);
@@ -1486,11 +1817,12 @@ function cpowMain(array $options, array $argv): int
     if ($manifest === null) {
         cpowAdd($report, 'violation', 'POW-02', $relativeDir . '/manifest.json is missing or not valid JSON');
 
-        return cpowPrintReport($report, $strict);
+        return cpowPrintReport($report, $strict, $advisory);
     }
 
-    cpowCheckManifest($dir, $manifest, $report);
-    cpowCheckCommentChain($root, $manifest, $report);
+    cpowCheckManifestIdentity($manifest, $issue, $branch, $relativeDir, $report);
+    cpowCheckManifest($root, $dir, $manifest, $issue, $branch, $report);
+    cpowCheckCommentChain($root, $manifest, $prNumber, $report);
     cpowCheckLedgerHistory($root, $base, $relativeDir, $report);
     cpowCheckReRolls($root, $base, $manifest, $report);
 
@@ -1506,12 +1838,12 @@ function cpowMain(array $options, array $argv): int
         ));
     }
 
-    return cpowPrintReport($report, $strict);
+    return cpowPrintReport($report, $strict, $advisory);
 }
 
 try {
     /** @var list<string> $argv */
-    exit(cpowMain(cpowParseArgs($argv), $argv));
+    exit(cpowMain(cpowParseArgs($argv)));
 } catch (Throwable $e) {
     cpowFail($e->getMessage(), 1);
 }

@@ -55,7 +55,9 @@ The body of the entry.
 
 Grammar: `<!-- kb:` followed by space-separated `key=value` pairs, closed by
 `-->`, all on **one** line. A value is either bare (no whitespace) or
-double-quoted. The comment must be the very next line after the heading.
+double-quoted. The comment must be the very next line after the heading. No
+value may contain `-->`, quoted or not: an HTML comment ends at its first one,
+so the rest of the entry would render as visible text.
 
 | Key | Required | Meaning |
 | --- | --- | --- |
@@ -88,8 +90,9 @@ awk '/^### /{p=0} /id=FAQ-002/{p=1} p' docs/helpers/faq.md                  # on
 ## Decay
 
 The knowledge base is capped at **300 lines per file** (the generated index does
-not count). `bin/kb-lint.php` warns above that; the retro step brings it back
-under by applying two rules:
+not count, nor does the `## Tag index` heading and the blank lines around it).
+`bin/kb-lint.php` warns above that; the retro step brings it back under by
+applying two rules:
 
 - **`promoted`** — the lesson is now encoded as a test, a PHPStan rule or a lint
   rule. The entry collapses to a one-liner naming the gate in `gate="…"`; the

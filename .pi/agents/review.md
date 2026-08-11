@@ -25,6 +25,9 @@ Read the knowledge base first (index only, never write):
 `open`, state explicitly: still present / fixed / not a real finding — each with
 evidence from the current branch. No finding may silently disappear between rounds;
 that is the whole point of the ledger being append-only. Only then hunt for new issues.
+The file is gitignored and written per cycle by `bin/pow.php`: if it does not exist yet
+(round 1, a fresh clone, a profile that does not create it), say exactly that in the
+ledger-walk section and go straight to hunting new issues — do not treat it as an error.
 
 Review priorities:
 - correctness and likely regressions

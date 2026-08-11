@@ -21,6 +21,9 @@ final class KbLintScriptTest extends TestCase
 
     private const DECISIONS = 'docs/helpers/decisions.md';
 
+    /** The environment variable that can redirect the lint at another tree. */
+    private const ROOT_ENV = 'KB_LINT_ROOT';
+
     private string $sandbox = '';
 
     private string $script = '';
@@ -221,6 +224,144 @@ final class KbLintScriptTest extends TestCase
         self::assertStringContainsString('knowledge-base file is missing', $result['err']);
     }
 
+    public function testTheLintedRootIsNamedInTheOutput(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        $result = $this->kbLint();
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('kb-lint: root ' . $this->sandboxRoot() . "\n", $result['out']);
+    }
+
+    public function testARootTakenFromTheEnvironmentIsNamedAndWarnedAbout(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        $result = $this->runScript([self::ROOT_ENV => $this->sandbox], []);
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('kb-lint: root ' . $this->sandboxRoot() . "\n", $result['out']);
+        self::assertStringContainsString('kb-lint: warning: root overridden via KB_LINT_ROOT', $result['out']);
+        self::assertStringContainsString('1 warning(s)', $result['out']);
+    }
+
+    public function testAnExplicitRootWinsOverTheEnvironmentAndIsNotWarnedAbout(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        $decoy = $this->sandbox . '/decoy';
+        self::assertTrue(mkdir($decoy, 0o775, true));
+
+        $result = $this->runScript([self::ROOT_ENV => $decoy], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('kb-lint: root ' . $this->sandboxRoot() . "\n", $result['out']);
+        self::assertStringNotContainsString('root overridden', $result['out']);
+    }
+
+    public function testJsonOutputNamesTheLintedRoot(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        $payload = json_decode($this->runScript([self::ROOT_ENV => $this->sandbox], ['--json'])['out'], true);
+
+        self::assertIsArray($payload);
+        self::assertSame($this->sandboxRoot(), $payload['root'] ?? null);
+        self::assertTrue($payload['root_from_env'] ?? null);
+        self::assertContains('root overridden via KB_LINT_ROOT', $payload['warnings'] ?? []);
+
+        $plain = json_decode($this->kbLint('--json')['out'], true);
+        self::assertIsArray($plain);
+        self::assertSame($this->sandboxRoot(), $plain['root'] ?? null);
+        self::assertFalse($plain['root_from_env'] ?? null);
+    }
+
+    public function testAShortEntryContainedInALongerOneIsReportedAsADuplicate(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $this->write(self::FAQ, $this->file('FAQ', [
+            [
+                'title' => 'Stale daemon keeps the ports bound',
+                'meta' => 'id=FAQ-001 date=2026-08-11 tags=alpha trigger="ports are still bound" hits=0 status=active',
+                'body' => 'A stale daemon keeps ports 8888 and 9999 bound; stop it before running the suite again.',
+            ],
+            [
+                'title' => 'The test daemon keeps ports 8888 and 9999 bound after a crash',
+                'meta' => 'id=FAQ-002 date=2026-08-11 tags=alpha trigger="the suite cannot bind" hits=0 status=active',
+                'body' => 'A stale daemon keeps ports 8888 and 9999 bound; stop it before running the suite '
+                    . "again.\nCheck the pid file, then kill the leftover master process manually.",
+            ],
+        ]));
+
+        $result = $this->kbLint();
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString(
+            'overlap 100% — merge them or make the difference explicit',
+            $result['out'],
+            'a short entry fully contained in a long one is exactly what the overlap coefficient is for',
+        );
+        self::assertStringContainsString('FAQ-001', $result['out']);
+        self::assertStringContainsString('FAQ-002', $result['out']);
+    }
+
+    public function testFrontMatterMustNotSmuggleACommentTerminatorIntoAValue(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $this->write(self::FAQ, $this->file('FAQ', [
+            [
+                'title' => 'A trigger that ends the comment early',
+                'meta' => 'id=FAQ-001 date=2026-08-11 tags=alpha trigger="an arrow --> here" hits=0 status=active',
+                'body' => 'Body.',
+            ],
+        ]));
+
+        $result = $this->kbLint();
+
+        self::assertSame(1, $result['code'], $result['out']);
+        self::assertStringContainsString('front-matter value for "trigger" must not contain "-->"', $result['err']);
+    }
+
+    public function testASecondTagIndexBlockFailsEvenWithFix(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $faq = $this->read(self::FAQ);
+        $this->write(self::FAQ, $faq . "\n## Tag index\n\n<!-- kb-index:start -->\n- `stale` — FAQ-999\n<!-- kb-index:end -->\n");
+
+        $result = $this->kbLint();
+        self::assertSame(1, $result['code'], $result['out']);
+        self::assertStringContainsString('more than one tag index block', $result['err']);
+
+        self::assertSame(1, $this->kbLint('--fix')['code'], '--fix must not paper over a leftover index block');
+    }
+
+    public function testTheGeneratedIndexAndItsHeadingDoNotCountAgainstTheBudget(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        $withoutIndex = preg_replace(
+            '/## Tag index\n\n<!-- kb-index:start -->\n.*?<!-- kb-index:end -->\n\n/s',
+            '',
+            $this->read(self::FAQ),
+        ) ?? '';
+
+        $lines = explode("\n", $withoutIndex);
+        if (end($lines) === '') {
+            array_pop($lines);
+        }
+
+        $payload = json_decode($this->kbLint('--json')['out'], true);
+        self::assertIsArray($payload);
+        self::assertIsArray($payload['files'][0] ?? null);
+
+        self::assertSame(
+            \count($lines),
+            $payload['files'][0]['budgeted_lines'] ?? null,
+            'the heading and the blank lines around the generated index are generated too',
+        );
+    }
+
     public function testAnUnknownOptionIsAUsageError(): void
     {
         $this->writeValidKnowledgeBase();
@@ -317,10 +458,21 @@ final class KbLintScriptTest extends TestCase
      */
     private function kbLint(string ...$args): array
     {
-        $command = array_merge(
-            [\PHP_BINARY, $this->script, '--root=' . $this->sandbox],
-            array_values($args),
-        );
+        return $this->runScript([], ['--root=' . $this->sandbox, ...array_values($args)]);
+    }
+
+    /**
+     * Runs the script with exactly the given arguments and environment — no
+     * implicit `--root=`, so the environment can decide the root.
+     *
+     * @param array<string, string> $env
+     * @param list<string> $args
+     *
+     * @return array{code: int, out: string, err: string}
+     */
+    private function runScript(array $env, array $args): array
+    {
+        $command = [\PHP_BINARY, $this->script, ...$args];
 
         $outFile = $this->sandbox . '/stdout.log';
         $errFile = $this->sandbox . '/stderr.log';
@@ -331,7 +483,13 @@ final class KbLintScriptTest extends TestCase
         ];
         $pipes = [];
 
-        $process = proc_open($command, $descriptors, $pipes, $this->sandbox, ['PATH' => (string) getenv('PATH')]);
+        $process = proc_open(
+            $command,
+            $descriptors,
+            $pipes,
+            $this->sandbox,
+            ['PATH' => (string) getenv('PATH'), ...$env],
+        );
         self::assertIsResource($process);
 
         $code = proc_close($process);
@@ -341,6 +499,14 @@ final class KbLintScriptTest extends TestCase
             'out' => (string) file_get_contents($outFile),
             'err' => (string) file_get_contents($errFile),
         ];
+    }
+
+    private function sandboxRoot(): string
+    {
+        $root = realpath($this->sandbox);
+        self::assertIsString($root);
+
+        return $root;
     }
 
     private function path(string $relative): string

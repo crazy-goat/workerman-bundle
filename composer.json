@@ -102,7 +102,7 @@
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run",
-            "php bin/check-pow.php",
+            "php bin/check-pow.php --advisory",
             "php bin/kb-lint.php"
         ],
         "check-pow": [

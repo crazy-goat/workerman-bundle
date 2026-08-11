@@ -84,7 +84,7 @@ not match the value `getHost()` validates.
 ## Security policy
 
 ### Security hardening from the #582–#586 review must stay intact
-<!-- kb: id=DEC-006 date=2026-08-08 tags=security,policy trigger="touching static file serving, headers, master identification or cache permissions" hits=0 status=active -->
+<!-- kb: id=DEC-006 date=2026-08-09 tags=security,policy trigger="touching static file serving, headers, master identification or cache permissions" hits=0 status=active -->
 
 The following hardening measures were consolidated through the security
 review (#582–#586 series) — keep them intact when touching the related
@@ -117,7 +117,7 @@ threshold is defined (#589, #601) — update it there, not in CI YAML.
 Lowering it is forbidden outright.
 
 ### `composer lint` / `lint-fix` are the canonical entry points
-<!-- kb: id=DEC-008 date=2026-08-08 tags=lint,git-hooks,policy trigger="adding a new check, or wiring one into CI or the hook" hits=0 status=active -->
+<!-- kb: id=DEC-008 date=2026-08-11 tags=lint,git-hooks,policy trigger="adding a new check, or wiring one into CI or the hook" hits=0 status=active -->
 
 `bin/install-git-hook.php` installs a pre-push hook that runs `composer lint`
 — php-cs-fixer, phpstan, rector (dry-run), the proof-of-work gate
@@ -126,6 +126,15 @@ repository-wide check is added to the `lint` script, and gets a standalone
 `composer <name>` script only as a convenience alias; nothing invokes the
 individual tools directly, so `lint` stays the one thing CI, the hook and a
 contributor all run.
+
+Updated for #686: a check inside `lint` must be **safe to fail nowhere**.
+Composer aborts an array script on the first non-zero command, so a check that
+can fail mid-cycle blocks every push on every branch — the `--no-verify`
+failure mode the pre-push hook exists to avoid. `lint` therefore runs the gate
+as `check-pow.php --advisory` (reports, always exits 0), and the hook adds a
+single blocking run guarded by the issue-branch pattern. Canonical entry point
+and advisory hook are reconciled by *mode*, not by taking the check out of
+`lint`.
 
 ### The retro step is the only writer of this knowledge base
 <!-- kb: id=DEC-009 date=2026-08-11 tags=knowledge-base,process,policy trigger="learning something worth recording during implementation or review" hits=0 status=active -->

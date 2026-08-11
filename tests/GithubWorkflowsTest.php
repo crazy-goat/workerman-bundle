@@ -52,15 +52,41 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
+    public function testPullRequestTriggerIncludesReadyForReview(): void
+    {
+        // `ready_for_review` is not in the default type set. Without it, a PR
+        // pushed while still a draft has `pow: skipped` on every run, and
+        // clicking "Ready for review" produces no new run for the same head
+        // SHA — so the gate would never run before merge.
+        $this->assertMatchesRegularExpression(
+            '/^\s+types: \[[^]]*ready_for_review[^]]*\]$/m',
+            $this->workflowContent,
+            'A draft PR marked ready must trigger a fresh run, or the pow job is never enforced',
+        );
+
+        foreach (['opened', 'synchronize', 'reopened'] as $type) {
+            $this->assertMatchesRegularExpression(
+                '/^\s+types: \[[^]]*\b' . $type . '\b[^]]*\]$/m',
+                $this->workflowContent,
+                'Naming types explicitly opts out of the defaults, so every default must be restated',
+            );
+        }
+    }
+
     public function testProofOfWorkGateRunsTheMasterCopyOfTheScript(): void
     {
         $this->assertStringContainsString(
-            'git show origin/master:bin/check-pow.php > "$RUNNER_TEMP/check-pow.php"',
+            'git show origin/master:bin/check-pow.php > "$gate/check-pow.php"',
             $this->workflowContent,
             'CI must materialise the master copy of the gate — a PR must not be able to weaken the gate that judges it',
         );
         $this->assertStringContainsString(
-            'php "$RUNNER_TEMP/check-pow.php" --strict --verify-reality',
+            'git show origin/master:bin/pow-common.php > "$gate/pow-common.php"',
+            $this->workflowContent,
+            'The gate requires bin/pow-common.php from its own directory; half a gate from master is no gate',
+        );
+        $this->assertStringContainsString(
+            'php "$gate/check-pow.php" --strict --verify-reality',
             $this->workflowContent,
             'CI must run the materialised master copy, not bin/check-pow.php from the branch',
         );
@@ -71,12 +97,24 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
+    public function testProofOfWorkGateIsPointedAtTheCheckout(): void
+    {
+        // The gate is materialised into $RUNNER_TEMP, whose parent is not the
+        // checkout; without this the job failed on POW-00/POW-02 whatever the
+        // branch had recorded.
+        $this->assertStringContainsString(
+            'CHECK_POW_ROOT: ${{ github.workspace }}',
+            $this->workflowContent,
+            'The materialised gate must be told which repository it judges',
+        );
+    }
+
     public function testProofOfWorkGateFallsBackWhenMasterHasNoScriptYet(): void
     {
         $this->assertStringContainsString(
-            'cp bin/check-pow.php "$RUNNER_TEMP/check-pow.php"',
+            'cp bin/check-pow.php bin/pow-common.php "$gate/"',
             $this->workflowContent,
-            'The PR introducing the gate must be able to run it — with a loud warning',
+            'The PR introducing the gate must be able to run it — with a loud warning, and with both halves',
         );
     }
 

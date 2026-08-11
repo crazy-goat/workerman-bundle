@@ -541,6 +541,116 @@ final class PowScriptTest extends TestCase
         self::assertSame('', $result['out'], 'no foreign file is ever published as a harness artifact');
     }
 
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function nonIntegerExitCodeProvider(): iterable
+    {
+        // POW-08 compares these byte for byte against a recomputed run, so
+        // `is_numeric` accepting "1e3" as 1000 turned a typo into an accusation
+        // of a falsified manifest.
+        yield 'scientific notation' => ['lint_exit=1e3', 'lint_exit'];
+        yield 'a float that truncates to zero' => ['test_exit=0.9', 'test_exit'];
+        yield 'hexadecimal' => ['lint_exit=0x10', 'lint_exit'];
+        yield 'whitespace' => ['test_exit= 1', 'test_exit'];
+    }
+
+    #[DataProvider('nonIntegerExitCodeProvider')]
+    public function testAnExitCodeMustBeAnInteger(string $assignment, string $key): void
+    {
+        $this->startCycle();
+
+        $result = $this->pow('--set', $assignment);
+
+        self::assertSame(2, $result['code']);
+        self::assertStringContainsString('--set ' . $key . ' expects an integer exit code', $result['err']);
+        self::assertNull($this->manifest('docs/proof_of_work/current/manifest.json')[$key]);
+    }
+
+    public function testANegativeExitCodeIsStillAnInteger(): void
+    {
+        $this->startCycle();
+
+        self::assertSame(0, $this->pow('--set', 'lint_exit=-1')['code']);
+        self::assertSame(-1, $this->manifest('docs/proof_of_work/current/manifest.json')['lint_exit']);
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function nonFiniteCoverageProvider(): iterable
+    {
+        yield 'infinity' => ['coverage=INF'];
+        yield 'not a number' => ['coverage=NAN'];
+        yield 'text' => ['coverage=eighty'];
+    }
+
+    #[DataProvider('nonFiniteCoverageProvider')]
+    public function testCoverageMustBeAFiniteNumber(string $assignment): void
+    {
+        $this->startCycle();
+
+        $result = $this->pow('--set', $assignment);
+
+        self::assertSame(2, $result['code']);
+        self::assertStringContainsString('expects a finite number', $result['err']);
+    }
+
+    public function testAMalformedLedgerRowIsFatalRatherThanSkipped(): void
+    {
+        $this->startCycle();
+        $this->addFinding('F-01', 1, 'high');
+        $this->addFinding('F-03', 1, 'high');
+
+        // Six cells instead of seven — the row used to parse as nothing, so
+        // F-03 disappeared from --status, from the duplicate check and from the
+        // --finish gate without a word.
+        $ledger = $this->read('docs/proof_of_work/current/findings.md');
+        $lines = explode("\n", $ledger);
+
+        foreach ($lines as $i => $line) {
+            if (str_starts_with($line, '| F-03 ')) {
+                $lines[$i] = rtrim(substr($line, 0, (int) strrpos(rtrim($line, " |"), '|')));
+            }
+        }
+
+        $this->write('docs/proof_of_work/current/findings.md', implode("\n", $lines));
+
+        $result = $this->pow('--status');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('malformed docs/proof_of_work/current/findings.md', $result['err']);
+        self::assertStringContainsString('cells, not 7', $result['err']);
+    }
+
+    public function testADryRunRefusesARunThatIsAlreadyRecorded(): void
+    {
+        $this->startCycle();
+        $this->fakeGh();
+        self::assertSame(0, $this->pow('--round=1', '--role=coder', '--run=bbbb2222')['code']);
+
+        // A dry run publishes nothing, so it is the cheapest place to learn
+        // that the run is already recorded — it used to return before checking.
+        $result = $this->pow('--round=2', '--role=coder', '--run=bbbb2222', '--dry-run');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('is already recorded as round 1', $result['err']);
+        self::assertSame('', $result['out']);
+    }
+
+    public function testADryRunRefusesARoundThatGoesBackwards(): void
+    {
+        $this->startCycle();
+        $this->fakeGh();
+        self::assertSame(0, $this->pow('--round=2', '--role=coder', '--run=bbbb2222')['code']);
+
+        $result = $this->pow('--round=1', '--role=coder', '--run=aaaa1111', '--dry-run');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('rounds never go backwards', $result['err']);
+        self::assertSame('', $result['out']);
+    }
+
     public function testAnAmbiguousRunIdIsRefused(): void
     {
         $this->startCycle();

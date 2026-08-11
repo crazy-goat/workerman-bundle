@@ -10,10 +10,16 @@ use PHPUnit\Framework\TestCase;
 /**
  * Convention test for the subagent knowledge base and the project-scoped agents.
  *
- * `bin/kb-lint.php` is the enforcement half; this test asserts the same
- * invariants independently (it re-derives the tag index instead of trusting the
- * script) and additionally pins the `.pi/agents/` contract, so a broken agent
- * prompt fails the suite rather than the next cycle.
+ * `bin/kb-lint.php` is the enforcement half; this test re-checks the same
+ * invariants against the committed knowledge base and pins the `.pi/agents/`
+ * contract, so a broken agent prompt fails the suite rather than the next cycle.
+ *
+ * It is deliberately *not* an independent implementation: `renderIndex()` here
+ * repeats the script's rendering rule, and the front-matter parser below is a
+ * laxer regex than the script's tokenizer. A rendering bug would therefore be
+ * agreed on by both. What this test does add is that the invariants hold on the
+ * real files without running the script — the script's own behaviour is pinned
+ * by `KbLintScriptTest`, which drives it as a subprocess over fixtures.
  *
  * @coversNothing
  */
@@ -263,16 +269,19 @@ final class KnowledgeBaseTest extends TestCase
         self::assertStringNotContainsString('Commit entries as part of the change', $content);
     }
 
-    public function testKbLintExitsZeroOnTheCommittedTree(): void
+    public function testKbLintExitsZeroOnTheWorkingTree(): void
     {
         $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $pipes = [];
 
+        // An explicit environment, so an ambient KB_LINT_ROOT cannot point this
+        // run at another tree and turn it green.
         $process = proc_open(
             [\PHP_BINARY, $this->projectDir . '/bin/kb-lint.php'],
             $descriptors,
             $pipes,
             $this->projectDir,
+            ['PATH' => (string) getenv('PATH')],
         );
 
         self::assertIsResource($process);
@@ -284,6 +293,11 @@ final class KnowledgeBaseTest extends TestCase
 
         self::assertSame(0, proc_close($process), "bin/kb-lint.php failed:\n" . $stdout . $stderr);
         self::assertStringContainsString('kb-lint: OK', $stdout);
+        self::assertStringContainsString(
+            'kb-lint: root ' . $this->projectDir . "\n",
+            $stdout,
+            'the output must name the tree that was linted, so a redirected run is visible',
+        );
     }
 
     /**

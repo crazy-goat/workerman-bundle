@@ -399,8 +399,8 @@ Before opening a PR, verify that all linters and tests pass on your machine:
 
 ```bash
 # Run all linters (php-cs-fixer dry-run, phpstan, rector dry-run), the
-# advisory proof-of-work gate (php bin/check-pow.php) and the knowledge-base
-# linter (php bin/kb-lint.php)
+# report-only proof-of-work gate (php bin/check-pow.php --advisory) and the
+# knowledge-base linter (php bin/kb-lint.php)
 composer lint
 
 # Auto-fix fixable issues (php-cs-fixer, rector, kb-lint --fix)
@@ -505,7 +505,7 @@ gh pr checks --watch
 
 CI workflow (`.github/workflows/tests.yaml`) runs:
 1. **lint** – composer validate, composer audit, php-cs-fixer, phpstan, rector,
-   plus the advisory proof-of-work gate
+   plus the report-only proof-of-work gate
 2. **tests matrix** (PHP 8.2–8.5 × Symfony 6.4–8.0) – unit + E2E tests
 3. **pow** – the `origin/master` copy of `bin/check-pow.php` with
    `--strict --verify-reality` (skipped while the PR is a draft), see
@@ -537,9 +537,10 @@ git push origin feat/issue-<NUMBER>-<description>
 gh pr checks --watch
 ```
 
-> **Note:** The pre-push hook runs `composer lint` and then
-> `php bin/check-pow.php` before every push. The proof-of-work gate warns
-> always but blocks only on `^(fix|feat|process)/issue-<N>`.
+> **Note:** The pre-push hook runs `composer lint` before every push, which
+> includes the proof-of-work gate in report-only mode. On an issue branch
+> (`^(fix|feat|process)/issue-<N>`) it then runs the gate once more, and there
+> evidence of tampering blocks the push; an unfinished cycle does not.
 > To skip the hook in emergencies: `git push --no-verify` — CI will still say
 > no, that is the point.
 
@@ -754,9 +755,15 @@ and leaves a trace in the diff.
 
 | Where | Invocation | Effect |
 | --- | --- | --- |
-| `composer lint` | `php bin/check-pow.php` | advisory — reports, exits 0 unless there is evidence of tampering |
-| pre-push hook | `php bin/check-pow.php` | **warns always, blocks only** on `^(fix\|feat\|process)/issue-<N>` |
+| `composer lint` | `php bin/check-pow.php --advisory` | report only — always exits 0 |
+| pre-push hook | `php bin/check-pow.php`, **only** on `^(fix\|feat\|process)/issue-<N>` | blocks on evidence of tampering; an unfinished cycle does not block |
 | CI (`pow` job) | the **`origin/master` copy**, `--strict --verify-reality` | **hard gate** — this is the one that decides |
+
+`composer lint` runs the gate in `--advisory` mode on purpose. Composer aborts
+an array script on the first non-zero command, so a gate that can fail inside
+`lint` blocks every push on every branch — including branches nobody is running
+a cycle on. `lint` stays the canonical entry point (`DEC-008`) and stays green;
+the hook adds the one blocking run where a proof of work is actually expected.
 
 The pre-push hook deliberately does not block every push. A hook that blocks
 every push is a hook people bypass with `--no-verify`, which would make the
@@ -770,11 +777,12 @@ cycle, by design.
 ### Skip or enforce
 
 The gate **enforces** when the branch matches `^(fix|feat|process)/issue-<N>`
-or when the diff touches a protected path. Everything else — another branch, no
-pull request for the branch, `gh` missing/unauthenticated/offline — is a
-one-line skip with exit 0, so `composer lint` never breaks for ordinary work.
-`--strict` turns every "cannot determine" into a failure, because in CI an
-unreadable fact is indistinguishable from a hidden one.
+or when the diff touches a protected path. Everything else — `master`/`main`
+(a base branch is never gated against itself), another branch, no pull request
+for the branch, `gh` missing/unauthenticated/offline — is a one-line skip with
+exit 0. `--strict` turns every "cannot determine" into a failure, because in CI
+an unreadable fact is indistinguishable from a hidden one — including a `git`
+call that exited non-zero, which is reported rather than read as "no changes".
 
 Findings come in four severities: `FAIL` (evidence of tampering, always fails),
 `PENDING` (the cycle is not finished yet), `UNKNOWN` (a fact could not be read)
@@ -785,29 +793,34 @@ and `NOTE`. `PENDING` and `UNKNOWN` only fail under `--strict`.
 | Id | What it means | Fix |
 | --- | --- | --- |
 | `POW-01` | the PR has no `closingIssuesReferences` — **no work without an issue** | `gh pr edit --body "Closes #<N> …"`, or file the issue first (step 1) |
-| `POW-02` | no `docs/proof_of_work/<NNNN>-<slug>/` for the closed issue | run step 11.5: `php bin/pow.php --finish`, commit `docs/proof_of_work` |
-| `POW-03` | the manifest is incomplete for its profile: too few rounds, an `open` ledger entry, no verdict, or a non-`CLEAN` verdict with no `escalation.md` | resolve the remaining findings (step 5), record the verdict (step 6), then `--finish` again |
+| `POW-02` | no `docs/proof_of_work/<NNNN>-<slug>/` for the closed issue, or its `manifest.json` names a different `issue`/`branch` or an unknown `pow_version` | run step 11.5: `php bin/pow.php --finish`, commit `docs/proof_of_work`. Renaming an older cycle's directory does not rebind it — the manifest is the binding |
+| `POW-03` | the cycle is incomplete for the profile it is **entitled** to (re-derived from the branch prefix and the issue labels, never read from the manifest): too few rounds, a malformed ledger row, an `open` entry, a missing `lint_exit`/`test_exit`, no verdict, or a non-`CLEAN` verdict with no `escalation.md` naming every open finding | resolve the remaining findings (step 5), record the numbers and the verdict (step 6), then `--finish` again |
 | `POW-04` | something other than `.gitkeep` from `docs/proof_of_work/current/` is in the diff | `git rm --cached` it; `current/` is a gitignored scratch buffer, only `--finish` publishes |
 | `POW-05` | the comment chain is broken: a comment is gone, its body no longer hashes to `comment_sha256`, it was edited (`updated_at != created_at`), `prev` does not point at the previous round, or `created_at` does not increase | do not edit or delete round comments. A round that must be replaced is recorded, not rewritten: `php bin/pow.php --abort=<runId>:<reason>` and publish a new round |
-| `POW-06` | `findings.md` at one commit is not a byte prefix of the next — a finding was edited or deleted | restore the removed rows; a status change is a NEW row (`php bin/pow.php --resolve`), never an edit |
-| `POW-07` | a `coder`/`review` run inside the branch time window appears neither in `rounds[]` nor in `aborted[]` — a **silent re-roll** | `php bin/pow.php --abort=<runId>:"<why it was thrown away>"`. Re-running review until it says "clean" is the cheat this exists for |
+| `POW-06` | `findings.md` at one commit is not a byte prefix of the next — a finding was edited or deleted | restore the removed rows; a status change is a NEW row (`php bin/pow.php --resolve`), never an edit. **Inert in the documented flow** (the ledger is committed once, at step 11.5) — it then says so as a `NOTE`; the real anchor is `POW-05` |
+| `POW-07` | a `coder`/`review` run inside the branch time window appears neither in `rounds[]` nor in `aborted[]` — a **silent re-roll** | `php bin/pow.php --abort=<runId>:"<why it was thrown away>"`. Re-running review until it says "clean" is the cheat this exists for. **Local advisory only**: `.pi-subagents/` is gitignored, so it never runs in CI |
 | `POW-08` | `manifest falsified` — the declared `lint_exit`/`test_exit`/`coverage` does not match the recomputed value | run the real thing and record the real numbers: `php bin/pow.php --set lint_exit=<code> --set test_exit=<code> --set coverage=<pct>` |
-| `POW-09` | a `no-pow` bypass without approval or without a changelog entry | see below |
-| `POW-10` | a protected path was touched from the wrong branch or without approval | see below |
+| `POW-09` | a `no-pow` bypass without approval, or with no `docs/process-changelog.md` line naming both `no-pow` and the exact number | see below |
+| `POW-10` | a protected path was touched from the wrong branch, without approval, or with an approval submitted **before** the newest protected-path commit | see below |
+| `POW-11` | `CHECK_POW_SKIP` or `CHECK_POW_GH_FIXTURE` was set where the gate ignores it (`--strict`, or a CI runner) | unset it. A kill switch that outranks the gate is not a gate |
 
 ### Protected paths
 
-A diff touching `bin/pow.php`, `bin/check-pow.php`, `.github/workflows/*` or
-the `scripts` block of `composer.json` changes the rules of the game rather
-than the code, so it requires **both**:
+A diff touching `bin/pow.php`, `bin/pow-common.php`, `bin/check-pow.php`,
+`.github/workflows/*` or the `scripts` block of `composer.json` changes the
+rules of the game rather than the code, so it requires **both**:
 
 1. a `process/` branch prefix (`bin/gh-branch <NUMBER> process`), and
-2. an explicit maintainer approval on the pull request.
+2. a maintainer approval on the pull request, submitted **after** the newest
+   commit touching a protected path — a stale approval cannot authorise a
+   rewrite it never saw. Re-request the review after such a commit.
 
-The branch half fails immediately and on any branch — including branches the
-gate would otherwise skip. The approval half is a hard failure in CI
-(`--strict`) and a warning locally, because an approval does not exist yet
-while the change is still being written.
+The branch half fails on any branch the gate enforces on — including branches it
+would otherwise skip, since touching a protected path is itself what puts the
+diff in scope. Untracked files count: a brand-new protected file is seen before
+it is committed. The approval half is a hard failure in CI (`--strict`) and a
+warning locally, because an approval does not exist yet while the change is
+still being written.
 
 An unrelated edit to `composer.json` is not a protected change: the gate
 compares the decoded `scripts` block against the base ref.
@@ -818,13 +831,20 @@ A pull request must not be able to weaken the gate that judges it, so CI never
 runs the in-tree copy:
 
 ```bash
-git show origin/master:bin/check-pow.php > "$RUNNER_TEMP/check-pow.php" \
-  && php "$RUNNER_TEMP/check-pow.php" --strict --verify-reality --pr=<n> --branch=<name>
+git show origin/master:bin/check-pow.php  > "$gate/check-pow.php" \
+  && git show origin/master:bin/pow-common.php > "$gate/pow-common.php" \
+  && php "$gate/check-pow.php" --strict --verify-reality --pr=<n> --branch=<name>
 ```
 
-`php bin/check-pow.php --self-check` does the same locally. When
+Both files, from the same ref: `check-pow.php` requires `pow-common.php` from
+its own directory, and half a gate from `master` is no gate. When
 `origin/master:bin/check-pow.php` does not exist yet — the pull request that
-introduces the gate — both fall back to the in-tree copy with a loud notice.
+introduces the gate — CI falls back to the in-tree copy with a loud warning.
+
+There is deliberately **no local equivalent**. A `--self-check` flag existed and
+was removed: locally `master` is whatever the developer's clone happens to hold,
+so it advertised a property it could not deliver. One mechanism, in the place
+where the ref is fetched from the remote.
 
 ### Escape hatch: the `no-pow` label
 
@@ -832,7 +852,9 @@ Release PRs and reverts have no cycle to prove. The label `no-pow` skips
 `POW-01`–`POW-08`, and it costs three things:
 
 - a **maintainer approval** on the PR (checked, not assumed),
-- an entry in `docs/process-changelog.md` naming the PR or the issue,
+- a line in `docs/process-changelog.md` naming **both** `no-pow` and the exact
+  PR or issue number — `#700` does not match `#7001`, and a line that merely
+  mentions the number is not a record,
 - a loud banner in every CI log that used it.
 
 A bypass is a documented exception, never a silent one. It is not a way to
@@ -1045,9 +1067,9 @@ are part of the repository and change through a reviewed PR. See
   - **at least 1 approving review** before merge
   - All status checks passing (lint, tests)
   - Branch up-to-date with master (recommended)
-- Pre-push hook automatically runs `composer lint` and the proof-of-work
-  gate (`php bin/check-pow.php`) before each push. The gate warns always and
-  blocks only on an issue branch; the hard gate is CI. To skip:
+- Pre-push hook automatically runs `composer lint` before each push, which
+  includes the proof-of-work gate in report-only mode. On an issue branch the
+  gate runs once more and can block; the hard gate is CI. To skip:
   `git push --no-verify`
 - Keep feature branches short-lived. If a rebase is needed:
   ```bash

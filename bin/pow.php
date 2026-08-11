@@ -47,20 +47,23 @@ declare(strict_types=1);
  *               title or labels (pass `--slug`/`--profile` instead)
  */
 
+require_once __DIR__ . '/pow-common.php';
+
 /**
  * Schema version of manifest.json. Bump when the shape changes so consumers
- * (the Phase 2 gate) can pin one shape instead of guessing.
+ * (the Phase 2 gate) can pin one shape instead of guessing. Shared with the
+ * gate through bin/pow-common.php — the gate asserts the value it reads.
  */
-const POW_VERSION = 1;
+const POW_VERSION = POWC_VERSION;
 
 /** Round caps per profile. There is no round beyond the cap — the oracle decides. */
-const POW_PROFILE_CAPS = ['full' => 4, 'light' => 2];
+const POW_PROFILE_CAPS = POWC_PROFILE_CAPS;
 
 /** Branch prefixes that select the `full` profile (audit + gate steps mandatory). */
-const POW_FULL_PREFIXES = ['fix', 'feat', 'refactor', 'perf', 'process'];
+const POW_FULL_PREFIXES = POWC_FULL_PREFIXES;
 
 /** Branch prefixes that select the `light` profile (cap 2, no gate step). */
-const POW_LIGHT_PREFIXES = ['docs', 'chore', 'ci', 'test', 'build'];
+const POW_LIGHT_PREFIXES = POWC_LIGHT_PREFIXES;
 
 const POW_SEVERITIES = ['high', 'medium', 'low', 'nit'];
 
@@ -68,7 +71,7 @@ const POW_STATUSES = ['open', 'fixed', 'gated', 'wontfix'];
 
 const POW_RESOLVE_STATUSES = ['fixed', 'gated', 'wontfix'];
 
-const POW_VERDICTS = ['CLEAN', 'NARROW', 'REDO', 'ACCEPT', 'HUMAN'];
+const POW_VERDICTS = POWC_VERDICTS;
 
 /** Machine facts accepted by `--set`, mapped to their manifest type. */
 const POW_SET_KEYS = ['lint_exit' => 'int', 'test_exit' => 'int', 'coverage' => 'float'];
@@ -104,74 +107,16 @@ function powInfo(string $message): void
 /**
  * Runs a command without a shell and returns its exit code and streams.
  *
+ * Both pipes are drained together — see powcDrain() in bin/pow-common.php for
+ * why reading one to EOF first deadlocks.
+ *
  * @param list<string> $cmd
  *
  * @return array{code: int, out: string, err: string}
  */
 function powRun(array $cmd, ?string $cwd = null): array
 {
-    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $pipes = [];
-    $process = @proc_open($cmd, $descriptors, $pipes, $cwd);
-
-    if (!is_resource($process)) {
-        return ['code' => 127, 'out' => '', 'err' => 'unable to start: ' . implode(' ', $cmd)];
-    }
-
-    // Both pipes are drained together: reading one to EOF first deadlocks as
-    // soon as the child fills the other pipe's buffer (64 KB on Linux).
-    [$out, $err] = powDrain($pipes[1], $pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-
-    return ['code' => proc_close($process), 'out' => $out, 'err' => $err];
-}
-
-/**
- * Reads two pipes concurrently until both reach EOF.
- *
- * @param resource $stdout
- * @param resource $stderr
- *
- * @return array{0: string, 1: string}
- */
-function powDrain($stdout, $stderr): array
-{
-    stream_set_blocking($stdout, false);
-    stream_set_blocking($stderr, false);
-
-    $buffers = ['out' => '', 'err' => ''];
-    $open = ['out' => $stdout, 'err' => $stderr];
-
-    while ($open !== []) {
-        $read = array_values($open);
-        $write = null;
-        $except = null;
-
-        if (@stream_select($read, $write, $except, 5) === false) {
-            break;
-        }
-
-        foreach ($open as $name => $stream) {
-            if (!in_array($stream, $read, true)) {
-                continue;
-            }
-
-            $chunk = fread($stream, 65536);
-
-            if ($chunk !== false && $chunk !== '') {
-                $buffers[$name] .= $chunk;
-
-                continue;
-            }
-
-            if (feof($stream)) {
-                unset($open[$name]);
-            }
-        }
-    }
-
-    return [$buffers['out'], $buffers['err']];
+    return powcRun($cmd, $cwd);
 }
 
 function powGhDisabled(): bool
@@ -214,24 +159,12 @@ function powUtcNow(): string
 /** Escapes a free-text value so it survives inside one markdown table cell. */
 function powCell(string $text): string
 {
-    $text = str_replace(["\r\n", "\r"], "\n", $text);
-    $text = str_replace('|', '\\|', $text);
-    $text = str_replace("\n", '<br>', $text);
-
-    // Control characters (ESC, FF, NUL, ...) must never reach a committed file:
-    // they would let a description inject ANSI escapes into findings.md.
-    $stripped = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text);
-
-    if (!is_string($stripped)) {
-        $stripped = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
-    }
-
-    return trim($stripped);
+    return powcCell($text);
 }
 
 function powUncell(string $text): string
 {
-    return str_replace(['\\|', '<br>'], ['|', "\n"], $text);
+    return powcUncell($text);
 }
 
 function powMkdir(string $dir): void
@@ -541,6 +474,11 @@ function powLedgerHeader(int $issue): string
 /**
  * Parses the ledger rows in file order.
  *
+ * A malformed `|`-line is fatal, not skipped: a six-cell row used to make an
+ * `open` finding vanish from `--status`, from the duplicate check and from the
+ * `--finish` gate at once, which is the opposite of "no finding may silently
+ * disappear". The same parser runs inside bin/check-pow.php.
+ *
  * @return list<array{id: string, round: int, loc: string, desc: string, severity: string, status: string, resolution: string}>
  */
 function powLedgerRows(string $root): array
@@ -551,39 +489,16 @@ function powLedgerRows(string $root): array
         return [];
     }
 
-    $rows = [];
+    $parsed = powcParseLedger(powRead($file));
 
-    foreach (explode("\n", powRead($file)) as $line) {
-        $line = trim($line);
-
-        if (!str_starts_with($line, '|')) {
-            continue;
-        }
-
-        $cells = preg_split('/(?<!\\\\)\|/', $line);
-
-        if ($cells === false || count($cells) < 9) {
-            continue;
-        }
-
-        $cells = array_map('trim', array_slice($cells, 1, 7));
-
-        if ($cells[0] === 'ID' || str_starts_with($cells[0], '---')) {
-            continue;
-        }
-
-        $rows[] = [
-            'id' => $cells[0],
-            'round' => (int) $cells[1],
-            'loc' => powUncell($cells[2]),
-            'desc' => powUncell($cells[3]),
-            'severity' => $cells[4],
-            'status' => $cells[5],
-            'resolution' => powUncell($cells[6]),
-        ];
+    if ($parsed['errors'] !== []) {
+        powFail(
+            'malformed ' . powRelative($root, $file) . ":\n  - " . implode("\n  - ", $parsed['errors'])
+            . "\nThe ledger is append-only and machine-read; a row the parser cannot read is a finding nobody sees.",
+        );
     }
 
-    return $rows;
+    return $parsed['rows'];
 }
 
 /**
@@ -595,25 +510,7 @@ function powLedgerRows(string $root): array
  */
 function powLedgerState(array $rows): array
 {
-    $state = [];
-
-    foreach ($rows as $row) {
-        if (!isset($state[$row['id']])) {
-            $state[$row['id']] = [
-                'first_round' => $row['round'],
-                'status' => $row['status'],
-                'loc' => $row['loc'],
-                'desc' => $row['desc'],
-                'severity' => $row['severity'],
-            ];
-
-            continue;
-        }
-
-        $state[$row['id']]['status'] = $row['status'];
-    }
-
-    return $state;
+    return powcLedgerState($rows);
 }
 
 /**
@@ -670,17 +567,7 @@ function powFindingCounters(array $rows): array
  */
 function powOpenIds(string $root): array
 {
-    $open = [];
-
-    foreach (powLedgerState(powLedgerRows($root)) as $id => $entry) {
-        if ($entry['status'] === 'open') {
-            $open[] = (string) $id;
-        }
-    }
-
-    natsort($open);
-
-    return array_values($open);
+    return powcOpenIds(powLedgerState(powLedgerRows($root)));
 }
 
 // --------------------------------------------------------------------------
@@ -947,6 +834,14 @@ function powCommandRound(string $root, array $options): void
         'generated_by' => 'bin/pow.php',
     ]) . powRead($artifactFile);
 
+    /** @var list<array<string, mixed>> $rounds */
+    $rounds = array_values(array_filter($manifest['rounds'], 'is_array'));
+
+    // Checked before publishing AND before the dry-run preview returns: the
+    // assertion publishes nothing, so a dry run is the cheapest place to learn
+    // that the run is already recorded or that the round goes backwards.
+    powAssertRoundIsNew($rounds, $round, $role, $runId);
+
     if ($options['dry-run'] === true) {
         fwrite(STDOUT, $body);
         powInfo(sprintf(
@@ -961,12 +856,6 @@ function powCommandRound(string $root, array $options): void
     if (powGhDisabled()) {
         powFail('POW_NO_GH=1 is set — --round can only run with --dry-run');
     }
-
-    /** @var list<array<string, mixed>> $rounds */
-    $rounds = array_values(array_filter($manifest['rounds'], 'is_array'));
-
-    // Checked before publishing: a rejected round must not leave a comment behind.
-    powAssertRoundIsNew($rounds, $round, $role, $runId);
 
     $pr = powResolvePrNumber($root);
     $comment = powPublishComment($root, $pr, $body);
@@ -1301,23 +1190,14 @@ function powCommandVerdict(string $root, array $options): void
  */
 function powVerdictProblems(string $root, ?string $verdict): array
 {
-    if ($verdict === null || $verdict === 'CLEAN') {
-        return [];
-    }
+    return powcEscalationProblems($verdict, powEscalationText($root), powOpenIds($root));
+}
 
+function powEscalationText(string $root): string
+{
     $escalation = powEscalationFile($root);
 
-    if (!is_file($escalation) || trim(powRead($escalation)) === '') {
-        return ['verdict ' . $verdict . ' requires a non-empty ' . powRelative($root, $escalation)];
-    }
-
-    if ($verdict !== 'ACCEPT') {
-        return [];
-    }
-
-    $unjustified = powUnjustifiedOpenIds($root);
-
-    return $unjustified === [] ? [] : ['ACCEPT with unjustified findings: ' . implode(', ', $unjustified)];
+    return is_file($escalation) ? powRead($escalation) : '';
 }
 
 /**
@@ -1327,21 +1207,12 @@ function powVerdictProblems(string $root, ?string $verdict): array
  */
 function powUnjustifiedOpenIds(string $root): array
 {
-    $escalation = powEscalationFile($root);
-    $text = is_file($escalation) ? powRead($escalation) : '';
+    $text = powEscalationText($root);
 
     return array_values(array_filter(
         powOpenIds($root),
-        static fn(string $id): bool => !powMentionsId($text, $id),
+        static fn(string $id): bool => !powcMentionsId($text, $id),
     ));
-}
-
-/**
- * Word-boundary match, so naming F-10 does not also justify F-1.
- */
-function powMentionsId(string $text, string $id): bool
-{
-    return preg_match('/(?<![A-Za-z0-9_-])' . preg_quote($id, '/') . '(?![A-Za-z0-9_-])/', $text) === 1;
 }
 
 /**
@@ -1369,11 +1240,24 @@ function powCommandSet(string $root, array $options): void
             powFail('unknown --set key "' . $key . '" (expected ' . implode('|', array_keys(POW_SET_KEYS)) . ')', 2);
         }
 
-        if (!is_numeric($value)) {
-            powFail('--set ' . $key . ' expects a number, got "' . $value . '"', 2);
+        // `is_numeric` would accept "1e3" (recorded as 1000) and "0.9"
+        // (recorded as 0) for an exit code. POW-08 compares those byte for
+        // byte against a recomputed run, so a typo would be reported as
+        // "manifest falsified" — an accusation of tampering for a slip.
+        if (POW_SET_KEYS[$key] === 'int') {
+            if (ctype_digit(ltrim($value, '-')) !== true || $value === '-' || $value === '') {
+                powFail('--set ' . $key . ' expects an integer exit code, got "' . $value . '"', 2);
+            }
+
+            $manifest[$key] = (int) $value;
+        } else {
+            if (!is_numeric($value) || !is_finite((float) $value)) {
+                powFail('--set ' . $key . ' expects a finite number, got "' . $value . '"', 2);
+            }
+
+            $manifest[$key] = (float) $value;
         }
 
-        $manifest[$key] = POW_SET_KEYS[$key] === 'int' ? (int) $value : (float) $value;
         $changed[] = $key . '=' . $manifest[$key];
     }
 
@@ -1584,7 +1468,7 @@ function powGitFacts(string $root): array
 {
     $base = null;
 
-    foreach (['origin/master', 'master', 'origin/main', 'main'] as $candidate) {
+    foreach (POWC_BASE_REFS as $candidate) {
         if (powRun(['git', 'rev-parse', '--verify', '--quiet', $candidate], $root)['code'] === 0) {
             $base = $candidate;
             break;
@@ -1606,7 +1490,7 @@ function powGitFacts(string $root): array
  */
 function powLines(string $text): array
 {
-    return array_values(array_filter(array_map('trim', explode("\n", $text)), static fn(string $l): bool => $l !== ''));
+    return powcLines($text);
 }
 
 /**
@@ -1616,50 +1500,21 @@ function powLines(string $text): array
  */
 function powValidateManifest(string $root, array $manifest): array
 {
-    $problems = [];
-    $profile = (string) $manifest['profile'];
-    $minimumRounds = $profile === 'full' ? 2 : 1;
     $rounds = is_array($manifest['rounds']) ? $manifest['rounds'] : [];
+    $ledger = powLedgerFile($root);
 
-    if (count($rounds) < $minimumRounds) {
-        $problems[] = sprintf('only %d round(s) recorded, the %s profile needs at least %d', count($rounds), $profile, $minimumRounds);
-    }
-
-    if ($manifest['lint_exit'] === null) {
-        $problems[] = 'lint_exit is not set (pow.php --set lint_exit=<code>)';
-    }
-
-    if ($manifest['test_exit'] === null) {
-        $problems[] = 'test_exit is not set (pow.php --set test_exit=<code>)';
-    }
-
-    $verdict = $manifest['verdict'];
-
-    if ($verdict === null) {
-        $problems[] = 'no verdict recorded (pow.php --verdict=<' . implode('|', POW_VERDICTS) . '>)';
-    }
-
-    $escalation = powEscalationFile($root);
-    $hasEscalation = is_file($escalation) && trim(powRead($escalation)) !== '';
-    $open = powOpenIds($root);
-
-    if ($open !== []) {
-        if ($verdict === 'CLEAN') {
-            $problems[] = 'verdict CLEAN but the ledger still has open findings: ' . implode(', ', $open);
-        }
-
-        if (!$hasEscalation && ($verdict === null || $verdict === 'CLEAN')) {
-            $problems[] = 'open findings (' . implode(', ', $open) . ') with no escalation.md justifying them';
-        }
-    }
-
-    // Re-checked here, not only in powCommandVerdict: the escalation rules must
-    // hold for the state that is actually shipped, whatever the command order was.
-    foreach (powVerdictProblems($root, is_string($verdict) ? $verdict : null) as $problem) {
-        $problems[] = $problem;
-    }
-
-    return $problems;
+    // The one completeness rule, shared with bin/check-pow.php's POW-03 so the
+    // gate can never accept a cycle --finish would have refused.
+    return powcCompletenessProblems(
+        (string) $manifest['profile'],
+        count($rounds),
+        is_file($ledger) && trim(powRead($ledger)) !== '',
+        is_int($manifest['lint_exit']) ? $manifest['lint_exit'] : null,
+        is_int($manifest['test_exit']) ? $manifest['test_exit'] : null,
+        is_string($manifest['verdict']) ? $manifest['verdict'] : null,
+        powEscalationText($root),
+        powOpenIds($root),
+    );
 }
 
 /**

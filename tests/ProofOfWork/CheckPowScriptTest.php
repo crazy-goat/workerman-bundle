@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\ProofOfWork;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -186,13 +187,13 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('no longer exists — a round comment was deleted', $result['err']);
     }
 
-    public function testDroppingARoundBreaksThePrevChain(): void
+    public function testDroppingTheFirstRoundBreaksTheFirstRoundRule(): void
     {
         $this->buildHappyRepository();
         $this->writeFixture($this->fixture());
 
-        // The orchestrator deletes the round that reported findings and keeps
-        // only the clean one; `prev` no longer points at anything real.
+        // Keeping only the later round leaves a first entry whose `prev` points
+        // at a round that is no longer in the manifest.
         $manifest = $this->manifest();
         $manifest['rounds'] = [$manifest['rounds'][1]];
         $this->writeManifest($manifest);
@@ -202,6 +203,82 @@ final class CheckPowScriptTest extends TestCase
         self::assertSame(1, $result['code']);
         self::assertStringContainsString('[POW-05]', $result['err']);
         self::assertStringContainsString('the first round must have prev=null', $result['err']);
+    }
+
+    /**
+     * The realistic cheat is the other end: truncate the review that found
+     * problems. The prev chain stays intact — round 1 legitimately has
+     * prev=null — so only the round count catches it, and only if the profile
+     * cannot be forged down along with it.
+     */
+    public function testDroppingTheLastRoundIsRejected(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+        $this->removeArtifact('aaaa1111', 'review');
+
+        $manifest = $this->manifest();
+        $manifest['rounds'] = [$manifest['rounds'][0]];
+        $this->writeManifest($manifest);
+
+        $result = $this->check('--strict');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-03]', $result['err']);
+        self::assertStringContainsString('1 round(s) recorded, the full profile needs at least 2', $result['err']);
+    }
+
+    public function testDroppingTheLastRoundAndForgingTheProfileIsStillRejected(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+        $this->removeArtifact('aaaa1111', 'review');
+
+        // `light` needs only one round — so the profile is the second thing an
+        // orchestrator would edit. It is re-derived from the branch prefix and
+        // the issue labels, never read from the manifest.
+        $manifest = $this->manifest();
+        $manifest['rounds'] = [$manifest['rounds'][0]];
+        $manifest['profile'] = 'light';
+        $this->writeManifest($manifest);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code'], 'a forged profile is tampering, not incompleteness');
+        self::assertStringContainsString('[POW-03]', $result['err']);
+        self::assertStringContainsString('manifest declares profile "light"', $result['err']);
+        self::assertStringContainsString('entitle it to "full"', $result['err']);
+    }
+
+    /**
+     * A `docs/` prefix is entitled to `light` — but only when the issue is
+     * known not to carry the `process` label. When `gh` cannot answer, the
+     * strict choice wins; "we could not check" must never buy a smaller cycle.
+     * (The branch enters the gate's scope through a protected path, which is
+     * the only way a light-prefix branch is enforced at all today.)
+     */
+    public function testTheProfileFallsBackToFullWhenTheIssueLabelsCannotBeRead(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        unset($fixture['issues']);
+        $this->writeFixture($fixture);
+
+        $this->git('switch', '-qc', 'docs/issue-4242-sample-issue');
+        $this->write('.github/workflows/tests.yaml', "name: Tests\n# tweaked\n");
+
+        $manifest = $this->manifest();
+        $manifest['branch'] = 'docs/issue-4242-sample-issue';
+        $manifest['profile'] = 'light';
+        $manifest['rounds'] = [$manifest['rounds'][0]];
+        $this->writeManifest($manifest);
+        $this->commit('docs: tweak CI');
+
+        $result = $this->check('--branch=docs/issue-4242-sample-issue');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('could not be read — assuming the full profile', $result['err']);
+        self::assertStringContainsString('entitle it to "full"', $result['err']);
     }
 
     public function testBackfilledProofOfWorkIsRejected(): void
@@ -264,7 +341,7 @@ final class CheckPowScriptTest extends TestCase
 
         self::assertSame(1, $result['code']);
         self::assertStringContainsString('[POW-03]', $result['err']);
-        self::assertStringContainsString('the ledger still has open finding(s) F-03', $result['err']);
+        self::assertStringContainsString('the ledger still has open findings: F-03', $result['err']);
     }
 
     public function testNonCleanVerdictWithoutEscalationIsRejected(): void
@@ -295,13 +372,18 @@ final class CheckPowScriptTest extends TestCase
         $result = $this->check('--strict');
 
         self::assertSame(1, $result['code']);
-        self::assertStringContainsString('no verdict recorded and no escalation.md', $result['err']);
+        self::assertStringContainsString('no verdict recorded', $result['err']);
     }
 
     public function testTooFewRoundsForTheProfileIsRejected(): void
     {
         $this->buildHappyRepository();
         $this->writeFixture($this->fixture());
+
+        // Dropping the review round would otherwise orphan its artifact and
+        // trip POW-07 as well, leaving the exit code over-determined: this test
+        // is about the round count and nothing else.
+        $this->removeArtifact('aaaa1111', 'review');
 
         $manifest = $this->manifest();
         $manifest['rounds'] = [$manifest['rounds'][0]];
@@ -311,6 +393,7 @@ final class CheckPowScriptTest extends TestCase
 
         self::assertSame(1, $result['code']);
         self::assertStringContainsString('1 round(s) recorded, the full profile needs at least 2', $result['err']);
+        self::assertStringNotContainsString('[POW-07]', $result['err'], 'exit 1 must be caused by the round count alone');
     }
 
     public function testScratchBufferInTheDiffIsRejected(): void
@@ -417,10 +500,7 @@ final class CheckPowScriptTest extends TestCase
         $fixture['pr']['reviews'] = [];
         $this->writeFixture($fixture);
 
-        $this->git('switch', '-qc', 'process/issue-4242-sample-issue');
-        $this->write('bin/pow.php', "<?php // rewritten in the open\n");
-        $this->git('add', '-A');
-        $this->commit('process: rewrite the recorder');
+        $this->onProcessBranch();
 
         $advisory = $this->check('--branch=process/issue-4242-sample-issue');
         self::assertSame(0, $advisory['code'], $advisory['err']);
@@ -429,6 +509,60 @@ final class CheckPowScriptTest extends TestCase
         $strict = $this->check('--strict', '--branch=process/issue-4242-sample-issue');
         self::assertSame(1, $strict['code']);
         self::assertStringContainsString('FAIL    [POW-10]', $strict['err']);
+    }
+
+    public function testAnApprovalWithoutAnAssociationIsNotAMaintainerApproval(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        // A drive-by APPROVED review from a fork carries no authorAssociation
+        // the gate recognises; it used to count as maintainer approval.
+        $fixture['pr']['reviews'] = [
+            ['state' => 'APPROVED', 'author' => ['login' => 'passer-by'], 'submittedAt' => '2099-01-01T00:00:00Z'],
+        ];
+        $this->writeFixture($fixture);
+
+        $this->onProcessBranch();
+
+        $result = $this->check('--strict', '--branch=process/issue-4242-sample-issue');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('carries no maintainer approval', $result['err']);
+        self::assertStringNotContainsString('approved by passer-by', $result['err']);
+    }
+
+    public function testAnApprovalOlderThanTheProtectedPathCommitIsRejected(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        $fixture['pr']['reviews'] = [
+            ['state' => 'APPROVED', 'authorAssociation' => 'OWNER', 'author' => ['login' => 'maintainer'], 'submittedAt' => '2001-01-01T00:00:00Z'],
+        ];
+        $this->writeFixture($fixture);
+
+        $this->onProcessBranch();
+
+        $result = $this->check('--branch=process/issue-4242-sample-issue');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-10]', $result['err']);
+        self::assertStringContainsString('before the newest protected-path commit', $result['err']);
+    }
+
+    public function testAnUntrackedProtectedFileIsSeenBeforeItIsCommitted(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $this->git('switch', '-qc', 'chore/sneaky');
+        // Never committed, so `git diff base...HEAD` says nothing about it.
+        $this->write('.github/workflows/release.yaml', "name: publish everything\n");
+
+        $result = $this->check('--branch=chore/sneaky');
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-10]', $result['err']);
+        self::assertStringContainsString('.github/workflows/release.yaml', $result['err']);
     }
 
     public function testProtectedPathIsCheckedEvenOnANonIssueBranch(): void
@@ -494,7 +628,7 @@ final class CheckPowScriptTest extends TestCase
         $fixture['pr']['labels'] = [['name' => 'no-pow']];
         $fixture['pr']['closingIssuesReferences'] = [];
         $this->writeFixture($fixture);
-        $this->write('docs/process-changelog.md', "# Process changelog\n\n- #700 release PR, no proof of work.\n");
+        $this->write('docs/process-changelog.md', "# Process changelog\n\n- #700 release PR, no-pow, approved by @maintainer.\n");
 
         $result = $this->check('--strict');
 
@@ -502,6 +636,33 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('BYPASS', $result['err']);
         self::assertStringContainsString('checks 1-8 are skipped', $result['err']);
         self::assertStringNotContainsString('[POW-01]', $result['err'], 'the hatch skips the closing-issue check');
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function unconvincingChangelogProvider(): iterable
+    {
+        yield 'a longer number that merely starts with it' => ["# Process changelog\n\n- #7001 no-pow for an unrelated release.\n"];
+        yield 'a denial, which used to read as a record' => ["# Process changelog\n\n- this is not #700; it went through a full cycle.\n"];
+        yield 'the number without the marker' => ["# Process changelog\n\n- #700 was merged on Tuesday.\n"];
+        yield 'the marker without the number' => ["# Process changelog\n\n- a no-pow bypass was granted last year.\n"];
+    }
+
+    #[DataProvider('unconvincingChangelogProvider')]
+    public function testABypassNeedsTheMarkerAndTheExactNumberOnOneLine(string $changelog): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        $fixture['pr']['labels'] = [['name' => 'no-pow']];
+        $this->writeFixture($fixture);
+        $this->write('docs/process-changelog.md', $changelog);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-09]', $result['err']);
+        self::assertStringContainsString('is not recorded in docs/process-changelog.md', $result['err']);
     }
 
     public function testNoPowLabelWithoutAnApprovalIsRejected(): void
@@ -536,49 +697,162 @@ final class CheckPowScriptTest extends TestCase
     }
 
     // ---------------------------------------------------------------------
-    // The gate runs from master
+    // Replay: a whole proof of work lifted from another cycle
     // ---------------------------------------------------------------------
 
-    public function testAPullRequestModifyingTheGateIsValidatedWithTheMasterCopy(): void
+    public function testAProofOfWorkRenamedFromAnotherIssueIsRejected(): void
     {
         $this->buildHappyRepository();
-        $this->writeFixture($this->fixture());
+        $fixture = $this->fixture();
+        $fixture['pr']['closingIssuesReferences'] = [['number' => 9001]];
+        $this->writeFixture($fixture);
 
-        // origin/master carries the real gate; the branch replaces it with one
-        // that always passes. --self-check must run the master copy.
-        self::assertSame(0, $this->git('switch', '-q', 'master')['code']);
-        $this->write('bin/check-pow.php', "<?php\nfwrite(STDERR, \"MASTER COPY SPEAKING\\n\");\nexit(7);\n");
-        $this->commit('add the gate to master');
-        $this->git('update-ref', 'refs/remotes/origin/master', 'master');
-        self::assertSame(0, $this->git('switch', '-q', self::BRANCH)['code']);
-        self::assertSame(0, $this->git('merge', '-q', '--no-edit', 'master')['code']);
+        // `git mv` the recorded directory of #4242 onto issue #9001 and open a
+        // PR closing #9001. The manifest still says 4242, and the comments it
+        // points at are real, so every hash and timestamp still checks out.
+        $this->git('mv', self::POW_DIR, 'docs/proof_of_work/9001-other');
+        $this->git('switch', '-qc', 'fix/issue-9001-other');
+        $this->commit('fix: reuse someone else\'s proof of work');
 
-        $this->write('bin/check-pow.php', "<?php\nfwrite(STDERR, \"TAMPERED COPY SPEAKING\\n\");\nexit(0);\n");
-        $this->git('add', '-A');
-        $this->commit('process: "improve" the gate');
+        $result = $this->check('--strict', '--branch=fix/issue-9001-other');
 
-        $result = $this->check('--self-check', '--strict');
-
-        self::assertSame(7, $result['code'], 'the exit code must come from the master copy');
-        self::assertStringContainsString('MASTER COPY SPEAKING', $result['err']);
-        self::assertStringNotContainsString('TAMPERED COPY SPEAKING', $result['err']);
-        self::assertStringContainsString('running the origin/master copy', $result['err']);
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-02]', $result['err']);
+        self::assertStringContainsString('records issue #4242 but this pull request closes #9001', $result['err']);
+        self::assertStringContainsString('records branch "fix/issue-4242-sample-issue"', $result['err']);
     }
 
-    public function testSelfCheckFallsBackLoudlyWhenMasterHasNoGateYet(): void
+    public function testRoundCommentsFromAnotherPullRequestAreRejected(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        // Real, unedited, correctly hashed comments — on somebody else's PR.
+        $fixture['comments']['111']['issue_url'] = 'https://api.github.com/repos/o/r/issues/42';
+        $fixture['comments']['222']['issue_url'] = 'https://api.github.com/repos/o/r/issues/42';
+        $this->writeFixture($fixture);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-05]', $result['err']);
+        self::assertStringContainsString('belongs to https://api.github.com/repos/o/r/issues/42, not to PR #700', $result['err']);
+    }
+
+    public function testACommentWithNoIssueUrlCannotBeBound(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        unset($fixture['comments']['111']['issue_url'], $fixture['comments']['222']['issue_url']);
+        $this->writeFixture($fixture);
+
+        $advisory = $this->check();
+        self::assertSame(0, $advisory['code'], $advisory['err']);
+        self::assertStringContainsString('carries no issue_url', $advisory['err']);
+
+        $strict = $this->check('--strict');
+        self::assertSame(1, $strict['code']);
+    }
+
+    public function testAManifestWithoutAPowVersionIsRejected(): void
     {
         $this->buildHappyRepository();
         $this->writeFixture($this->fixture());
 
-        $result = $this->check('--self-check', '--strict');
+        $manifest = $this->manifest();
+        unset($manifest['pow_version']);
+        $this->writeManifest($manifest);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('declares no pow_version', $result['err']);
+    }
+
+    public function testAManifestFromAFutureSchemaIsRejected(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $manifest = $this->manifest();
+        $manifest['pow_version'] = 2;
+        $this->writeManifest($manifest);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('declares pow_version 2, this gate reads version 1', $result['err']);
+    }
+
+    // ---------------------------------------------------------------------
+    // "Cannot determine" must never look like "nothing to see here"
+    // ---------------------------------------------------------------------
+
+    public function testAnUnreadableDiffIsNotAnEmptyDiff(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        // A shallow clone: `git diff origin/master...HEAD` exits 128 with
+        // "no merge base" and an empty stdout. Returning [] there used to turn
+        // POW-04 and POW-10 off without a word.
+        $this->write('bin/pow.php', "<?php // weakened\n");
+        $this->write('docs/proof_of_work/current/manifest.json', "{}\n");
+        $this->git('add', '-A', '-f');
+        $this->commit('rewrite the recorder and leak the buffer');
+        $this->makeUnrelatedBase();
+
+        $advisory = $this->check();
+        self::assertStringContainsString('[POW-00]', $advisory['err']);
+        self::assertStringContainsString('the changed-file list is incomplete', $advisory['err']);
+
+        $strict = $this->check('--strict');
+        self::assertSame(1, $strict['code'], 'in --strict, "cannot determine" is a failure');
+        self::assertStringContainsString('FAIL    [POW-00]', $strict['err']);
+    }
+
+    public function testASingleLedgerCommitReportsThatPow06DidNotRun(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        // The documented flow commits findings.md once, at step 11.5. Squash the
+        // two ledger commits into one and POW-06 has nothing to compare — which
+        // it must say out loud rather than pass silently.
+        self::assertSame(0, $this->git('reset', '-q', '--soft', 'HEAD~2')['code']);
+        $this->commit('docs(pow): proof of work for #4242');
+
+        $result = $this->check('--strict');
 
         self::assertSame(0, $result['code'], $result['err']);
-        self::assertStringContainsString('origin/master has no bin/check-pow.php yet', $result['err']);
-        self::assertStringContainsString('FALLING BACK to the in-tree copy', $result['err']);
+        self::assertStringContainsString('[POW-06]', $result['err']);
+        self::assertStringContainsString('the append-only comparison needs two, so it did not run', $result['err']);
+    }
+
+    public function testAMalformedLedgerRowIsAViolationNotASilentSkip(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        // Six cells instead of seven. The row parses as nothing, so the open
+        // finding it carries used to be invisible to POW-03.
+        $this->write(
+            self::POW_DIR . '/findings.md',
+            $this->read(self::POW_DIR . '/findings.md')
+                . "| F-09 | 2 | src/Foo.php:9 | still open | high | open |\n",
+        );
+        $this->git('add', '-A');
+        $this->commit('docs(pow): one more finding');
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-03]', $result['err']);
+        self::assertStringContainsString('findings.md is malformed', $result['err']);
+        self::assertStringContainsString('has 6 cells, not 7', $result['err']);
     }
 
     // ---------------------------------------------------------------------
-    // CLI
+    // CLI and the environment
     // ---------------------------------------------------------------------
 
     public function testUnknownOptionIsAUsageError(): void
@@ -591,15 +865,176 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('unknown option --nonsense', $result['err']);
     }
 
-    public function testSkipEnvironmentVariableShortCircuits(): void
+    /**
+     * A reused branch name leaves closed pull requests behind. Resolving one of
+     * those would make the gate validate that PR's comment chain instead of the
+     * one under review, so the open PR is asked for first.
+     */
+    public function testAnOpenPullRequestWinsOverAClosedOneOnTheSameBranch(): void
+    {
+        $this->buildHappyRepository();
+        $this->fakeGh(
+            ['open' => '[{"number":700}]', 'all' => '[{"number":123}]'],
+            (string) json_encode(['number' => 700, 'closingIssuesReferences' => [['number' => self::ISSUE]], 'labels' => [], 'reviews' => []]),
+        );
+
+        $this->check();
+
+        self::assertStringContainsString('--state open', $this->ghLog());
+        self::assertStringNotContainsString('--state all', $this->ghLog(), 'the open lookup answered, so `all` is never asked');
+        self::assertStringContainsString('pr view 700', $this->ghLog());
+    }
+
+    public function testAClosedPullRequestIsStillFoundWhenNoOpenOneExists(): void
+    {
+        $this->buildHappyRepository();
+        $this->fakeGh(
+            ['open' => '[]', 'all' => '[{"number":123}]'],
+            (string) json_encode(['number' => 123, 'closingIssuesReferences' => [['number' => self::ISSUE]], 'labels' => [], 'reviews' => []]),
+        );
+
+        $this->check();
+
+        self::assertStringContainsString('--state open', $this->ghLog());
+        self::assertStringContainsString('--state all', $this->ghLog());
+        self::assertStringContainsString('pr view 123', $this->ghLog());
+    }
+
+    /**
+     * CI materialises the gate into $RUNNER_TEMP so a pull request cannot
+     * supply its own. The script's parent directory is then not the checkout,
+     * and resolving the root from it made the gate see no git repository, no
+     * proof of work and no pull request — POW-00/POW-02 whatever the branch had
+     * recorded. The working tree of the current directory wins instead.
+     */
+    public function testTheGateMaterialisedOutsideTheRepositoryStillFindsIt(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $gate = $this->sandbox . '/elsewhere/gate';
+        self::assertTrue(mkdir($gate, 0o775, true));
+
+        foreach (['check-pow.php', 'pow-common.php'] as $file) {
+            self::assertTrue(copy(\dirname(__DIR__, 2) . '/bin/' . $file, $gate . '/' . $file));
+        }
+
+        // No CHECK_POW_ROOT: the gate has to work it out from the cwd.
+        $result = $this->exec([PHP_BINARY, $gate . '/check-pow.php', '--strict'], [
+            'CHECK_POW_ROOT' => '',
+            'CHECK_POW_GH_FIXTURE' => $this->sandbox . '/gh-fixture.json',
+        ]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('running from outside the repository', $result['err']);
+        self::assertStringContainsString('proof of work for issue #4242 verified', $result['err']);
+    }
+
+    public function testStrictAndAdvisoryAreContradictory(): void
+    {
+        $this->buildHappyRepository();
+
+        $result = $this->check('--strict', '--advisory');
+
+        self::assertSame(2, $result['code']);
+        self::assertStringContainsString('contradictory', $result['err']);
+    }
+
+    public function testAdvisoryModeReportsTamperingButNeverFails(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        $fixture['comments']['222']['body'] = "---\nround: 1\n---\n\nall clean, honest\n";
+        $this->writeFixture($fixture);
+
+        $blocking = $this->check();
+        self::assertSame(1, $blocking['code'], 'the default mode still fails on evidence of tampering');
+
+        $advisory = $this->check('--advisory');
+
+        self::assertSame(0, $advisory['code'], 'composer lint must never go red because of the gate');
+        self::assertStringContainsString('WARN    [POW-05]', $advisory['err']);
+        self::assertStringContainsString('report-only mode', $advisory['out']);
+    }
+
+    public function testABaseBranchIsSkippedInsteadOfBeingGatedAgainstItself(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        // master ahead of a stale origin/master: every protected file in the
+        // repository reads as freshly touched from a non-process/ branch.
+        self::assertSame(0, $this->git('switch', '-q', 'master')['code']);
+        $this->git('update-ref', 'refs/remotes/origin/master', 'master');
+        $this->write('bin/pow.php', "<?php // an ordinary commit on master\n");
+        $this->commit('chore: touch the recorder on master');
+
+        $result = $this->check('--branch=master');
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('is a base branch', $result['out']);
+        self::assertStringNotContainsString('[POW-10]', $result['err']);
+    }
+
+    public function testSkipEnvironmentVariableShortCircuitsOutsideStrict(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $result = $this->checkWith(['CHECK_POW_SKIP' => '1']);
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('CHECK_POW_SKIP=1', $result['out']);
+    }
+
+    public function testSkipEnvironmentVariableCannotSwitchOffTheStrictGate(): void
     {
         $this->buildHappyRepository();
         $this->writeFixture($this->fixture());
 
         $result = $this->checkWith(['CHECK_POW_SKIP' => '1'], '--strict');
 
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-11]', $result['err']);
+        self::assertStringContainsString('set but ignored under --strict', $result['err']);
+        self::assertStringNotContainsString('skipped (CHECK_POW_SKIP=1)', $result['out']);
+    }
+
+    public function testTheGhFixtureIsIgnoredOnARunner(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $result = $this->checkWith(['GITHUB_ACTIONS' => 'true', 'CI' => 'true']);
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-11]', $result['err']);
+        self::assertStringContainsString('ignored on a CI runner', $result['err']);
+        // With the fixture ignored there is no `gh` in the sandbox PATH either,
+        // so the pull request becomes unresolvable rather than fabricated.
+        self::assertStringContainsString('[POW-00]', $result['err']);
+    }
+
+    /**
+     * `--verify-reality` runs `composer lint` and `composer test:coverage`, the
+     * two commands most likely to fill a pipe buffer. A gate that drains stdout
+     * to EOF before touching stderr hangs here forever instead of failing —
+     * in CI that means the six-hour job timeout, not a red build.
+     */
+    public function testAVerifyRealityChildFloodingStderrDoesNotDeadlock(): void
+    {
+        $this->buildHappyRepository();
+        $this->writeFixture($this->fixture());
+
+        $flood = 'php -r \'$c = str_repeat("x", 1024); for ($i = 0; $i < 512; $i++) { fwrite(STDERR, $c); } exit(0);\'';
+
+        $result = $this->checkWith([
+            'CHECK_POW_LINT_CMD' => $flood,
+            'CHECK_POW_TEST_CMD' => 'exit 0',
+        ], '--verify-reality');
+
         self::assertSame(0, $result['code'], $result['err']);
-        self::assertStringContainsString('CHECK_POW_SKIP=1', $result['out']);
+        self::assertStringContainsString('lint_exit matches the recomputed value (0)', $result['err']);
     }
 
     // ---------------------------------------------------------------------
@@ -668,6 +1103,7 @@ final class CheckPowScriptTest extends TestCase
     private function baseManifest(): array
     {
         return [
+            'pow_version' => 1,
             'issue' => self::ISSUE,
             'slug' => self::SLUG,
             'branch' => self::BRANCH,
@@ -722,10 +1158,20 @@ final class CheckPowScriptTest extends TestCase
                 'labels' => [['name' => 'bug']],
                 'closingIssuesReferences' => [['number' => self::ISSUE]],
                 'reviews' => [
-                    ['state' => 'APPROVED', 'authorAssociation' => 'OWNER', 'author' => ['login' => 'maintainer']],
+                    [
+                        'state' => 'APPROVED',
+                        'authorAssociation' => 'OWNER',
+                        'author' => ['login' => 'maintainer'],
+                        // Later than any commit the sandbox can produce, so the
+                        // staleness rule only fires where a test asks for it.
+                        'submittedAt' => '2099-01-01T00:00:00Z',
+                    ],
                 ],
             ],
             'comments' => $this->comments(),
+            'issues' => [
+                (string) self::ISSUE => ['labels' => [['name' => 'bug']]],
+            ],
         ];
     }
 
@@ -738,12 +1184,14 @@ final class CheckPowScriptTest extends TestCase
             '111' => [
                 'id' => 111,
                 'body' => self::ROUND_ONE_BODY,
+                'issue_url' => 'https://api.github.com/repos/o/r/issues/700',
                 'created_at' => '2026-08-11T10:00:00Z',
                 'updated_at' => '2026-08-11T10:00:00Z',
             ],
             '222' => [
                 'id' => 222,
                 'body' => self::ROUND_TWO_BODY,
+                'issue_url' => 'https://api.github.com/repos/o/r/issues/700',
                 'created_at' => '2026-08-11T10:05:00Z',
                 'updated_at' => '2026-08-11T10:05:00Z',
             ],
@@ -783,8 +1231,9 @@ final class CheckPowScriptTest extends TestCase
         $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $pipes = [];
         $fixture = $this->sandbox . '/gh-fixture.json';
+        $fakeBin = $this->sandbox . '/fakebin';
         $base = [
-            'PATH' => (string) getenv('PATH'),
+            'PATH' => (is_dir($fakeBin) ? $fakeBin . ':' : '') . getenv('PATH'),
             'HOME' => (string) getenv('HOME'),
             'CHECK_POW_ROOT' => $this->sandbox,
         ];
@@ -797,12 +1246,108 @@ final class CheckPowScriptTest extends TestCase
 
         self::assertIsResource($process);
 
-        $out = (string) stream_get_contents($pipes[1]);
-        $err = (string) stream_get_contents($pipes[2]);
+        // Both pipes together: the child can outrun a 64 KB buffer on either.
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        $buffers = ['', ''];
+        $open = [1 => $pipes[1], 2 => $pipes[2]];
+
+        while ($open !== []) {
+            $read = array_values($open);
+            $write = null;
+            $except = null;
+
+            if (@stream_select($read, $write, $except, 30) === false) {
+                break;
+            }
+
+            foreach ($open as $key => $stream) {
+                if (!\in_array($stream, $read, true)) {
+                    continue;
+                }
+
+                $chunk = fread($stream, 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $buffers[$key - 1] .= $chunk;
+
+                    continue;
+                }
+
+                if (feof($stream)) {
+                    unset($open[$key]);
+                }
+            }
+        }
+
         fclose($pipes[1]);
         fclose($pipes[2]);
 
-        return ['code' => proc_close($process), 'out' => $out, 'err' => $err];
+        return ['code' => proc_close($process), 'out' => $buffers[0], 'err' => $buffers[1]];
+    }
+
+    /**
+     * Installs a stub `gh` first on the child PATH and records every
+     * invocation, so the real `gh pr list` / `gh pr view` path can be driven
+     * without the JSON fixture that short-circuits it.
+     *
+     * @param array<string, string> $prByState `gh pr list --state <state>` payloads
+     */
+    private function fakeGh(array $prByState, string $prView): void
+    {
+        $dir = $this->sandbox . '/fakebin';
+
+        if (!is_dir($dir)) {
+            self::assertTrue(mkdir($dir, 0o775, true));
+        }
+
+        $config = json_encode(['list' => $prByState, 'view' => $prView], JSON_UNESCAPED_SLASHES);
+        self::assertIsString($config);
+        $this->write('fakegh.json', $config);
+
+        $stub = '#!' . PHP_BINARY . "\n" . <<<'PHP'
+            <?php
+
+            $args = array_slice($argv, 1);
+            $root = (string) getenv('CHECK_POW_ROOT');
+            file_put_contents($root . '/fakegh.log', implode(' ', $args) . "\n", FILE_APPEND);
+            $config = json_decode((string) file_get_contents($root . '/fakegh.json'), true);
+
+            if (($args[0] ?? '') === '--version' || (($args[0] ?? '') === 'auth' && ($args[1] ?? '') === 'status')) {
+                exit(0);
+            }
+
+            if (($args[0] ?? '') === 'pr' && ($args[1] ?? '') === 'list') {
+                $state = 'all';
+
+                foreach ($args as $i => $arg) {
+                    if ($arg === '--state') {
+                        $state = (string) ($args[$i + 1] ?? 'all');
+                    }
+                }
+
+                echo (string) ($config['list'][$state] ?? '[]');
+                exit(0);
+            }
+
+            if (($args[0] ?? '') === 'pr' && ($args[1] ?? '') === 'view') {
+                echo (string) ($config['view'] ?? '{}');
+                exit(0);
+            }
+
+            fwrite(STDERR, "fake gh: unsupported: " . implode(' ', $args) . "\n");
+            exit(1);
+            PHP;
+
+        self::assertNotFalse(file_put_contents($dir . '/gh', $stub));
+        self::assertTrue(chmod($dir . '/gh', 0o755));
+    }
+
+    private function ghLog(): string
+    {
+        $log = $this->path('fakegh.log');
+
+        return is_file($log) ? (string) file_get_contents($log) : '';
     }
 
     /**
@@ -853,6 +1398,47 @@ final class CheckPowScriptTest extends TestCase
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    /**
+     * Switches to the process/ branch and rewrites a protected file there, the
+     * shape every POW-10 test needs.
+     */
+    private function onProcessBranch(): void
+    {
+        $this->git('switch', '-qc', 'process/issue-4242-sample-issue');
+        $this->write('bin/pow.php', "<?php // rewritten in the open\n");
+        $manifest = $this->manifest();
+        $manifest['branch'] = 'process/issue-4242-sample-issue';
+        $this->writeManifest($manifest);
+        $this->git('add', '-A');
+        $this->commit('process: rewrite the recorder');
+    }
+
+    /**
+     * Points origin/master at an unrelated root commit, which is what
+     * `git diff origin/master...HEAD` calls "no merge base" — the shallow-clone
+     * failure mode, reproducible without a shallow clone.
+     */
+    private function makeUnrelatedBase(): void
+    {
+        self::assertSame(0, $this->git('switch', '-q', '--orphan', 'unrelated')['code']);
+        $this->write('unrelated.txt', "no shared history\n");
+        $this->commit('unrelated root');
+        $this->git('update-ref', 'refs/remotes/origin/master', 'unrelated');
+        self::assertSame(0, $this->git('switch', '-q', self::BRANCH)['code']);
+        $this->git('branch', '-D', 'master');
+    }
+
+    private function removeArtifact(string $runId, string $agent): void
+    {
+        foreach (['_0_meta.json', '_0_output.md'] as $suffix) {
+            $file = $this->path('.pi-subagents/artifacts/' . $runId . '_' . $agent . $suffix);
+
+            if (is_file($file)) {
+                self::assertTrue(unlink($file));
+            }
+        }
     }
 
     private function writeArtifact(string $runId, string $agent, int $timestamp): void

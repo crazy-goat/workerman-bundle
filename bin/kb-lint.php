@@ -19,6 +19,12 @@ declare(strict_types=1);
  *   --root=DIR          repository root (default: the parent of bin/)
  *   --help              show this help
  *
+ * Environment:
+ *   KB_LINT_ROOT        same as --root=, overridden by it. The resolved root is
+ *                       always printed, and using this variable is reported as a
+ *                       warning — a lint whose target can be switched invisibly
+ *                       is not a gate.
+ *
  * Exit codes:
  *   0  clean (warnings may still be printed)
  *   1  lint failure (an error was found, or --fix was needed and not given)
@@ -75,7 +81,11 @@ const STALE_AFTER_CYCLES = 20;
  */
 const DUPLICATE_THRESHOLD = 0.75;
 
-/** Short entries are too noisy to compare; below this token count they are skipped. */
+/**
+ * A pair is compared only when the *larger* of the two entries reaches this
+ * token count. Applying the minimum to both entries would skip exactly the
+ * short-entry-inside-a-long-one case the overlap coefficient exists for.
+ */
 const DUPLICATE_MIN_TOKENS = 15;
 
 const INDEX_START = '<!-- kb-index:start -->';
@@ -175,10 +185,47 @@ function parseFrontMatter(string $line): array
             return ['pairs' => [], 'error' => sprintf('duplicate front-matter key "%s"', $key)];
         }
 
+        // An HTML comment ends at its first "-->", whatever the quoting says, so
+        // a value containing one parses here but renders as visible text.
+        if (str_contains($value, '-->')) {
+            return ['pairs' => [], 'error' => sprintf('front-matter value for "%s" must not contain "-->"', $key)];
+        }
+
         $pairs[$key] = $value;
     }
 
     return ['pairs' => $pairs, 'error' => null];
+}
+
+/**
+ * How many lines the generated index occupies, its scaffolding included.
+ *
+ * `writeIndex()` emits `## Tag index`, a blank line, the two markers and a
+ * trailing blank line. All of that is generated, so none of it is charged to
+ * the line budget.
+ *
+ * @param list<string> $lines
+ * @param array{start: int, end: int, body: list<string>} $index
+ */
+function indexFootprint(array $lines, array $index): int
+{
+    $footprint = $index['end'] - $index['start'] + 1;
+
+    if (trim($lines[$index['end']] ?? 'x') === '') {
+        $footprint++;
+    }
+
+    if (trim($lines[$index['start'] - 2] ?? 'x') !== '') {
+        return $footprint;
+    }
+
+    $footprint++;
+
+    if (preg_match('/^#{1,3}\s+Tag index$/', trim($lines[$index['start'] - 3] ?? '')) === 1) {
+        $footprint++;
+    }
+
+    return $footprint;
 }
 
 /**
@@ -188,7 +235,7 @@ function parseFrontMatter(string $line): array
  *     entries: list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}>,
  *     errors: list<string>,
  *     lines: int,
- *     index: ?array{start: int, end: int, body: list<string>},
+ *     index: ?array{start: int, end: int, body: list<string>, footprint: int},
  *     first_section: ?int
  * }
  */
@@ -224,10 +271,20 @@ function parseFile(string $relative, string $absolute): array
                 continue;
             }
 
+            if ($index !== null) {
+                // --fix rewrites one block only, so a leftover would survive the
+                // next lint and silently contradict the regenerated index.
+                $errors[] = sprintf('%s:%d: more than one tag index block — keep exactly one', $relative, $number);
+                $indexStart = null;
+
+                continue;
+            }
+
             $index = [
                 'start' => $indexStart,
                 'end' => $number,
                 'body' => \array_slice($lines, $indexStart, $number - $indexStart - 1),
+                'footprint' => 0,
             ];
             $indexStart = null;
 
@@ -276,6 +333,10 @@ function parseFile(string $relative, string $absolute): array
 
     if ($indexStart !== null) {
         $errors[] = sprintf('%s:%d: tag index start marker is never closed', $relative, $indexStart);
+    }
+
+    if ($index !== null) {
+        $index['footprint'] = indexFootprint($lines, $index);
     }
 
     // The front-matter line is part of the entry, not of its body.
@@ -477,7 +538,7 @@ function renderIndex(array $entries): array
  * the markers are missing.
  *
  * @param list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries
- * @param array{start: int, end: int, body: list<string>}|null $index
+ * @param array{start: int, end: int, body: list<string>, footprint: int}|null $index
  */
 function writeIndex(string $absolute, array $entries, ?array $index, ?int $firstSection): void
 {
@@ -506,22 +567,26 @@ function printUsage(array $args): void
     fwrite(STDOUT, "  --fix               regenerate the tag index of every knowledge-base file\n");
     fwrite(STDOUT, "  --json              machine-readable output (JSON on stdout)\n");
     fwrite(STDOUT, "  --root=DIR          repository root (default: the parent of bin/)\n");
-    fwrite(STDOUT, "  --help              show this help\n");
+    fwrite(STDOUT, "  --help              show this help\n\n");
+    fwrite(STDOUT, "Environment:\n");
+    fwrite(STDOUT, '  ' . ROOT_ENV . "        same as --root=, overridden by it; reported as a warning\n");
 }
 
 /**
  * @param list<string> $argv
  *
- * @return array{fix: bool, json: bool, root: string}
+ * @return array{fix: bool, json: bool, root: string, root_from_env: bool}
  */
 function parseArgs(array $argv): array
 {
     $envRoot = getenv(ROOT_ENV);
+    $fromEnv = \is_string($envRoot) && $envRoot !== '';
 
     $options = [
         'fix' => false,
         'json' => false,
-        'root' => \is_string($envRoot) && $envRoot !== '' ? $envRoot : \dirname(__DIR__),
+        'root' => $fromEnv ? (string) $envRoot : \dirname(__DIR__),
+        'root_from_env' => $fromEnv,
     ];
 
     foreach (\array_slice($argv, 1) as $arg) {
@@ -544,6 +609,7 @@ function parseArgs(array $argv): array
 
         if (str_starts_with($arg, '--root=')) {
             $options['root'] = substr($arg, 7);
+            $options['root_from_env'] = false;
 
             continue;
         }
@@ -565,12 +631,19 @@ function parseArgs(array $argv): array
 }
 
 /**
- * @param array{fix: bool, json: bool, root: string} $options
+ * @param array{fix: bool, json: bool, root: string, root_from_env: bool} $options
  */
 function main(array $options): int
 {
     $errors = [];
     $warnings = [];
+
+    // Which tree was linted is part of the result: an environment variable that
+    // silently redirects the lint must never be invisible in its output.
+    if ($options['root_from_env']) {
+        $warnings[] = sprintf('root overridden via %s', ROOT_ENV);
+    }
+
     $stale = [];
     $duplicates = [];
     $files = [];
@@ -614,8 +687,9 @@ function main(array $options): int
             $allEntries[] = $entry;
         }
 
-        // The generated index is not knowledge, so it does not use up the budget.
-        $indexLines = $parsed['index'] !== null ? $parsed['index']['end'] - $parsed['index']['start'] + 1 : 0;
+        // The generated index is not knowledge, so neither it nor the heading and
+        // blank lines generated around it use up the budget.
+        $indexLines = $parsed['index'] !== null ? $parsed['index']['footprint'] : 0;
         $budgeted = $parsed['lines'] - $indexLines;
 
         if ($budgeted > LINE_BUDGET) {
@@ -666,7 +740,7 @@ function main(array $options): int
 
     for ($i = 0, $count = \count($comparable); $i < $count; $i++) {
         for ($j = $i + 1; $j < $count; $j++) {
-            if (\count($tokens[$i]) < DUPLICATE_MIN_TOKENS || \count($tokens[$j]) < DUPLICATE_MIN_TOKENS) {
+            if (max(\count($tokens[$i]), \count($tokens[$j])) < DUPLICATE_MIN_TOKENS) {
                 continue;
             }
 
@@ -695,6 +769,8 @@ function main(array $options): int
     if ($options['json']) {
         echo json_encode([
             'ok' => $ok,
+            'root' => $options['root'],
+            'root_from_env' => $options['root_from_env'],
             'files' => $files,
             'entries' => \count($allEntries),
             'errors' => $errors,
@@ -707,6 +783,8 @@ function main(array $options): int
 
         return $ok ? 0 : 1;
     }
+
+    fwrite(STDOUT, sprintf("kb-lint: root %s\n", $options['root']));
 
     foreach ($files as $file) {
         fwrite(STDOUT, sprintf(

@@ -31,7 +31,10 @@ Repository gates (do not rediscover them, do not weaken them):
 - The **80% line-coverage floor** is defined once, in `composer.json`'s
   `coverage:check`. Lowering it, disabling a linter rule or relaxing PHPStan to make
   a check pass is forbidden outright — report the conflict instead.
-- `src/`, `tests/` and `benchmarks/` are linted; `bin/` is not in any tool's scope.
+- `src/`, `tests/` and `benchmarks/` are linted; `bin/` is outside every *linter's*
+  scope, but `bin/` scripts have PHPUnit coverage (`tests/BinDirectoryTest.php`,
+  `tests/CoverageCiGateTest.php`, `tests/ProofOfWork/`, `tests/KnowledgeBase/`) — run
+  `composer test` after touching them.
 - The pre-push hook runs `composer lint`.
 
 How to work:
