@@ -97,6 +97,20 @@ final class PeriodicalTriggerTest extends TestCase
         ];
     }
 
+    public function testMixedSignIntervalIsAccepted(): void
+    {
+        // '-1 day +25 hours' nets +1 hour forward: a field-wise positivity
+        // check would wrongly reject it, the add-based one must accept it.
+        $trigger = new PeriodicalTrigger('-1 day +25 hours');
+        $now = new \DateTimeImmutable('2024-01-15 12:00:00');
+
+        $nextRun = $trigger->getNextRunDate($now);
+
+        $this->assertSame('every -1 day +25 hours', (string) $trigger);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
+        $this->assertGreaterThan($now, $nextRun);
+    }
+
     public function testGetNextRunDateReturnsFutureDate(): void
     {
         $trigger = new PeriodicalTrigger(60);
