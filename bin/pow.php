@@ -47,6 +47,12 @@ declare(strict_types=1);
  *               title or labels (pass `--slug`/`--profile` instead)
  */
 
+/**
+ * Schema version of manifest.json. Bump when the shape changes so consumers
+ * (the Phase 2 gate) can pin one shape instead of guessing.
+ */
+const POW_VERSION = 1;
+
 /** Round caps per profile. There is no round beyond the cap — the oracle decides. */
 const POW_PROFILE_CAPS = ['full' => 4, 'light' => 2];
 
@@ -112,12 +118,60 @@ function powRun(array $cmd, ?string $cwd = null): array
         return ['code' => 127, 'out' => '', 'err' => 'unable to start: ' . implode(' ', $cmd)];
     }
 
-    $out = (string) stream_get_contents($pipes[1]);
-    $err = (string) stream_get_contents($pipes[2]);
+    // Both pipes are drained together: reading one to EOF first deadlocks as
+    // soon as the child fills the other pipe's buffer (64 KB on Linux).
+    [$out, $err] = powDrain($pipes[1], $pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
 
     return ['code' => proc_close($process), 'out' => $out, 'err' => $err];
+}
+
+/**
+ * Reads two pipes concurrently until both reach EOF.
+ *
+ * @param resource $stdout
+ * @param resource $stderr
+ *
+ * @return array{0: string, 1: string}
+ */
+function powDrain($stdout, $stderr): array
+{
+    stream_set_blocking($stdout, false);
+    stream_set_blocking($stderr, false);
+
+    $buffers = ['out' => '', 'err' => ''];
+    $open = ['out' => $stdout, 'err' => $stderr];
+
+    while ($open !== []) {
+        $read = array_values($open);
+        $write = null;
+        $except = null;
+
+        if (@stream_select($read, $write, $except, 5) === false) {
+            break;
+        }
+
+        foreach ($open as $name => $stream) {
+            if (!in_array($stream, $read, true)) {
+                continue;
+            }
+
+            $chunk = fread($stream, 65536);
+
+            if ($chunk !== false && $chunk !== '') {
+                $buffers[$name] .= $chunk;
+
+                continue;
+            }
+
+            if (feof($stream)) {
+                unset($open[$name]);
+            }
+        }
+    }
+
+    return [$buffers['out'], $buffers['err']];
 }
 
 function powGhDisabled(): bool
@@ -162,8 +216,17 @@ function powCell(string $text): string
 {
     $text = str_replace(["\r\n", "\r"], "\n", $text);
     $text = str_replace('|', '\\|', $text);
+    $text = str_replace("\n", '<br>', $text);
 
-    return trim(str_replace("\n", '<br>', $text));
+    // Control characters (ESC, FF, NUL, ...) must never reach a committed file:
+    // they would let a description inject ANSI escapes into findings.md.
+    $stripped = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text);
+
+    if (!is_string($stripped)) {
+        $stripped = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text);
+    }
+
+    return trim($stripped);
 }
 
 function powUncell(string $text): string
@@ -254,6 +317,40 @@ function powArtifactsDir(string $root): string
 // --------------------------------------------------------------------------
 
 /**
+ * Reads the manifest without ever failing — for the recovery paths that must
+ * work on a manifest nothing else can parse (`--abort`).
+ *
+ * @return array<string, mixed>|null
+ */
+function powReadManifestDefensively(string $root): ?array
+{
+    $file = powManifestFile($root);
+
+    if (!is_file($file)) {
+        return null;
+    }
+
+    $contents = @file_get_contents($file);
+
+    if ($contents === false) {
+        return null;
+    }
+
+    try {
+        $manifest = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+
+    if (!is_array($manifest)) {
+        return null;
+    }
+
+    /** @var array<string, mixed> $manifest */
+    return powManifestShapeProblems($manifest) === [] ? $manifest : null;
+}
+
+/**
  * @return array<string, mixed>
  */
 function powLoadManifest(string $root): array
@@ -265,7 +362,6 @@ function powLoadManifest(string $root): array
     }
 
     try {
-        /** @var array<string, mixed> $manifest */
         $manifest = json_decode(powRead($file), true, 512, JSON_THROW_ON_ERROR);
     } catch (JsonException $e) {
         powFail('malformed manifest.json: ' . $e->getMessage());
@@ -275,7 +371,113 @@ function powLoadManifest(string $root): array
         powFail('malformed manifest.json: expected an object');
     }
 
+    /** @var array<string, mixed> $manifest */
+    $problems = powManifestShapeProblems($manifest);
+
+    if ($problems !== []) {
+        powFail(
+            'malformed manifest.json (' . powRelative($root, $file) . "):\n  - " . implode("\n  - ", $problems)
+            . "\nThis file is written by bin/pow.php only — start a new cycle with --start, or --abort to archive it.",
+        );
+    }
+
     return $manifest;
+}
+
+/**
+ * Every key `--status`, `--round` and `--finish` read, with its expected type.
+ * A manifest the script cannot understand must never be reported as usable.
+ *
+ * @param array<string, mixed> $manifest
+ *
+ * @return list<string>
+ */
+function powManifestShapeProblems(array $manifest): array
+{
+    $expected = [
+        'pow_version' => 'int',
+        'issue' => 'int',
+        'slug' => 'string',
+        'branch' => 'string',
+        'profile' => 'string',
+        'round_cap' => 'int',
+        'created_at' => 'string',
+        'rounds' => 'list',
+        'commits' => 'list',
+        'files_changed' => 'list',
+        'lint_exit' => 'int|null',
+        'test_exit' => 'int|null',
+        'coverage' => 'float|null',
+        'findings' => 'counters',
+        'gates_added' => 'list',
+        'aborted' => 'list',
+        'verdict' => 'string|null',
+    ];
+
+    $problems = [];
+
+    foreach ($expected as $key => $type) {
+        if (!array_key_exists($key, $manifest)) {
+            $problems[] = 'missing key "' . $key . '"';
+
+            continue;
+        }
+
+        if (!powValueMatchesType($manifest[$key], $type)) {
+            $problems[] = 'key "' . $key . '" must be ' . $type . ', got ' . get_debug_type($manifest[$key]);
+        }
+    }
+
+    if (($problems === []) && (int) $manifest['issue'] <= 0) {
+        $problems[] = 'key "issue" must be a positive integer';
+    }
+
+    if (($problems === []) && !isset(POW_PROFILE_CAPS[(string) $manifest['profile']])) {
+        $problems[] = 'key "profile" must be one of ' . implode('|', array_keys(POW_PROFILE_CAPS));
+    }
+
+    if (($problems === []) && (int) $manifest['round_cap'] < 1) {
+        $problems[] = 'key "round_cap" must be a positive integer';
+    }
+
+    if (($problems === []) && $manifest['verdict'] !== null && !in_array($manifest['verdict'], POW_VERDICTS, true)) {
+        $problems[] = 'key "verdict" must be one of ' . implode('|', POW_VERDICTS);
+    }
+
+    if (($problems === []) && (int) $manifest['pow_version'] !== POW_VERSION) {
+        $problems[] = 'unsupported pow_version ' . (int) $manifest['pow_version'] . ' (this script writes ' . POW_VERSION . ')';
+    }
+
+    return $problems;
+}
+
+function powValueMatchesType(mixed $value, string $type): bool
+{
+    return match ($type) {
+        'int' => is_int($value),
+        'string' => is_string($value),
+        'int|null' => $value === null || is_int($value),
+        'float|null' => $value === null || is_int($value) || is_float($value),
+        'string|null' => $value === null || is_string($value),
+        'list' => is_array($value) && array_is_list($value),
+        'counters' => powIsCounters($value),
+        default => false,
+    };
+}
+
+function powIsCounters(mixed $value): bool
+{
+    if (!is_array($value)) {
+        return false;
+    }
+
+    foreach (['total', 'round1', 'escaped', 'open'] as $key) {
+        if (!isset($value[$key]) || !is_int($value[$key])) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -298,6 +500,7 @@ function powSaveManifest(string $root, array $manifest): void
 function powNewManifest(int $issue, string $slug, string $branch, string $profile): array
 {
     return [
+        'pow_version' => POW_VERSION,
         'issue' => $issue,
         'slug' => $slug,
         'branch' => $branch,
@@ -489,21 +692,9 @@ function powOpenIds(string $root): array
  */
 function powCurrentEntries(string $root): array
 {
-    $dir = powCurrentDir($root);
-
-    if (!is_dir($dir)) {
-        return [];
-    }
-
-    $entries = scandir($dir);
-
-    if ($entries === false) {
-        return [];
-    }
-
     return array_values(array_filter(
-        $entries,
-        static fn(string $entry): bool => !in_array($entry, ['.', '..', '.gitkeep'], true),
+        powDirEntries(powCurrentDir($root)),
+        static fn(string $entry): bool => $entry !== '.gitkeep',
     ));
 }
 
@@ -623,14 +814,25 @@ function powSlugFromIssue(string $root, int $issue): string
  */
 function powResolveProfile(string $root, int $issue, string $branch, mixed $explicit): string
 {
+    $prefix = strtolower(explode('/', $branch, 2)[0]);
+
     if ($explicit !== null) {
         if (!is_string($explicit) || !isset(POW_PROFILE_CAPS[$explicit])) {
             powFail('invalid --profile (expected full or light)', 2);
         }
+
+        // An explicit --profile must not be able to buy a smaller round cap on
+        // a branch whose prefix mandates the full profile.
+        if ($explicit === 'light' && in_array($prefix, POW_FULL_PREFIXES, true)) {
+            powFail(
+                '--profile=light is refused on a "' . $prefix . '/" branch — that prefix mandates the full profile '
+                . '(' . implode(', ', POW_FULL_PREFIXES) . ')',
+                2,
+            );
+        }
+
         $profile = $explicit;
     } else {
-        $prefix = strtolower(explode('/', $branch, 2)[0]);
-
         if (in_array($prefix, POW_LIGHT_PREFIXES, true)) {
             $profile = 'light';
         } elseif (in_array($prefix, POW_FULL_PREFIXES, true)) {
@@ -641,7 +843,16 @@ function powResolveProfile(string $root, int $issue, string $branch, mixed $expl
         }
     }
 
-    if ($profile === 'full' || powGhDisabled()) {
+    if ($profile === 'full') {
+        return $profile;
+    }
+
+    if (powGhDisabled()) {
+        powInfo(
+            'POW_NO_GH=1 — the labels of issue #' . $issue . ' were NOT checked, so a "process" label cannot force '
+            . 'the full profile. Recorded profile "' . $profile . '" is unverified.',
+        );
+
         return $profile;
     }
 
@@ -696,6 +907,13 @@ function powCommandRound(string $root, array $options): void
     if (!is_string($runId) || $runId === '') {
         powFail('--round requires --run=<runId>', 2);
     }
+    if (preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]*$/', $runId) !== 1) {
+        powFail(
+            'invalid --run "' . $runId . '" — a run id is [A-Za-z0-9][A-Za-z0-9_-]*; it is interpolated into a glob '
+            . 'over ' . powRelative($root, powArtifactsDir($root)) . ' and must not be a pattern or a path',
+            2,
+        );
+    }
 
     $manifest = powLoadManifest($root);
     $cap = (int) $manifest['round_cap'];
@@ -744,11 +962,21 @@ function powCommandRound(string $root, array $options): void
         powFail('POW_NO_GH=1 is set — --round can only run with --dry-run');
     }
 
+    /** @var list<array<string, mixed>> $rounds */
+    $rounds = array_values(array_filter($manifest['rounds'], 'is_array'));
+
+    // Checked before publishing: a rejected round must not leave a comment behind.
+    powAssertRoundIsNew($rounds, $round, $role, $runId);
+
     $pr = powResolvePrNumber($root);
     $comment = powPublishComment($root, $pr, $body);
 
-    /** @var list<array<string, mixed>> $rounds */
-    $rounds = is_array($manifest['rounds']) ? array_values($manifest['rounds']) : [];
+    foreach ($rounds as $recorded) {
+        if (isset($recorded['comment_id']) && (int) $recorded['comment_id'] === $comment['id']) {
+            powFail('comment ' . $comment['id'] . ' is already recorded — refusing to record it twice');
+        }
+    }
+
     $previous = $rounds === [] ? null : $rounds[count($rounds) - 1];
 
     $rounds[] = [
@@ -777,6 +1005,33 @@ function powCommandRound(string $root, array $options): void
 }
 
 /**
+ * The round sequence is the anti-cheat spine: a run may be published once, and
+ * a role's rounds never go backwards.
+ *
+ * @param list<array<string, mixed>> $rounds
+ */
+function powAssertRoundIsNew(array $rounds, int $round, string $role, string $runId): void
+{
+    $highestForRole = 0;
+
+    foreach ($rounds as $recorded) {
+        if (isset($recorded['run_id']) && (string) $recorded['run_id'] === $runId) {
+            powFail('run ' . $runId . ' is already recorded as round ' . (int) ($recorded['n'] ?? 0)
+                . ' (' . (string) ($recorded['role'] ?? '?') . ') — one artifact is published once');
+        }
+
+        if (isset($recorded['role'], $recorded['n']) && (string) $recorded['role'] === $role) {
+            $highestForRole = max($highestForRole, (int) $recorded['n']);
+        }
+    }
+
+    if ($round < $highestForRole) {
+        powFail('round ' . $round . ' is lower than the highest recorded ' . $role . ' round (' . $highestForRole
+            . ') — rounds never go backwards');
+    }
+}
+
+/**
  * @return array{0: string, 1: string} artifact path and agent name derived from it
  */
 function powLocateArtifact(string $root, string $runId): array
@@ -787,7 +1042,14 @@ function powLocateArtifact(string $root, string $runId): array
         powFail('unknown run_id ' . $runId);
     }
 
-    sort($matches);
+    if (count($matches) > 1) {
+        sort($matches);
+        powFail(
+            'run id ' . $runId . ' matches ' . count($matches) . ' artifacts ('
+            . implode(', ', array_map('basename', $matches)) . ') — it must identify exactly one',
+        );
+    }
+
     $file = $matches[0];
     $agent = (string) preg_replace(
         ['/^' . preg_quote($runId . '_', '/') . '/', '/_0_output\.md$/'],
@@ -857,49 +1119,67 @@ function powResolvePrNumber(string $root): int
 }
 
 /**
- * Publishes the body and reads the created comment back from the API, so the
- * recorded id and timestamp are server-assigned, never taken from the local clock.
+ * Publishes the body with a single POST whose JSON response carries the
+ * server-assigned id, timestamp and stored body. One call means a failure can
+ * never orphan an already-published comment, and the returned body is checked
+ * byte for byte against what was sent: if GitHub normalised anything (the
+ * classic risk is "\n" -> "\r\n"), every later comment-chain check would fail
+ * instead — silently, in CI, on someone else's PR.
  *
  * @return array{id: int, created_at: string}
  */
 function powPublishComment(string $root, int $pr, string $body): array
 {
+    $payload = json_encode(['body' => $body], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    if ($payload === false) {
+        powFail('unable to encode the comment body as JSON');
+    }
+
     $tmp = tempnam(sys_get_temp_dir(), 'pow-comment-');
 
     if ($tmp === false) {
         powFail('unable to create a temporary file for the comment body');
     }
 
-    powWrite($tmp, $body);
+    powWrite($tmp, $payload);
 
     try {
-        $result = powGh(['pr', 'comment', (string) $pr, '--body-file', $tmp], $root);
+        $result = powGh(
+            ['api', '--method', 'POST', 'repos/:owner/:repo/issues/' . $pr . '/comments', '--input', $tmp],
+            $root,
+        );
     } finally {
         @unlink($tmp);
     }
 
     if ($result['code'] !== 0) {
-        powFail('gh pr comment failed: ' . trim($result['err'] . $result['out']));
+        powFail('publishing the round comment failed (nothing was posted): ' . trim($result['err'] . $result['out']));
     }
 
-    if (preg_match('/#issuecomment-(\d+)/', $result['out'], $matches) !== 1) {
-        powFail('unable to determine the comment id from gh output: ' . trim($result['out']));
+    try {
+        $comment = json_decode($result['out'], true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException $e) {
+        powFail('unreadable API response for the published comment: ' . $e->getMessage());
     }
 
-    $commentId = (int) $matches[1];
-    $api = powGh(['api', 'repos/:owner/:repo/issues/comments/' . $commentId, '--jq', '.id, .created_at'], $root);
-
-    if ($api['code'] !== 0) {
-        powFail('unable to read comment ' . $commentId . ' back from the API: ' . trim($api['err']));
+    if (!is_array($comment) || !isset($comment['id'], $comment['created_at'], $comment['body'])
+        || !is_int($comment['id']) || !is_string($comment['created_at']) || !is_string($comment['body'])) {
+        powFail('unexpected API response for the published comment: ' . trim($result['out']));
     }
 
-    $lines = array_values(array_filter(array_map('trim', explode("\n", $api['out'])), static fn(string $l): bool => $l !== ''));
-
-    if (count($lines) < 2) {
-        powFail('unexpected API response for comment ' . $commentId);
+    if (hash('sha256', $comment['body']) !== hash('sha256', $body)) {
+        powFail(sprintf(
+            'GitHub stored a different body than the one published (sent sha256 %s, stored %s). '
+            . 'Comment %d%s must be deleted before retrying — recording it would break every comment-chain check.',
+            hash('sha256', $body),
+            hash('sha256', $comment['body']),
+            $comment['id'],
+            isset($comment['html_url']) && is_string($comment['html_url']) ? ' (' . $comment['html_url'] . ')' : '',
+        ));
     }
 
-    return ['id' => (int) $lines[0], 'created_at' => $lines[1]];
+    return ['id' => $comment['id'], 'created_at' => $comment['created_at']];
 }
 
 /**
@@ -908,7 +1188,7 @@ function powPublishComment(string $root, int $pr, string $body): array
 function powCommandFinding(string $root, array $options): void
 {
     $manifest = powLoadManifest($root);
-    $id = powRequireString($options, 'id', '--finding');
+    $id = powRequireId($options, '--finding');
     $round = $options['round'];
     $loc = powRequireString($options, 'loc', '--finding');
     $desc = powRequireString($options, 'desc', '--finding');
@@ -950,7 +1230,7 @@ function powCommandFinding(string $root, array $options): void
 function powCommandResolve(string $root, array $options): void
 {
     $manifest = powLoadManifest($root);
-    $id = powRequireString($options, 'id', '--resolve');
+    $id = powRequireId($options, '--resolve');
     $round = $options['round'];
     $status = powRequireString($options, 'status', '--resolve');
     $resolution = powRequireString($options, 'resolution', '--resolve');
@@ -999,30 +1279,69 @@ function powCommandVerdict(string $root, array $options): void
         powFail('invalid --verdict (expected ' . implode('|', POW_VERDICTS) . ')', 2);
     }
 
-    if ($verdict !== 'CLEAN') {
-        $escalation = powEscalationFile($root);
+    $problems = powVerdictProblems($root, $verdict);
 
-        if (!is_file($escalation) || trim(powRead($escalation)) === '') {
-            powFail('verdict ' . $verdict . ' requires a non-empty ' . powRelative($root, $escalation));
-        }
-
-        if ($verdict === 'ACCEPT') {
-            $text = powRead($escalation);
-            $unjustified = array_values(array_filter(
-                powOpenIds($root),
-                static fn(string $id): bool => !str_contains($text, $id),
-            ));
-
-            if ($unjustified !== []) {
-                powFail('ACCEPT with unjustified findings: ' . implode(', ', $unjustified));
-            }
-        }
+    if ($problems !== []) {
+        powFail($problems[0]);
     }
 
     $manifest['verdict'] = $verdict;
     powSaveManifest($root, $manifest);
 
     fwrite(STDOUT, 'Recorded verdict ' . $verdict . "\n");
+}
+
+/**
+ * The escalation rules of a verdict, re-checkable at any time: they are
+ * enforced at `--verdict` time AND again at `--finish`, so ordering (record the
+ * verdict first, add open findings or edit escalation.md afterwards) cannot
+ * bypass them.
+ *
+ * @return list<string>
+ */
+function powVerdictProblems(string $root, ?string $verdict): array
+{
+    if ($verdict === null || $verdict === 'CLEAN') {
+        return [];
+    }
+
+    $escalation = powEscalationFile($root);
+
+    if (!is_file($escalation) || trim(powRead($escalation)) === '') {
+        return ['verdict ' . $verdict . ' requires a non-empty ' . powRelative($root, $escalation)];
+    }
+
+    if ($verdict !== 'ACCEPT') {
+        return [];
+    }
+
+    $unjustified = powUnjustifiedOpenIds($root);
+
+    return $unjustified === [] ? [] : ['ACCEPT with unjustified findings: ' . implode(', ', $unjustified)];
+}
+
+/**
+ * Open finding IDs that escalation.md does not name.
+ *
+ * @return list<string>
+ */
+function powUnjustifiedOpenIds(string $root): array
+{
+    $escalation = powEscalationFile($root);
+    $text = is_file($escalation) ? powRead($escalation) : '';
+
+    return array_values(array_filter(
+        powOpenIds($root),
+        static fn(string $id): bool => !powMentionsId($text, $id),
+    ));
+}
+
+/**
+ * Word-boundary match, so naming F-10 does not also justify F-1.
+ */
+function powMentionsId(string $text, string $id): bool
+{
+    return preg_match('/(?<![A-Za-z0-9_-])' . preg_quote($id, '/') . '(?![A-Za-z0-9_-])/', $text) === 1;
 }
 
 /**
@@ -1113,12 +1432,12 @@ function powCommandFinish(string $root, array $options): void
 
     powSaveManifest($root, $manifest);
 
-    $dest = sprintf('%s/%04d-%s', powDir($root), (int) $manifest['issue'], (string) $manifest['slug']);
+    $dest = powFinishDestination($root, $manifest);
     powMkdir($dest);
 
     $moved = [];
 
-    foreach (['manifest.json', 'findings.md', 'escalation.md'] as $name) {
+    foreach (POW_DURABLE_FILES as $name) {
         $source = powCurrentDir($root) . '/' . $name;
 
         if (!is_file($source)) {
@@ -1149,6 +1468,113 @@ function powCommandFinish(string $root, array $options): void
         $manifest['findings']['open'],
         (string) $manifest['verdict'],
     ));
+}
+
+/** The three files a finished cycle is made of. */
+const POW_DURABLE_FILES = ['manifest.json', 'findings.md', 'escalation.md'];
+
+/**
+ * Resolves `<NNNN>-<slug>/` and guarantees it is safe to write into.
+ *
+ * The slug is re-slugified here: `--start` sanitises it, but `--finish` reads
+ * it back from the local, gitignored manifest, so a hand-edited `"slug":
+ * "../../../escaped"` would otherwise create a directory outside
+ * docs/proof_of_work/.
+ *
+ * @param array<string, mixed> $manifest
+ */
+function powFinishDestination(string $root, array $manifest): string
+{
+    $issue = $manifest['issue'];
+
+    if (!is_int($issue) || $issue <= 0) {
+        powFail('manifest issue must be a positive integer, got ' . var_export($issue, true));
+    }
+
+    $slug = powSlugify((string) $manifest['slug']);
+
+    if ($slug === '') {
+        powFail('manifest slug "' . (string) $manifest['slug'] . '" is empty once slugified — re-run --start --slug=<kebab-case>');
+    }
+
+    $dest = sprintf('%s/%04d-%s', powDir($root), $issue, $slug);
+    $existing = powDirEntries($dest);
+
+    if ($existing === []) {
+        return $dest;
+    }
+
+    if (powDestinationIsContinued($root, $dest, $existing)) {
+        powInfo('Replacing ' . powRelative($root, $dest) . ' — the new ledger extends the recorded one.');
+
+        return $dest;
+    }
+
+    // Never overwrite a recorded cycle: the previous ledger and its escalation
+    // are evidence, and a silent replacement is exactly what the append-only
+    // ledger exists to make impossible.
+    $base = powDir($root) . '/.abandoned/' . gmdate('Ymd\THis\Z') . '-' . basename($dest);
+    $archive = $base;
+    $suffix = 1;
+
+    while (is_dir($archive)) {
+        $archive = $base . '-' . $suffix++;
+    }
+
+    powMkdir(dirname($archive));
+
+    if (!@rename($dest, $archive)) {
+        powFail('refusing to overwrite the non-empty ' . powRelative($root, $dest) . ' and unable to archive it to ' . powRelative($root, $archive));
+    }
+
+    powInfo(
+        'Archived the previously recorded ' . basename($dest) . ' to ' . powRelative($root, $archive)
+        . ' — the new ledger does not extend it, and --finish never overwrites recorded evidence.',
+    );
+
+    return $dest;
+}
+
+/**
+ * True when writing over $dest keeps the append-only invariant: it holds only
+ * the durable files, every one of them is about to be replaced, and the
+ * incoming ledger starts with the recorded one.
+ *
+ * @param list<string> $existing
+ */
+function powDestinationIsContinued(string $root, string $dest, array $existing): bool
+{
+    foreach ($existing as $entry) {
+        if (!in_array($entry, POW_DURABLE_FILES, true) || !is_file(powCurrentDir($root) . '/' . $entry)) {
+            return false;
+        }
+    }
+
+    if (!is_file($dest . '/findings.md') || !is_file(powLedgerFile($root))) {
+        return false;
+    }
+
+    $recorded = powRead($dest . '/findings.md');
+
+    return $recorded !== '' && str_starts_with(powRead(powLedgerFile($root)), $recorded);
+}
+
+/**
+ * @return list<string> entries of $dir other than . and ..
+ */
+function powDirEntries(string $dir): array
+{
+    if (!is_dir($dir)) {
+        return [];
+    }
+
+    $entries = scandir($dir);
+
+    if ($entries === false) {
+        return [];
+    }
+
+    return array_values(array_filter($entries, static fn(string $entry): bool => !in_array($entry, ['.', '..'], true)));
 }
 
 /**
@@ -1222,9 +1648,15 @@ function powValidateManifest(string $root, array $manifest): array
             $problems[] = 'verdict CLEAN but the ledger still has open findings: ' . implode(', ', $open);
         }
 
-        if (!$hasEscalation) {
+        if (!$hasEscalation && ($verdict === null || $verdict === 'CLEAN')) {
             $problems[] = 'open findings (' . implode(', ', $open) . ') with no escalation.md justifying them';
         }
+    }
+
+    // Re-checked here, not only in powCommandVerdict: the escalation rules must
+    // hold for the state that is actually shipped, whatever the command order was.
+    foreach (powVerdictProblems($root, is_string($verdict) ? $verdict : null) as $problem) {
+        $problems[] = $problem;
     }
 
     return $problems;
@@ -1235,7 +1667,10 @@ function powValidateManifest(string $root, array $manifest): array
  */
 function powCommandAbort(string $root, array $options): void
 {
-    $manifest = is_file(powManifestFile($root)) ? powLoadManifest($root) : null;
+    // Read defensively: --abort is the way out of a corrupt manifest, so it
+    // must never be locked out by the very file it exists to archive.
+    $manifest = powReadManifestDefensively($root);
+    $issue = $manifest !== null && isset($manifest['issue']) && is_int($manifest['issue']) ? $manifest['issue'] : null;
     $reason = is_string($options['reason']) ? $options['reason'] : 'no reason given';
 
     if (powCurrentEntries($root) === []) {
@@ -1249,7 +1684,7 @@ function powCommandAbort(string $root, array $options): void
 
     fwrite(STDOUT, sprintf(
         "Aborted the proof of work%s\n  archived: %s\n  reason:   %s\n",
-        $manifest !== null ? ' for issue #' . (int) $manifest['issue'] : '',
+        $issue !== null ? ' for issue #' . $issue : '',
         powRelative($root, $dest),
         $reason,
     ));
@@ -1310,6 +1745,28 @@ function powRefreshCounters(string $root, array $manifest): void
 }
 
 /**
+ * A finding ID must survive the round trip through the markdown ledger: an ID
+ * the parser skips (`ID`, `---...`) would make a recorded finding vanish from
+ * `--status`, from the duplicate check and from the `--finish` gate.
+ *
+ * @param array<string, mixed> $options
+ */
+function powRequireId(array $options, string $command): string
+{
+    $id = powRequireString($options, 'id', $command);
+
+    if ($id === 'ID' || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $id) !== 1) {
+        powFail(
+            'invalid --id "' . $id . '" — an id is [A-Za-z0-9][A-Za-z0-9._-]* and may be neither "ID" nor '
+            . 'anything starting with "-" (those are ledger header/separator rows and would never be read back)',
+            2,
+        );
+    }
+
+    return $id;
+}
+
+/**
  * @param array<string, mixed> $options
  */
 function powRequireString(array $options, string $name, string $command): string
@@ -1344,7 +1801,8 @@ function powUsage(): void
               Start a cycle. A non-empty current/ is archived to .abandoned/<ts>/,
               never deleted. The profile defaults to the branch prefix
               (fix|feat|refactor|perf|process -> full, docs|chore|ci|test|build ->
-              light); an issue labelled "process" is always full.
+              light); an issue labelled "process" is always full, and
+              --profile=light is refused on a full-prefix branch.
 
           --round=N --role=<coder|review|oracle|auditor|...> --run=<runId> [--dry-run]
               Publish the harness artifact of <runId> as a PR comment with injected
@@ -1371,8 +1829,10 @@ function powUsage(): void
 
           --finish
               Recompute commits/files/findings from git and the ledger, validate the
-              manifest for its profile, then move manifest.json, findings.md and
-              escalation.md into docs/proof_of_work/<NNNN>-<slug>/.
+              manifest for its profile (including the verdict/escalation rules),
+              then move manifest.json, findings.md and escalation.md into
+              docs/proof_of_work/<NNNN>-<slug>/. An existing directory there is
+              archived to .abandoned/ first unless the new ledger extends it.
 
           --abort [--reason=<text>]
               Archive current/ to .abandoned/<ts>/ and reset it.
@@ -1466,8 +1926,10 @@ function powParseArgs(array $argv): array
         }
 
         if ($value === null) {
-            if (!isset($argv[$i + 1])) {
-                powFail('option --' . $name . ' requires a value', 2);
+            // A following flag is never a value: `--finding --id --round=1`
+            // must not set id to the literal "--round=1".
+            if (!isset($argv[$i + 1]) || str_starts_with($argv[$i + 1], '--')) {
+                powFail('option --' . $name . ' requires a value (use --' . $name . '=<value> for a value starting with --)', 2);
             }
             $value = $argv[++$i];
         }
