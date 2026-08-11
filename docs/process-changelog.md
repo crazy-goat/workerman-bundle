@@ -119,7 +119,7 @@ One entry per process change, in the order they land:
 
 - **Date:** 2026-08-11
 - **Issue:** #686 (phase 6)
-- **PR:** to be filled in on merge
+- **PR:** #697
 - **What:** deleted `bin/pow.php`, `bin/check-pow.php`, `bin/pow-common.php`
   and `bin/pow-metrics.php` (~4,600 lines) with their tests (~3,300 lines),
   both proof-of-work CI jobs, the `manifest.json` schema, the append-only
