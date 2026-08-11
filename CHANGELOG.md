@@ -48,15 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The fail-open cache-permission warning from the config cache check now
-  reaches the application logs on the server `start` path. `Runner` accepts
-  an optional `?LoggerInterface` constructor argument and passes it as the
-  logger of the `ConfigLoader` it builds in `createConfigLoader()` (issue
-  #586 introduced the PSR-3 logger on `ConfigLoader`, but `Runner` built it
-  without one, so on the production serve path the warning only hit stderr
-  via the `trigger_error(\E_USER_WARNING)` fallback). `ServerManager`
+  reaches the application logs on the `workerman:server start`/`restart`
+  path. `Runner` accepts an optional `?LoggerInterface` constructor argument
+  and passes it as the logger of the `ConfigLoader` it builds in
+  `createConfigLoader()` (issue #586 introduced the PSR-3 logger on
+  `ConfigLoader`, but `Runner` built it without one, so the warning only hit
+  stderr via the `trigger_error(\E_USER_WARNING)` fallback). `ServerManager`
   forwards its injected `logger` service into the `Runner` it constructs in
   `start()`/`restart()`. The `trigger_error` fallback is preserved for
-  standalone / non-DI construction paths ([#612](https://github.com/crazy-goat/workerman-bundle/issues/612))
+  standalone / non-DI construction paths, including the Symfony-runtime
+  `index.php start` entry point, where no container is available without an
+  eager kernel boot ([#612](https://github.com/crazy-goat/workerman-bundle/issues/612))
 
 - A `HEAD` request on a `BinaryFileResponse` no longer streams the file body (RFC 9110 §9.3.2). `BinaryFileResponse::setContent(null)` — which Symfony's `prepare()` calls for `HEAD` — is a no-op (unlike `StreamedResponse`), so the file stayed attached and `withFile()` sent the bytes via `Http::encode()`, which has no request-method awareness. The request method is now threaded into the strategy layer through a new opt-in `RequestMethodAwareResponseConverterStrategyInterface` (a sub-interface of `ResponseConverterStrategyInterface`; `ResponseConverter` dispatches on `instanceof`, so the base interface — and external/custom strategies — stay backward-compatible). For `HEAD`, `BinaryFileResponseStrategy` emits a bodyless `HeadResponse` carrying the file size as `Content-Length` (the value `prepare()` set; `Range` handling is `GET`-only) instead of calling `withFile()`, and deletes a `deleteFileAfterSend` file synchronously (the `onBufferDrain` cleanup used by the `GET` path would not fire for a bodyless response). `StreamedResponseStrategy` likewise sends only the head for `HEAD` — no chunked terminator body — instead of executing the stream callback ([#683](https://github.com/crazy-goat/workerman-bundle/issues/683))
 
