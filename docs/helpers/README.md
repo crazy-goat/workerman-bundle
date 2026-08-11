@@ -26,9 +26,10 @@ which runs inside `composer lint`.
    `review` / `review-critical` **propose** candidate entries in their report —
    title, suggested tags, trigger, one paragraph — and the retro step decides
    what lands and commits it. Two writers gave us duplicates, unlabelled entries
-   and a file nobody could load selectively (issue #686). The retro step itself
-   is added by phase 4 of that issue; until then the single-writer rule is
-   still binding — a subagent that "just appends" is doing the wrong thing.
+   and a file nobody could load selectively (issue #686). The retro step
+   (`docs/workflow.md`, steps 15/16, added by phase 4 of that issue) is the
+   single writer — a subagent that "just appends" outside those two steps is
+   doing the wrong thing.
 3. **One topic per entry.** The problem, the solution/decision, optionally an
    issue/PR/commit reference. Do not restate what the README or `docs/` already
    says — `docs/troubleshooting.md` already covers long-running worker state

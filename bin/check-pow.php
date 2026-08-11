@@ -1519,11 +1519,12 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
         cpowAdd($report, 'notice', 'POW-09', 'bypass approved by ' . $approval['login']);
     }
 
-    // TODO(#686 phase 4): docs/process-changelog.md is created by phase 4 of
-    // issue #686 together with its cycle-zero entry. Until that lands the file
-    // does not exist, so this branch degrades the hatch to `undetermined` under
-    // --strict — i.e. a `no-pow` PR fails CI rather than passing silently,
-    // which is the right way round for a sequencing gap.
+    // docs/process-changelog.md is created by phase 4 of issue #686, together
+    // with its cycle-zero entry (see docs/process-changelog.md#1). The branch
+    // below is therefore normally dead code from here on; it is kept as a
+    // defensive fallback — if the file were ever deleted, a `no-pow` PR
+    // degrades to `undetermined` under --strict (fails CI) rather than
+    // passing silently, which is the right way round for a missing record.
     $changelog = $root . '/docs/process-changelog.md';
 
     if (!is_file($changelog)) {

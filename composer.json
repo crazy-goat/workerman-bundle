@@ -111,6 +111,9 @@
         "kb-lint": [
             "php bin/kb-lint.php"
         ],
+        "pow-metrics": [
+            "php bin/pow-metrics.php"
+        ],
         "post-install-cmd": [
             "php bin/install-git-hook.php"
         ],

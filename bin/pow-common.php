@@ -343,6 +343,34 @@ function powcMentionsId(string $text, string $id): bool
     return preg_match('/(?<![A-Za-z0-9_-])' . preg_quote($id, '/') . '(?![A-Za-z0-9_-])/', $text) === 1;
 }
 
+/**
+ * Finding counters derived from ledger state — shared so bin/pow-metrics.php
+ * (phase 4) reads the same breakdown bin/pow.php writes into the manifest,
+ * instead of re-parsing findings.md with its own rules. `round1`/`escaped` are
+ * the manifest's `findings{}` shape; `fixed`/`gated`/`wontfix` are the extra
+ * by-status breakdown the manifest does not carry but the retro's escape-rate
+ * and gate-adoption reporting needs.
+ *
+ * @param array<string, array{first_round: int, status: string, loc: string, desc: string, severity: string}> $state
+ *
+ * @return array{total: int, round1: int, escaped: int, open: int, fixed: int, gated: int, wontfix: int}
+ */
+function powcFindingCounters(array $state): array
+{
+    $counters = ['total' => 0, 'round1' => 0, 'escaped' => 0, 'open' => 0, 'fixed' => 0, 'gated' => 0, 'wontfix' => 0];
+
+    foreach ($state as $entry) {
+        $counters['total']++;
+        $counters[$entry['first_round'] <= 1 ? 'round1' : 'escaped']++;
+
+        if (isset($counters[$entry['status']])) {
+            $counters[$entry['status']]++;
+        }
+    }
+
+    return $counters;
+}
+
 // --------------------------------------------------------------------------
 // Completeness — the rule the recorder enforces at --finish and the gate at POW-03
 // --------------------------------------------------------------------------

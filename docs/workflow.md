@@ -168,7 +168,7 @@ gate step is mandatory. It is selected from the branch prefix:
 
 | Profile | Branch prefixes | Round cap | Gate step |
 | --- | --- | --- | --- |
-| `full` | `fix`, `feat`, `refactor`, `perf`, `process` | **4** | mandatory |
+| `full` | `fix`, `feat`, `refactor`, `perf`, `process` | **4** | mandatory (steps 4b/4c) |
 | `light` | `docs`, `chore`, `ci`, `test`, `build` | **2** | not required |
 
 An issue labelled `process` is **always** `full`, whatever the branch says —
@@ -303,6 +303,81 @@ write to `docs/helpers/` — only the retro step does, see
 > **Why a subagent:** code review reads the full diff plus surrounding code,
 > runs static analysis, and produces a structured findings list. Delegating
 > keeps the main session focused on fixes and the next workflow step.
+
+---
+
+## 4b. Classify Findings for the Gate (reviewer, read-only)
+
+**Who:** the `reviewer` agent (project-scoped, read-only — it does not fix
+anything). **What:** for every finding currently in the ledger, answer one
+question: *could an automated check have caught this, and which one (a
+regression test, a PHPStan rule, a lint rule)?* **When:** after step 4's
+review, before findings are fixed in step 5 — classification decides how a
+finding gets closed, so it has to happen first.
+
+```bash
+# The subagent receives a task like:
+# "Read docs/proof_of_work/current/findings.md. For every finding whose
+#  effective status is 'open', answer: could an automated check have caught
+#  this, and which one? Read docs/helpers/ first (tag index + matching
+#  entries only) to check whether this class of defect already has a
+#  candidate check on record. Do not fix anything. Do not write to
+#  docs/helpers/. Return: ID | classification (gate-candidate / not-automatable)
+#  | proposed check | rationale."
+```
+
+A finding the reviewer marks as a gate candidate is moved to `gated` when it
+is resolved in step 5, instead of merely `fixed`:
+
+```bash
+php bin/pow.php --resolve --id=F-02 --round=2 --status=gated \
+  --resolution="classified gate-candidate by reviewer — see F-02 in the round comment; test added in the same PR (step 4c)"
+```
+
+A finding stays `fixed` (not `gated`) when the reviewer concludes no
+automated check would plausibly have caught it (a one-off typo, a
+judgement call with no mechanical signature) — classification is a
+judgement the reviewer states and justifies, not a rubber stamp on every
+finding.
+
+---
+
+## 4c. Escalate to a Gate (coder)
+
+**Who:** the `coder` agent. **What:** for every finding classified `gated` in
+step 4b, add the regression test, PHPStan rule or lint rule **in the same
+PR** — not a follow-up issue, not a promise for later. **When:** alongside
+the fixes in step 5, before the cycle can reach `--verdict=CLEAN`.
+
+**The rule of two:** the **first** occurrence of a class of defect becomes a
+knowledge-base candidate (`docs/helpers/faq.md` or `decisions.md`, proposed
+in the coder's or reviewer's report — see "Knowledge Base" below); the
+**second** occurrence of the *same class* is a mandatory gate. The FAQ is a
+buffer for what has been seen once, not a destination for what keeps
+happening — an entry that would need a second write-up next time is a gate
+that has not been built yet.
+
+Mandatory in the `full` profile (the profile table's "Gate step" column);
+**skipped in `light`** — see `docs/process-notices.md` (N-06) for the
+measurable condition under which that exemption would be revisited.
+
+```bash
+# The subagent receives a task like:
+# "docs/proof_of_work/current/findings.md has finding(s) classified
+#  gate-candidate by the reviewer (step 4b). For each, add the smallest
+#  regression test / PHPStan rule / lint rule that would have caught it,
+#  in this PR. If this is the SECOND time this class of defect has been
+#  seen (check docs/helpers/faq.md and decisions.md via the tag index —
+#  a prior entry for the same class means this occurrence is the second),
+#  the gate is mandatory, not optional. Record the gate with
+#  php bin/pow.php --gate=\"<one-line description>\"."
+```
+
+Record every gate added so `bin/pow-metrics.php` can count it later:
+
+```bash
+php bin/pow.php --gate="tests/MarkdownLinkTest.php — internal markdown links must resolve"
+```
 
 ---
 
@@ -617,6 +692,53 @@ git pull origin master
 
 ---
 
+## 13.5. Audit the Proof of Work (reviewer, fresh context)
+
+**Who:** the `reviewer` agent, in a **fresh context** — no memory of this
+cycle's chat, no access to anything the orchestrator said along the way.
+**What:** the only inputs are the committed proof of work
+(`docs/proof_of_work/<NNNN>-<slug>/`), `git log --format=fuller` for the
+merged commits, and the diff. The question is exactly: *does the evidence
+support that the flow ran as documented? List inconsistencies.* **When:**
+after the merge (step 12) and the branch switch (step 13) — the audit looks
+at the finished, merged record, not a cycle still in flight.
+
+```bash
+# The subagent receives a task like:
+# "Fresh context. You have not seen this cycle before. Read:
+#  - docs/proof_of_work/<NNNN>-<slug>/manifest.json and findings.md
+#    (and escalation.md if present)
+#  - git log --format=fuller <base>..<merge-commit> for the merged branch
+#  - the diff introduced by the merge
+#  Does the evidence support that the workflow in docs/workflow.md actually
+#  ran as documented? List every inconsistency you find: a round that
+#  claims more happened than the diff shows, a finding resolved with no
+#  matching code change, a verdict that does not match the ledger state,
+#  timestamps that do not make sense. Do not fix anything. Do not write to
+#  docs/helpers/. Report format: PASS/inconsistencies-found, then one line
+#  per inconsistency with evidence."
+```
+
+**Always on in the `full` profile** — there is deliberately **no
+"only from 3+ rounds" threshold**. A round-count trigger is something the
+orchestrator can see and route around: an incentive to look done by round 2
+just to skip the one check designed to catch a convincing-but-false
+narrative would defeat the audit before it ever ran. Fresh context is the
+whole point — it is what makes the audit resistant to being talked around by
+how the cycle was framed, and that resistance only holds if it is not
+conditional on a number the orchestrator controls. See
+`docs/process-notices.md` (N-02) for the measurable condition under which
+this would be revisited, and (N-08) for why the audit's inputs stay narrow
+(POW + git log + diff) rather than re-deriving acceptance criteria from the
+issue body.
+
+An inconsistency found here does not reopen the merged PR; it is either
+folded into step 14 (if it is a real, still-open code problem) or becomes a
+candidate for step 15's retro (if it points at a process gap — e.g. a step
+that is easy to skip without anyone noticing).
+
+---
+
 ## 14. Report Implementation Problems and Offer a GitHub Issue
 
 At the end of the workflow, present the findings collected from the
@@ -695,6 +817,155 @@ gh issue create \
 
 ---
 
+## 15. Retro (every ~5 cycles)
+
+Steps 1–14 (plus 13.5) run every cycle. The retro runs on a coarser cadence —
+roughly every 5 finished cycles — because it needs enough manifests to see a
+pattern rather than react to one unlucky cycle.
+
+```bash
+php bin/pow-metrics.php --since=5 --min-cycles=3
+```
+
+`--min-cycles=3` is the guardrail, not a suggestion: with fewer than 3
+manifests in scope the script itself exits non-zero, so the retro cannot run
+on thin evidence. Run it before starting 15a.
+
+### 15a. Diagnose (oracle, fork)
+
+**Who:** the `oracle` agent, in a **fork** of the metrics output — no other
+context. **What:** diagnose over the metrics from `bin/pow-metrics.php`
+(≥3 manifests) and propose **at most 2** changes. Proposing more than 2 per
+retro is itself a smell: a retro that finds ten things wrong at once did not
+diagnose, it vented.
+
+Every proposed change is classified into exactly one of:
+
+| Class | Meaning | Where it lands |
+| --- | --- | --- |
+| `automation` | a check, script or gate would prevent recurrence | GitHub issue, `process` label, current milestone |
+| `workflow` | `docs/workflow.md` itself needs to change (a step, an order, a threshold) | GitHub issue, `process` label, current milestone |
+| `knowledge` | worth recording, not worth automating yet | committed directly to `docs/helpers/` (step 16) |
+| `noop` | no action — see the guardrail below | recorded in the oracle's report only |
+
+```bash
+# The subagent receives a task like:
+# "Fork. Your only input is this: <output of bin/pow-metrics.php --since=5>.
+#  Diagnose at most 2 changes that would measurably improve the numbers
+#  above. For each: what changed metric or repeated pattern motivates it,
+#  the proposed change, its class (automation/workflow/knowledge/noop), and
+#  a measurable success criterion (docs/process-changelog.md's format).
+#  Guardrail: propose a change ONLY when you can cite either a specific
+#  metric from the input above, or >=2 recorded occurrences of the same
+#  issue (cite both). No such evidence -> classify it noop and say so
+#  explicitly; do not propose a change on a hunch."
+```
+
+**Guardrail:** no evidence — a metric from `bin/pow-metrics.php`, or **≥2**
+recorded occurrences of the same class of problem — means `noop`. A retro
+that always finds 2 changes to make is not diagnosing, it is producing
+theater; `noop` is a legitimate, expected outcome of most retros.
+
+### 15b. Verify (reviewer, fresh, read-only)
+
+**Who:** the `reviewer` agent, in a **fresh, read-only** context — it does
+not see the oracle's reasoning, only its conclusions and the same metrics
+input. **What:** independently check whether the cited evidence actually
+supports each proposed change, so the oracle cannot rubber-stamp its own
+conclusions by construction (nobody grades their own diagnosis).
+
+```bash
+# The subagent receives a task like:
+# "Fresh context, read-only. Here is a proposed process change and the
+#  metrics/evidence cited for it: <oracle's 15a output>. Independently
+#  verify: does the cited metric or occurrence count actually exist and
+#  support the claim? Is 'noop' the more honest classification? Do not
+#  fix or apply anything; do not write to docs/helpers/. Report: for each
+#  proposed change, CONFIRMED / DOWNGRADE-TO-NOOP / DISPUTED, with the
+#  evidence you checked."
+```
+
+A change downgraded to `noop` by 15b does not proceed to step 16. A `DISPUTED`
+change is a `HUMAN` call, same as an unresolved oracle verdict at the round
+cap (step 6) — ask the user rather than picking a side.
+
+---
+
+## 16. Apply (coder)
+
+**Who:** the `coder` agent. **What:** apply the outcome of steps 15a/15b.
+
+- **`knowledge`** changes are committed **immediately** — the retro step is
+  the knowledge base's single writer (`docs/helpers/README.md`, `DEC-009`).
+  For phase 4 of issue #686, "the retro step" for this cycle is the agent
+  writing this document; the rule binds identically to every retro after it.
+- **`automation`** and **`workflow`** changes become GitHub issues labelled
+  `process`, filed into the **current milestone** (not backlog-and-forget —
+  `bin/pick-issue.php` will surface them like any other issue):
+
+```bash
+gh issue create \
+  --title "process: <short description of the automation/workflow change>" \
+  --body "## Diagnosed by
+
+Retro over docs/proof_of_work/ cycles <range> (bin/pow-metrics.php --since=5)
+
+## What
+
+<the proposed change>
+
+## Why
+
+<the metric or >=2 occurrences that motivated it>
+
+## Success criterion
+
+<measurable, from docs/process-changelog.md's format>" \
+  --label process --milestone <current milestone>
+```
+
+- Every applied change — `knowledge` immediately, `automation`/`workflow`
+  once their issue's own PR merges — gets one entry in
+  `docs/process-changelog.md`, with `Outcome: pending`. Step 17 is what
+  fills that in; nothing here marks a change `kept` on day one.
+
+---
+
+## 17. Verify the Change Stuck (delegate)
+
+**Who:** the `delegate` agent. **When:** after **5 cycles** have passed since
+a process change's `docs/process-changelog.md` entry was recorded — same
+cadence as the retro itself, offset so a change has time to show up in the
+metrics before it is judged.
+
+**What:** for each entry still `pending`, check its success criterion against
+`bin/pow-metrics.php` output and the repository, then record `kept` or
+`reverted` (never leave it `pending` past its review point — an unresolved
+verdict here is a process change nobody checked, which is a silent failure
+mode identical to the one the whole retro loop exists to close).
+
+```bash
+# The subagent receives a task like:
+# "For every entry in docs/process-changelog.md still marked
+#  Outcome: pending whose Date is >=5 cycles old (cross-reference
+#  bin/pow-metrics.php --json for cycle count), check its Success
+#  criterion against the current metrics/repository state. Append the
+#  verdict: kept (criterion met, keep the change) or reverted (criterion
+#  not met — and say what should happen to the change itself: is it
+#  reverted outright, or does it need its own follow-up issue?).
+#  Do not silently leave an entry pending past its review point."
+```
+
+**Why this step exists, stated plainly:** without it, the loop is
+self-*mutating*, not self-improving — steps 15/16 can change the process
+based on a plausible diagnosis, but nothing ever comes back to check whether
+that diagnosis was right. A change that turned out to make things worse
+would simply sit there, indistinguishable from one that helped, forever.
+Step 17 is the difference between "we changed something" and "we learned
+something."
+
+---
+
 ## Proof of Work (docs/proof_of_work/)
 
 Every cycle leaves a verifiable trail. The **narrative** — context, plan,
@@ -725,12 +996,15 @@ progress; `.abandoned/<ts>/` keeps cycles that were never finished.
 | 5 | `php bin/pow.php --resolve --id=F-01 --round=<N> --status=<fixed\|gated\|wontfix> --resolution="…"` |
 | 6 | `php bin/pow.php --verdict=<CLEAN\|NARROW\|REDO\|ACCEPT\|HUMAN>` |
 | 7, 11 | `php bin/pow.php --set lint_exit=0 --set test_exit=0 --set coverage=81.4` |
-| any | `php bin/pow.php --gate="…"`, `--abort=<runId>:<reason>`, `--status` |
+| 4c | `php bin/pow.php --gate="…"` |
+| any | `--abort=<runId>:<reason>`, `--status` |
 | 11.5 | `php bin/pow.php --finish` (or `--abort --reason="…"`) |
+| 15 | `php bin/pow-metrics.php --since=5 --min-cycles=3 [--json]` |
 
 Exit codes: 0 ok, 1 runtime/validation error, 2 usage error. Full reference:
 [bin/README.md](../bin/README.md#powphp) and
-[proof_of_work/README.md](proof_of_work/README.md).
+[proof_of_work/README.md](proof_of_work/README.md); `bin/pow-metrics.php` is
+documented in [bin/README.md](../bin/README.md#pow-metricsphp).
 
 Do not hand-edit `manifest.json` or `findings.md` — every field the script
 writes is derived from something checkable (an artifact on disk, a GitHub
@@ -888,9 +1162,9 @@ lines of FAQ for a two-file change is exactly what the index exists to prevent.
 `coder`/`coder-high` and `review`/`review-critical` **propose** candidate
 entries in their report — title, tags, trigger, one paragraph — and the retro
 decides what lands. Two writers produced duplicates, unlabelled entries and a
-file that had to be read in full (issue #686). The retro step itself arrives
-with phase 4 of that issue; until then the rule still binds — a subagent that
-appends to the knowledge base is doing the wrong thing.
+file that had to be read in full (issue #686, `DEC-009`). See "15. Retro" and
+"16. Apply" below for the retro step's mechanics — a subagent outside those
+two steps that appends to the knowledge base is doing the wrong thing.
 
 **Prefer a gate over an entry.** If a regression test, PHPStan rule or lint rule
 could catch the class of defect, add the check. The knowledge base is a buffer
@@ -923,18 +1197,20 @@ still user-scoped.
 | 2c | `oracle` | user | judgement call on approach when the plan is contested |
 | 3 | `coder` / `coder-high` / `worker` | **project** (`coder`, `coder-high`) | implement; return files changed, biggest problem, discovered bugs, candidate KB entries |
 | 4 | `review` / `review-critical` | **project** | ledger-first code review |
-| 4b | `reviewer` | **project** | classify findings: which automated check would have caught this? — *introduced by phase 4* |
+| 4b | `reviewer` | **project** | classify findings: which automated check would have caught this? |
+| 4c | `coder` | **project** | add the regression test / PHPStan rule / lint rule for every `gated` finding, same PR |
 | 11 | `delegate` | user | compress CI logs into actionable failures |
-| 13.5 | `reviewer` | **project** | audit the proof of work in a fresh context — *introduced by phase 4* |
+| 13.5 | `reviewer` | **project** | audit the proof of work in a fresh context |
 | 14 | `reviewer` | **project** | verify candidate findings before opening GitHub issues |
-| 15a | `oracle` | user | retro: diagnose over ≥3 manifests — *introduced by phase 4* |
-| 15b | `reviewer` | **project** | retro: independently verify the oracle's evidence — *introduced by phase 4* |
-| 16 | `coder` | **project** | commit the `knowledge` outcome, file the rest as `process` issues — *introduced by phase 4* |
-| 17 | `delegate` | user | after 5 cycles, check whether earlier process changes stuck — *introduced by phase 4* |
+| 15a | `oracle` | user | retro: diagnose over ≥3 manifests, propose ≤2 classified changes |
+| 15b | `reviewer` | **project** | retro: independently verify the oracle's evidence |
+| 16 | `coder` | **project** | commit the `knowledge` outcome, file the rest as `process` issues |
+| 17 | `delegate` | user | after 5 cycles, check whether earlier process changes stuck |
 
-Steps 4b, 13.5, 15, 16 and 17 do not exist yet; they are listed so the map is
-the single place that answers "who runs where", and phase 4 of issue #686 fills
-in their mechanics.
+Steps 4b, 4c, 13.5, 15, 16 and 17 were introduced by phase 4 of issue #686;
+see "4b. Classify Findings", "4c. Escalate to a Gate", "13.5. Audit the Proof
+of Work", "15. Retro", "16. Apply" and "17. Verify the Change Stuck" above for
+their mechanics.
 
 **`review-critical` is mandatory**, not a judgement call, when the diff touches
 any of:
@@ -979,8 +1255,16 @@ php bin/pow.php --round=1 --role=coder --run=<runId>       # artifact -> PR comm
 php bin/pow.php --round=1 --role=review --run=<runId>
 php bin/pow.php --finding --id=F-01 --round=1 --loc=<file:line> --desc="..." --severity=high
 
+# 4b. Classify (reviewer, read-only): could an automated check have caught this?
+#     gate candidates get --status=gated when resolved in step 5
+# 4c. Escalate to a gate (coder): add the test/rule for every `gated` finding,
+#     in this PR (mandatory in `full`, skipped in `light`) — rule of two:
+#     1st occurrence -> KB entry, 2nd occurrence of the same class -> gate
+php bin/pow.php --gate="tests/SomeNewGuard.php — what it now catches"
+
 # 5-6. Fix, resolve, re-review — HARD CAP: 4 rounds (full) / 2 (light)
 php bin/pow.php --resolve --id=F-01 --round=2 --status=fixed --resolution="..."
+php bin/pow.php --resolve --id=F-02 --round=2 --status=gated --resolution="..."
 php bin/pow.php --round=2 --role=review --run=<runId>
 php bin/pow.php --verdict=CLEAN
 #    at the cap: oracle writes escalation.md and picks NARROW | REDO | ACCEPT | HUMAN
@@ -1012,18 +1296,36 @@ gh issue close <NUMBER>
 # 13. Switch back to master
 git checkout master && git pull origin master
 
+# 13.5 Audit the proof of work (reviewer, FRESH context; always on in `full`)
+#    inputs: docs/proof_of_work/<NNNN>-<slug>/, git log --format=fuller, the diff
+#    "does the evidence support that the flow ran as documented?"
+
 # 14. Report + offer GitHub issue for discovered problems
 #    show: biggest problem(s), discovered bugs / places to improve
 #    verify each candidate with a review subagent (finding is real?
 #    no duplicate on GitHub? use --limit >30 in issue lists)
 #    then ask: "Create GitHub issue(s)?" → if yes: gh issue create ...
+
+# 15. Retro — every ~5 cycles, --min-cycles guards against thin evidence
+php bin/pow-metrics.php --since=5 --min-cycles=3
+#    15a oracle (fork): diagnose, propose <=2 changes, each automation|workflow|knowledge|noop
+#    15b reviewer (fresh, read-only): independently verify the oracle's evidence
+
+# 16. Apply (coder)
+#    knowledge  -> commit straight to docs/helpers/ (the retro is its single writer)
+#    automation/workflow -> gh issue create --label process --milestone <current>
+#    either way: one docs/process-changelog.md entry, Outcome: pending
+
+# 17. Verify the change stuck (delegate) — after 5 cycles, check each pending
+#     entry's success criterion, record kept | reverted in
+#     docs/process-changelog.md
 ```
 
 ---
 
 ## Subagent Usage Summary
 
-Five steps of this workflow are delegated to subagents to keep the main
+Most steps of this workflow are delegated to subagents to keep the main
 session's context lean. Every subagent run leaves an artifact in
 `.pi-subagents/artifacts/`, and that artifact — not a summary of it — is what
 `bin/pow.php --round` publishes:
@@ -1033,15 +1335,23 @@ session's context lean. Every subagent run leaves an artifact in
 | 1    | Triage open issues, return ranked shortlist | Issue bodies + comments are token-heavy |
 | 3    | Implement the issue (worker/coder)         | Coding context is token-heavy; agent returns structured report (files, biggest problem, discovered bugs) |
 | 4, 6 | Code review of the implementation diff, ledger first | Full diff + surrounding code is token-heavy; the review must confirm or reject every open ledger entry before hunting for new ones |
+| 4b   | `reviewer` (read-only): classify every finding — could an automated check have caught it, and which one? | A finding worth gating has to be identified before step 5 closes its ledger row, and a fixer should not also be the one deciding whether its own fix needed a gate |
 | 6    | `oracle` at the round cap: pick one binding verdict (`NARROW`/`REDO`/`ACCEPT`/`HUMAN`) and write `escalation.md` | A loop that has not converged in 4 rounds needs a decision from a fresh context, not another iteration |
+| 13.5 | `reviewer`, **fresh context**: does the evidence (POW + `git log --format=fuller` + diff) support that the flow ran as documented? | Fresh context cannot be talked around by the orchestrator's narrative — the whole point of an audit that checks the process, not the code |
 | 14   | Verify candidate findings before creating GitHub issues (read-only: is the finding real? is it already tracked?) | GitHub duplicate search (open + closed, `--limit` > 30) plus code verification across several findings is query-heavy |
+| 15a  | `oracle` (fork): diagnose over ≥3 manifests' metrics, propose ≤2 classified changes | A retro needs to look at several cycles at once, in a context that holds only the metrics, not this cycle's narrative |
+| 15b  | `reviewer`, **fresh, read-only**: independently verify the oracle's cited evidence | The oracle must not grade its own diagnosis — a second, evidence-blind pass is what makes `noop` a credible outcome, not a rubber stamp |
+| 17   | `delegate`: check each pending process-changelog entry's success criterion after 5 cycles | Cross-referencing several changelog entries against `bin/pow-metrics.php` output is exactly the token-heavy compression this section delegates for every other step |
 
 All subagents have read/write/edit/bash tools and operate on the same
-repository (the step-14 verifier and the step-6 oracle are instructed to run
+repository (the step-4b classifier, the step-6 oracle, the step-13.5 auditor,
+the step-14 verifier and the step-15b verifier are instructed to run
 read-only). Give each one a clear, scoped instruction and a defined output
 format (ranked list with rationale / numbered findings list with
 `ID | file:line | description | severity` / coder report with biggest problem
-+ discovered bugs / one verdict plus per-finding justification).
++ discovered bugs / one verdict plus per-finding justification / a change
+proposal classified `automation`/`workflow`/`knowledge`/`noop` with cited
+evidence).
 
 Capture the `runId` of every run: it is the prefix of
 `.pi-subagents/artifacts/<runId>_<agent>_0_output.md` and the only way

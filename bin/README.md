@@ -163,6 +163,47 @@ normal use: `POW_ROOT` points the script at another repository root (default:
 the parent of `bin/`), and `POW_NO_GH=1` disables every `gh` call, which makes
 `--round` require `--dry-run`.
 
+### `pow-metrics.php`
+
+Reports metrics for the self-improving workflow's step 15 "retro" (see
+`docs/workflow.md`), derived **entirely** from committed manifests — there is
+no `cycles.jsonl` or any other derived file (`docs/process-notices.md`, N-04).
+It walks `docs/proof_of_work/<NNNN>-<slug>/manifest.json` and reads each
+cycle's `findings.md` through `bin/pow-common.php`'s ledger parser — the same
+one `bin/pow.php` and `bin/check-pow.php` use — instead of a third copy of the
+parsing rules, which is exactly the kind of drift that caused real bugs in
+phase 2.
+
+**Usage:**
+```bash
+php bin/pow-metrics.php                          # all finished cycles
+php bin/pow-metrics.php --since=5                # last 5 cycles only
+php bin/pow-metrics.php --min-cycles=3           # exit 1 below 3 cycles in scope
+php bin/pow-metrics.php --json                   # machine-readable output
+composer pow-metrics                             # the same, as a composer script
+```
+
+Per cycle and in aggregate: rounds used vs. the profile's cap, **escape
+rate** (findings first seen in round ≥2 / total findings — the key metric for
+the gates loop), findings by status (`round1`/`escaped`/`open`/`fixed`/
+`gated`/`wontfix`), gates added, escalations and verdicts, and `lint_exit`/
+`test_exit`/`coverage`.
+
+`--min-cycles` (default 3, matching the retro's own "diagnose over ≥3
+manifests" requirement) makes the script itself the guardrail: fewer cycles
+than that in scope is a non-zero exit, so step 15 cannot be run on thin
+evidence by mistake. A manifest that cannot be parsed is skipped with a notice
+on stderr rather than aborting the whole report — this is a reporting tool,
+not a second enforcement path; that is `bin/check-pow.php`'s job.
+
+Not wired into `composer lint` (`DEC-008`): it is a reporting tool, not a
+check, and has nothing to fail on its own account.
+
+Works entirely offline. Exit codes: 0 = ok, 1 = runtime error or fewer than
+`--min-cycles` cycles in scope, 2 = usage error. `POW_ROOT` (the same variable
+`bin/pow.php` reads) points the script at another repository root; not needed
+in normal use.
+
 ### `check-pow.php`
 
 Verifies the proof of work of the current pull request (see

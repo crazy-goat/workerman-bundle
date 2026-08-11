@@ -536,30 +536,24 @@ function powAppendRow(string $root, array $row): void
 }
 
 /**
+ * The 4-key subset manifest.json carries; bin/pow-metrics.php reads the fuller
+ * powcFindingCounters() breakdown (adds fixed/gated/wontfix) straight off the
+ * same ledger state instead of a second parser.
+ *
  * @param list<array{id: string, round: int, loc: string, desc: string, severity: string, status: string, resolution: string}> $rows
  *
  * @return array{total: int, round1: int, escaped: int, open: int}
  */
 function powFindingCounters(array $rows): array
 {
-    $state = powLedgerState($rows);
-    $round1 = 0;
-    $escaped = 0;
-    $open = 0;
+    $counters = powcFindingCounters(powLedgerState($rows));
 
-    foreach ($state as $entry) {
-        if ($entry['first_round'] <= 1) {
-            $round1++;
-        } else {
-            $escaped++;
-        }
-
-        if ($entry['status'] === 'open') {
-            $open++;
-        }
-    }
-
-    return ['total' => count($state), 'round1' => $round1, 'escaped' => $escaped, 'open' => $open];
+    return [
+        'total' => $counters['total'],
+        'round1' => $counters['round1'],
+        'escaped' => $counters['escaped'],
+        'open' => $counters['open'],
+    ];
 }
 
 /**
