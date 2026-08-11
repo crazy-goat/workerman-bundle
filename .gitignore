@@ -10,3 +10,8 @@ var/
 
 # Pi subagent artifacts
 .pi-subagents/
+
+# Proof of work scratch buffer (docs/workflow.md step 2.5+)
+/docs/proof_of_work/current/*
+!/docs/proof_of_work/current/.gitkeep
+/docs/proof_of_work/.abandoned/

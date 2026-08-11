@@ -82,3 +82,62 @@ php bin/pick-issue.php --json                      # machine-readable output
 
 Requires the `gh` CLI (authenticated). Exit codes: 0 = candidates,
 1 = gh/API error, 2 = usage error, 3 = release needed.
+
+### `pow.php`
+
+Records the **proof of work** of one issue cycle (see `docs/workflow.md`,
+steps 2.5–6, and [../docs/proof_of_work/README.md](../docs/proof_of_work/README.md)).
+The cycle narrative lives in PR comments; only `manifest.json`, `findings.md`
+and — when it exists — `escalation.md` are committed, under
+`docs/proof_of_work/<NNNN>-<slug>/`.
+
+Round comments are never authored by the orchestrator: `--round` reads the
+harness artifact `.pi-subagents/artifacts/<runId>_<agent>_0_output.md`,
+injects front matter derived from the neighbouring `_meta.json`, publishes it
+verbatim with `gh pr comment`, and records the comment id, the server-assigned
+`created_at` and the sha256 of the exact published body. An unknown `run_id`
+is refused.
+
+**Usage:**
+```bash
+php bin/pow.php --start --issue=686 [--slug=<kebab>] [--branch=<name>] [--profile=full|light]
+php bin/pow.php --round=2 --role=review --run=<runId> [--dry-run]
+php bin/pow.php --finding --id=F-01 --round=1 --loc=src/Foo.php:12 \
+                --desc="…" --severity=high [--status=open]
+php bin/pow.php --resolve --id=F-01 --round=2 --status=fixed --resolution="…"
+php bin/pow.php --verdict=CLEAN            # or NARROW | REDO | ACCEPT | HUMAN
+php bin/pow.php --set lint_exit=0 --set test_exit=0 --set coverage=81.4
+php bin/pow.php --gate="regression test for X" --abort=<runId>:<reason>
+php bin/pow.php --status                   # summary of the cycle in progress
+php bin/pow.php --finish                   # validate + move into <NNNN>-<slug>/
+php bin/pow.php --abort --reason="…"       # archive current/ to .abandoned/<ts>/
+```
+
+`--status` and `--abort` are commands when written bare and options when
+written with a value (`--status=fixed`, `--abort=<runId>:<reason>`), so their
+value form always requires the `=` sign.
+
+Rules the script enforces:
+
+- **round cap** — `full` profile 4 rounds, `light` 2. Beyond the cap the
+  script refuses and points at the `oracle` verdict plus `escalation.md`;
+  there is no round 5.
+- **append-only ledger** — `--resolve` appends a NEW row for the same ID, it
+  never edits one. A `wontfix` must cite `decisions.md#<anchor>` or
+  `escalation.md`.
+- **verdicts** — anything but `CLEAN` requires a non-empty `escalation.md`;
+  `ACCEPT` additionally requires every still-open finding to be named there.
+- **`--start` never deletes** — a non-empty `current/` is archived to
+  `.abandoned/<ts>/`.
+- **`--finish` recomputes** `commits[]`, `files_changed[]` and
+  `findings{total,round1,escaped,open}` from git and the ledger rather than
+  trusting declared values.
+
+Requires the `gh` CLI (authenticated) for `--round` and for the issue
+title/labels lookup in `--start`; everything else works offline. Exit codes:
+0 = ok, 1 = runtime/validation error, 2 = usage error.
+
+Two environment variables exist for the test suite and are not needed in
+normal use: `POW_ROOT` points the script at another repository root (default:
+the parent of `bin/`), and `POW_NO_GH=1` disables every `gh` call, which makes
+`--round` require `--dry-run`.

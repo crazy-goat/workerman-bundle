@@ -30,6 +30,15 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('install-git-hook.php', $content);
     }
 
+    public function testBinReadmeDocumentsPow(): void
+    {
+        $content = file_get_contents($this->projectDir . '/bin/README.md');
+        $this->assertNotFalse($content);
+        $this->assertStringContainsString('### `pow.php`', $content);
+        $this->assertStringContainsString('proof of work', $content);
+        $this->assertStringContainsString('0 = ok, 1 = runtime/validation error, 2 = usage error', $content);
+    }
+
     public function testReadmeDisambiguatesBinConsole(): void
     {
         $content = file_get_contents($this->projectDir . '/README.md');
