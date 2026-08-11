@@ -18,3 +18,11 @@ One entry per finding. Appended across rounds. Severity: `high` / `medium` /
 - R1-2 | `bin/check-coverage.php:62` | **nit** | Missing trailing comma in
   multi-line `printf`. Pre-existing (byte-identical to `master`); `bin/` is
   outside php-cs-fixer scope. **Status: not a new finding** — out of scope.
+
+## Round 2
+
+- R1-1 | **low** | **Status: fixed** — verified by running the script on
+  `clover-files-only.xml` (75.00%, exit 0); the fallback sums both `/file/metrics` nodes.
+  The new test fails against a `[0]`-only implementation. Closed.
+- R1-2 | **nit** | **Status: not a new finding** (pre-existing, out of scope). Closed.
+- Round 2 found no new findings.

@@ -32,3 +32,34 @@ Round 1 — no earlier findings to reconcile (`findings-review.md` did not exist
 Change correctly and completely fixes issue #691 for real PHPUnit Clover output.
 The regression test + fixture genuinely pin the old bug. No blocking issues.
 Fallback edge case was the only real finding and has been fixed and tested.
+
+# Review Round 2 — Issue #691
+
+Automated review (`reviewer` subagent), read-only.
+
+## Earlier-round findings
+
+- **R1-1 (low, fallback `[0]`-only) — FIXED.** Verified by running the script on
+  `clover-files-only.xml`: `Coverage: 75.00% (75/100 statements)`, exit 0 — the fallback
+  sums both `/file/metrics` nodes (60+40=100, 40+35=75). Simulating the old `[0]`-only
+  behaviour on the same fixture yields `40/60 = 66.67%`, so the new test genuinely fails
+  against the old code. `clover-no-metrics.xml` has no `<metrics>` anywhere and triggers
+  exit 2 as expected.
+- **R1-2 (nit, trailing comma) — NOT A NEW FINDING.** Byte-identical to master; out of
+  scope; unchanged.
+
+## New findings
+
+None that change behavior. Fallback double-counting checked (`//file/metrics` selects only
+file-level nodes, no inflation); primary `/coverage/project/metrics` correctly prefers the
+single aggregate; `statements=0` guard intact.
+
+## Test run
+
+`vendor/bin/phpunit --no-coverage tests/CheckCoverageGateTest.php` → OK (7 tests, 33
+assertions). `php -l bin/check-coverage.php` → no syntax errors.
+
+## Verdict
+
+Complete and correct for issue #691. Round-1 fallback defect genuinely fixed, fixtures/tests
+valid, full test file passes. No blocking issues.
