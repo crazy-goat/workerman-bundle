@@ -121,15 +121,88 @@ final class GithubWorkflowsTest extends TestCase
     public function testProofOfWorkGateParticipatesInTheAggregatedSignal(): void
     {
         $this->assertMatchesRegularExpression(
-            '/needs: \[lint, tests, benchmark, pow\]/',
+            '/needs: \[lint, tests, benchmark, pow, pow-reality\]/',
             $this->workflowContent,
-            'The ci aggregator must depend on the pow job',
+            'The ci aggregator must depend on both halves of the gate',
         );
+
+        foreach (['pow', 'pow-reality'] as $job) {
+            $this->assertStringContainsString(
+                sprintf(
+                    'if [ "${{ needs.%1$s.result }}" != "success" ] && [ "${{ needs.%1$s.result }}" != "skipped" ]; then exit 1; fi',
+                    $job,
+                ),
+                $this->workflowContent,
+                sprintf('A failing %s job must fail CI; a skipped one (draft PR) must not', $job),
+            );
+        }
+    }
+
+    /**
+     * Everything except POW-08 is pure git plus a few API reads, so it must not
+     * queue behind `lint`: tampering is the finding you want first, not last.
+     * POW-08 recomputes lint/tests/coverage and is the only slow part, so it
+     * lives in its own job behind `tests`.
+     */
+    public function testTheFastHalfOfTheGateDoesNotWaitForLint(): void
+    {
+        $pow = $this->jobBlock('pow');
+
+        $this->assertStringNotContainsString(
+            'needs:',
+            $pow,
+            'The attestation checks are seconds of work — they run beside lint, not after it',
+        );
+        $this->assertStringNotContainsString(
+            '--verify-reality',
+            $pow,
+            'Recomputing lint and the whole suite belongs in pow-reality, not in the fast job',
+        );
+        $this->assertStringNotContainsString(
+            'composer install',
+            $pow,
+            'Without --verify-reality the gate is a standalone script; installing vendor/ would only cost time',
+        );
+
         $this->assertStringContainsString(
-            'if [ "${{ needs.pow.result }}" != "success" ] && [ "${{ needs.pow.result }}" != "skipped" ]; then exit 1; fi',
-            $this->workflowContent,
-            'A failing pow job must fail CI; a skipped one (draft PR) must not',
+            'needs: [lint, tests]',
+            $this->jobBlock('pow-reality'),
+            'POW-08 is moot when the suite is red, so it waits for tests instead of racing them for runners',
         );
+    }
+
+    public function testBothHalvesOfTheGateRunTheMasterCopy(): void
+    {
+        foreach (['pow', 'pow-reality'] as $job) {
+            $this->assertStringContainsString(
+                'git show origin/master:bin/check-pow.php > "$gate/check-pow.php"',
+                $this->jobBlock($job),
+                sprintf('%s must judge the PR with the master copy of the gate', $job),
+            );
+        }
+    }
+
+    /**
+     * Returns one top-level job block, from its `  <name>:` header up to the
+     * next one, so an assertion cannot accidentally be satisfied by a sibling.
+     *
+     * Full-line `#` comments are stripped: these jobs explain themselves at
+     * length, and a negative assertion must not be tripped by prose that merely
+     * names the thing it forbids.
+     */
+    private function jobBlock(string $name): string
+    {
+        $pattern = sprintf('/^  %s:\n(?:(?!^  [a-z]).*\n)*/m', preg_quote($name, '/'));
+
+        $this->assertMatchesRegularExpression($pattern, $this->workflowContent, sprintf('job %s not found', $name));
+        preg_match($pattern, $this->workflowContent, $matches);
+
+        $lines = array_filter(
+            explode("\n", $matches[0]),
+            static fn(string $line): bool => !str_starts_with(ltrim($line), '#'),
+        );
+
+        return implode("\n", $lines);
     }
 
     public function testProofOfWorkGateIsSkippedOnDraftPullRequests(): void

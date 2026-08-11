@@ -269,6 +269,13 @@ final class PowCommonTest extends TestCase
         self::assertSame(400 * 2 * 1024, \strlen((string) $result['err']));
     }
 
+    /**
+     * The two platforms disagree about how an unstartable command surfaces:
+     * macOS fails inside `proc_open()`, Linux forks successfully and the child
+     * exits 127 with an empty stderr. This asserts the normalised contract, not
+     * either platform's raw behaviour — the macOS-only version of this test
+     * passed locally and failed on the Linux CI leg.
+     */
     public function testRunReportsAnUnstartableCommandInsteadOfThrowing(): void
     {
         $result = $this->evaluate('powcRun(["this-command-does-not-exist-4242"])');
@@ -276,6 +283,31 @@ final class PowCommonTest extends TestCase
         self::assertIsArray($result);
         self::assertSame(127, $result['code']);
         self::assertStringContainsString('unable to start', (string) $result['err']);
+        self::assertStringContainsString('this-command-does-not-exist-4242', (string) $result['err']);
+    }
+
+    /**
+     * The flip side of the normalisation above, pinned so it stays deliberate:
+     * a command that really did start and exited 127 in silence is reported the
+     * same way, because 127 is exactly the "command not found" convention.
+     */
+    public function testASilent127IsReportedAsUnstartableToo(): void
+    {
+        $result = $this->evaluate('powcRun(["sh", "-c", "exit 127"])');
+
+        self::assertIsArray($result);
+        self::assertSame(127, $result['code']);
+        self::assertStringContainsString('unable to start', (string) $result['err']);
+    }
+
+    public function testRunKeepsAChildsOwnStderrOn127(): void
+    {
+        $result = $this->evaluate('powcRun(["sh", "-c", "echo boom >&2; exit 127"])');
+
+        self::assertIsArray($result);
+        self::assertSame(127, $result['code']);
+        self::assertStringContainsString('boom', (string) $result['err']);
+        self::assertStringNotContainsString('unable to start', (string) $result['err']);
     }
 
     // ---------------------------------------------------------------------

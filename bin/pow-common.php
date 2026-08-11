@@ -167,8 +167,20 @@ function powcRun(array|string $cmd, ?string $cwd = null, ?array $env = null): ar
     [$out, $err] = powcDrain($pipes[1], $pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
+    $code = proc_close($process);
 
-    return ['code' => proc_close($process), 'out' => $out, 'err' => $err];
+    // A command that cannot be exec'd is reported differently per platform:
+    // macOS fails inside proc_open() and takes the branch above, while on Linux
+    // the fork succeeds and the child exits 127 with nothing on stderr. Both
+    // are normalised to the same shape so callers never have to care — and so
+    // an unstartable command is never a silent failure. A real command exiting
+    // 127 without writing to stderr is indistinguishable from this, which is
+    // precisely what 127 conventionally means.
+    if ($code === 127 && $err === '') {
+        $err = 'unable to start: ' . (is_array($cmd) ? implode(' ', $cmd) : $cmd);
+    }
+
+    return ['code' => $code, 'out' => $out, 'err' => $err];
 }
 
 /**
