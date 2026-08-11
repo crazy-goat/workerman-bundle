@@ -29,7 +29,7 @@ declare(strict_types=1);
  *   1  gate violation
  *   2  usage error
  *
- * Scope: the gate ENFORCES when the branch matches ^(fix|feat|process)/issue-\d+
+ * Scope: the gate ENFORCES when the branch matches ^(fix|feat|refactor|perf|process)/issue-\d+
  * or when the diff touches a protected path. It SKIPS — one notice, exit 0 —
  * on a base branch (master/main), on any other branch, when no pull request
  * exists for the branch, and when `gh` is missing, unauthenticated or offline.
@@ -75,13 +75,19 @@ require_once __DIR__ . '/pow-common.php';
 /** Coverage is a float derived from a clover file; compare with a tolerance. */
 const CPOW_COVERAGE_TOLERANCE = 0.05;
 
-/** An approval only counts as "maintainer" from one of these associations. */
-const CPOW_MAINTAINER_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
-
 /** Agents whose runs must be accounted for in the manifest (round or aborted). */
 const CPOW_ROUND_AGENT = '#^(coder|review)#';
 
-/** Files that may only change through a `process/` branch with an approval. */
+/**
+ * Files that may only change through a `process/` branch.
+ *
+ * There used to be a second requirement — a maintainer approval — but this
+ * repository has a single collaborator with write access and GitHub refuses
+ * a self-approval, so that half was unsatisfiable by construction. Dropped in
+ * #686 phase 5; see docs/process-notices.md (N-13) for what the branch-prefix
+ * requirement alone still buys (visibility, not a second pair of eyes) and
+ * the condition for revisiting it.
+ */
 const CPOW_PROTECTED_FILES = ['bin/pow.php', 'bin/pow-common.php', 'bin/check-pow.php'];
 
 /** Path prefixes under the same rule. */
@@ -253,11 +259,14 @@ function cpowPrintReport(array $report, bool $strict, bool $advisory = false): i
     $failed = cpowHasLevel($report, 'violation')
         || ($strict && (cpowHasLevel($report, 'incomplete') || cpowHasLevel($report, 'undetermined')));
 
+    // Naming the mode matters most in the one case a developer reads this line
+    // at all: a rejected push. The default mode can fail — unlike --advisory —
+    // so it must not call itself advisory.
     fwrite(STDOUT, sprintf(
-        "check-pow: %s (%d finding(s), %s mode)\n",
+        "check-pow: %s (%d finding(s), %s)\n",
         $failed && !$advisory ? 'FAILED' : 'ok',
         count($report),
-        $advisory ? 'report-only' : ($strict ? 'strict' : 'advisory'),
+        $advisory ? 'report-only mode' : ($strict ? 'strict mode' : 'default mode — only violations fail'),
     ));
 
     // --advisory never fails: it is what `composer lint` runs, and lint must
@@ -624,81 +633,6 @@ function cpowClosingIssues(array $pr): array
     return $numbers;
 }
 
-/**
- * The most recent approval "on record": a submitted APPROVED review by someone
- * with write access. A comment saying "looks good" is not an approval.
- *
- * An absent or non-string `authorAssociation` means "not a maintainer". It used
- * to mean "assume the best", so any APPROVED review — a drive-by from a fork —
- * authorised rewriting the gate.
- *
- * `submittedAt` is read from the review object itself; `gh pr view --json`
- * has no top-level `submittedAt` field, the timestamp ships inside `reviews`.
- *
- * @param array<string, mixed> $pr
- *
- * @return array{login: string, submitted_at: string}|null
- */
-function cpowMaintainerApproval(array $pr): ?array
-{
-    $reviews = $pr['reviews'] ?? [];
-
-    if (!is_array($reviews)) {
-        return null;
-    }
-
-    $latest = null;
-
-    foreach ($reviews as $review) {
-        if (!is_array($review) || ($review['state'] ?? null) !== 'APPROVED') {
-            continue;
-        }
-
-        if (!is_string($review['authorAssociation'] ?? null)
-            || !in_array($review['authorAssociation'], CPOW_MAINTAINER_ASSOCIATIONS, true)) {
-            continue;
-        }
-
-        $author = $review['author'] ?? null;
-        $submitted = is_string($review['submittedAt'] ?? null) ? $review['submittedAt'] : '';
-        $approval = [
-            'login' => is_array($author) && is_string($author['login'] ?? null) ? $author['login'] : 'unknown',
-            'submitted_at' => $submitted,
-        ];
-
-        if ($latest === null || strtotime($submitted) > strtotime($latest['submitted_at'])) {
-            $latest = $approval;
-        }
-    }
-
-    return $latest;
-}
-
-/**
- * Author date of the newest commit touching one of the protected paths, so a
- * stale approval cannot authorise a later rewrite of the gate.
- *
- * @param list<string> $paths
- *
- * @return array{ok: bool, timestamp: int|null}
- */
-function cpowNewestCommitDate(string $root, ?string $base, array $paths): array
-{
-    if ($base === null || $paths === []) {
-        return ['ok' => false, 'timestamp' => null];
-    }
-
-    $result = cpowRun(['git', 'log', '-1', '--format=%at', $base . '..HEAD', '--', ...$paths], $root);
-
-    if ($result['code'] !== 0) {
-        return ['ok' => false, 'timestamp' => null];
-    }
-
-    $stamp = trim($result['out']);
-
-    return ['ok' => true, 'timestamp' => $stamp === '' ? null : (int) $stamp];
-}
-
 // --------------------------------------------------------------------------
 // Proof of work on disk
 // --------------------------------------------------------------------------
@@ -798,9 +732,9 @@ function cpowCoverageOf(string $cloverFile): ?float
  *
  * A diff touching bin/pow.php, bin/pow-common.php, bin/check-pow.php,
  * .github/workflows/* or the `scripts` block of composer.json rewrites the gate
- * itself, so it needs the `process/` branch prefix plus a maintainer approval.
+ * itself, so it needs the `process/` branch prefix.
  *
- * Detection only — the two reporting halves run after the scope gate, so the
+ * Detection only — the reporting half runs after the scope gate, so the
  * gate never speaks about a branch it has no business judging.
  *
  * @param list<string>                                          $files
@@ -836,7 +770,14 @@ function cpowProtectedPaths(string $root, ?string $base, array $files, array &$r
 }
 
 /**
- * POW-10, branch half.
+ * POW-10 — the sole check: a protected path requires the `process/` branch
+ * prefix.
+ *
+ * There used to be a second half here requiring a maintainer approval
+ * submitted after the newest protected-path commit. Dropped in #686 phase 5:
+ * this repository has one collaborator with write access, GitHub does not
+ * allow approving your own pull request, so the requirement was impossible to
+ * satisfy rather than merely strict. See docs/process-notices.md (N-13).
  *
  * @param list<string>                                          $touched
  * @param list<array{level: string, id: string, message: string}> $report
@@ -855,62 +796,6 @@ function cpowCheckProtectedBranch(array $touched, string $branch, array &$report
     }
 
     cpowAdd($report, 'notice', 'POW-10', 'protected path(s) touched from a process/ branch: ' . implode(', ', $touched));
-}
-
-/**
- * POW-10, approval half. An approval submitted before the newest commit
- * touching a protected path did not see that commit, so it cannot authorise it.
- *
- * @param array<string, mixed>                                  $pr
- * @param list<string>                                          $touched
- * @param list<array{level: string, id: string, message: string}> $report
- */
-function cpowCheckProtectedApproval(string $root, ?string $base, array $pr, int $prNumber, array $touched, bool $strict, array &$report): void
-{
-    $approval = cpowMaintainerApproval($pr);
-
-    if ($approval === null) {
-        cpowAdd($report, $strict ? 'violation' : 'incomplete', 'POW-10', sprintf(
-            'PR #%d touches a protected path but carries no maintainer approval',
-            $prNumber,
-        ));
-
-        return;
-    }
-
-    $paths = array_values(array_filter($touched, static fn(string $path): bool => !str_contains($path, ' ')));
-    $newest = cpowNewestCommitDate($root, $base, $paths);
-    $approvedAt = $approval['submitted_at'] === '' ? false : strtotime($approval['submitted_at']);
-
-    if (!$newest['ok'] || $newest['timestamp'] === null) {
-        cpowAdd($report, 'notice', 'POW-10', 'protected-path change approved by ' . $approval['login']
-            . ' (the date of the newest protected-path commit could not be read, so the approval was not aged)');
-
-        return;
-    }
-
-    if ($approvedAt === false) {
-        cpowAdd($report, $strict ? 'violation' : 'incomplete', 'POW-10', sprintf(
-            'the approval by %s carries no submittedAt, so it cannot be shown to postdate the protected-path change',
-            $approval['login'],
-        ));
-
-        return;
-    }
-
-    if ($approvedAt < $newest['timestamp']) {
-        cpowAdd($report, 'violation', 'POW-10', sprintf(
-            'the approval by %s was submitted at %s, before the newest protected-path commit (%s) — a stale '
-            . 'approval cannot authorise a later rewrite of the gate; re-request the review',
-            $approval['login'],
-            $approval['submitted_at'],
-            gmdate('Y-m-d\TH:i:s\Z', $newest['timestamp']),
-        ));
-
-        return;
-    }
-
-    cpowAdd($report, 'notice', 'POW-10', 'protected-path change approved by ' . $approval['login'] . ' at ' . $approval['submitted_at']);
 }
 
 /**
@@ -1115,6 +1000,7 @@ function cpowCheckCommentChain(string $root, array $manifest, int $prNumber, arr
 
     $previousSha = null;
     $previousTime = null;
+    $previousId = null;
 
     foreach ($rounds as $index => $round) {
         if (!is_array($round)) {
@@ -1145,23 +1031,50 @@ function cpowCheckCommentChain(string $root, array $manifest, int $prNumber, arr
 
         $previousSha = $declaredSha;
 
-        // created_at is server-assigned, so it is the one timestamp that cannot
-        // be backdated; it must increase strictly from round to round.
+        // created_at is server-assigned, so it is the one timestamp that
+        // cannot be backdated — but GitHub's resolution is one second, so two
+        // rounds published back-to-back (e.g. coder then review, with no
+        // mandated pause between them) can legitimately share a created_at.
+        // comment_id is also server-assigned and strictly increasing across
+        // the whole repository, so an equal timestamp is tie-broken by it:
+        // time is only a violation when it genuinely goes backwards, or when
+        // it moves forward while the id moves backwards — the two
+        // attestations disagreeing is itself the tell.
         $time = $createdAt === '' ? false : strtotime($createdAt);
 
         if ($time === false) {
             cpowAdd($report, 'violation', 'POW-05', $label . ': created_at is missing or unparsable');
         } else {
-            if ($previousTime !== null && $time <= $previousTime) {
-                cpowAdd($report, 'violation', 'POW-05', sprintf(
-                    '%s: created_at %s is not after the previous round — the proof of work was backfilled',
-                    $label,
-                    $createdAt,
-                ));
+            if ($previousTime !== null) {
+                if ($time < $previousTime) {
+                    cpowAdd($report, 'violation', 'POW-05', sprintf(
+                        '%s: created_at %s is before the previous round — the proof of work was backfilled',
+                        $label,
+                        $createdAt,
+                    ));
+                } elseif ($time === $previousTime) {
+                    if ($previousId === null || $id <= 0 || $id <= $previousId) {
+                        cpowAdd($report, 'violation', 'POW-05', sprintf(
+                            '%s: created_at %s equals the previous round and comment_id did not also increase — the proof of work was backfilled',
+                            $label,
+                            $createdAt,
+                        ));
+                    }
+                } elseif ($previousId !== null && $id > 0 && $id < $previousId) {
+                    cpowAdd($report, 'violation', 'POW-05', sprintf(
+                        "%s: created_at %s is after the previous round but comment_id %d is lower than the previous round's %d — timestamps and comment order disagree",
+                        $label,
+                        $createdAt,
+                        $id,
+                        $previousId,
+                    ));
+                }
             }
 
             $previousTime = $time;
         }
+
+        $previousId = $id > 0 ? $id : null;
 
         if ($id <= 0) {
             cpowAdd($report, 'violation', 'POW-05', $label . ': comment_id is missing');
@@ -1492,6 +1405,16 @@ function cpowCheckReality(string $root, array $manifest, array &$report): void
 /**
  * POW-09 — the `no-pow` escape hatch.
  *
+ * There used to be a second condition here — a maintainer approval — but this
+ * repository has a single collaborator with write access and GitHub refuses a
+ * self-approval, so it was unsatisfiable rather than merely strict. Dropped in
+ * #686 phase 5; see docs/process-notices.md (N-13). What remains: the label
+ * activates nothing by itself — the bypass applies only once the
+ * `docs/process-changelog.md` record exists, which is entirely within the
+ * author's own control (no external actor to wait on), so an unrecorded label
+ * is a `violation`, not a pending state, and checks 1–8 run normally until it
+ * is recorded.
+ *
  * Returns true when the hatch applies and checks 1–8 must be skipped.
  *
  * @param array<string, mixed>                                  $pr
@@ -1504,41 +1427,26 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
     }
 
     $number = (int) ($pr['number'] ?? 0);
-    $issues = cpowClosingIssues($pr);
+    $numbers = [$number];
 
-    fwrite(STDERR, str_repeat('!', 72) . "\n");
-    fwrite(STDERR, "check-pow: BYPASS — PR #{$number} carries the `no-pow` label, checks 1-8 are skipped.\n");
-    fwrite(STDERR, "check-pow: a bypass is a documented exception, never a silent one.\n");
-    fwrite(STDERR, str_repeat('!', 72) . "\n");
-
-    $approval = cpowMaintainerApproval($pr);
-
-    if ($approval === null) {
-        cpowAdd($report, 'violation', 'POW-09', 'the `no-pow` label requires a maintainer approval on the pull request — there is none on record');
-    } else {
-        cpowAdd($report, 'notice', 'POW-09', 'bypass approved by ' . $approval['login']);
+    foreach (cpowClosingIssues($pr) as $issue) {
+        $numbers[] = $issue;
     }
 
     // docs/process-changelog.md is created by phase 4 of issue #686, together
-    // with its cycle-zero entry (see docs/process-changelog.md#1). The branch
-    // below is therefore normally dead code from here on; it is kept as a
-    // defensive fallback — if the file were ever deleted, a `no-pow` PR
-    // degrades to `undetermined` under --strict (fails CI) rather than
-    // passing silently, which is the right way round for a missing record.
+    // with its cycle-zero entry (see docs/process-changelog.md#1), so this
+    // branch is normally dead code; it is kept as a defensive fallback — if
+    // the file were ever deleted, a `no-pow` PR degrades to `undetermined`
+    // under --strict (fails CI) rather than silently bypassing anything.
     $changelog = $root . '/docs/process-changelog.md';
 
     if (!is_file($changelog)) {
-        cpowAdd($report, $strict ? 'undetermined' : 'notice', 'POW-09', 'docs/process-changelog.md does not exist — the bypass cannot be recorded');
+        cpowAdd($report, $strict ? 'undetermined' : 'notice', 'POW-09', 'docs/process-changelog.md does not exist — the `no-pow` bypass cannot be recorded, so it does not apply; checks 1-8 run normally');
 
-        return true;
+        return false;
     }
 
     $contents = (string) file_get_contents($changelog);
-    $numbers = [$number];
-
-    foreach ($issues as $issue) {
-        $numbers[] = $issue;
-    }
 
     foreach (explode("\n", $contents) as $line) {
         // "no-pow" on the line as well as the number: a changelog that happens
@@ -1551,6 +1459,10 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
 
         foreach ($numbers as $candidate) {
             if (preg_match('/(?<![0-9])#' . $candidate . '(?![0-9])/', $line) === 1) {
+                fwrite(STDERR, str_repeat('!', 72) . "\n");
+                fwrite(STDERR, "check-pow: BYPASS — PR #{$number} carries the `no-pow` label, recorded in docs/process-changelog.md, checks 1-8 are skipped.\n");
+                fwrite(STDERR, "check-pow: a bypass is a documented exception, never a silent one.\n");
+                fwrite(STDERR, str_repeat('!', 72) . "\n");
                 cpowAdd($report, 'notice', 'POW-09', 'bypass recorded in docs/process-changelog.md (#' . $candidate . ')');
 
                 return true;
@@ -1558,12 +1470,17 @@ function cpowCheckBypass(string $root, array $pr, bool $strict, array &$report):
         }
     }
 
+    // Not (yet) recorded: the bypass does not apply. Checks 1-8 run exactly
+    // as if the label were absent — a label with no record must not switch
+    // off the tamper checks or block a push/the pow-gated test matrix on its
+    // own — but the attempt itself is a violation, since writing the record
+    // is entirely within the author's control.
     cpowAdd($report, 'violation', 'POW-09', sprintf(
-        'the `no-pow` bypass is not recorded in docs/process-changelog.md — add a line naming `no-pow` and %s',
+        'the `no-pow` bypass is not recorded in docs/process-changelog.md — add a line naming `no-pow` and %s; until it is, the bypass does not apply and checks 1-8 run normally',
         implode(' or ', array_map(static fn(int $n): string => '#' . $n, $numbers)),
     ));
 
-    return true;
+    return false;
 }
 
 // --------------------------------------------------------------------------
@@ -1586,7 +1503,7 @@ function cpowUsage(): void
           --branch=<name>    validate this branch instead of the checked-out one
           -h, --help         show this help
 
-        The gate enforces on ^(fix|feat|process)/issue-<N> branches and on any diff
+        The gate enforces on ^(fix|feat|refactor|perf|process)/issue-<N> branches and on any diff
         touching a protected path; everything else is a one-line skip with exit 0.
 
         CI runs the origin/master copy of this script (see
@@ -1757,13 +1674,6 @@ function cpowMain(array $options): int
 
     $pr = $resolved['pr'];
     $prNumber = (int) ($pr['number'] ?? 0);
-
-    // POW-10, second half: the approval is only knowable through gh, and it
-    // does not exist yet while the change is still being written — so it is a
-    // hard gate in CI (strict) and a warning locally.
-    if ($protectedTouched !== []) {
-        cpowCheckProtectedApproval($root, $base, $pr, $prNumber, $protectedTouched, $strict, $report);
-    }
 
     if (cpowCheckBypass($root, $pr, $strict, $report)) {
         return cpowPrintReport($report, $strict, $advisory);

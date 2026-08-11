@@ -54,8 +54,8 @@ final class PowCommonTest extends TestCase
 
     public function testTheIssueBranchPatternHasOneSourceInThreeRenderings(): void
     {
-        self::assertSame('#^(fix|feat|process)/issue-(\d+)#', $this->evaluate('powcIssueBranchPattern()'));
-        self::assertSame('^(fix|feat|process)/issue-[0-9]+', $this->evaluate('powcIssueBranchEre()'));
+        self::assertSame('#^(fix|feat|refactor|perf|process)/issue-(\d+)#', $this->evaluate('powcIssueBranchPattern()'));
+        self::assertSame('^(fix|feat|refactor|perf|process)/issue-[0-9]+', $this->evaluate('powcIssueBranchEre()'));
 
         self::assertSame(
             ['process', '686'],
@@ -63,6 +63,23 @@ final class PowCommonTest extends TestCase
         );
         self::assertSame(1, $this->evaluate('preg_match("#" . powcIssueBranchEre() . "#", "fix/issue-1-a")'));
         self::assertSame(0, $this->evaluate('preg_match("#" . powcIssueBranchEre() . "#", "chore/issue-1-a")'));
+    }
+
+    /**
+     * A `full`-profile prefix that is not enforced is a fiction: `pow.php
+     * --start` hands it the mandatory 4-round profile, and the gate/hook then
+     * skip it outright as "not an issue branch" (#686 phase 5, finding 2).
+     * `refactor` and `perf` were exactly that until this test started pinning
+     * the two constants equal.
+     */
+    public function testEveryFullProfilePrefixIsAnEnforcedIssueBranchType(): void
+    {
+        self::assertSame(
+            $this->evaluate('POWC_FULL_PREFIXES'),
+            $this->evaluate('POWC_ISSUE_BRANCH_TYPES'),
+            'POWC_ISSUE_BRANCH_TYPES must be exactly POWC_FULL_PREFIXES, or a full-profile '
+            . 'branch prefix goes unenforced',
+        );
     }
 
     public function testEveryEntryPointLoadsTheSharedRulesInsteadOfRestatingThem(): void
@@ -83,7 +100,7 @@ final class PowCommonTest extends TestCase
         self::assertIsString($installer);
         self::assertStringContainsString('powcIssueBranchEre()', $installer);
         self::assertStringNotContainsString(
-            '^(fix|feat|process)/issue-[0-9]+',
+            '^(fix|feat|refactor|perf|process)/issue-[0-9]+',
             $installer,
             'the installer must derive the pattern, not carry a fourth copy of it',
         );

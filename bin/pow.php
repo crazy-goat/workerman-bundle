@@ -19,7 +19,7 @@ declare(strict_types=1);
  *
  * Commands:
  *   --start --issue=N [--slug=<kebab>] [--branch=<name>] [--profile=full|light]
- *   --round=N --role=<coder|review|oracle|auditor|...> --run=<runId> [--dry-run]
+ *   --round=N --role=<coder|review|...> --run=<runId> [--dry-run]
  *   --finding --id=<F-NN> --round=N --loc=<file:line> --desc=<text>
  *             --severity=<high|medium|low|nit> [--status=open]
  *   --resolve --id=<F-NN> --round=N --status=<fixed|gated|wontfix>
@@ -783,7 +783,7 @@ function powCommandRound(string $root, array $options): void
         powFail('--round requires a positive integer', 2);
     }
     if (!is_string($role) || $role === '') {
-        powFail('--round requires --role=<coder|review|oracle|auditor|...>', 2);
+        powFail('--round requires --role=<coder|review|...>', 2);
     }
     if (!is_string($runId) || $runId === '') {
         powFail('--round requires --run=<runId>', 2);
@@ -1653,7 +1653,7 @@ function powUsage(): void
               light); an issue labelled "process" is always full, and
               --profile=light is refused on a full-prefix branch.
 
-          --round=N --role=<coder|review|oracle|auditor|...> --run=<runId> [--dry-run]
+          --round=N --role=<coder|review|...> --run=<runId> [--dry-run]
               Publish the harness artifact of <runId> as a PR comment with injected
               front matter and record the round. Refuses an unknown run id and any
               round beyond the profile cap (full 4, light 2).

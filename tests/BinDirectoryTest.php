@@ -90,7 +90,7 @@ final class BinDirectoryTest extends TestCase
         );
         $this->assertStringContainsString('php bin/check-pow.php', $installer);
         $this->assertSame(
-            '^(fix|feat|process)/issue-[0-9]+',
+            '^(fix|feat|refactor|perf|process)/issue-[0-9]+',
             $this->prePushIssueBranchPattern($installer),
             'the hook must block only on an issue branch — a hook that blocks every push gets bypassed',
         );
@@ -102,7 +102,7 @@ final class BinDirectoryTest extends TestCase
      */
     private function prePushIssueBranchPattern(string $installer): string
     {
-        $literal = '^(fix|feat|process)/issue-[0-9]+';
+        $literal = '^(fix|feat|refactor|perf|process)/issue-[0-9]+';
 
         if (str_contains($installer, "'" . $literal . "'")) {
             return $literal;
@@ -148,7 +148,7 @@ final class BinDirectoryTest extends TestCase
 
         $hook = file_get_contents($sandbox . '/.git/hooks/pre-push');
         $this->assertIsString($hook);
-        $this->assertStringContainsString("grep -Eq '^(fix|feat|process)/issue-[0-9]+'", $hook);
+        $this->assertStringContainsString("grep -Eq '^(fix|feat|refactor|perf|process)/issue-[0-9]+'", $hook);
         // The blocking run must sit INSIDE the branch condition. When it sat
         // outside, `composer lint || exit 1` had already blocked the push on
         // every branch before the condition was ever reached.
@@ -175,6 +175,53 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('### `pow-common.php`', $readme);
     }
 
+    /**
+     * bin/README.md used to omit `bin/pow-common.php` from the protected-path
+     * list at "Allowed types", while the `POW-10` table row, `docs/workflow.md`
+     * and `CPOW_PROTECTED_FILES` all included it — one file, three descriptions,
+     * only two of them agreeing. `bin/check-pow.php` self-executes on require
+     * (it calls `exit()` at the bottom), so its constant is read from the
+     * source text rather than by loading the script in-process.
+     */
+    public function testProtectedFileListsAgreeEverywhere(): void
+    {
+        $source = file_get_contents($this->projectDir . '/bin/check-pow.php');
+        $this->assertNotFalse($source);
+        $this->assertMatchesRegularExpression(
+            "/const CPOW_PROTECTED_FILES = \\['([^']+)', '([^']+)', '([^']+)'\\];/",
+            $source,
+        );
+        preg_match("/const CPOW_PROTECTED_FILES = \\['([^']+)', '([^']+)', '([^']+)'\\];/", $source, $matches);
+        $protectedFiles = [$matches[1] ?? '', $matches[2] ?? '', $matches[3] ?? ''];
+
+        $readme = file_get_contents($this->projectDir . '/bin/README.md');
+        $this->assertNotFalse($readme);
+        $workflow = file_get_contents($this->projectDir . '/docs/workflow.md');
+        $this->assertNotFalse($workflow);
+
+        foreach ($protectedFiles as $file) {
+            $this->assertStringContainsString(
+                $file,
+                $readme,
+                'bin/README.md must list every protected file exactly once, including ' . $file,
+            );
+            $this->assertStringContainsString(
+                $file,
+                $workflow,
+                'docs/workflow.md must list every protected file exactly once, including ' . $file,
+            );
+        }
+
+        // bin/README.md's "Allowed types" paragraph and its POW-10 table row
+        // must independently name every protected file too — that pairing is
+        // exactly what drifted before.
+        $allowedTypesSection = substr($readme, (int) strpos($readme, 'Allowed types:'), 400);
+
+        foreach ($protectedFiles as $file) {
+            $this->assertStringContainsString($file, $allowedTypesSection);
+        }
+    }
+
     public function testGhBranchKnowsTheProcessType(): void
     {
         $script = file_get_contents($this->projectDir . '/bin/gh-branch');
@@ -184,6 +231,35 @@ final class BinDirectoryTest extends TestCase
             $script,
         );
         $this->assertStringContainsString('*,process,*)              TYPE=process ;;', $script);
+    }
+
+    /**
+     * `gh-branch` is bash and cannot `require` `pow-common.php`, so its
+     * `TYPES=` list is a fourth, hand-maintained copy of the set that
+     * `POWC_FULL_PREFIXES`/`POWC_LIGHT_PREFIXES` define — bin/README.md used
+     * to claim the hook, the gate and `gh-branch` "cannot drift apart" for
+     * exactly this reason, which was false for `gh-branch`. This cannot make
+     * them share one source, but it does make a drift fail a test instead of
+     * being noticed months later.
+     */
+    public function testGhBranchTypesMatchThePowCommonPrefixSets(): void
+    {
+        require_once $this->projectDir . '/bin/pow-common.php';
+
+        $script = file_get_contents($this->projectDir . '/bin/gh-branch');
+        $this->assertNotFalse($script);
+        $this->assertSame(1, preg_match('/^TYPES="([^"]+)"$/m', $script, $matches));
+        $ghBranchTypes = explode(' ', $matches[1] ?? '');
+
+        $expected = [...(array) constant('POWC_FULL_PREFIXES'), ...(array) constant('POWC_LIGHT_PREFIXES')];
+        sort($expected);
+        sort($ghBranchTypes);
+
+        $this->assertSame(
+            $expected,
+            $ghBranchTypes,
+            'gh-branch\'s TYPES must be exactly POWC_FULL_PREFIXES union POWC_LIGHT_PREFIXES',
+        );
     }
 
     public function testReadmeDisambiguatesBinConsole(): void

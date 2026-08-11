@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProcessDocsTest extends TestCase
 {
-    private const NOTICE_IDS = ['N-01', 'N-02', 'N-03', 'N-04', 'N-05', 'N-06', 'N-07', 'N-08', 'N-09', 'N-10', 'N-11', 'N-12'];
+    private const NOTICE_IDS = ['N-01', 'N-02', 'N-03', 'N-04', 'N-05', 'N-06', 'N-07', 'N-08', 'N-09', 'N-10', 'N-11', 'N-12', 'N-13'];
 
     private string $projectDir;
 

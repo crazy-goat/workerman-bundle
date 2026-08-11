@@ -69,7 +69,7 @@ retrofit into this notice.
 ## N-03 — Hard pre-push block
 
 **Proposed:** make the pre-push hook fail (not just warn) `bin/check-pow.php`
-on every push, not only on `^(fix|feat|process)/issue-<N>` branches.
+on every push, not only on `^(fix|feat|refactor|perf|process)/issue-<N>` branches.
 
 **Rejected because (phase 2):** Composer aborts an array script on the first
 non-zero command, so a gate that can fail inside `composer lint` blocks every
@@ -272,3 +272,45 @@ threads to reconstruct one cycle.
 comments would have already been needed (e.g. a workflow variant that
 delays PR creation) on ≥2 cycles — evidence the "PR exists from the start"
 assumption this decision relies on no longer holds.
+
+## N-13 — A maintainer-approval requirement on `POW-09`/`POW-10`
+
+**Proposed:** require a maintainer approval on the pull request — submitted
+after the newest protected-path commit for `POW-10`, on record at all for the
+`POW-09` `no-pow` bypass — mirroring how a typical branch-protection rule
+requires a second reviewer before a sensitive change merges.
+
+**Rejected because (phase 5, #686):** this repository has **one** collaborator
+with write access (`gh api repos/crazy-goat/workerman-bundle/collaborators`)
+and `master` carries **no GitHub branch protection**
+(`gh api repos/crazy-goat/workerman-bundle/branches/master/protection` →
+404 "Branch not protected"). GitHub does not allow approving your own pull
+request. An approval requirement here is therefore not merely strict, it is
+**impossible to satisfy** — it would deadlock every protected-path change and
+every `no-pow` bypass forever, for a solo maintainer operating an agent that
+already holds the `gh` credentials needed to open the PR, push to it, and
+request or dismiss reviews on it. No in-repository mechanism can force a
+second human into the loop when there is no second human with access to be
+in it.
+
+What the gate still buys, honestly stated: **visibility, not prevention.** The
+`process/` branch prefix (`POW-10`) and the `docs/process-changelog.md` record
+(`POW-09`) make a protected-path change or a bypass show up unmissably in the
+diff and in every CI log that runs against it — a maintainer reviewing their
+own history, or anyone else who later gets write access, sees exactly what
+changed and why without having to reconstruct it. What it does **not** do is
+stop the maintainer (or an agent acting with their credentials) from making
+the change; there is no gate design available at this collaborator count that
+could do that gate's job better without external tooling (a second GitHub
+account with independent review authority, a required-reviewers branch
+protection rule naming someone who is not the author, or similar) than
+without it. Confusing "requires an approval field to be filled in" with "is
+prevented" is exactly what the impossible check used to do.
+
+**Trigger:** a second collaborator with write access appears on the
+repository (`gh api repos/crazy-goat/workerman-bundle/collaborators`), or
+branch protection is enabled on `master`
+(`gh api repos/crazy-goat/workerman-bundle/branches/master/protection` no
+longer 404s) — either makes a real, satisfiable approval requirement possible
+again, at which point `POW-09`/`POW-10` and `docs/workflow.md`'s Notes section
+should be revisited to reinstate it.

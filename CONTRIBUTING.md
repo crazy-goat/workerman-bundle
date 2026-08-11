@@ -2,15 +2,22 @@
 
 Thank you for your interest in contributing to this project!
 
-## Branch Protection Rules
+## What Gates a Merge
 
-This repository uses branch protection rules on the `master` branch to ensure code quality:
+`master` carries **no GitHub branch protection** — this is a solo-maintainer
+project with a single collaborator, so there is nobody else to require a
+review from, and GitHub does not allow approving your own pull request
+anyway. What actually gates a merge is CI (the `ci` aggregator job) plus the
+maintainer choosing to merge; see `docs/process-notices.md` (N-13) for what
+that does and does not buy.
 
 ### Required Status Checks
 
-All pull requests must pass the following checks before merging:
+CI must report green before a pull request is merged:
 
-- **Lint** - Code style validation using PHP-CS-Fixer, PHPStan, and Rector
+- **Lint** - Code style validation using PHP-CS-Fixer, PHPStan, and Rector,
+  plus the report-only proof-of-work gate (`bin/check-pow.php --advisory`)
+  and the knowledge-base linter (`bin/kb-lint.php`)
 - **Tests** - PHPUnit tests across multiple PHP (8.2-8.5) and Symfony (6.4-8.0) versions
 
 ### Pull Request Requirements

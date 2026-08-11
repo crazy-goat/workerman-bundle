@@ -29,7 +29,9 @@ which runs inside `composer lint`.
    and a file nobody could load selectively (issue #686). The retro step
    (`docs/workflow.md`, steps 15/16, added by phase 4 of that issue) is the
    single writer — a subagent that "just appends" outside those two steps is
-   doing the wrong thing.
+   doing the wrong thing. Letting every subagent write directly was itself
+   considered and rejected; see `docs/process-notices.md` (N-05) for the
+   trigger that would reopen the question.
 3. **One topic per entry.** The problem, the solution/decision, optionally an
    issue/PR/commit reference. Do not restate what the README or `docs/` already
    says — `docs/troubleshooting.md` already covers long-running worker state
@@ -99,9 +101,12 @@ applying two rules:
   rule. The entry collapses to a one-liner naming the gate in `gate="…"`; the
   detail lives in the check itself. `kb-lint` enforces the collapse (at most two
   body lines) and refuses a `promoted` entry without a `gate`.
-- **`stale`** — 0 `hits` over 20 cycles. `kb-lint` lists stale entries; the
-  retro removes them. If nobody loaded it in 20 cycles it is not knowledge, it
-  is sediment.
+- **`stale`** — 0 `hits` over 20 cycles. `kb-lint.php` does not compute this
+  from `hits` itself: the retro is the one that judges an entry stale (0 hits
+  over `STALE_AFTER_CYCLES` cycles) and sets `status=stale`; `kb-lint` then
+  only lists entries already marked that way, in a machine-checkable form the
+  retro can act on, and removes them at the next pass. If nobody loaded it in
+  20 cycles it is not knowledge, it is sediment.
 
 An entry is never edited in place to say something different: change the
 content, change the `date`, and say what changed and why (see `DEC-009`).

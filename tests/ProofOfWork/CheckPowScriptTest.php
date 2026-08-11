@@ -302,6 +302,71 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('the proof of work was backfilled', $result['err']);
     }
 
+    /**
+     * GitHub's `created_at` has one-second resolution. Two rounds published
+     * back to back (coder then review, with no mandated pause between them —
+     * exactly what steps 3-4 do) can come back with an identical timestamp.
+     * A real reviewer reproduced this against live GitHub: three comments
+     * posted in parallel to a real PR all came back `created_at =
+     * 2026-08-11T05:44:02Z`, with strictly increasing, insertion-order ids.
+     * Requiring a strictly later `created_at` failed that honest cycle before
+     * this test existed; the `comment_id` — also server-assigned and
+     * monotonic — tie-breaks it instead.
+     */
+    public function testTwoRoundsSharingACreatedAtPassWhenTheCommentIdIncreases(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        // Round 1's comment_id is 111, round 2's is 222 — already increasing.
+        // Only the timestamp collides.
+        $fixture['comments']['222']['created_at'] = '2026-08-11T10:00:00Z';
+        $fixture['comments']['222']['updated_at'] = '2026-08-11T10:00:00Z';
+        $this->writeFixture($fixture);
+
+        $manifest = $this->manifest();
+        $manifest['rounds'][1]['created_at'] = '2026-08-11T10:00:00Z';
+        $this->writeManifest($manifest);
+
+        $result = $this->check('--strict');
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringNotContainsString('backfilled', $result['err']);
+    }
+
+    /**
+     * The tie-break is not a blanket pass for equal timestamps: it only
+     * excuses the collision when the comment_id also increases. A round
+     * recorded against an OLDER comment than the previous round, wearing the
+     * same timestamp to look honest, is still backfilled.
+     */
+    public function testTwoRoundsSharingACreatedAtStillFailWhenTheCommentIdDoesNotIncrease(): void
+    {
+        $this->buildHappyRepository();
+        $fixture = $this->fixture();
+        $fixture['comments']['90'] = [
+            'id' => 90,
+            'body' => self::ROUND_TWO_BODY,
+            'issue_url' => 'https://api.github.com/repos/o/r/issues/700',
+            'created_at' => '2026-08-11T10:00:00Z',
+            'updated_at' => '2026-08-11T10:00:00Z',
+        ];
+        $this->writeFixture($fixture);
+
+        $manifest = $this->manifest();
+        // Round 2 now points at comment 90 (lower than round 1's 111) but
+        // claims the same created_at as round 1 — the id order contradicts
+        // the "honest tie" story.
+        $manifest['rounds'][1]['comment_id'] = 90;
+        $manifest['rounds'][1]['created_at'] = '2026-08-11T10:00:00Z';
+        $this->writeManifest($manifest);
+
+        $result = $this->check();
+
+        self::assertSame(1, $result['code']);
+        self::assertStringContainsString('[POW-05]', $result['err']);
+        self::assertStringContainsString('the proof of work was backfilled', $result['err']);
+    }
+
     public function testDeletedFindingBreaksTheAppendOnlyLedger(): void
     {
         $this->buildHappyRepository();
@@ -493,8 +558,14 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('require a process/ branch', $result['err']);
     }
 
-    public function testProtectedPathOnAProcessBranchNeedsAnApproval(): void
+    public function testProtectedPathOnAProcessBranchPassesWithoutAnApproval(): void
     {
+        // POW-10 used to also require a maintainer approval submitted after
+        // the newest protected-path commit. Dropped in #686 phase 5: this
+        // repository has a single collaborator with write access and GitHub
+        // refuses a self-approval, so the requirement was unsatisfiable, not
+        // merely strict (docs/process-notices.md, N-13). What remains is the
+        // `process/` branch prefix alone — no reviews on the PR at all.
         $this->buildHappyRepository();
         $fixture = $this->fixture();
         $fixture['pr']['reviews'] = [];
@@ -502,51 +573,11 @@ final class CheckPowScriptTest extends TestCase
 
         $this->onProcessBranch();
 
-        $advisory = $this->check('--branch=process/issue-4242-sample-issue');
-        self::assertSame(0, $advisory['code'], $advisory['err']);
-        self::assertStringContainsString('carries no maintainer approval', $advisory['err']);
-
-        $strict = $this->check('--strict', '--branch=process/issue-4242-sample-issue');
-        self::assertSame(1, $strict['code']);
-        self::assertStringContainsString('FAIL    [POW-10]', $strict['err']);
-    }
-
-    public function testAnApprovalWithoutAnAssociationIsNotAMaintainerApproval(): void
-    {
-        $this->buildHappyRepository();
-        $fixture = $this->fixture();
-        // A drive-by APPROVED review from a fork carries no authorAssociation
-        // the gate recognises; it used to count as maintainer approval.
-        $fixture['pr']['reviews'] = [
-            ['state' => 'APPROVED', 'author' => ['login' => 'passer-by'], 'submittedAt' => '2099-01-01T00:00:00Z'],
-        ];
-        $this->writeFixture($fixture);
-
-        $this->onProcessBranch();
-
         $result = $this->check('--strict', '--branch=process/issue-4242-sample-issue');
 
-        self::assertSame(1, $result['code']);
-        self::assertStringContainsString('carries no maintainer approval', $result['err']);
-        self::assertStringNotContainsString('approved by passer-by', $result['err']);
-    }
-
-    public function testAnApprovalOlderThanTheProtectedPathCommitIsRejected(): void
-    {
-        $this->buildHappyRepository();
-        $fixture = $this->fixture();
-        $fixture['pr']['reviews'] = [
-            ['state' => 'APPROVED', 'authorAssociation' => 'OWNER', 'author' => ['login' => 'maintainer'], 'submittedAt' => '2001-01-01T00:00:00Z'],
-        ];
-        $this->writeFixture($fixture);
-
-        $this->onProcessBranch();
-
-        $result = $this->check('--branch=process/issue-4242-sample-issue');
-
-        self::assertSame(1, $result['code']);
+        self::assertSame(0, $result['code'], $result['err']);
         self::assertStringContainsString('[POW-10]', $result['err']);
-        self::assertStringContainsString('before the newest protected-path commit', $result['err']);
+        self::assertStringContainsString('protected path(s) touched from a process/ branch', $result['err']);
     }
 
     public function testAnUntrackedProtectedFileIsSeenBeforeItIsCommitted(): void
@@ -665,20 +696,29 @@ final class CheckPowScriptTest extends TestCase
         self::assertStringContainsString('is not recorded in docs/process-changelog.md', $result['err']);
     }
 
-    public function testNoPowLabelWithoutAnApprovalIsRejected(): void
+    public function testAnUnrecordedNoPowLabelDoesNotSwitchOffChecks1To8(): void
     {
+        // The bypass is not authorised by the label alone (there is no
+        // approval concept to gate it on: this repository has one
+        // collaborator with write access, and GitHub refuses a
+        // self-approval — docs/process-notices.md, N-13). Until the
+        // changelog records it, checks 1-8 run exactly as if the label were
+        // absent, so a real defect (here: no closing issue) still surfaces
+        // as its own finding instead of being silently switched off.
         $this->buildHappyRepository();
         $fixture = $this->fixture();
         $fixture['pr']['labels'] = [['name' => 'no-pow']];
-        $fixture['pr']['reviews'] = [];
+        $fixture['pr']['closingIssuesReferences'] = [];
         $this->writeFixture($fixture);
         $this->write('docs/process-changelog.md', "# Process changelog\n\n- #700 release PR.\n");
 
         $result = $this->check();
 
         self::assertSame(1, $result['code']);
+        self::assertStringNotContainsString('BYPASS', $result['err'], 'not recorded — the bypass must not activate');
         self::assertStringContainsString('[POW-09]', $result['err']);
-        self::assertStringContainsString('requires a maintainer approval', $result['err']);
+        self::assertStringContainsString('is not recorded in docs/process-changelog.md', $result['err']);
+        self::assertStringContainsString('[POW-01]', $result['err'], 'checks 1-8 ran normally and found the missing closing issue');
     }
 
     public function testNoPowLabelUnrecordedInTheProcessChangelogIsRejected(): void

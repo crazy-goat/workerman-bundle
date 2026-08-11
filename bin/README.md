@@ -18,14 +18,19 @@ hook is automatically installed by Composer via the `post-install-cmd` and
 **reports but never fails**, because Composer aborts an array script on the
 first non-zero command, so a gate that can fail inside `lint` would block every
 push on every branch. The hook then runs the gate a second time — **only** on a
-branch matching `^(fix|feat|process)/issue-<N>`, and there only evidence of
+branch matching `^(fix|feat|refactor|perf|process)/issue-<N>`, and there only evidence of
 tampering (a `FAIL` finding) blocks; a cycle that is merely unfinished does not.
 A hook that blocks every push is a hook people bypass with `--no-verify`, which
 would make the whole gate fiction. The hard gate is CI (see `check-pow.php`).
 
 The branch pattern is not written out in the installer: it is rendered from
-`POWC_ISSUE_BRANCH_TYPES` in `pow-common.php`, so the hook, the gate and
-`gh-branch` cannot drift apart.
+`POWC_ISSUE_BRANCH_TYPES` in `pow-common.php`, so the hook and the gate share
+one source and cannot drift apart from each other. `gh-branch` is **not** part
+of that: it is bash, cannot `require` a PHP file, and hardcodes its own
+`TYPES=` list (see `gh-branch` below) — a fourth, hand-maintained copy of the
+prefix set, pinned against `POWC_FULL_PREFIXES`/`POWC_LIGHT_PREFIXES` by
+`tests/BinDirectoryTest.php::testGhBranchTypesMatchThePowCommonPrefixSets`
+rather than sharing a source with them.
 
 **Manual reinstall:**
 ```bash
@@ -60,10 +65,10 @@ default remote branch (never from a stale local `master`).
 
 Allowed types: `fix`, `feat`, `docs`, `perf`, `refactor`, `chore`, `test`,
 `build`, `ci`, `process`. **`process` is not optional** for changes to the
-workflow tooling itself — `bin/pow.php`, `bin/check-pow.php`,
-`.github/workflows/*` and the `scripts` block of `composer.json` are protected
-paths and `bin/check-pow.php` rejects a diff touching them from any other
-branch prefix (see `check-pow.php` below).
+workflow tooling itself — `bin/pow.php`, `bin/pow-common.php`,
+`bin/check-pow.php`, `.github/workflows/*` and the `scripts` block of
+`composer.json` are protected paths and `bin/check-pow.php` rejects a diff
+touching them from any other branch prefix (see `check-pow.php` below).
 
 **Usage:**
 ```bash
@@ -233,12 +238,13 @@ php bin/check-pow.php --pr=700 --branch=fix/issue-686-x   # explicit target
 ```
 
 **Skip or enforce.** The gate **enforces** when the branch matches
-`^(fix|feat|process)/issue-<N>` or when the diff touches a protected path.
+`^(fix|feat|refactor|perf|process)/issue-<N>` or when the diff touches a protected path.
 Everything else — a base branch (`master`/`main`, which is never gated against
 itself), another branch, no pull request for the branch, `gh`
 missing/unauthenticated/offline — is a **one-line skip with exit 0**.
-`--strict` (used by CI) turns every "cannot determine" into a failure, because
-in CI an unreadable fact is indistinguishable from a hidden one.
+`--strict` (used by CI's `pow-reality` job; the `pow` job runs in default mode)
+turns every "cannot determine" into a failure, because in CI an unreadable
+fact is indistinguishable from a hidden one.
 
 Findings carry a severity that decides who fails on them:
 
@@ -257,6 +263,7 @@ leaked scratch buffer is never legitimate.
 
 | Id | Check |
 | --- | --- |
+| `POW-00` | meta: the gate could not read a fact it needed (the changed-file list, or a pull request to validate against) — `undetermined`, fails only under `--strict`. Also the id of the single `notice` printed when every other check passed cleanly |
 | `POW-01` | the PR has `closingIssuesReferences` — **no work without an issue** |
 | `POW-02` | `docs/proof_of_work/<NNNN>-<slug>/` exists for that issue and holds a readable `manifest.json` whose `pow_version`, `issue` and `branch` match the pull request under test — renaming a recorded directory does **not** rebind it |
 | `POW-03` | the manifest is complete for the profile it is **entitled** to (re-derived from the branch prefix and the issue labels, never read from the manifest): enough rounds, a readable ledger with no malformed row, no `open` entry, both machine exit codes, a verdict, and an `escalation.md` naming every open finding for `ACCEPT` |
@@ -266,7 +273,7 @@ leaked scratch buffer is never legitimate.
 | `POW-07` | no silent re-rolls: every `coder`/`review` artifact in `.pi-subagents/artifacts/` inside the branch time window appears in `rounds[]` or in `aborted[]` with a reason. **Local advisory only** — `.pi-subagents/` is gitignored, so the directory never exists on a runner and the check reports that it did not run. The window starts at the earliest **author** date on the branch (`%at`), which `git rebase` does not rewrite |
 | `POW-08` | manifest vs reality: `--verify-reality` recomputes lint/test and compares `lint_exit`/`test_exit`, and compares `coverage` against `var/coverage.xml` (tolerance 0.05pp); a mismatch fails as `manifest falsified` |
 | `POW-09` | the `no-pow` escape hatch, see below |
-| `POW-10` | protected paths: a diff touching `bin/pow.php`, `bin/pow-common.php`, `bin/check-pow.php`, `.github/workflows/*` or the `scripts` block of `composer.json` requires a `process/` branch **and** a maintainer approval submitted **after** the newest protected-path commit (untracked files count — a new protected file is visible before it is committed) |
+| `POW-10` | protected paths: a diff touching `bin/pow.php`, `bin/pow-common.php`, `bin/check-pow.php`, `.github/workflows/*` or the `scripts` block of `composer.json` requires a `process/` branch (untracked files count — a new protected file is visible before it is committed). There used to also be a maintainer-approval requirement, dropped in #686 phase 5 — see `docs/process-notices.md` (N-13) |
 | `POW-11` | the environment kill switches are not honoured where they would matter: `CHECK_POW_SKIP` is ignored under `--strict`, `CHECK_POW_GH_FIXTURE` is ignored on a CI runner, and either being set there is itself a `FAIL` |
 
 **The gate runs from `master`.** A pull request must not be able to weaken the
@@ -287,13 +294,22 @@ happens to hold, so an in-script equivalent would advertise a property it
 cannot deliver.
 
 **Escape hatch.** The PR label `no-pow` (release PRs, reverts) skips checks
-`POW-01`–`POW-08`, but only when the PR also carries a maintainer approval on
-record *and* the bypass is named in `docs/process-changelog.md`. The bypass is
-always printed loudly — a bypass is a documented exception, never a silent one.
+`POW-01`–`POW-08`, but **only** once the bypass is named in
+`docs/process-changelog.md`. There is no approval condition — this repository
+has a single collaborator with write access and GitHub refuses a
+self-approval, so an approval requirement would have been unsatisfiable, not
+merely strict (`docs/process-notices.md`, N-13). The label alone activates
+nothing: until the changelog line exists, checks 1–8 run exactly as if the
+label were absent, and `POW-09` reports a `FAIL` naming what is missing —
+unlike an approval, writing the changelog line is entirely within the PR
+author's own control, so there is no pending state to wait out. A label with
+no record must not switch off the tamper checks or block a push/the
+`pow`-gated test matrix on its own. Once recorded, the bypass is always
+printed loudly — a bypass is a documented exception, never a silent one.
 
 Requires the `gh` CLI (authenticated) for everything that reads GitHub; the
-local checks (`POW-04`, `POW-06`, `POW-07`, the branch half of `POW-10`) work
-offline. Exit codes: 0 = pass or skip, 1 = gate violation, 2 = usage error.
+local checks (`POW-04`, `POW-06`, `POW-07`, `POW-10`) work offline. Exit
+codes: 0 = pass or skip, 1 = gate violation, 2 = usage error.
 
 Environment variables, none needed in normal use: `CHECK_POW_ROOT` points the
 script at another repository root, `CHECK_POW_SKIP=1` makes it exit 0

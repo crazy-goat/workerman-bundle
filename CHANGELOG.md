@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused), while only `manifest.json`, an append-only `findings.md` ledger
   and, when the round cap forces an oracle verdict, `escalation.md` are
   committed under `docs/proof_of_work/<NNNN>-<slug>/`. `bin/check-pow.php`
-  enforces it in CI with ten checks — no work without an issue, an intact
+  enforces it in CI with twelve checks (`POW-00`–`POW-11`) — no work without an issue, an intact
   comment chain (a tampered, edited or deleted comment is detectable), an
   append-only ledger, no silent review re-rolls, a manifest whose declared
   lint/test/coverage values CI recomputes itself, and a protected-path rule

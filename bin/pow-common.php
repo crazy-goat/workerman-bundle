@@ -25,17 +25,28 @@ declare(strict_types=1);
  * or the gate cannot start. See the "Verify the proof of work" step.
  */
 
-/** Branch types that carry an issue number and are therefore enforced. */
-const POWC_ISSUE_BRANCH_TYPES = ['fix', 'feat', 'process'];
+/** Branch prefixes that select the `full` profile (audit + gate steps mandatory). */
+const POWC_FULL_PREFIXES = ['fix', 'feat', 'refactor', 'perf', 'process'];
+
+/**
+ * Branch types that carry an issue number and are therefore enforced.
+ *
+ * Must be exactly POWC_FULL_PREFIXES: every prefix that mandates the `full`
+ * profile (audit + gate steps mandatory) has to be enforced, or the profile
+ * assignment is a fiction for the prefixes left out. `refactor` and `perf`
+ * were `full`-profile here but missing from enforcement until #686 phase 5 —
+ * a `refactor/issue-N-…` or `perf/issue-N-…` branch got the mandatory profile
+ * from `pow.php --start` and was then unconditionally skipped by the gate and
+ * the pre-push hook as "not an issue branch". `tests/ProofOfWork/PowCommonTest.php`
+ * pins the two constants equal so they cannot drift apart again.
+ */
+const POWC_ISSUE_BRANCH_TYPES = POWC_FULL_PREFIXES;
 
 /** Round caps per profile. There is no round beyond the cap — the oracle decides. */
 const POWC_PROFILE_CAPS = ['full' => 4, 'light' => 2];
 
 /** Minimum recorded rounds per profile. Recorder and gate read the same number. */
 const POWC_MIN_ROUNDS = ['full' => 2, 'light' => 1];
-
-/** Branch prefixes that select the `full` profile (audit + gate steps mandatory). */
-const POWC_FULL_PREFIXES = ['fix', 'feat', 'refactor', 'perf', 'process'];
 
 /** Branch prefixes that select the `light` profile (cap 2, no gate step). */
 const POWC_LIGHT_PREFIXES = ['docs', 'chore', 'ci', 'test', 'build'];
