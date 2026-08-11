@@ -87,9 +87,18 @@ final readonly class SfxDownloader
                 // A failed extraction — corrupt archive, malicious entry,
                 // or no usable SFX entry — would poison every later fetch()
                 // the same way a bad checksum would: remove the archive and
-                // rethrow the original exception unchanged.
+                // rethrow the original exception unchanged (type/message).
+                // If the removal itself fails, the bad artifact stays on
+                // disk and every later fetch() fails on it again; error_log()
+                // the failure so the operator knows to remove it by hand.
                 if (is_file($destination)) {
-                    unlink($destination);
+                    $removed = @unlink($destination);
+                    if (!$removed) {
+                        error_log(sprintf(
+                            'Unable to remove failed SFX archive "%s"; the bad artifact stays on disk and every subsequent fetch() will fail on it. Remove it manually.',
+                            $destination,
+                        ));
+                    }
                 }
                 throw $e;
             }

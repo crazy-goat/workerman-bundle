@@ -382,11 +382,73 @@ final class SfxDownloaderTest extends TestCase
             );
             self::fail('Expected a RuntimeException for the corrupt archive.');
         } catch (\RuntimeException $e) {
-            self::assertStringContainsString('Failed to open zip archive', $e->getMessage());
+            // The rethrown exception must keep its original type and message
+            // exactly — no removal note is appended on the zip path.
+            self::assertSame(sprintf('Failed to open zip archive "%s".', $zipPath), $e->getMessage());
         }
 
         // The corrupt artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
+    }
+
+    /**
+     * When the failed archive cannot be unlinked (e.g. the destination
+     * directory lost its write permission), the removal failure must be
+     * surfaced via error_log(): the rethrown exception keeps its original
+     * message, so without the warning the operator would never learn that
+     * the bad artifact is still on disk, poisoning every later fetch().
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipLogsWarningWhenFailedArchiveCannotBeRemoved(): void
+    {
+        $dir = $this->tempDir . '/readonly';
+        mkdir($dir, 0755, true);
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        file_put_contents($zipPath, str_repeat('not-a-zip-', 100));
+
+        // Remove the directory's write permission so unlink() fails with
+        // EACCES while is_file() (which needs only execute permission) still
+        // reports the artifact. As root — or on filesystems that ignore the
+        // mode bits — the directory stays writable and the failure cannot be
+        // simulated; skip in that case.
+        chmod($dir, 0555);
+        if (is_writable($dir)) {
+            chmod($dir, 0755);
+            self::markTestSkipped('Cannot simulate an unlink() failure: the directory stays writable (running as root?).');
+        }
+
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
+        try {
+            try {
+                (new SfxDownloader())->fetch(
+                    'https://example.invalid/phpmicro.sfx.zip',
+                    $dir,
+                );
+                self::fail('Expected a RuntimeException for the corrupt archive.');
+            } catch (\RuntimeException $e) {
+                // The rethrown exception must keep its original type and
+                // message exactly — nothing is claimed about the removal.
+                self::assertSame(sprintf('Failed to open zip archive "%s".', $zipPath), $e->getMessage());
+            }
+        } finally {
+            ini_restore('error_log');
+            chmod($dir, 0755);
+        }
+
+        // The failed removal must be signalled: the operator has to know the
+        // bad artifact is still on disk.
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertStringContainsString(
+            sprintf('Unable to remove failed SFX archive "%s"', $zipPath),
+            $logContent,
+            'The error_log should contain the removal-failure warning.',
+        );
+
+        // The unlink failed, so the bad artifact must still be there.
+        self::assertFileExists($zipPath);
     }
 
     /**
