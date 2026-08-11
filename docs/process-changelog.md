@@ -176,3 +176,31 @@ One entry per process change, in the order they land:
   `<x>` recorded in `findings-review.md`. Reconciliation PRs like §699 stop
   appearing.
 - **Outcome:** pending
+
+### #5 — The PR is created after implementation and local gates, not as a draft before any code exists
+
+- **Date:** 2026-08-11
+- **Issue:** #704
+- **PR:** TBD
+- **What:** removed workflow step 2.5 (a draft PR opened immediately after
+  branch creation, before any code) and moved PR creation into step 9: the
+  PR is now opened — ready, not draft — after implementation and after step
+  7's linters/tests pass locally. The proof-of-work directory creation
+  (`mkdir -p docs/proof_of_work/<NNNN>-<slug>`) moved to the end of step 2,
+  since it does not depend on a PR.
+- **Why:** both justifications for the draft-first step were stale. "Round
+  comments have a home from round 1" died when the proof of work moved from
+  PR comments to committed files under `docs/proof_of_work/` (entry #3, PR
+  #697) — the files have a home whether or not a PR exists. "CI starts
+  earlier" was waste: in the #670 cycle the draft ran the full matrix (PHP
+  8.2–8.5 × Symfony 6.4–8.0) on the seed commit and the implementation push
+  3 minutes later cancelled it (`concurrency: cancel-in-progress`). The
+  step was also not practical as written: `gh pr create --draft` fails with
+  "GraphQL: No commits between master and <branch>" on a branch with no new
+  commits, so the cycle needed a junk seed commit that polluted history.
+- **Success criterion:** `grep -nE "2\.5|--draft|gh pr ready"
+  docs/workflow.md` finds nothing, and the only multi-line `gh pr create`
+  code block in the file sits in step 9 (the Quick Reference keeps its
+  usual one-line condensed echo of the step, as it does for every step) —
+  checkable directly with grep, no interpretation needed.
+- **Outcome:** pending
