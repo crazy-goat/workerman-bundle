@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1720000000">
+  <!-- Coverage wrapper with files but NO <metrics> node anywhere. The script
+       must exit 2 (usage) because no aggregate can be found. -->
+  <project timestamp="1720000000">
+    <file name="/path/to/SampleCalculator.php" />
+  </project>
+</coverage>

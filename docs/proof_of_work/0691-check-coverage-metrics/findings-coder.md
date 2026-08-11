@@ -30,3 +30,10 @@ Out-of-scope observations (not addressed in this change):
 - The regression test's `runScript()` initially typed `float $threshold` while call sites passed
   `'0.0'` string literals → TypeError on PHP 8.5 (strict_types). Widened to `float|string` and
   normalized with `number_format(..., 1)` so all thresholds serialize consistently.
+
+## Round 1 revision (from review)
+
+- Review flagged that the fallback path (`//file/metrics` + `[0]`) took only the first
+  file's metrics for multi-file output without a `<project>` node — a silent under-report.
+  Fixed to sum all `/file/metrics` nodes and added a dedicated fixture + tests. See
+  `code-decision-1.md` revision note and `findings-review.md` R1-1.

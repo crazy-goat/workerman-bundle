@@ -47,3 +47,15 @@ the output format is byte-for-byte identical to what CI already parses.
 - The fixture's `<package>` wrapper is decorative (PHPUnit's own Clover doesn't emit
   `<package>`); it exists only to prove the old bug via divergent counts. The parsing
   logic itself keys on the `<project>` aggregate regardless of packages — which is the point.
+
+## Revision after review round 1
+
+Review (R1-1, low) flagged that the original fallback (`//file/metrics` + `[0]`)
+reported only the **first** file's metrics for multi-file Clover without a
+`<project>` layer — a silent regression vs the old code, which summed all file
+metrics. Revised the fallback to **sum all `/file/metrics` nodes** when the
+project aggregate is absent, restoring correct totals for that shape. Added a
+second fixture (`clover-files-only.xml`, no project-level metrics) plus two
+tests pinning the fallback (converges on 75.00%, and exit 2 when no `<metrics>`
+exists anywhere). The `<project>` path is now fully self-contained in the `if`
+branch; the fallback is the `else` branch.

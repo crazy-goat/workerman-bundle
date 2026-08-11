@@ -28,21 +28,28 @@ if ($xml === false) {
     exit(2);
 }
 
-// Select a single aggregate <metrics> node: the project-level aggregate when
-// present (so class/file/project nodes are not double-counted), falling back
-// to a lone per-file aggregate for minimal Clover output.
+// Prefer the single project-level aggregate (so class/file/project nodes are
+// not double-counted). If Clover has no <project> layer, fall back to summing
+// the per-file aggregates, which covers multi-file output without a project:
 $aggregate = $xml->xpath('/coverage/project/metrics');
-if ($aggregate === false || $aggregate === []) {
-    $aggregate = $xml->xpath('//file/metrics');
-}
-if ($aggregate === false || $aggregate === []) {
-    fwrite(STDERR, "No aggregate <metrics> element found in coverage file.\n");
-    exit(2);
-}
+if ($aggregate !== false && $aggregate !== []) {
+    $metric = $aggregate[0];
+    $totalStatements = (int) ((string) ($metric['statements'] ?? '0'));
+    $coveredStatements = (int) ((string) ($metric['coveredstatements'] ?? '0'));
+} else {
+    $fileMetrics = $xml->xpath('//file/metrics');
+    if ($fileMetrics === false || $fileMetrics === []) {
+        fwrite(STDERR, "No aggregate <metrics> element found in coverage file.\n");
+        exit(2);
+    }
 
-$metric = $aggregate[0];
-$totalStatements = (int) ((string) ($metric['statements'] ?? '0'));
-$coveredStatements = (int) ((string) ($metric['coveredstatements'] ?? '0'));
+    $totalStatements = 0;
+    $coveredStatements = 0;
+    foreach ($fileMetrics as $metric) {
+        $totalStatements += (int) ((string) ($metric['statements'] ?? '0'));
+        $coveredStatements += (int) ((string) ($metric['coveredstatements'] ?? '0'));
+    }
+}
 
 if ($totalStatements === 0) {
     fwrite(STDERR, "No executable statements found in coverage file.\n");

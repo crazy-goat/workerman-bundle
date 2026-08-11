@@ -76,17 +76,51 @@ final class CheckCoverageGateTest extends TestCase
         self::assertSame(0, $output['status']);
     }
 
+    public function testFallsBackToSummingFileMetricsWhenNoProjectAggregateExists(): void
+    {
+        $output = $this->runScriptOn('0.0', __DIR__ . '/Fixtures/clover-files-only.xml');
+
+        // Both fixtures converge on 75/100 = 75.00%, but this one reaches it
+        // via the fallback that sums /file/metrics (60+40 / 40+35) instead of
+        // reading a single project-level aggregate.
+        self::assertStringContainsString(
+            sprintf('Coverage: %.2f%% (%d/%d statements)', self::PROJECT_PERCENT, self::PROJECT_COVERED, self::PROJECT_STATEMENTS),
+            $output['stdout'],
+        );
+        self::assertStringNotContainsString(
+            '(72.22%)',
+            $output['stdout'],
+        );
+        self::assertSame(0, $output['status']);
+    }
+
+    public function testFallsBackWhenNoMetricsExistAnywhere(): void
+    {
+        $output = $this->runScriptOn('0.0', __DIR__ . '/Fixtures/clover-no-metrics.xml');
+
+        self::assertSame(2, $output['status'], 'A coverage file with no <metrics> anywhere must exit 2');
+        self::assertStringContainsString('No aggregate <metrics> element found', $output['stderr']);
+    }
+
     /**
      * @return array{stdout: string, stderr: string, status: int}
      */
     private function runScript(float|string $threshold): array
+    {
+        return $this->runScriptOn($threshold, $this->fixture);
+    }
+
+    /**
+     * @return array{stdout: string, stderr: string, status: int}
+     */
+    private function runScriptOn(float|string $threshold, string $fixture): array
     {
         $script = __DIR__ . '/../bin/check-coverage.php';
         $thresholdArg = number_format((float) $threshold, 1, '.', '');
         $command = sprintf(
             'php %s %s %s',
             escapeshellarg($script),
-            escapeshellarg($this->fixture),
+            escapeshellarg($fixture),
             escapeshellarg($thresholdArg),
         );
 
