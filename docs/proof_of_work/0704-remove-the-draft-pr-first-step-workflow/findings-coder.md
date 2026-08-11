@@ -50,12 +50,9 @@ unless stated otherwise.
 ## Weak spots noticed (in scope)
 
 1. `docs/workflow.md` step 9 prose includes the GraphQL error text "No
-   commits between master and <branch>" in plain prose. The literal
-   `<branch>` will be rendered as an HTML tag by GitHub's Markdown in some
-   renderers, but it is inside a sentence surrounded by quotes and matches
-   the issue's wording; the same pattern already exists elsewhere in the
-   repo docs, so it was kept. If it ever renders wrong, wrap it in
-   backticks.
+   commits between master and `<branch>`" in plain prose. The backticks
+   around `<branch>` keep it from being eaten as an HTML tag; keep them if
+   the sentence is ever reworded.
 2. The changelog entry #5's "PR: TBD" will need filling in once the PR
    exists — the entry's own convention (#4 uses "(this PR)") was not
    followed because the task explicitly said to leave it out or mark TBD.

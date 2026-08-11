@@ -196,7 +196,7 @@ One entry per process change, in the order they land:
   8.2–8.5 × Symfony 6.4–8.0) on the seed commit and the implementation push
   3 minutes later cancelled it (`concurrency: cancel-in-progress`). The
   step was also not practical as written: `gh pr create --draft` fails with
-  "GraphQL: No commits between master and <branch>" on a branch with no new
+  "GraphQL: No commits between master and `<branch>`" on a branch with no new
   commits, so the cycle needed a junk seed commit that polluted history.
 - **Success criterion:** `grep -nE "2\.5|--draft|gh pr ready"
   docs/workflow.md` finds nothing, and the only multi-line `gh pr create`

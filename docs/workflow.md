@@ -367,7 +367,7 @@ status, the review conversation) before there is content: a PR opened on a
 branch with no new commits runs CI on nothing — in the #670 cycle the full
 matrix ran on the seed commit and the implementation push cancelled it 3
 minutes later (`concurrency: cancel-in-progress`) — and `gh pr create`
-refuses such a branch outright ("No commits between master and <branch>").
+refuses such a branch outright ("No commits between master and `<branch>`").
 The issue is linked from the first push regardless:
 `closingIssuesReferences` comes from the `Closes #<NUMBER>` line in the
 body, not from when the PR was opened:

@@ -287,7 +287,7 @@ validates nothing: in the #670 cycle the draft ran the full matrix (PHP
 3 minutes later cancelled it (`concurrency: cancel-in-progress`) — wasted
 runs, not earlier detection. (3) The step's practical premise was false:
 `gh pr create --draft` fails with "GraphQL: No commits between master and
-<branch>" on a branch with no new commits, so the cycle needed a junk seed
+`<branch>`" on a branch with no new commits, so the cycle needed a junk seed
 commit that polluted history. What survives: `closingIssuesReferences`
 comes from the body's `Closes #<NUMBER>` line at workflow step 9, and the
 PR remains the convergence point (diff, CI status, review conversation)
