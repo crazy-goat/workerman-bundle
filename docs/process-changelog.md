@@ -153,3 +153,26 @@ One entry per process change, in the order they land:
   each merged cycle's directory contains at least `findings-review.md` and one
   `review-<x>.md`. Checkable from the CI history and `ls docs/proof_of_work/`.
 - **Outcome:** pending
+
+### #4 — Review files are committed after every round, including clean ones
+
+- **Date:** 2026-08-11
+- **Issue:** #667 (follow-up), PR #699
+- **PR:** (this PR)
+- **What:** `docs/workflow.md` step 6 now instructs the main session to commit
+  `review-<x>.md` and the `findings-review.md` appends after EVERY review
+  round — clean rounds included — because the read-only review subagent never
+  commits and a clean round has no fix commit to sweep its files up.
+- **Why:** cycle #667 converged in round 2 with no findings, so
+  `review-2.md` and the round-2 status appends sat uncommitted in the working
+  tree through lint, ready-for-review, CI and the squash merge (§698). They
+  reached `master` only via a second docs PR (§699), which the `restric-main`
+  ruleset made necessary: master rejects direct pushes. Uncommitted review
+  files are not proof of work yet — they exist only until the context that
+  holds them is compacted.
+- **Success criterion:** for each merged cycle, every `review-<x>.md` written
+  during its rounds exists in the merge commit — checkable with
+  `git show <merge>:docs/proof_of_work/<NNNN>-<slug>/review-<x>.md` for all
+  `<x>` recorded in `findings-review.md`. Reconciliation PRs like §699 stop
+  appearing.
+- **Outcome:** pending
