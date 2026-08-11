@@ -36,7 +36,7 @@ final readonly class ServerManager
         $this->writeMasterFingerprint($daemon);
         $this->prepareWorkerStart(ServerAction::START, $daemon, $graceful);
 
-        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
+        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout(), $this->logger))->run();
     }
 
     /**
@@ -79,7 +79,7 @@ final readonly class ServerManager
         $this->writeMasterFingerprint($daemon);
         $this->prepareWorkerStart(ServerAction::RESTART, $daemon, $graceful);
 
-        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout()))->run();
+        return (new Runner($this->createKernelFactory(), $this->resolveCacheWarmupTimeout(), $this->logger))->run();
     }
 
     /**

@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Runtime\RunnerInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Worker;
@@ -18,6 +19,7 @@ readonly class Runner implements RunnerInterface
     public function __construct(
         private KernelFactory $kernelFactory,
         private int $cacheWarmupTimeout = CacheWarmupTimeoutConfig::DEFAULT,
+        private ?LoggerInterface $logger = null,
     ) {
         if ($this->cacheWarmupTimeout < 1) {
             throw new \InvalidArgumentException(\sprintf(
@@ -56,6 +58,7 @@ readonly class Runner implements RunnerInterface
             projectDir: $this->kernelFactory->getProjectDir(),
             cacheDir: $this->getCacheDir(),
             isDebug: $this->kernelFactory->isDebug(),
+            logger: $this->logger,
         );
     }
 

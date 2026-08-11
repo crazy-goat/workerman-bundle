@@ -707,6 +707,61 @@ final class RunnerTest extends TestCase
         $this->assertInstanceOf(ConfigLoader::class, $loader);
     }
 
+    /**
+     * Issue #612: the ConfigLoader built through Runner must receive the
+     * logger injected into Runner, so the fail-open cache-permission warning
+     * reaches the application logs instead of being raised as an
+     * \E_USER_WARNING on the `serve` path.
+     */
+    public function testConfigLoaderLogsFailOpenWarningViaInjectedLogger(): void
+    {
+        $logger = new class extends \Psr\Log\AbstractLogger {
+            /** @var array<int, array{level: string, message: string}> */
+            public array $records = [];
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->records[] = ['level' => $level, 'message' => (string) $message];
+            }
+        };
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->method('getProjectDir')->willReturn('/tmp/project');
+        $kernel->method('getCacheDir')->willReturn('/tmp/project/var/cache/test');
+        $kernel->method('getEnvironment')->willReturn('test');
+        $kernel->method('isDebug')->willReturn(false);
+
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+        $runner = new Runner($kernelFactory, CacheWarmupTimeoutConfig::DEFAULT, $logger);
+
+        $loader = $this->invokeRunnerMethod($runner, 'createConfigLoader');
+
+        // Fail-open trigger from #586: cache metadata cannot be read (missing path).
+        $missingPath = '/tmp/project/var/cache/test/workerman/does-not-exist.php';
+        $triggered = null;
+        set_error_handler(
+            static function (int $severity, string $message) use (&$triggered): bool {
+                $triggered = $message;
+
+                return true;
+            },
+            \E_USER_WARNING,
+        );
+
+        try {
+            (new \ReflectionMethod(ConfigLoader::class, 'validateCacheFilePermissions'))
+                ->invoke($loader, $missingPath);
+        } finally {
+            restore_error_handler();
+        }
+
+        // The warning must go to the injected logger, not trigger_error().
+        $this->assertSame(null, $triggered, 'fail-open path must not raise E_USER_WARNING when a logger is injected');
+        $this->assertCount(1, $logger->records, 'injected logger must receive the fail-open warning');
+        $this->assertSame('warning', $logger->records[0]['level']);
+        $this->assertStringContainsString($missingPath, $logger->records[0]['message']);
+    }
+
     public function testGetCacheDirUsesDefaultFromKernel(): void
     {
         $savedEnv = $_SERVER['APP_CACHE_DIR'] ?? null;
