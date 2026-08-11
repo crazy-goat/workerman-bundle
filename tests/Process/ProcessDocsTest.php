@@ -53,6 +53,30 @@ final class ProcessDocsTest extends TestCase
         self::assertMatchesRegularExpression('/pending.{0,20}\|.{0,20}kept.{0,20}\|.{0,20}reverted/', $content);
     }
 
+    public function testProcessChangelogHasTheBootstrapGateMiningEntryNamingAtLeastThreeCandidates(): void
+    {
+        $content = $this->read('docs/process-changelog.md');
+
+        self::assertStringContainsString('#2 —', $content, 'the bootstrap gate-mining entry must be recorded as entry #2');
+        self::assertStringContainsString('Bootstrap', $content);
+
+        $section = $this->extractChangelogEntry($content, '#2');
+        self::assertNotNull($section, 'entry #2 must be its own section');
+
+        // The phase 4 acceptance criterion is "a retro over the existing
+        // artifacts returns >=3 gate candidates" — assert the entry names at
+        // least three, not just gestures at "some".
+        self::assertStringContainsString('tests/MarkdownLinkTest.php', $section);
+        self::assertStringContainsString('tests/ChangelogStructureTest.php', $section);
+        self::assertStringContainsString('tests/LintScopeTest.php', $section);
+
+        // The third candidate was deliberately deferred, not silently
+        // dropped — the deferral must be recorded as a decision with a
+        // reason, not merely omitted from what shipped.
+        self::assertMatchesRegularExpression('/[Dd]eferred/', $section);
+        self::assertStringContainsString('fails by design', $section);
+    }
+
     public function testProcessNoticesExists(): void
     {
         self::assertFileExists($this->projectDir . '/docs/process-notices.md');
@@ -109,6 +133,17 @@ final class ProcessDocsTest extends TestCase
     private function extractNoticeSection(string $content, string $id): ?string
     {
         $pattern = '/^## ' . preg_quote($id, '/') . ' —.*?(?=^## N-|\z)/ms';
+
+        if (preg_match($pattern, $content, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[0];
+    }
+
+    private function extractChangelogEntry(string $content, string $marker): ?string
+    {
+        $pattern = '/^### ' . preg_quote($marker, '/') . ' —.*?(?=^### #|\z)/ms';
 
         if (preg_match($pattern, $content, $matches) !== 1) {
             return null;

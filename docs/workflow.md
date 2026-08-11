@@ -894,11 +894,23 @@ cap (step 6) — ask the user rather than picking a side.
 ## 16. Apply (coder)
 
 **Who:** the `coder` agent. **What:** apply the outcome of steps 15a/15b.
+**When:** immediately after 15a/15b conclude a change is neither `noop` nor
+`DISPUTED` — a `knowledge` outcome is committed in the same session;
+`automation`/`workflow` outcomes are filed as GitHub issues then, with the
+`docs/process-changelog.md` entry following once that issue's own PR merges.
 
 - **`knowledge`** changes are committed **immediately** — the retro step is
   the knowledge base's single writer (`docs/helpers/README.md`, `DEC-009`).
-  For phase 4 of issue #686, "the retro step" for this cycle is the agent
-  writing this document; the rule binds identically to every retro after it.
+
+  > **Cycle-zero note, not standing policy:** for phase 4 of issue #686 —
+  > the PR that introduced steps 15/16 themselves — "the retro step" was the
+  > agent that wrote this document, since no earlier retro could have run
+  > the process before it existed. `docs/process-changelog.md` entry #1
+  > records the analogous cycle-zero exemption for the proof-of-work format
+  > as a whole; this is the same kind of one-time exception, not a second
+  > instance of it. Every retro after this one runs steps 15a/15b/16 as
+  > separate subagent invocations exactly as described above — this note
+  > does not relax that.
 - **`automation`** and **`workflow`** changes become GitHub issues labelled
   `process`, filed into the **current milestone** (not backlog-and-forget —
   `bin/pick-issue.php` will surface them like any other issue):

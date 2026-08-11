@@ -116,6 +116,19 @@ function powmReadCycle(string $dir): ?array
         return null;
     }
 
+    $powVersion = $manifest['pow_version'] ?? null;
+
+    if (!is_int($powVersion) || $powVersion !== POWC_VERSION) {
+        powmNotice(sprintf(
+            'skipping %s — pow_version is %s, this script reads version %d (see bin/pow.php and bin/check-pow.php)',
+            basename($dir),
+            $powVersion === null ? 'missing' : var_export($powVersion, true),
+            POWC_VERSION,
+        ));
+
+        return null;
+    }
+
     $issue = $manifest['issue'] ?? null;
     $profile = $manifest['profile'] ?? null;
     $roundCap = $manifest['round_cap'] ?? null;
@@ -224,6 +237,8 @@ function powmAggregate(array $cycles): array
     $lintClean = 0;
     $testClean = 0;
     $coverageValues = [];
+    /** @var array<string, array{total: int, escaped: int}> $findingsByProfile */
+    $findingsByProfile = [];
 
     foreach ($cycles as $cycle) {
         $totalRounds += (int) $cycle['rounds_used'];
@@ -235,6 +250,11 @@ function powmAggregate(array $cycles): array
         foreach ($findingTotals as $key => $value) {
             $findingTotals[$key] = $value + $findings[$key];
         }
+
+        $profileKey = (string) $cycle['profile'];
+        $findingsByProfile[$profileKey] ??= ['total' => 0, 'escaped' => 0];
+        $findingsByProfile[$profileKey]['total'] += $findings['total'];
+        $findingsByProfile[$profileKey]['escaped'] += $findings['escaped'];
 
         $gatesAdded += count((array) $cycle['gates_added']);
         $verdict = $cycle['verdict'] ?? 'UNSET';
@@ -250,6 +270,13 @@ function powmAggregate(array $cycles): array
     }
 
     $count = count($cycles);
+    $escapeRateByProfile = [];
+
+    foreach ($findingsByProfile as $profileKey => $profileFindings) {
+        $escapeRateByProfile[$profileKey] = $profileFindings['total'] > 0
+            ? $profileFindings['escaped'] / $profileFindings['total']
+            : null;
+    }
 
     return [
         'cycles' => $count,
@@ -257,6 +284,10 @@ function powmAggregate(array $cycles): array
         'cycles_at_cap' => $atCap,
         'findings' => $findingTotals,
         'escape_rate' => $findingTotals['total'] > 0 ? $findingTotals['escaped'] / $findingTotals['total'] : null,
+        // Segmented by cycle['profile'] so docs/process-notices.md's N-06
+        // trigger (light vs. full escape rate) is directly checkable here
+        // instead of requiring a reader to segment the per-cycle rows by hand.
+        'escape_rate_by_profile' => $escapeRateByProfile,
         'gates_added_total' => $gatesAdded,
         'verdicts' => $verdictCounts,
         'escalated_cycles' => $escalated,
@@ -354,6 +385,17 @@ function powmMain(array $options): int
     $enough = count($cycles) >= $minCycles;
 
     if ($options['json']) {
+        // Both `verdicts` and `escape_rate_by_profile` are maps keyed by a
+        // dynamic string (a verdict name, a profile name) that can be empty
+        // when zero cycles are in scope. PHP renders an empty associative
+        // array as a JSON array (`[]`), not an object (`{}`) — a type change
+        // a strict consumer (the oracle/reviewer subagents at step 15 parse
+        // this) should never see between an empty and a populated run. The
+        // `(object)` cast pins the type regardless of how many keys exist.
+        $jsonAggregate = $aggregate;
+        $jsonAggregate['verdicts'] = (object) $aggregate['verdicts'];
+        $jsonAggregate['escape_rate_by_profile'] = (object) $aggregate['escape_rate_by_profile'];
+
         echo json_encode([
             'root' => $root,
             'cycles_available' => $available,
@@ -361,7 +403,7 @@ function powmMain(array $options): int
             'min_cycles' => $minCycles,
             'enough_for_retro' => $enough,
             'cycles' => $cycles,
-            'aggregate' => $aggregate,
+            'aggregate' => $jsonAggregate,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
     } else {
         fwrite(STDOUT, sprintf(
@@ -421,6 +463,18 @@ function powmMain(array $options): int
             }
 
             fwrite(STDOUT, 'verdicts: ' . implode(' ', $parts) . "\n");
+        }
+
+        $escapeRateByProfile = $aggregate['escape_rate_by_profile'];
+
+        if (is_array($escapeRateByProfile) && $escapeRateByProfile !== []) {
+            $parts = [];
+
+            foreach ($escapeRateByProfile as $profile => $rate) {
+                $parts[] = $profile . '=' . ($rate === null ? 'n/a' : sprintf('%.1f%%', $rate * 100));
+            }
+
+            fwrite(STDOUT, 'escape_rate_by_profile: ' . implode(' ', $parts) . "\n");
         }
     }
 

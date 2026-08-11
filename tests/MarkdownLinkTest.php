@@ -27,7 +27,12 @@ use PHPUnit\Framework\TestCase;
  */
 final class MarkdownLinkTest extends TestCase
 {
-    private const GITHUB_SLUG_DISALLOWED_CHARS = '/[^a-z0-9 _\-]/';
+    // GitHub's slugger keeps letters and digits from any script, not just
+    // ASCII (`\p{L}`/`\p{N}` under the `u` modifier) — only punctuation is
+    // dropped. An ASCII-only class would strip an accented letter instead of
+    // preserving it, e.g. turning "Café Meeting" into "caf-meeting" rather
+    // than "café-meeting".
+    private const GITHUB_SLUG_DISALLOWED_CHARS = '/[^\p{L}\p{N} _\-]/u';
 
     /**
      * @return array<string, array{0: string}>
@@ -102,6 +107,38 @@ final class MarkdownLinkTest extends TestCase
                 $this->assertAnchorExists($root, $relativePath, $resolvedRelative, $anchor);
             }
         }
+    }
+
+    /**
+     * Dormant today — no tracked `.md` file has a non-ASCII heading — but a
+     * latent false positive the moment one appears (e.g. an author's name).
+     * GitHub preserves non-ASCII letters in its heading anchors instead of
+     * stripping them, so the slugger must too.
+     */
+    public function testGithubSlugPreservesNonAsciiLetters(): void
+    {
+        self::assertSame('café-meeting', $this->invokeGithubSlug('Café Meeting'));
+        self::assertSame('café-meeting', $this->invokeHeadingSlugs("# Café Meeting\n")[0] ?? null);
+    }
+
+    private function invokeGithubSlug(string $heading): string
+    {
+        $method = new \ReflectionMethod($this, 'githubSlug');
+
+        return (string) $method->invoke($this, $heading);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function invokeHeadingSlugs(string $content): array
+    {
+        $method = new \ReflectionMethod($this, 'headingSlugs');
+
+        /** @var list<string> $slugs */
+        $slugs = $method->invoke($this, $content);
+
+        return $slugs;
     }
 
     private function assertAnchorExists(string $root, string $sourceFile, string $targetRelative, string $anchor): void
@@ -256,7 +293,9 @@ final class MarkdownLinkTest extends TestCase
     {
         // "[text](url)" inside a heading contributes only its text.
         $text = (string) preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $heading);
-        $text = strtolower($text);
+        // mb_strtolower (not strtolower, which only touches A-Z) so a
+        // non-ASCII uppercase letter is lower-cased instead of left alone.
+        $text = mb_strtolower($text, 'UTF-8');
         $text = (string) preg_replace(self::GITHUB_SLUG_DISALLOWED_CHARS, '', $text);
         $text = trim($text);
 

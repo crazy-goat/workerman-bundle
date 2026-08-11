@@ -160,6 +160,103 @@ final class PowMetricsScriptTest extends TestCase
         self::assertStringContainsString('0002-broken', $result['err']);
     }
 
+    public function testMismatchedPowVersionIsSkippedWithANoticeInsteadOfCountedAsAnOrdinaryCycle(): void
+    {
+        $goodDir = $this->sandbox . '/docs/proof_of_work/0001-first';
+        self::assertTrue(mkdir($goodDir, 0o775, true));
+        $this->writeCycleFiles($goodDir, 1, 'first', [], '2026-01-01T00:00:00Z');
+
+        $futureDir = $this->sandbox . '/docs/proof_of_work/0002-future';
+        self::assertTrue(mkdir($futureDir, 0o775, true));
+        $this->writeCycleFiles($futureDir, 2, 'future', [], '2026-01-02T00:00:00Z', powVersion: 99);
+
+        $result = $this->metrics('--min-cycles=1');
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('1 cycle(s) available, 1 in scope', $result['out']);
+        self::assertStringContainsString('0002-future', $result['err']);
+        self::assertStringContainsString('pow_version', $result['err']);
+    }
+
+    public function testMissingPowVersionIsSkippedWithANoticeInsteadOfCountedAsAnOrdinaryCycle(): void
+    {
+        $goodDir = $this->sandbox . '/docs/proof_of_work/0001-first';
+        self::assertTrue(mkdir($goodDir, 0o775, true));
+        $this->writeCycleFiles($goodDir, 1, 'first', [], '2026-01-01T00:00:00Z');
+
+        $unversionedDir = $this->sandbox . '/docs/proof_of_work/0002-unversioned';
+        self::assertTrue(mkdir($unversionedDir, 0o775, true));
+        $this->writeCycleFiles($unversionedDir, 2, 'unversioned', [], '2026-01-02T00:00:00Z', powVersion: null);
+
+        $result = $this->metrics('--min-cycles=1');
+
+        self::assertSame(0, $result['code'], $result['err']);
+        self::assertStringContainsString('1 cycle(s) available, 1 in scope', $result['out']);
+        self::assertStringContainsString('0002-unversioned', $result['err']);
+        self::assertStringContainsString('pow_version', $result['err']);
+    }
+
+    public function testJsonAggregateVerdictsIsAlwaysAJsonObjectNeverAnArray(): void
+    {
+        $emptyResult = $this->metrics('--min-cycles=0', '--json');
+        self::assertSame(0, $emptyResult['code'], $emptyResult['err']);
+        $this->assertJsonKeyIsAlwaysAnObject($emptyResult['out'], 'verdicts');
+        $this->assertJsonKeyIsAlwaysAnObject($emptyResult['out'], 'escape_rate_by_profile');
+
+        $this->createCycle(1, 'first', []);
+        $populatedResult = $this->metrics('--min-cycles=1', '--json');
+        self::assertSame(0, $populatedResult['code'], $populatedResult['err']);
+        $this->assertJsonKeyIsAlwaysAnObject($populatedResult['out'], 'verdicts');
+        $this->assertJsonKeyIsAlwaysAnObject($populatedResult['out'], 'escape_rate_by_profile');
+
+        $payload = json_decode($populatedResult['out'], true);
+        self::assertIsArray($payload);
+        self::assertSame(1, $payload['aggregate']['verdicts']['CLEAN'] ?? null);
+    }
+
+    /**
+     * `json_decode(..., true)` turns both a JSON object and a JSON array
+     * into a PHP array, which would hide the exact regression this test
+     * guards against (an empty PHP map serializing as `[]` instead of
+     * `{}`), so this asserts against the raw JSON text instead of the
+     * decoded value.
+     */
+    private function assertJsonKeyIsAlwaysAnObject(string $json, string $key): void
+    {
+        self::assertMatchesRegularExpression(
+            '/"' . preg_quote($key, '/') . '":\s*\{/',
+            $json,
+            sprintf('"%s" must serialize as a JSON object ({...})', $key),
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/"' . preg_quote($key, '/') . '":\s*\[/',
+            $json,
+            sprintf('"%s" must never serialize as a JSON array ([...])', $key),
+        );
+    }
+
+    public function testAggregateSegmentsEscapeRateByProfile(): void
+    {
+        // full: 1 finding first seen round 1 -> 0% escape.
+        $this->createCycle(1, 'first', [
+            ['id' => 'F-01', 'firstRound' => 1, 'status' => 'fixed'],
+        ], profile: 'full');
+
+        // light: 1 finding first seen round 2 -> 100% escape.
+        $this->createCycle(2, 'second', [
+            ['id' => 'F-01', 'firstRound' => 2, 'status' => 'fixed'],
+        ], profile: 'light');
+
+        $result = $this->metrics('--min-cycles=1', '--json');
+        self::assertSame(0, $result['code'], $result['err']);
+
+        $payload = json_decode($result['out'], true);
+        self::assertIsArray($payload);
+
+        self::assertEqualsWithDelta(0.0, $payload['aggregate']['escape_rate_by_profile']['full'], 0.0001);
+        self::assertEqualsWithDelta(1.0, $payload['aggregate']['escape_rate_by_profile']['light'], 0.0001);
+    }
+
     public function testUnknownOptionIsAUsageError(): void
     {
         $result = $this->metrics('--not-a-real-option');
@@ -180,17 +277,17 @@ final class PowMetricsScriptTest extends TestCase
     /**
      * @param list<array{id: string, firstRound: int, status: string}> $findings
      */
-    private function createCycle(int $issue, string $slug, array $findings, ?string $createdAt = null): void
+    private function createCycle(int $issue, string $slug, array $findings, ?string $createdAt = null, string $profile = 'full'): void
     {
         $dir = sprintf('%s/docs/proof_of_work/%04d-%s', $this->sandbox, $issue, $slug);
         self::assertTrue(mkdir($dir, 0o775, true));
-        $this->writeCycleFiles($dir, $issue, $slug, $findings, $createdAt);
+        $this->writeCycleFiles($dir, $issue, $slug, $findings, $createdAt, $profile);
     }
 
     /**
      * @param list<array{id: string, firstRound: int, status: string}> $findings
      */
-    private function writeCycleFiles(string $dir, int $issue, string $slug, array $findings, ?string $createdAt): void
+    private function writeCycleFiles(string $dir, int $issue, string $slug, array $findings, ?string $createdAt, string $profile = 'full', int|string|null $powVersion = 1): void
     {
         $rounds = [];
         $maxRound = 1;
@@ -204,11 +301,11 @@ final class PowMetricsScriptTest extends TestCase
         }
 
         $manifest = [
-            'pow_version' => 1,
+            'pow_version' => $powVersion,
             'issue' => $issue,
             'slug' => $slug,
             'branch' => 'fix/issue-' . $issue . '-' . $slug,
-            'profile' => 'full',
+            'profile' => $profile,
             'round_cap' => 4,
             'created_at' => $createdAt ?? '2026-01-01T00:00:00Z',
             'rounds' => $rounds,
@@ -222,6 +319,10 @@ final class PowMetricsScriptTest extends TestCase
             'aborted' => [],
             'verdict' => 'CLEAN',
         ];
+
+        if ($powVersion === null) {
+            unset($manifest['pow_version']);
+        }
 
         self::assertNotFalse(file_put_contents(
             $dir . '/manifest.json',

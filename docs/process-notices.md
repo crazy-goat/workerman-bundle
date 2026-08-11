@@ -44,11 +44,27 @@ narrative — a threshold based on the narrative's own round count defeats
 that property before the audit ever runs. It is therefore **always on** in
 the `full` profile, at a per-cycle cost of one subagent run.
 
-**Trigger:** `bin/pow-metrics.php`'s aggregate shows **zero** step-13.5
-findings across ≥10 consecutive `full`-profile cycles **and** those cycles'
-round counts are evenly spread (not clustered at the cap) — evidence the
-audit is cost without signal regardless of round count, not evidence that
-short cycles specifically are safe to skip.
+**Trigger:** nothing today records a step-13.5 finding as a discrete,
+countable fact — `manifest.json` has no such field, `bin/pow.php` has no
+command to append a finding to a cycle whose manifest `--finish` already
+moved out of `current/` (step 13.5 runs *after* the merge, on an archived,
+already-committed manifest), and `bin/pow-metrics.php` computes no such
+counter. Building that recording path — a new field on an already-finished,
+git-tracked manifest, written by a step that runs after the cycle it
+describes has closed — is disproportionate for a rejected-alternative
+notice, so the trigger uses a proxy that is already measurable without it:
+**10 consecutive `full`-profile cycles** (`bin/pow-metrics.php --since=10
+--min-cycles=3`) produce **no new entry** in `docs/process-changelog.md`.
+Step 16 adds an entry for every `automation`/`workflow`/`knowledge` retro
+outcome; only `noop` adds none — so a 10-cycle stretch with no new entry
+*is* a 10-retro `noop` streak, visible from the changelog and
+`bin/pow-metrics.php` together, without instrumenting step 13.5 itself.
+**And** those cycles' round counts are evenly spread (not clustered at the
+cap) — evidence the audit is cost without signal regardless of round count,
+not evidence that short cycles specifically are safe to skip. If the audit
+is ever revisited on its own findings rather than this proxy, giving it a
+real recording path is the prerequisite follow-up work, not something to
+retrofit into this notice.
 
 ## N-03 — Hard pre-push block
 
@@ -116,10 +132,14 @@ table in `docs/workflow.md`), not an alternative under consideration — kept
 here as a notice precisely because "low risk" is an assumption, not a
 measurement, and the profile table hard-codes it.
 
-**Trigger:** `bin/pow-metrics.php`'s aggregate escape rate for `light`-profile
-cycles exceeds the `full`-profile escape rate by more than 10 percentage
-points over ≥5 `light` cycles — evidence that `light` changes escape checks
-at a materially higher rate and the gate step should be mandatory there too.
+**Trigger:** `bin/pow-metrics.php --json`'s
+`aggregate.escape_rate_by_profile.light` exceeds
+`aggregate.escape_rate_by_profile.full` by more than 10 percentage points
+over ≥5 `light` cycles — evidence that `light` changes escape checks at a
+materially higher rate and the gate step should be mandatory there too.
+(`escape_rate_by_profile` segments the single global `escape_rate` by each
+cycle's `profile` field precisely so this trigger is checkable directly,
+instead of requiring a reader to segment the per-cycle rows by hand.)
 
 ## N-07 — Commit signing as the tamper-evidence mechanism
 
@@ -173,10 +193,27 @@ reproducible: the same milestone state always produces the same ranking.
 The subagent path is kept as the fallback for open-ended triage
 (`docs/workflow.md`, step 1), not removed.
 
-**Trigger:** the human/LLM picks something other than `bin/pick-issue.php`'s
-top-ranked candidate in more than half of the last 10 cycles — evidence the
-scoring weights no longer reflect what actually gets prioritized, which
-argues for retuning the score, not for discarding the deterministic pass.
+**Trigger:** the original wording ("the human/LLM picks something other than
+`bin/pick-issue.php`'s top-ranked candidate in more than half of the last 10
+cycles") is **not reconstructible**: nothing records what the script
+recommended at the moment an issue was actually picked, and its ranking
+depends on live milestone/label/age/comment-count state that has since moved
+on — rerunning it later answers a different question, not the historical
+one. Recording that recommendation going forward (a `top_candidate` field
+`bin/pow.php --start` writes when `gh` can answer, mirroring how
+`powResolveProfile()` already reads issue labels non-fatally) was considered
+and set aside here as more than a notice warrants; it remains the natural
+follow-up if this alternative is ever revisited in earnest.
+
+In the meantime the trigger is something checkable **today**, without any
+new instrumentation: run `php bin/pick-issue.php --json` for the active
+milestone and look at the `score` gap between the `#1` and `#2` candidates.
+A gap of **5 points or less** — smaller than the swing of a single label
+(priority alone spans 3–60 points) — means the ranking is a near-tie the
+formula cannot meaningfully resolve. If that happens for **3 milestones in
+a row**, the weights themselves — not any single override — are the thing
+to revisit, which is a narrower and more honest question than one this
+notice cannot actually answer from history.
 
 ## N-10 — An explicit proof-of-work size cap
 

@@ -58,3 +58,68 @@ One entry per process change, in the order they land:
   `bin/check-pow.php --strict` accepts on the first attempt — i.e. this is the
   last cycle-zero exemption the proof-of-work format itself ever needs.
 - **Outcome:** pending
+
+### #2 — Bootstrap: mining review history for the first gates
+
+- **Date:** 2026-08-11
+- **Issue:** #686
+- **PR:** #687 (phase 4)
+- **What:** before writing any bootstrap gate, mined `.pi-subagents/artifacts/`
+  review history for finding classes that actually recurred, instead of
+  guessing what to automate first. Corpus: 88
+  `*_{review,review-critical,reviewer}_0_output.md` artifacts, 80 usable (8
+  discarded: SIGTERM/empty), 59 carrying at least one concrete finding (21
+  clean). Top recurring classes, by artifact count:
+
+  | # | Class | Artifacts |
+  | --- | --- | --- |
+  | 1 | Docs↔code drift (prose / `info()` asserts behaviour the code lacks) | ~15 |
+  | 2 | Test flakiness: wall-clock recency asserts, fixed sleeps, shared-daemon state | ~10 |
+  | 3 | CHANGELOG accuracy / structure (dup headings, phantom APIs, missing `[Unreleased]`) | ~9 |
+  | 4 | Tests that don't discriminate old vs. new behaviour; brittle source-greps | ~8 |
+  | 5 | Untested error/fallback branch on a security-relevant path | ~6 |
+  | 6 | Markdown structural defects (broken cross-dir links, wrong anchors, list-breaking fences) | ~6 |
+  | 7 | Platform divergence — validated on macOS, differs on Linux CI | ~5 |
+  | 8 | Unbounded process-lifetime state / static leakage between tests | ~5 |
+  | 9 | Unsuppressed fs/syscall warnings, unchecked returns | ~4 |
+  | 10 | Environment-gated pre-existing failures normalised as noise | ~4 |
+
+  The **3 strongest gate candidates** — cheap to build, green or
+  near-green on the current tree — were, in priority order:
+
+  1. `tests/MarkdownLinkTest.php` (class 6, ~6 artifacts) — every internal
+     markdown link and heading anchor resolves, case-sensitively, across the
+     tracked `.md` files.
+  2. `tests/ChangelogStructureTest.php` (class 3, ~9 artifacts; repeat
+     offences #641, #255, #356) — `[Unreleased]` ordering, strictly
+     descending released versions, no duplicate subheadings per version,
+     every entry carries `(#N)`.
+  3. `tests/LintScopeTest.php` — `bin/` is outside PHPStan, php-cs-fixer and
+     Rector scope (3 artifacts, the cheapest gate of all: `bin/` already has
+     7 real PHPStan errors and a live `Undefined array key 'number'` at
+     `bin/pick-issue.php:517`).
+
+- **Shipped:** #1 and #2 above, both in this PR.
+- **Deferred:** #3, `tests/LintScopeTest.php`, is **not** shipped here. It
+  fails by design on the current tree: `bin/` first needs adding to
+  `phpstan.neon.dist`, `.php-cs-fixer.dist.php` and `rector.php` and its ~7
+  PHPStan errors fixed (tracked separately as #635), and `tests/Fixtures`
+  needs a `git mv` to resolve its case collision with `tests/fixtures`
+  (passes on case-insensitive macOS/APFS, breaks on case-sensitive Linux
+  CI — evidence in the mined artifacts). Landing the test before that work
+  would either commit a permanently-red test or pull unrelated scope into
+  this PR, so it is deferred to its own tracked issue (#688, `process`
+  label, milestone 0.26.0) rather than silently dropped.
+- **Why:** this bootstrap **is** the phase 4 acceptance criterion "a retro
+  over the existing artifacts returns ≥3 gate candidates" — evidenced here
+  by the 3 candidates above, rather than left to be inferred from a scratch
+  file outside the repository. Picking gates from evidence that recurred
+  across many independent review runs — not intuition — is the same rule
+  the recurring step-15 retro loop enforces at step 15a (cite a metric or
+  ≥2 occurrences, or classify `noop`).
+- **Success criterion:** issue #688 is closed by a PR whose CI run shows
+  `tests/LintScopeTest.php` passing (green on Linux CI specifically, since
+  the case-collision half is invisible on a case-insensitive local
+  checkout) — checkable directly from the issue tracker and CI, no
+  interpretation needed.
+- **Outcome:** pending

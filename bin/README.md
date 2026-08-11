@@ -185,16 +185,25 @@ composer pow-metrics                             # the same, as a composer scrip
 
 Per cycle and in aggregate: rounds used vs. the profile's cap, **escape
 rate** (findings first seen in round ≥2 / total findings — the key metric for
-the gates loop), findings by status (`round1`/`escaped`/`open`/`fixed`/
-`gated`/`wontfix`), gates added, escalations and verdicts, and `lint_exit`/
-`test_exit`/`coverage`.
+the gates loop) both overall and **segmented by profile**
+(`aggregate.escape_rate_by_profile.full` / `.light`, so
+`docs/process-notices.md`'s N-06 trigger is checkable directly instead of
+requiring a reader to segment the per-cycle rows by hand), findings by status
+(`round1`/`escaped`/`open`/`fixed`/`gated`/`wontfix`), gates added,
+escalations and verdicts, and `lint_exit`/`test_exit`/`coverage`.
 
 `--min-cycles` (default 3, matching the retro's own "diagnose over ≥3
 manifests" requirement) makes the script itself the guardrail: fewer cycles
 than that in scope is a non-zero exit, so step 15 cannot be run on thin
-evidence by mistake. A manifest that cannot be parsed is skipped with a notice
-on stderr rather than aborting the whole report — this is a reporting tool,
-not a second enforcement path; that is `bin/check-pow.php`'s job.
+evidence by mistake. A manifest that cannot be parsed, or whose
+`pow_version` does not match the one this script (and `bin/pow.php` /
+`bin/check-pow.php`) reads, is skipped with a notice on stderr rather than
+aborting the whole report or silently counting an incompatible cycle — this
+is a reporting tool, not a second enforcement path; that is
+`bin/check-pow.php`'s job. `--json`'s `aggregate.verdicts` and
+`aggregate.escape_rate_by_profile` are always JSON objects, even with zero
+cycles in scope (an empty PHP map would otherwise serialize as `[]`, a type
+change a strict consumer should never see).
 
 Not wired into `composer lint` (`DEC-008`): it is a reporting tool, not a
 check, and has nothing to fail on its own account.
