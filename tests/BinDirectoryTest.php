@@ -100,6 +100,30 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('bin/README.md', $content);
     }
 
+    /**
+     * CONTRIBUTING.md used to claim "PHPStan level 6" while phpstan.neon.dist
+     * already ran level 8 (issue #693). Pin the doc against the config so a
+     * level bump cannot drift stale a second time.
+     */
+    public function testContributingPhpstanLevelMatchesConfig(): void
+    {
+        $neonContent = file_get_contents($this->projectDir . '/phpstan.neon.dist');
+        $this->assertNotFalse($neonContent);
+        $level = null;
+        if (preg_match('/level:\s*(\d+)/', $neonContent, $levelMatches) === 1) {
+            $level = (int) $levelMatches[1];
+        }
+        $this->assertNotNull($level, 'phpstan.neon.dist must declare a PHPStan level');
+
+        $contribContent = file_get_contents($this->projectDir . '/CONTRIBUTING.md');
+        $this->assertNotFalse($contribContent);
+        $this->assertStringContainsString(
+            "PHPStan level {$level}",
+            $contribContent,
+            'CONTRIBUTING.md must state the same PHPStan level as phpstan.neon.dist',
+        );
+    }
+
     public function testReadmeHasLicenseSection(): void
     {
         $content = file_get_contents($this->projectDir . '/README.md');

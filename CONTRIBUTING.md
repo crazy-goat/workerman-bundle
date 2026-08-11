@@ -147,12 +147,13 @@ The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
 - **Lint job**: Validates `composer.json`, runs security audit, and checks code style
 - **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix; the PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in `composer.json` → `coverage:check`)
 - **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge)
+- **CI job**: Aggregator that fails unless the Lint and Tests jobs succeeded (benchmark stays advisory); see `docs/workflow.md` for the full CI layout
 
 ## Code Standards
 
 - PHP 8.2+ syntax
 - Follow PSR-12 coding standards (enforced by PHP-CS-Fixer)
-- Static analysis with PHPStan level 6
+- Static analysis with PHPStan level 8
 - Automated refactoring with Rector
 
 ## Reporting Issues
