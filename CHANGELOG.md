@@ -47,6 +47,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `bin/check-coverage.php` now reads the **project-level** `<metrics>` aggregate
+  from the PHPUnit Clover report instead of summing the class-, file- and
+  project-level `<metrics>` nodes. Those three levels coincide only by accident
+  of this codebase's structure (a perfect 3× multiple), so the moment `src/`
+  gained a top-level function or Clover gained a `<package>` grouping layer the
+  coverage gate would silently measure a distorted ratio while still passing or
+  failing on the wrong number. The script selects `/coverage/project/metrics`
+  and falls back to summing `/file/metrics` for Clover output without a
+  project layer, so the printed statement counts are now accurate too (no more
+  3× inflation). A regression test and two fixtures pin the parsing
+  ([#691](https://github.com/crazy-goat/workerman-bundle/issues/691))
+
 - `CONTRIBUTING.md` no longer claims "PHPStan level 6" — the project has run
   PHPStan at **level 8** (`phpstan.neon.dist`) all along, so a contributor
   writing to level 6 would be surprised by CI. The level is now pinned by a

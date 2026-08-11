@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1720000000">
+  <project timestamp="1720000000">
+    <metrics statements="100" coveredstatements="75" />
+    <package name="App">
+      <file name="/path/to/SampleCalculator.php">
+        <metrics statements="60" coveredstatements="40" />
+        <class name="SampleCalculator">
+          <metrics statements="50" coveredstatements="30" />
+          <methods>
+            <method name="add">
+              <metrics statements="20" coveredstatements="20" />
+            </method>
+            <method name="subtract">
+              <metrics statements="15" coveredstatements="10" />
+            </method>
+            <method name="helper">
+              <metrics statements="15" coveredstatements="0" />
+            </method>
+          </methods>
+        </class>
+        <!-- 10 file-level statements live outside any class, so class metrics
+             deliberately do NOT sum up to the file metrics. This is precisely
+             the structure that makes a naive //metrics summation diverge from
+             the project aggregate. -->
+      </file>
+      <file name="/path/to/SampleFormatter.php">
+        <metrics statements="40" coveredstatements="35" />
+        <class name="SampleFormatter">
+          <metrics statements="30" coveredstatements="25" />
+          <methods>
+            <method name="format">
+              <metrics statements="30" coveredstatements="25" />
+            </method>
+          </methods>
+        </class>
+      </file>
+    </package>
+  </project>
+</coverage>
