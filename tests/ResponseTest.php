@@ -84,7 +84,7 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('', (string) $response->getBody(), 'HEAD must not send the file body');
         $this->assertSame(
-            (string) filesize(__DIR__ . '/fixtures/test_download.txt'),
+            (string) filesize(__DIR__ . '/Fixtures/test_download.txt'),
             $response->getHeaderLine('Content-Length'),
             'HEAD Content-Length must be the file size',
         );

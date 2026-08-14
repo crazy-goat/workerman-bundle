@@ -242,6 +242,7 @@ function indexFootprint(array $lines, array $index): int
 function parseFile(string $relative, string $absolute): array
 {
     $lines = readLines($absolute);
+    /** @var list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries */
     $entries = [];
     $errors = [];
     $index = null;
@@ -249,6 +250,8 @@ function parseFile(string $relative, string $absolute): array
     $inFence = false;
     $indexStart = null;
     $current = null;
+    /** @var list<string>|null $currentBody reference to the body of the entry being collected */
+    $currentBody = null;
 
     foreach ($lines as $offset => $line) {
         $number = $offset + 1;
@@ -292,8 +295,8 @@ function parseFile(string $relative, string $absolute): array
         }
 
         if ($inFence || !str_starts_with($trimmed, '#')) {
-            if ($current !== null) {
-                $entries[\count($entries) - 1]['body'][] = $line;
+            if ($currentBody !== null) {
+                $currentBody[] = $line;
             }
 
             continue;
@@ -308,6 +311,8 @@ function parseFile(string $relative, string $absolute): array
         }
 
         $current = null;
+        unset($currentBody);
+        $currentBody = null;
 
         if ($matches[1] !== '###') {
             continue;
@@ -329,6 +334,7 @@ function parseFile(string $relative, string $absolute): array
             'body' => [],
         ];
         $current = $title;
+        $currentBody = &$entries[\count($entries) - 1]['body'];
     }
 
     if ($indexStart !== null) {
@@ -343,9 +349,9 @@ function parseFile(string $relative, string $absolute): array
     foreach ($entries as $key => $entry) {
         $body = $entry['body'];
         if ($body !== [] && str_starts_with(trim($body[0]), '<!--')) {
-            array_shift($body);
+            $body = array_slice($body, 1);
         }
-        $entries[$key]['body'] = array_values($body);
+        $entries[$key]['body'] = $body;
     }
 
     // A file ending in a newline yields a trailing empty element; it is not a line.
@@ -781,7 +787,7 @@ function main(array $options): int
             'stale_after_cycles' => STALE_AFTER_CYCLES,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
 
-        return $ok ? 0 : 1;
+        exit($ok ? 0 : 1);
     }
 
     fwrite(STDOUT, sprintf("kb-lint: root %s\n", $options['root']));
@@ -812,7 +818,7 @@ function main(array $options): int
     if (!$ok) {
         fwrite(STDERR, sprintf("kb-lint: FAILED — %d error(s)\n", \count($errors)));
 
-        return 1;
+        exit(1);
     }
 
     fwrite(STDOUT, sprintf(
@@ -822,11 +828,11 @@ function main(array $options): int
         \count($stale),
     ));
 
-    return 0;
+    exit(0);
 }
 
 try {
-    exit(main(parseArgs($argv)));
+    main(parseArgs($_SERVER['argv'] ?? []));
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     exit(2);

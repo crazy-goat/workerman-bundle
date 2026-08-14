@@ -9,6 +9,9 @@ declare(strict_types=1);
  * Usage: php bin/check-coverage.php <clover.xml> [threshold-percent]
  */
 
+$argc = $_SERVER['argc'] ?? 0;
+$argv = $_SERVER['argv'] ?? [];
+
 if ($argc < 2) {
     fwrite(STDERR, "Usage: php bin/check-coverage.php <clover.xml> [threshold-percent]\n");
     exit(2);
@@ -32,13 +35,13 @@ if ($xml === false) {
 // not double-counted). If Clover has no <project> layer, fall back to summing
 // the per-file aggregates, which covers multi-file output without a project:
 $aggregate = $xml->xpath('/coverage/project/metrics');
-if ($aggregate !== false && $aggregate !== []) {
+if (is_array($aggregate) && $aggregate !== []) {
     $metric = $aggregate[0];
     $totalStatements = (int) ((string) ($metric['statements'] ?? '0'));
     $coveredStatements = (int) ((string) ($metric['coveredstatements'] ?? '0'));
 } else {
     $fileMetrics = $xml->xpath('//file/metrics');
-    if ($fileMetrics === false || $fileMetrics === []) {
+    if (!is_array($fileMetrics) || $fileMetrics === []) {
         fwrite(STDERR, "No aggregate <metrics> element found in coverage file.\n");
         exit(2);
     }
@@ -65,7 +68,7 @@ printf(
     $coveredStatements,
     $totalStatements,
     $thresholdPercent,
-    $status === 0 ? 'OK' : 'FAILED'
+    $status === 0 ? 'OK' : 'FAILED',
 );
 
 exit($status);

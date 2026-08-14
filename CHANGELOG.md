@@ -45,6 +45,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--force` flags. Wired into `docs/workflow.md` (step 2) so that neither
   humans nor LLMs have to invent branch names.
 
+- `bin/` is now part of the lint scope of every tool that analyses source —
+  `phpstan.neon.dist` `paths:`, the `.php-cs-fixer.dist.php` finder and
+  `rector.php` `withPaths()` — so the seven PHPStan errors that were hiding
+  in `bin/` (including a live `Undefined array key 'number'` in
+  `bin/pick-issue.php`) are now fixed and type-checked on every run
+  ([#635](https://github.com/crazy-goat/workerman-bundle/issues/635),
+  [#688](https://github.com/crazy-goat/workerman-bundle/issues/688)). A new
+  `tests/LintScopeTest.php` pins `bin/` in all three configs and enforces that
+  no two tracked paths collide when compared case-insensitively — the
+  motivating case, `tests/Fixtures/` coexisting with `tests/fixtures/`, was
+  consolidated into the uppercase tree via `git mv`, because a collision that
+  overlays cleanly on a case-insensitive macOS checkout silently becomes two
+  separate trees on the case-sensitive Linux CI
+  ([#688](https://github.com/crazy-goat/workerman-bundle/issues/688))
+
 ### Fixed
 
 - `bin/check-coverage.php` now reads the **project-level** `<metrics>` aggregate

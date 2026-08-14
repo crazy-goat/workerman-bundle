@@ -31,7 +31,7 @@ final class ResponseTestController extends AbstractController
     #[Route('/response_test_file', name: 'app_response_test_file')]
     public function fileResponse(): BinaryFileResponse
     {
-        $testFile = __DIR__ . '/../fixtures/test_download.txt';
+        $testFile = __DIR__ . '/../Fixtures/test_download.txt';
 
         return new BinaryFileResponse($testFile, \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'Content-Type' => 'text/plain',
@@ -62,7 +62,7 @@ final class ResponseTestController extends AbstractController
     #[Route('/response_test_streamed_binary', name: 'app_response_test_streamed_binary')]
     public function streamedBinaryFileResponse(): StreamedBinaryFileResponse
     {
-        $testFile = __DIR__ . '/../fixtures/test_download.txt';
+        $testFile = __DIR__ . '/../Fixtures/test_download.txt';
 
         return new StreamedBinaryFileResponse($testFile, Response::HTTP_OK, [
             'Content-Type' => 'text/plain',
