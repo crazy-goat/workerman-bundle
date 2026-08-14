@@ -118,15 +118,23 @@ final class ConfigLoader implements CacheWarmerInterface
      *
      * If the metadata cannot be read, a warning naming the path is emitted
      * (logged via the PSR-3 logger when one is available, otherwise raised as
-     * an \E_USER_WARNING) and loading proceeds (fail-open with a signal) — the
-     * check must not silently disappear on filesystems that do not report
-     * permissions. The fail-open warning only applies when the cache file is
-     * known to exist: `loadFromCache()` gates on `is_file($cachePath)` first,
-     * so when that cannot be answered — e.g. the containing directory cannot
-     * be statted (EACCES) — loading falls through to `loadFresh()` and the
-     * caller gets a `LogicException('Configuration not available')`, not the
-     * warning. The check is best-effort: it does not cover ACLs, extended
-     * attributes, or filesystems that do not support POSIX permissions.
+     * an \E_USER_WARNING) and loading proceeds (fail-open with a signal). The
+     * fail-open warning is a defensive guard: `loadFromCache()` gates on
+     * `is_file($cachePath)` first, and on POSIX statting `dir/file` requires
+     * search (`x`) permission on the containing directory and every ancestor
+     * — strictly more than statting `dir` itself — so whenever `is_file()`
+     * returns `true`, the four metadata reads (`fileperms`/`filegroup` on the
+     * directory, `fileperms`/`fileowner` on the file) all succeed too. The
+     * warn branch is therefore reachable through the public API only in a
+     * TOCTOU window (the file is unlinked between the gate and the reads) or
+     * on filesystems where the POSIX implication does not hold (ACLs,
+     * extended attributes). When `is_file()` itself returns `false` — e.g.
+     * the containing directory is not searchable (no `x` permission), so
+     * `stat()` on paths inside it fails with `EACCES` — loading falls through
+     * to `loadFresh()` and the caller gets a `LogicException` ("Configuration
+     * not available"), not the warning. The check is best-effort: it does not
+     * cover ACLs, extended attributes, or filesystems that do not support
+     * POSIX permissions.
      *
      * @throws \RuntimeException if the cache directory or file is unsafe
      */

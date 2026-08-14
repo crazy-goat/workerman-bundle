@@ -523,6 +523,11 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
+        // Precondition: the cache file must actually exist, otherwise this
+        // test degenerates into testLoadFreshThrowsWhenNoConfigAndNoCache and
+        // proves nothing.
+        $this->assertFileExists($cachePath);
+
         // On POSIX, chmod 0000 on the containing directory makes stat() on a
         // path inside it fail with EACCES, so is_file() answers false and the
         // loadFromCache() gate falls through before permission validation runs.

@@ -431,16 +431,24 @@ containing directory** before loading it:
   replace would be owned by that user.
 - **World-writable file check**: As a secondary signal, a cache file that is
   itself world-writable is **refused**.
-- **Unreadable metadata**: If the file or directory metadata cannot be read
-  (e.g. on filesystems that do not report permissions), a **warning naming
-  the path is emitted** — logged via the PSR-3 logger when one is configured,
-  raised as an `E_USER_WARNING` otherwise — and loading proceeds; the check
-  degrades loudly instead of silently disappearing. The warning fires only
-  when the cache file is known to exist (`is_file()` succeeded) but
-  `fileperms()`/`fileowner()`/`filegroup()` return `false`. When `is_file()`
-  itself returns `false` because the containing directory cannot be statted
-  (EACCES on the directory), loading falls back to `loadFresh()` — no
-  warning, and the caller gets a `LogicException`.
+- **Unreadable metadata**: If the file or directory metadata cannot be
+  read, a **warning naming the path is emitted** — logged via the PSR-3
+  logger when one is configured, raised as an `E_USER_WARNING` otherwise —
+  and loading proceeds; the check degrades loudly instead of silently
+  disappearing. This fail-open branch is a defensive guard: `loadFromCache()`
+  gates on `is_file($cachePath)` first, and on POSIX statting `dir/file`
+  requires search (`x`) permission on the containing directory and every
+  ancestor — strictly more than statting `dir` itself — so whenever
+  `is_file()` returns `true`, the four metadata reads (`fileperms`/
+  `filegroup` on the directory, `fileperms`/`fileowner` on the file) all
+  succeed too. The warn branch is therefore reachable through the public API
+  only in a TOCTOU window (the file is unlinked between the gate and the
+  reads) or on filesystems where the POSIX implication does not hold (ACLs,
+  extended attributes). When `is_file()` itself returns `false` — e.g. the
+  containing directory is not searchable (no `x` permission), so `stat()` on
+  paths inside it fails with `EACCES` — loading falls back to `loadFresh()`
+  and the caller gets a `LogicException` ("Configuration not available"),
+  not the warning.
 - **Scope**: The checks cover POSIX owner and permission bits only. They do
   not cover ACLs, extended attributes, or filesystems that do not support
   POSIX permissions.
