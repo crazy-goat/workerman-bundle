@@ -153,6 +153,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   close ([#573](https://github.com/crazy-goat/workerman-bundle/issues/573))
 - The `servers[].static_files` config node is now marked deprecated alongside `serve_files`/`root_dir`: it exists solely to configure that deprecated static file serving path, so `config:dump-reference` no longer presents it as current, and actually setting the key now surfaces a deprecation notice naming `StaticFilesMiddleware`'s `$allowedExtensions` constructor argument as the replacement. A `StaticFilesMiddleware` registered as a service reads its allowlist exclusively from that constructor argument — the YAML `static_files.allowed_extensions` key has no effect there. `docs/security.md` now uses the real argument names (`$allowedExtensions`, `$followSymlinks`) throughout and states explicitly that the YAML key does not configure a service-registered middleware ([#591](https://github.com/crazy-goat/workerman-bundle/issues/591))
 
+- Documented that the `ConfigLoader` fail-open permission warning is only reachable when the cache file is known to exist; when the containing directory cannot be statted, loading falls back to `loadFresh()` and the `LogicException` path instead of the warning. `validateCacheFilePermissions()`'s phpdoc and the "Unreadable metadata" bullet in `docs/security.md` now describe exactly that reachability
+  ([#614](https://github.com/crazy-goat/workerman-bundle/issues/614))
+
 ## [0.25.0] - 2026-08-10
 
 ### Added

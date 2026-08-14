@@ -120,7 +120,12 @@ final class ConfigLoader implements CacheWarmerInterface
      * (logged via the PSR-3 logger when one is available, otherwise raised as
      * an \E_USER_WARNING) and loading proceeds (fail-open with a signal) — the
      * check must not silently disappear on filesystems that do not report
-     * permissions. The check is best-effort: it does not cover ACLs, extended
+     * permissions. The fail-open warning only applies when the cache file is
+     * known to exist: `loadFromCache()` gates on `is_file($cachePath)` first,
+     * so when that cannot be answered — e.g. the containing directory cannot
+     * be statted (EACCES) — loading falls through to `loadFresh()` and the
+     * caller gets a `LogicException('Configuration not available')`, not the
+     * warning. The check is best-effort: it does not cover ACLs, extended
      * attributes, or filesystems that do not support POSIX permissions.
      *
      * @throws \RuntimeException if the cache directory or file is unsafe

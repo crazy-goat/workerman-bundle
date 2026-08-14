@@ -510,6 +510,45 @@ final class ConfigLoaderTest extends TestCase
         $this->assertStringContainsString($missingPath, $triggered);
     }
 
+    public function testLoadFromCacheFallsThroughToLoadFreshWhenDirectoryIsUnreadable(): void
+    {
+        // Create loader A, set config, warm up to write cache
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        // On POSIX, chmod 0000 on the containing directory makes stat() on a
+        // path inside it fail with EACCES, so is_file() answers false and the
+        // loadFromCache() gate falls through before permission validation runs.
+        if (!@chmod($cacheDir, 0000)) {
+            $this->markTestSkipped('chmod 0000 on the cache directory failed');
+        }
+
+        try {
+            if (is_file($cachePath)) {
+                $this->markTestSkipped('chmod 0000 on the cache directory did not make is_file() return false on this host');
+            }
+
+            // Create loader B (no config set via setters) — the is_file() gate
+            // fails, so loading falls through to loadFresh() and the caller
+            // gets a LogicException, not the fail-open warning.
+            $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage('Configuration not available');
+
+            $loaderB->getWorkermanConfig();
+        } finally {
+            chmod($cacheDir, 0700);
+        }
+    }
+
     public function testCheckCacheFilePermissionsAcceptsSecurePermissions(): void
     {
         $verdict = ConfigLoader::checkCacheFilePermissions(

@@ -435,7 +435,12 @@ containing directory** before loading it:
   (e.g. on filesystems that do not report permissions), a **warning naming
   the path is emitted** — logged via the PSR-3 logger when one is configured,
   raised as an `E_USER_WARNING` otherwise — and loading proceeds; the check
-  degrades loudly instead of silently disappearing.
+  degrades loudly instead of silently disappearing. The warning fires only
+  when the cache file is known to exist (`is_file()` succeeded) but
+  `fileperms()`/`fileowner()`/`filegroup()` return `false`. When `is_file()`
+  itself returns `false` because the containing directory cannot be statted
+  (EACCES on the directory), loading falls back to `loadFresh()` — no
+  warning, and the caller gets a `LogicException`.
 - **Scope**: The checks cover POSIX owner and permission bits only. They do
   not cover ACLs, extended attributes, or filesystems that do not support
   POSIX permissions.
