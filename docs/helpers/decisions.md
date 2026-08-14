@@ -12,7 +12,7 @@ whole file.
 
 <!-- kb-index:start -->
 - `architecture` — DEC-002
-- `ci` — DEC-007
+- `ci` — DEC-007, DEC-014
 - `cookies` — DEC-010
 - `coverage` — DEC-007
 - `docs` — DEC-012
@@ -20,13 +20,15 @@ whole file.
 - `git-hooks` — DEC-008
 - `http` — DEC-001, DEC-002, DEC-005, DEC-010
 - `knowledge-base` — DEC-009
-- `lint` — DEC-008
+- `lint` — DEC-008, DEC-013, DEC-014
 - `long-running` — DEC-003
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005
-- `policy` — DEC-006, DEC-007, DEC-008, DEC-009
+- `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-014
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
+- `refactoring` — DEC-013
+- `references` — DEC-013
 - `response-strategy` — DEC-001, DEC-002
 - `security` — DEC-005, DEC-006, DEC-010
 - `static-files` — DEC-004
@@ -84,6 +86,21 @@ validated-host cache, so the regression test reads `Request::$trustedHosts` via
 reflection. When a trusted proxy forwards `X-Forwarded-Host`, the cache is
 skipped (reset every request) because the cache key (direct Host header) would
 not match the value `getHost()` validates.
+
+### Detach an array-element reference with `unset($ref)` before nulling — a bare `$ref = null` writes through it
+<!-- kb: id=DEC-013 date=2026-08-14 tags=lint,refactoring,references trigger="refactoring an `$entries[count-1][...][] = $line` indirect append into a by-reference cursor, or any refactor introducing `&$array[k]`" hits=0 status=active -->
+
+When a variable is bound by reference to an array element
+(`$cursor = &$entries[k]['body']`), a later `$cursor = null` does **not** clear
+the variable — it writes `null` **through** the reference into
+`$entries[k]['body']`, destroying the data collected so far. To detach the
+cursor you must `unset($cursor)` first (which breaks the reference) and only
+then assign. The `bin/kb-lint.php` `parseFile()` refactor in #688 relies on
+this: every heading runs `unset($currentBody); $currentBody = null;` before a
+`###` re-binds the cursor; omitting the `unset` would silently null each
+entry's body as the parser advanced. PHPStan does not flag it (a reference
+write looks like a normal assignment), so it is a review-only hazard — when
+you see `&$array[k]`, check that every rebind path `unset`s before reassigning.
 
 ## Security policy
 
@@ -188,3 +205,21 @@ outside fenced code blocks. A fence- and backtick-aware scan of the tracked
 `.md` files finds 0 raw occurrences today; keep it that way when editing
 docs — the angle-bracket tokens belong in fenced blocks or backticks, never
 bare in prose.
+
+### CI's lint leg runs under the lowest supported PHP — a PHP-version-specific PHPStan inference is invisible locally until CI runs
+<!-- kb: id=DEC-014 date=2026-08-14 tags=lint,ci,policy trigger="a CI lint failure that does not reproduce under the developer's local PHP, or adding a new path to phpstan/rector/php-cs-fixer scope" hits=0 status=active -->
+
+`composer.json` requires `php: ^8.2` and the CI `lint` job runs under PHP 8.2
+(the matrix low end), but developers typically run `composer lint` under their
+local PHP (8.4/8.5). PHPStan has no `phpVersion` pin in `phpstan.neon.dist`, so
+it infers from the running PHP, and a rule can fire on 8.2 that is silent on
+8.5 — #688 hit exactly this: `exit(main(...))` was flagged `function.void` on
+PHP 8.2 but clean on 8.4/8.5, because the `main(...)` call was an argument to
+`exit()` (not a first-level statement) and PHPStan's void-usage check ran. The
+fix was structural (move `exit()` inside `main()`, make the caller a bare
+statement). Lesson: when a lint failure does not reproduce locally, suspect a
+PHP-version parity gap before suspecting flakiness. The gate that would close
+this — running `composer lint` under `php:8.2` locally before push — is not yet
+landed (needs a committed lock or a `--ignore-platform-reqs` docker wrapper);
+filed as a future gate, not an entry, per DEC-008's "prefer a gate over an
+entry".
