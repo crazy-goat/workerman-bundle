@@ -16,9 +16,10 @@ use PHPUnit\Framework\TestCase;
  *     style-enforced, so regressions slip through.
  *
  *  2. No two tracked paths collide when compared case-insensitively. The
- *     motivating case was `tests/Fixtures/` (13 PHP classes referenced by
- *     PSR-4 autoload) coexisting with `tests/fixtures/` (1 static data file):
- *     on macOS they overlay into one directory, on Linux CI they are two
+ *     motivating case was `tests/Fixtures/` (3 PSR-4 autoloaded classes in
+ *     `PollingMonitorWatcher/`, 7 `*_runner.php`/`*_test.php` scripts and 3
+ *     `clover-*.xml` files) coexisting with `tests/fixtures/` (1 static data
+ *     file): on macOS they overlay into one directory, on Linux CI they are two
  *     separate trees and the autoload lookups for the PHP classes fail.
  *     The fix (#688) consolidated everything into `tests/Fixtures/` via
  *     `git mv`; this test ensures the collision cannot silently return.
@@ -43,9 +44,9 @@ final class LintScopeTest extends TestCase
      */
     public function testBinInLintScope(): void
     {
-        // phpstan.neon.dist — paths: list.
+        // phpstan.neon.dist — paths: list (standalone `bin` entry, not a prefix).
         $phpstan = (string) file_get_contents($this->projectDir . '/phpstan.neon.dist');
-        $this->assertStringContainsString('- bin', $phpstan, 'phpstan.neon.dist must list bin/ in its paths:');
+        $this->assertMatchesRegularExpression('/^\s*-\s+bin\s*$/m', $phpstan, 'phpstan.neon.dist must list bin/ in its paths:');
 
         // .php-cs-fixer.dist.php — Finder ->in(...) calls.
         $csFixer = (string) file_get_contents($this->projectDir . '/.php-cs-fixer.dist.php');
