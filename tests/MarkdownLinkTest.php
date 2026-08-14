@@ -16,8 +16,9 @@ use PHPUnit\Framework\TestCase;
  *
  * For every tracked `.md` file: every internal `[text](target)` link resolves
  * (case-sensitively — this repo runs CI on Linux, where a case-insensitive
- * macOS checkout would otherwise hide a broken path, see `tests/Fixtures` vs.
- * `tests/fixtures` in the LintScopeTest follow-up issue) relative to the file
+ * macOS checkout would otherwise hide a broken path; the `tests/Fixtures` vs.
+ * `tests/fixtures` case collision that motivated LintScopeTest (#688) is now
+ * resolved — the lowercase tree is gone) relative to the file
  * that contains it; a `#anchor` on an internal link resolves against the
  * target file's GitHub-slugified headings; and fenced code blocks are
  * balanced, and excluded from both checks so a `[…](…)` inside an example

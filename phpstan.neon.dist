@@ -5,6 +5,7 @@ parameters:
 		- src
 		- tests
 		- benchmarks
+		- bin
 	ignoreErrors:
 		-
 			message: '#never returns string so it can be removed from the return type#'

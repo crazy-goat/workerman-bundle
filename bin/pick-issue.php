@@ -94,7 +94,7 @@ const MAX_COMMENT_POINTS = 5;
  */
 function ghApi(array $args): mixed
 {
-    $cmd = 'gh api ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
+    $cmd = 'gh api ' . implode(' ', array_map(escapeshellarg(...), $args)) . ' 2>&1';
     exec($cmd, $lines, $exitCode);
 
     if ($exitCode !== 0) {
@@ -192,6 +192,8 @@ function compareVersions(string $a, string $b): int
 
 /**
  * @param list<array<string, mixed>> $milestones
+ *
+ * @return list<array<string, mixed>>
  */
 function sortMilestones(array $milestones): array
 {
@@ -334,9 +336,7 @@ function rankIssues(array $issues, int $top): array
     }
     unset($issue);
 
-    usort($issues, static function (array $a, array $b): int {
-        return $b['score'] <=> $a['score'] ?: $a['number'] <=> $b['number'];
-    });
+    usort($issues, static fn(array $a, array $b): int => $b['score'] <=> $a['score'] ?: $a['number'] <=> $b['number']);
 
     return $top > 0 ? array_slice($issues, 0, $top) : $issues;
 }
@@ -354,7 +354,10 @@ function printUsage(array $args): void
     fwrite(STDOUT, "  --help              show this help\n");
 }
 
-/** @param list<string> $argv */
+/** @param list<string> $argv
+ *
+ * @return array{repo: string, milestone: string|null, top: int, json: bool}
+ */
 function parseArgs(array $argv): array
 {
     $options = [
@@ -367,8 +370,9 @@ function parseArgs(array $argv): array
     $valueOptions = ['repo', 'milestone', 'top'];
     $fullArgv = $argv;
     $argv = array_slice($argv, 1);
+    $counter = count($argv);
 
-    for ($i = 0; $i < count($argv); $i++) {
+    for ($i = 0; $i < $counter; $i++) {
         $arg = $argv[$i];
 
         if ($arg === '--help' || $arg === '-h') {
@@ -453,6 +457,7 @@ function main(array $options): void
         "repos/$repo/milestones?state=open&per_page=100",
     ]);
     $milestones = is_array($milestones) ? $milestones : [];
+    $milestones = array_values($milestones);
 
     if ($milestones === []) {
         fwrite(STDERR, "No open milestones found.\n");
@@ -608,7 +613,7 @@ function main(array $options): void
             $labelSummary !== '' ? $labelSummary : 'no labels',
             (string) $issue['title'],
         ));
-        fwrite(STDOUT, "     " . (string) $issue['rationale'] . "\n");
+        fwrite(STDOUT, "     " . $issue['rationale'] . "\n");
     }
 
     $best = $ranked[0];
@@ -622,7 +627,7 @@ function main(array $options): void
 }
 
 try {
-    main(parseArgs($argv));
+    main(parseArgs($_SERVER['argv'] ?? []));
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     exit(2);
