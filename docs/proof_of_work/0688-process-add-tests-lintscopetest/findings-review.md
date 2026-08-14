@@ -30,3 +30,19 @@ file; each round updates the "what happened" column.
 - **Lint credibility:** PHPStan level 8 / php-cs-fixer / Rector / kb-lint all run
   independently on `bin/` — pass. LintScopeTest run in isolation — pass (round 2:
   14 tests, 34 assertions).
+
+## Round 3 — CI failure (escaped defect)
+
+| ID | file:line | what is wrong | severity | what happened to it |
+|----|-----------|---------------|----------|---------------------|
+| CI-1 | bin/kb-lint.php:835 | CI lint leg (PHP 8.2, phpstan 2.2.8) reports `Result of function main (void) is used.` (`function.void`) on `exit(main(parseArgs(...)))`. Local PHP 8.4/8.5 + phpstan 2.2.8 does NOT reproduce it, nor does `phpVersion: 80200`. The trigger (from PHPStan source `FunctionCallParametersCheck.php:224`) is: the `main(...)` call is NOT a first-level statement (it is the argument of `exit(...)`), so PHPStan's void-usage check runs, and under PHP 8.2 it resolves `main`'s return as void. `pick-issue.php` passed CI because its `main(): void` is called as a bare statement `main(...);`, which is a first-level statement and is exempt from the check. This escaped rounds 1–2 because the review agents and the coder all ran on PHP 8.4/8.5, where the inference differs — a missing local-vs-CI PHP-version parity check, not bad luck. | high | round 3 — fixed: refactored `kb-lint.php` so `main()` calls `exit()` itself on every return path (3 sites), and the caller is now the bare statement `main(parseArgs($_SERVER['argv'] ?? []));` (first-level, exempt from `function.void`), matching the `pick-issue.php` pattern. The `try/catch` is retained so a `Throwable` from `parseArgs()` (or from inside `main` before it `exit`s) is still caught and reported with `exit(2)`. Tests run `bin/kb-lint.php` as a subprocess and check `proc_close`, so converting returns to `exit` is transparent to them (verified: KnowledgeBase/KbLint tests pass). |
+
+### Automated check that would have caught this
+
+A local lint parity check that runs `composer lint` under the **lowest supported PHP**
+(8.2) before push — not just under the developer's local PHP. The CI matrix's lint
+leg is the only place that runs under 8.2 today, so a PHP-version-specific PHPStan
+inference gap is invisible locally. Candidate KB entry: run lint under `php:8.2`
+locally (e.g. via `docker run php:8.2-cli composer lint` once per PR) before opening
+the PR. Not landed in this issue (out of scope: would need a committed lock or a
+`--ignore-platform-reqs` wrapper); flagged for the retro step.

@@ -787,7 +787,7 @@ function main(array $options): int
             'stale_after_cycles' => STALE_AFTER_CYCLES,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
 
-        return $ok ? 0 : 1;
+        exit($ok ? 0 : 1);
     }
 
     fwrite(STDOUT, sprintf("kb-lint: root %s\n", $options['root']));
@@ -818,7 +818,7 @@ function main(array $options): int
     if (!$ok) {
         fwrite(STDERR, sprintf("kb-lint: FAILED — %d error(s)\n", \count($errors)));
 
-        return 1;
+        exit(1);
     }
 
     fwrite(STDOUT, sprintf(
@@ -828,11 +828,11 @@ function main(array $options): int
         \count($stale),
     ));
 
-    return 0;
+    exit(0);
 }
 
 try {
-    exit(main(parseArgs($_SERVER['argv'] ?? [])));
+    main(parseArgs($_SERVER['argv'] ?? []));
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     exit(2);
