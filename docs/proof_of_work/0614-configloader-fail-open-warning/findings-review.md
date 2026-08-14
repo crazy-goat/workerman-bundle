@@ -272,3 +272,21 @@ of scope here.
   is adjacent to its siblings (tight list, matching the surrounding style).
 - The `code-decision-2.md` line-87 vs line-88 drift and the test name
   "Unreadable" vs "unsearchable" are left as-is — not worth churn.
+
+## CI failure (escaped defect, step 11)
+
+### CI-1 | `src/Command/BuildPathResolver.php:35`, `src/Phar/SfxSourceResolver.php:88` | medium | fixed
+
+CI lint failed on PR #712 with Rector 2.6.2's `ReturnEarlyIfVariableRector`
+flagging two **pre-existing** files (not touched by this issue's docs/test
+change). Root cause: there is no committed `composer.lock`, so CI's
+`composer install` resolved to the newest Rector (2.6.2), which introduced
+the rule. Local Rector was 2.4.5, so `composer lint` passed locally but CI
+failed — an environmental drift, not a regression from this PR.
+
+Applied Rector's suggested early-return transformation to both files
+(mechanical, safe, covered by `BuildPathResolverTest` and
+`SfxSourceResolverTest` — 37 tests, 53 assertions, green). This keeps CI
+green without lowering any gate. A committed `composer.lock` would prevent
+this class of drift; that is a separate, repo-wide concern (candidate for a
+process issue).

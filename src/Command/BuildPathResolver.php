@@ -35,7 +35,7 @@ final class BuildPathResolver
         }
 
         if (!str_starts_with($buildDir, '/')) {
-            $buildDir = $projectDir . '/' . $buildDir;
+            return $projectDir . '/' . $buildDir;
         }
 
         return $buildDir;
