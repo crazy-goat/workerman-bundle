@@ -144,3 +144,131 @@ explicit error handler: in the EACCES case `validateCacheFilePermissions()` is
 never entered (the `is_file()` gate returns `false` first), so no
 `E_USER_WARNING` can fire — the PHPUnit `failOnWarning` setting is irrelevant to
 this test.
+
+## Round 2 — review verdict (commit 5e584b8, reviewed against origin/master)
+
+The "Round 2 (fixes applied by main session)" section above was written by the
+main session. The entries below are the reviewer's independent verification of
+each disposition against the code on the branch, plus new findings.
+
+### R1-1 — **fixed** (verified)
+
+`src/ConfigLoader.php:118-141` and `docs/security.md:434-451` state the POSIX
+implication correctly. Reproduced on PHP 8.5.9: dir `0000` →
+`is_file(dir/f)=false` while `fileperms(dir)=16384`, `filegroup(dir)=20`. Also
+verified the TOCTOU claim survives PHP's stat cache: an in-process `unlink()`
+invalidates the cached entry, and the two `$cacheDir` stats in the
+`checkCacheFilePermissions()` argument list (`src/ConfigLoader.php:145-152`)
+evict the `$cachePath` entry before it is re-read — both orderings reproduce
+`fileperms=false, fileowner=false` with the directory stats succeeding, i.e.
+the `warn` branch. Stale "filesystems that do not report permissions" example
+gone from all tracked sources.
+
+### R1-2 — **fixed** (verified)
+
+`tests/ConfigLoaderTest.php:529` — `assertFileExists($cachePath)` sits between
+`warmUp()` and the `chmod 0000`, so it runs while the directory is still
+searchable and does prevent the vacuous pass. Test executes (does not skip):
+1 test, 3 assertions.
+
+### R1-3 — **still present**, deferral accepted
+
+`src/ConfigLoader.php:275-280` still reads "no cached config file exists",
+which is false for the EACCES case. Docs no longer reproduce the misleading
+tail, so the doc-level inconsistency this issue targeted is resolved. Stays
+open on the record until the follow-up issue exists; two tests assert only the
+`"Configuration not available"` prefix (:549, :714, :724), so the reword is
+low risk when it happens.
+
+### R1-4 — **fixed** (verified)
+
+`src/ConfigLoader.php:129-132` and `docs/security.md:447-449` now say "not
+searchable (no `x` permission), so `stat()` on paths inside it fails with
+`EACCES`", matching the reproduction and the test comment at
+`tests/ConfigLoaderTest.php:531-533`.
+
+### R1-5 — **still present**, disposition accepted (nit)
+
+`tests/ConfigLoaderTest.php:553` hard-codes `chmod($cacheDir, 0700)`,
+consistent with :295-296, :330-331, :359-360, :391-392, :450-451, :457. Worth
+noting this restore is load-bearing (a `0000` dir would break `tearDown()`)
+where the siblings' are not — but it is inside `finally` and covers the skip
+path. No action.
+
+### R1-6 — **fixed** (verified)
+
+`code-decision-2.md` rationale is accurate: `phpunit.xml` sets no
+`failOnWarning`, PHPUnit is 10.5.63, and the EACCES path never enters
+`validateCacheFilePermissions()` because the gate at `src/ConfigLoader.php:88`
+returns `false` first. The superseded claim is correctly left in
+`code-decision-1.md` rather than rewritten.
+
+### R2-1 | `docs/security.md:447-451` | low | open
+
+"When `is_file()` itself returns `false` … loading falls back to `loadFresh()`
+and the caller gets a `LogicException`" is stated unconditionally, but
+`getConfig()` (`src/ConfigLoader.php:70-74`) is
+`loadFromMemory() ?? loadFromCache() ?? loadFresh()`. In a process that called
+the setters (e.g. cache warmup) the in-memory config wins and no exception
+occurs. An operator could read the bullet as "a bad cache-dir mode always
+fatals". One-clause fix: "…and, when no config was set via setters, the caller
+gets a `LogicException`". Same gap, less exposed, in the phpdoc at
+`src/ConfigLoader.php:133-137`. No automated check covers this class today.
+
+### R2-2 | `docs/security.md:438-451`, `src/ConfigLoader.php:122-137` | nit | open
+
+The security-guide bullet now names private internals (`loadFromCache()`,
+`loadFresh()`) and runs 18 lines. Renaming a private method silently makes a
+security doc stale with no CI signal (`MarkdownLinkTest` resolves links, not
+symbol names), and the operator takeaway is buried under POSIX stat
+semantics. Not worth churn on its own; a convention test that asserts
+backticked `identifier()` tokens in `docs/*.md` exist under `src/` would be
+the check for this class.
+
+### Verified clean in round 2
+
+- DEC-006 intact — the `src/ConfigLoader.php` diff is still docblock-only;
+  `loadFromCache()`, `validateCacheFilePermissions()` and
+  `checkCacheFilePermissions()` are byte-identical to master.
+- DEC-012 respected — no raw angle-bracket placeholders in the added
+  `docs/security.md` / `CHANGELOG.md` lines.
+- FAQ-005 untouched and still consistent with the reworked bullet.
+- No gate lowered: `composer.json`, `phpunit.xml` and CI config are not in the
+  diff; the 80% coverage floor is untouched.
+- CHANGELOG entry under `[Unreleased]` → `### Fixed`, house-style issue link.
+- `php vendor/bin/phpunit --no-coverage tests/ConfigLoaderTest.php
+  tests/ChangelogStructureTest.php tests/MarkdownLinkTest.php` →
+  165 tests, 679 assertions, 2 pre-existing skips, OK.
+- Minor, not findings: `code-decision-2.md` cites the gate as line 87 (it is
+  88); the new CHANGELOG bullet is blank-line separated where siblings are
+  adjacent; the new test's name says "Unreadable" where the mechanism is
+  "unsearchable" (the body comment is precise).
+
+## Round 3 (R2-1/R2-2 dispositions applied by main session)
+
+### R2-1 — fixed
+
+Both `src/ConfigLoader.php:135-139` and `docs/security.md:448-453` now
+qualify the `LogicException` outcome with "when no config was set via setters
+(the normal server boot path)" and add that a process that did set config via
+setters (e.g. cache warmup) uses the in-memory config and fatals nowhere. The
+CHANGELOG entry was updated to match. The unconditional "the caller gets a
+`LogicException`" wording is gone.
+
+### R2-2 — not fixed, accepted
+
+The security.md bullet still names `loadFromCache()` / `loadFresh()` and runs
+long. Moving the full POSIX derivation into the phpdoc and shortening the
+operator-facing bullet would be churn for little gain on a docs-only issue, and
+the phpdoc already carries the full derivation. The candidate KB entry
+("Docs that name private methods have no staleness gate") is noted for the
+retro step — a convention test that asserts backticked `identifier()` tokens in
+`docs/*.md` exist under `src/` would be the check for this class, but it is out
+of scope here.
+
+### Minor observations — fixed where trivial
+
+- The blank-line separator before the #614 CHANGELOG bullet was removed so it
+  is adjacent to its siblings (tight list, matching the surrounding style).
+- The `code-decision-2.md` line-87 vs line-88 drift and the test name
+  "Unreadable" vs "unsearchable" are left as-is — not worth churn.

@@ -131,10 +131,12 @@ final class ConfigLoader implements CacheWarmerInterface
      * extended attributes). When `is_file()` itself returns `false` — e.g.
      * the containing directory is not searchable (no `x` permission), so
      * `stat()` on paths inside it fails with `EACCES` — loading falls through
-     * to `loadFresh()` and the caller gets a `LogicException` ("Configuration
-     * not available"), not the warning. The check is best-effort: it does not
-     * cover ACLs, extended attributes, or filesystems that do not support
-     * POSIX permissions.
+     * to `loadFresh()`: when no config was set via setters (the normal server
+     * boot path) the caller gets a `LogicException` ("Configuration not
+     * available"), not the warning; in a process that did set config via
+     * setters (e.g. cache warmup) the in-memory config wins and no exception
+     * occurs. The check is best-effort: it does not cover ACLs, extended
+     * attributes, or filesystems that do not support POSIX permissions.
      *
      * @throws \RuntimeException if the cache directory or file is unsafe
      */
