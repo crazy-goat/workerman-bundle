@@ -88,7 +88,7 @@ final readonly class SfxSourceResolver
             $phpVersion = $buildConfig['bin_php_version'] ?? null;
         }
         if (!$this->isNonEmptyString($phpVersion)) {
-            $phpVersion = sprintf('%s.%s', PHP_MAJOR_VERSION, PHP_MINOR_VERSION);
+            return sprintf('%s.%s', PHP_MAJOR_VERSION, PHP_MINOR_VERSION);
         }
 
         return $phpVersion;
