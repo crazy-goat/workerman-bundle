@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-15
+
 ### Added
 
 - Every contribution cycle now leaves a **proof of work**: four kinds of
@@ -168,6 +170,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   close ([#573](https://github.com/crazy-goat/workerman-bundle/issues/573))
 - The `servers[].static_files` config node is now marked deprecated alongside `serve_files`/`root_dir`: it exists solely to configure that deprecated static file serving path, so `config:dump-reference` no longer presents it as current, and actually setting the key now surfaces a deprecation notice naming `StaticFilesMiddleware`'s `$allowedExtensions` constructor argument as the replacement. A `StaticFilesMiddleware` registered as a service reads its allowlist exclusively from that constructor argument — the YAML `static_files.allowed_extensions` key has no effect there. `docs/security.md` now uses the real argument names (`$allowedExtensions`, `$followSymlinks`) throughout and states explicitly that the YAML key does not configure a service-registered middleware ([#591](https://github.com/crazy-goat/workerman-bundle/issues/591))
 - Documented the precise reachability of the `ConfigLoader` fail-open permission warning: on POSIX a successful `is_file()` implies the four metadata reads succeed too (statting `dir/file` needs strictly more permission than statting `dir`), so the warn branch is a defensive guard reachable through the public API only in a TOCTOU window or on non-POSIX/ACL filesystems. When the containing directory is not searchable (no `x` permission), `is_file()` returns `false` and loading falls back to `loadFresh()` — on the normal server boot path (no config set via setters) the caller gets a `LogicException` instead of the warning, while a process that set config via setters (e.g. cache warmup) uses the in-memory config and fatals nowhere. `validateCacheFilePermissions()`'s phpdoc and the "Unreadable metadata" bullet in `docs/security.md` now describe exactly that; a test pins the not-searchable fall-through ([#614](https://github.com/crazy-goat/workerman-bundle/issues/614))
+
+- `pow.php --round` now refuses an artifact whose `meta.json` reports a non-zero `exitCode`, pointing the caller at `--abort=<runId>:<reason>` instead — the mechanism that already exists for exactly this case. A `--force` escape records the exit code in the round entry so the gate can see it. `check-pow.php` verifies the same thing independently: for every `run_id` in `rounds[]`, it reads the artifact's `meta.json` and raises a `violation` when `exitCode` is non-zero. `--abort=<runId>:<reason>` no longer accepts the same `run_id` twice ([#696](https://github.com/crazy-goat/workerman-bundle/issues/696))
+
+### Changed
+
+- Verified the untested proof-of-work paths on the #662 cycle and wrote the smoke-test mandate down ([#695](https://github.com/crazy-goat/workerman-bundle/issues/695))
+- Exercised POW-08 (manifest vs reality) end-to-end — it has never executed in CI before ([#690](https://github.com/crazy-goat/workerman-bundle/issues/690))
+- `docs/workflow.md` no longer claims at least 1 approving review is required — the actual ruleset requires 0 ([#673](https://github.com/crazy-goat/workerman-bundle/issues/673))
+- `control_byte_dos_e2e_runner.php` no longer duplicates timer-cancellation logic now centralized in `ServerWorker` ([#617](https://github.com/crazy-goat/workerman-bundle/issues/617))
 
 ## [0.25.0] - 2026-08-10
 
