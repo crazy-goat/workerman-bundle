@@ -12,6 +12,7 @@ whole file.
 
 <!-- kb-index:start -->
 - `bc` — FAQ-002
+- `benchmarks` — FAQ-026
 - `binary-file` — FAQ-002
 - `checksum` — FAQ-003
 - `ci` — FAQ-011
@@ -32,8 +33,8 @@ whole file.
 - `git-hooks` — FAQ-015
 - `grpc` — FAQ-007
 - `head` — FAQ-001, FAQ-002
-- `headers` — FAQ-012
-- `http` — FAQ-001, FAQ-002, FAQ-012
+- `headers` — FAQ-012, FAQ-025
+- `http` — FAQ-001, FAQ-002, FAQ-012, FAQ-025
 - `inotify` — FAQ-006
 - `jitter` — FAQ-020
 - `lint` — FAQ-015
@@ -54,10 +55,11 @@ whole file.
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-026
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
+- `vendor` — FAQ-025
 <!-- kb-index:end -->
 
 ## HTTP responses
@@ -155,16 +157,9 @@ stop/reload commands failed. `Worker::log()` is equally unusable there: its
 inside `runAll()` (feof() on null).
 
 ### "Address already in use" when running `composer test`
-<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999" hits=0 status=active -->
+<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999" hits=0 status=promoted gate="docs/workflow.md step 7 note + docs/troubleshooting.md document ports 8888/9999 and php tests/App/index.php stop" -->
 
-`composer test` boots a real Workerman daemon that binds ports **8888**
-and **9999** for E2E tests. If a stale daemon (or anything else) is holding
-those ports, PHPUnit fails with connection errors.
-
-```bash
-# Stop the daemon (safe even if not running):
-php tests/App/index.php stop
-```
+Promoted — ports 8888/9999 and `php tests/App/index.php stop` are documented in `docs/workflow.md` step 7 and `docs/troubleshooting.md`.
 
 ### How the test suite works
 <!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=active -->
@@ -250,11 +245,9 @@ guidance: UPGRADE.md "Upgrading to 0.25" (issue #640).
 ## GitHub CLI
 
 ### `gh issue list` returns at most 30 issues by default
-<!-- kb: id=FAQ-017 date=2026-08-08 tags=gh,triage trigger="listing or searching GitHub issues" hits=0 status=active -->
+<!-- kb: id=FAQ-017 date=2026-08-08 tags=gh,triage trigger="listing or searching GitHub issues" hits=0 status=promoted gate="bin/pick-issue.php paginates; docs/workflow.md mandates --limit > 30" -->
 
-Always raise the limit explicitly (`--limit 100`, max 1000) or paginate
-with `--page N` — otherwise issues beyond the first page are silently
-missed during triage.
+Promoted — `bin/pick-issue.php` paginates and `docs/workflow.md` step 1/14 mandate `--limit > 30` in every triage command.
 
 ## Long-running worker gotchas
 
@@ -342,3 +335,19 @@ Reference: `BinaryFileResponseStrategy::scheduleFileCleanup()` +
 <!-- kb: id=FAQ-024 date=2026-08-10 tags=config,deprecation trigger="deprecating a node in the Symfony config tree" hits=0 status=active -->
 
 Symfony's `ArrayNode::finalizeValue()` (vendor/symfony/config/Definition/ArrayNode.php) triggers a child node's deprecation only in the `array_key_exists($name, $value)` branch — an absent key takes the node's default and `continue`s silently. So marking a node deprecated while it keeps `addDefaultsIfNotSet()` / a default value is safe: users who never set the key see no deprecation, users who do set it get the notice. This is how `servers[].static_files` was deprecated alongside `serve_files`/`root_dir` (issue #591) without spamming every config load. The `static_files` deprecation also doubles as the "visible signal" for the allowlist trap: setting `static_files.allowed_extensions` with a service-registered `StaticFilesMiddleware` is still a no-op for the middleware, but no longer silent.
+
+## HTTP header parsing / Workerman internals
+
+### Workerman `header()` joins duplicates with `,`, never trims names, and `rawHead()` excludes the trailing CRLF — count-based gates need three corrections
+<!-- kb: id=FAQ-025 date=2026-08-15 tags=http,headers,tests,vendor trigger="gating or testing header parsing on a raw-head line count, or relying on Workerman header semantics" hits=0 status=active -->
+
+The vendored Workerman (`vendor/workerman/workerman/src/Protocols/Http/Request.php`) header semantics differ from the naive assumption in three ways that all bit the `rawHeadMayHaveDuplicates()` gate in `RequestConverter` (issue #557):
+
+1. **`rawHead()` excludes the trailing CRLF.** It is `strstr($buffer, "\r\n\r\n", true)`, so `substr_count($rawHead, "\r\n")` is exactly the header-line count after the request line. The `substr_count(...)- 1` formula from the issue body assumes the terminator is kept and would disable the optimization entirely (always-true → always slow path). Verify the offset against the vendored `rawHead()` before gating.
+2. **`parseHeaders()` does not trim header names.** It does `strtolower($parts[0])` verbatim, so an obs-fold-style line (`" X-Fold: v"`) becomes a key with a leading space (`" x-fold"`), distinct from `"x-fold"`. The raw parser trims, so two such lines are a duplicate for the raw parser but two distinct keys for Workerman — counts match while a duplicate exists. The gate forces a re-parse whenever `name !== trim(name)`.
+3. **`header()` joins duplicate values with a bare `,` (no space), not last-wins.** Only `count()` is used by the gate so this does not affect correctness, but any test asserting on the joined value must expect `,` not the RFC 7230 `, ` (the bundle's own join, applied on the slow path, is `, `). A fourth gotcha: middleware runs before `SymfonyController` converts, so `header()` may contain names absent from the raw head — an attacker could send exactly as many extra duplicate lines as middleware adds new names, making counts coincide and hiding a duplicate `Cookie` (the #217 class). The gate subtracts `Http\Request::addedHeaderCount()`. Any future count-based gate on headers must verify all four points against the vendored parser, not the issue brief.
+
+### phpbench report name in this repo is `aggregate`, not `average`
+<!-- kb: id=FAQ-026 date=2026-08-15 tags=tests,benchmarks trigger="running RequestConverterBench or any phpbench benchmark in this repo" hits=0 status=active -->
+
+`phpbench.json` defines only the `aggregate` report. `vendor/bin/phpbench run ... --report=average` errors out with "Not found in known reports: average" and lists the known names. Use `--report=aggregate` (or omit `--report` and let `phpbench.json` pick the default). Discovered during #557; the task brief said `--report=average`, which does not exist in this repo's phpbench config.

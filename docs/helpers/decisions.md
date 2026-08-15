@@ -18,17 +18,18 @@ whole file.
 - `docs` — DEC-012
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
 - `long-running` — DEC-003
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005
+- `performance` — DEC-013
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
-- `security` — DEC-005, DEC-006, DEC-010
+- `security` — DEC-005, DEC-006, DEC-010, DEC-013
 - `static-files` — DEC-004
 - `timers` — DEC-003
 <!-- kb-index:end -->
@@ -188,3 +189,25 @@ outside fenced code blocks. A fence- and backtick-aware scan of the tracked
 `.md` files finds 0 raw occurrences today; keep it that way when editing
 docs — the angle-bracket tokens belong in fenced blocks or backticks, never
 bare in prose.
+
+### Optimization gates on security-relevant parsers must fail open (re-parse) on every unverified input shape (#557)
+<!-- kb: id=DEC-013 date=2026-08-15 tags=http,security,performance trigger="adding a fast-path gate to a security-relevant parser, or relaxing an existing one" hits=0 status=active -->
+
+`RequestConverter::buildServerHeaders()` re-parses the raw header block on
+every request solely to detect duplicate header values, because duplicate
+`Cookie`/`Host`/`Content-Length`/`Authorization`/`Transfer-Encoding` handling
+is a security property (the #217 duplicate-`Cookie` smuggling class). The
+re-parse was gated behind an O(1) `rawHeadMayHaveDuplicates()` check in #557.
+The invariant the gate must uphold: **it may return `true` when there are no
+duplicates (false positive → wasted work, safe), but must NEVER return `false`
+when duplicates exist (false negative → skipped duplicate handling, security
+regression).** Every input shape the gate cannot prove safe — colon-less
+garbage lines, obs-fold / whitespace-padded names, middleware-added headers
+shifting the count, a `rawHead()` shape that does not match the assumed
+terminator semantics — forces the slow path. Two genuine false-negative
+classes were found while designing the gate (name-trim divergence between the
+raw parser and Workerman's `parseHeaders()`, and middleware-added-header
+count compensation; see FAQ-025) and both were closed by forcing the slow
+path on those shapes. Any future optimization gate on a parser that enforces
+a security property follows the same rule: fail open on unverified input, and
+prove the proof for every input shape before trusting the fast path.
