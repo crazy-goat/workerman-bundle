@@ -49,6 +49,7 @@ whole file.
 - `permissions` — FAQ-005
 - `phpstan` — FAQ-014
 - `ports` — FAQ-009
+- `process` — FAQ-007
 - `response-strategy` — FAQ-001, FAQ-002
 - `scheduler` — FAQ-020, FAQ-021
 - `sfx` — FAQ-003
@@ -121,16 +122,20 @@ host-specific and slow. (Inotify events are queued synchronously at syscall
 time, so `mkdir` → `rmdir` → `invokeOnNotify` is race-free.)
 
 ### grpc extension on macOS: stop timeouts, zombie masters, no worker restarts
-<!-- kb: id=FAQ-007 date=2026-08-09 tags=tests,grpc,macos,daemon trigger="daemon hangs, zombie master or no worker restart on macOS" hits=0 status=active -->
+<!-- kb: id=FAQ-007 date=2026-08-09 tags=tests,grpc,macos,daemon,process trigger="daemon hangs, zombie master or no worker restart on macOS" hits=0 status=active -->
 
 If the `grpc` extension is loaded (Homebrew PHP), its shutdown handler
 (`grpc_shutdown()`) **can hang indefinitely in forked children** on
 affected macOS/Homebrew setups. On such hosts (tracked in
 [#651](https://github.com/crazy-goat/workerman-bundle/issues/651)):
 
-- The daemonize intermediate can hang at `start -d`, so
-  `workerman:server stop` can time out and leave a zombie master. Clean
-  up with a **repo-scoped** command (never a bare `pkill -f WorkerMan` —
+- The daemonize intermediate can hang at `start -d`. Since #720
+  (`ProcessInspector::isAliveNonLinux()`), a zombie master is detected
+  via `ps -o stat= -p <pid>` (state `Z` or empty = dead), so `stop()`
+  no longer times out on the zombie-master shape. The **hung
+  intermediate itself still leaks** on non-Linux
+  (`killOrphanedIntermediateFork()` is Linux-only — #722); clean up
+  with a **repo-scoped** command (never a bare `pkill -f WorkerMan` —
   it would kill unrelated Workerman applications on the host):
   ```bash
   pkill -9 -f 'tests/App/index.php'; rm -f var/run/workerman.pid*
@@ -138,13 +143,20 @@ affected macOS/Homebrew setups. On such hosts (tracked in
 - A self-called `exit()` inside a process service hangs the worker (no
   restarts). The bundle terminates worker/task children with SIGKILL when
   grpc is loaded (`Util\ProcessTerminator`, since #650); make sure your
-  process services do not `exit()` themselves — return instead.
+  process services do not `exit()` themselves — return instead. The same
+  trap applies to **forked test children** on grpc hosts — kill them with
+  `posix_kill(getmypid(), SIGKILL)`, never `exit()`, or `grpc_shutdown()`
+  can hang the test suite.
 - Expect **exactly one** start-up warning in the Workerman log file
   (`var/log/workerman.log`): with `GRPC_ENABLE_FORK_SUPPORT` unset it
   says to set it; with it set (or `true`) it announces SIGKILL
   termination. They are mutually exclusive, not both emitted.
 
-CI (Linux, no grpc) does not exercise any of this.
+CI (Linux, no grpc) does not exercise any of this. `pcntl_waitpid` only
+answers for **direct children**; on non-Linux the kernel state for a
+non-child PID comes from `ps`, and any inspection-tool failure (exec
+disabled, `ps` 126/127, abnormal exit on a signalable PID) fails closed
+— the process is treated as alive and a warning is logged.
 
 ### Don't write start-up warnings to stderr before daemonize()
 <!-- kb: id=FAQ-008 date=2026-08-09 tags=tests,daemon,logging trigger="adding start-up output in Runner or anything before daemonize()" hits=0 status=active -->
