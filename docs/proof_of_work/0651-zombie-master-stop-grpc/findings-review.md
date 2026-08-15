@@ -63,3 +63,44 @@ commit a7d5775. No prior review round — file created fresh.
   process → "alive") is inherent to any PID-based liveness helper and is
   the same window the master fingerprint's start-time check addresses at
   the higher level. Acceptable for a low-level helper; noted, not a finding.
+
+## Round 2
+
+Reviewer role: review-critical (round 2), fix commit 4a1332f on top of
+a7d5775. Full details in `review-2.md`. Gates: phpunit 26 tests / 42
+assertions / 5 skipped (Linux-only) / 0 failures on macOS PHP 8.5.9;
+`composer lint` green.
+
+### Round-1 finding status
+
+- **R1 — FIXED.** `src/ProcessInspector.php:380-391` re-checks
+  `posix_kill($pid, 0)` on non-zero `ps` exit: still-signalable → `null`
+  (alive + warning, line 387), unsignalable → `''` (dead, line 390). The
+  discriminator is correct and there is no harmful TOCTOU against the
+  entry guard (line 36): death between the two checks yields the correct
+  "dead"; EPERM cannot newly appear (UID cannot change); PID reuse
+  resolves fail-safe. Non-child zombie + broken `ps` → treated alive is
+  the documented fail-closed policy in a degraded environment.
+- **R2 — FIXED.** Four `@requires OS Darwin` tests added
+  (`tests/ProcessInspectorTest.php:893, 912, 952, 969`), all executed and
+  passing on this host. They exercise exit-0-with-output,
+  non-zero+unsignalable → `''`, and the end-to-end `isAliveNonLinux`
+  dead/running paths. Residual gap tracked as N3.
+- **R3 — FIXED.** Marker write is now write-to-`$marker.<rand>.tmp` +
+  `rename()` (`tests/ProcessInspectorTest.php:279-281`); same filesystem,
+  atomic, the parent can never observe an empty marker.
+- **R4 — FIXED.** Docblock (`src/ProcessInspector.php:340-346`) now
+  distinguishes `''` (exit 0 no output, or non-zero exit on an
+  unsignalable PID) from `null` (ps not executable / abnormal exit on a
+  still-signalable PID → fail closed) and matches the code branch-for-branch.
+
+### NEW findings (round 2)
+
+| # | file:line | What is wrong | Severity | Status |
+| --- | --- | --- | --- | --- |
+| N1 | `src/ProcessInspector.php:373-375` | Inline comment in the new R1 branch contradicts the code: "An empty result on a still-signalable PID means the process is gone" — a still-signalable PID with a failed `ps` is treated as *alive* (`return null`, line 387); "gone" is returned only for an *unsignalable* PID (line 390). Comment-only, but it is the same docblock/code mismatch class as R4. | nit | OPEN |
+| N2 | `tests/ProcessInspectorTest.php:961-964` | `testIsAliveNonLinuxReturnsTrueForRunningPid` docblock claims to cover the "ps returns a non-Z state" happy path, but the forked child is a direct child, so `pcntl_waitpid` returns 0 and the method returns at the direct-child branch without invoking `ps`. Assertion is valid and deterministic; docblock only. The non-child ps happy path is covered by `testIsProcessAliveReturnsTrueForNonChildProcess` (line 222), so coverage is complete. | nit | OPEN |
+| N3 | `src/ProcessInspector.php:381-388` | The core R1 fail-closed branch (non-zero `ps` exit on a *signalable* PID → `null`) has no test. Reachable deterministically via the round-1 lever — `@exec` at line 362 is unqualified in namespace `CrazyGoat\WorkermanBundle`, so a test-side `CrazyGoat\WorkermanBundle\exec()` override could simulate `ps` failing on a live PID, even on Linux CI — but that override is global to the namespace for the whole PHPUnit process and risks polluting other tests. Branch fails closed and both its sub-conditions are individually exercised; acceptable residual gap. | low | OPEN (acceptable) |
+
+**Round-2 verdict: clean enough to merge.** N1/N2 are one-line comment
+corrections; N3 is a low, acceptable coverage gap. No round 3 needed.
