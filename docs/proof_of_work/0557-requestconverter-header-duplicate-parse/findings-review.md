@@ -15,7 +15,7 @@ Appended by the review-critical subagent. One entry per finding. Status
   `$rawHeaders[$nameLower] ?? null` lookup hitting when it should miss)
   would not be caught.
 - **severity:** low
-- **status:** open
+- **status:** fixed (round 2) — added `testFastPathAndSlowPathProduceIdenticalServerBagForUniqueHeaders` which builds two buffers differing only by a colon-less garbage line that flips the gate from false (fast) to true (slow) while leaving Workerman's parsed headers identical, then asserts `assertSame` across HTTP_HOST / HTTP_ACCEPT / HTTP_AUTHORIZATION / CONTENT_TYPE / CONTENT_LENGTH / HTTP_X_CUSTOM / HTTP_COOKIE. Gate state is asserted first via `callPrivateStaticMethod('rawHeadMayHaveDuplicates', ...)`.
 - **automated check that could catch it:** a property/parity test
   (PHPUnit) converting the same buffer twice — once normally, once with
   the gate forcibly disabled via reflection — and `assertSame` on the full

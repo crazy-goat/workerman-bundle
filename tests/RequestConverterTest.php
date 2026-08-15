@@ -1339,6 +1339,43 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('overridden', $symfonyRequest->server->get('HTTP_X_CUSTOM'));
     }
 
+    public function testFastPathAndSlowPathProduceIdenticalServerBagForUniqueHeaders(): void
+    {
+        $headers = "Host: example.com\r\n";
+        $headers .= "Accept: application/json\r\n";
+        $headers .= "Authorization: Basic dXNlcjpwYXNz\r\n";
+        $headers .= "Content-Type: application/json\r\n";
+        $headers .= "Content-Length: 123\r\n";
+        $headers .= "X-Custom: custom-value\r\n";
+        $headers .= "Cookie: session=abc123\r\n";
+
+        $fastBuffer = "GET /test HTTP/1.1\r\n" . $headers . "\r\n";
+        $slowBuffer = "GET /test HTTP/1.1\r\n" . $headers . "garbage-line-without-colon\r\n\r\n";
+
+        $fastRequest = new Request($fastBuffer);
+        $slowRequest = new Request($slowBuffer);
+
+        $this->assertFalse($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$fastRequest, $fastRequest->header() ?? []]));
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$slowRequest, $slowRequest->header() ?? []]));
+
+        $fastServer = RequestConverter::toSymfonyRequest($fastRequest)->server->all();
+        $slowServer = RequestConverter::toSymfonyRequest($slowRequest)->server->all();
+
+        $relevantKeys = [
+            'HTTP_HOST', 'HTTP_ACCEPT', 'HTTP_AUTHORIZATION',
+            'CONTENT_TYPE', 'CONTENT_LENGTH',
+            'HTTP_X_CUSTOM', 'HTTP_COOKIE',
+        ];
+
+        foreach ($relevantKeys as $key) {
+            $this->assertSame(
+                $fastServer[$key] ?? null,
+                $slowServer[$key] ?? null,
+                \sprintf('Parity failure for %s: fast path and slow path diverged', $key),
+            );
+        }
+    }
+
     public function testHeaderWithControlCharacterIsRejected(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
