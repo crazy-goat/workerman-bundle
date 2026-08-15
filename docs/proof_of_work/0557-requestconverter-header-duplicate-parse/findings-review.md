@@ -93,3 +93,65 @@ Appended by the review-critical subagent. One entry per finding. Status
 - **status:** open
 - **relation to `findings-coder.md`:** agree with coder's "latent vendor
   bug, not actionable here".
+
+---
+
+## Round 2 review (subagent, read-only)
+
+Round-2 diff: `git diff d3df459..ea17fc0` — only
+`tests/RequestConverterTest.php` (+37, new test
+`testFastPathAndSlowPathProduceIdenticalServerBagForUniqueHeaders`) and a
+1-line status update on R1-1 above. No production code changed
+(`git diff d3df459..ea17fc0 -- src/` empty).
+
+### R1-1 — confirmed fixed (round 2)
+
+The status update above is accurate. Independent verification of the three
+required properties:
+
+- **(a) gate flip:** `tests/RequestConverterTest.php:1358-1359` asserts
+  `assertFalse` on the fast buffer and `assertTrue` on the slow buffer via
+  `callPrivateStaticMethod('rawHeadMayHaveDuplicates', ...)`. Empirically
+  confirmed: fast `rawHead()` CRLF count = 7, parsed header count = 7 →
+  `7 !== 7 - 0` false → gate false. Slow `rawHead()` CRLF count = 8 (extra
+  garbage line), parsed header count = 7 → `8 !== 7 - 0` true → gate true.
+- **(b) `assertSame` on relevant keys:** L1370-1376 loops `assertSame` over
+  `HTTP_HOST`, `HTTP_ACCEPT`, `HTTP_AUTHORIZATION`, `CONTENT_TYPE`,
+  `CONTENT_LENGTH`, `HTTP_X_CUSTOM`, `HTTP_COOKIE`.
+- **(c) colon-less garbage line:** `"garbage-line-without-colon"` contains
+  no `:` (verified `str_contains(..., ':')` is false), so
+  `parseRawHeaderLines` (src/DTO/RequestConverter.php:356) skips it and
+  Workerman's `header()` does not register it — parsed headers identical on
+  both paths; the line's only effect is inflating the CRLF count to flip the
+  gate. The two `Request` instances are distinct objects, so `rawHead()`
+  per-instance memoization cannot leak the slow buffer onto the fast path.
+
+Test runs and passes: 1 test, 9 assertions (2 gate + 7 key).
+
+### R1-2 .. R1-6 — unchanged, correctly classified
+
+Production code unchanged since round 1. R1-2 (low, `Http/Request.php:44`
+coupling), R1-3 (nit, memoized second `rawHead()`), R1-4 (low, pre-existing
+obs-fold), R1-5 (nit, trim-mask divergence), R1-6 (low, latent vendor
+`: string` lie) all remain open at their recorded severities. No
+disagreement with round-1 classification.
+
+### New findings (round 2)
+
+None. The four concerns raised in the round-2 brief (memoization leakage,
+colon presence in the garbage line, CGI-special key coverage, lint/PHPStan
+/Rector cleanliness) were each checked and dismissed — see
+`review-2.md` "New findings (round 2)" for the per-concern reasoning.
+
+### Gates (round 2)
+
+- `composer lint` — PASS (PHP CS Fixer 0/245 fixable; PHPStan [OK];
+  Rector [OK]; kb-lint OK).
+- `vendor/bin/phpunit tests/RequestConverterTest.php` — PASS, 90 tests,
+  316 assertions, 0 failures (only warning: no coverage driver; underscore
+  `[warning]` lines are expected stderr from existing tests).
+
+### Merge recommendation
+
+GO — R1-1 closed by a correct parity test; R1-2..R1-6 deferred low/nit;
+gates green; no new issues.
