@@ -236,6 +236,14 @@ module shutdown entirely.
   only armed for non-graceful stops, so `stop --graceful` / `reload
   --graceful` (SIGQUIT/SIGUSR2) can hang on grpc hosts when the master has
   to wait for children stuck in `grpc_shutdown`.
+- **Zombie master after a hung daemonize intermediate:** when the
+  intermediate hangs in `grpc_shutdown()` it never reaps the SIGINTed
+  master, which stays a zombie. Since issue #651 the liveness check reads
+  the kernel state via `ps -o stat=` on macOS/BSD (a zombie reports state
+  `Z`), so `workerman:server stop` no longer waits out the full
+  `stop_timeout` in this scenario and returns success once the master is
+  dead. The hung intermediate itself is still not reaped/killed on
+  non-Linux; clean it up by hand if it accumulates.
 
 ## Reload Strategies Reference
 

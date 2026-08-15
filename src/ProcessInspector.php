@@ -49,7 +49,7 @@ final readonly class ProcessInspector
             return true;
         }
 
-        return $this->isReaped($pid);
+        return $this->isAliveNonLinux($pid);
     }
 
     public function getParentPid(int $pid): int
@@ -294,19 +294,84 @@ final readonly class ProcessInspector
     }
 
     /**
-     * On non-Linux POSIX systems, `posix_kill($pid, 0)` returns true for
-     * zombie processes until the parent reaps them. To distinguish a
-     * running process from a zombie, attempt a non-blocking `waitpid`:
-     * a positive return value means the child was reaped (dead), zero
-     * means it is still running, and a negative return means the pid is
-     * not a direct child of this process — in which case we trust the
-     * `posix_kill` result that already passed at the call site and
-     * treat the process as alive.
+     * Non-Linux POSIX liveness check.
+     *
+     * `posix_kill($pid, 0)` (which already passed at the call site) returns
+     * true for zombie processes until their parent reaps them, so it cannot
+     * distinguish a running process from a zombie. Distinguish them in two
+     * steps:
+     *
+     * 1. A non-blocking `pcntl_waitpid()` gives a definitive answer for
+     *    direct children of this process: a positive return reaps a zombie
+     *    child (dead), zero means a running child. This also keeps
+     *    direct-child zombies from leaking.
+     * 2. For PIDs that are NOT direct children (`waitpid` fails with
+     *    ECHILD) — such as a daemonized Workerman master stopped from a
+     *    separate CLI process — query the kernel process state via
+     *    `ps -o stat=`. A zombie has state `Z`; an empty result means the
+     *    process is already gone (issue #651). This mirrors the Linux
+     *    `/proc/{pid}/status` State check.
+     *
+     * When `ps` cannot be executed, the check fails closed (process treated
+     * as alive), mirroring the unreadable-`/proc` case on Linux, and logs a
+     * warning so the degraded mode is visible.
+     *
+     * @phpstan-impure
      */
-    private function isReaped(int $pid): bool
+    private function isAliveNonLinux(int $pid): bool
     {
         $result = pcntl_waitpid($pid, $status, \WNOHANG);
+        if ($result > 0) {
+            return false; // zombie direct child, now reaped
+        }
+        if ($result === 0) {
+            return true; // running direct child
+        }
 
-        return $result <= 0;
+        $state = $this->readProcessStateViaPs($pid);
+        if ($state === null) {
+            return true; // ps unavailable: fail closed, treat as alive
+        }
+
+        return $state !== '' && !str_starts_with($state, 'Z');
+    }
+
+    /**
+     * Read the kernel process state via `ps -o stat= -p <pid>`.
+     *
+     * Returns the trimmed state string (e.g. "Ss", "R+", "Z"), an empty
+     * string when the process no longer exists, or null when `ps` itself
+     * could not be executed (the caller must then fail closed).
+     *
+     * @phpstan-impure
+     */
+    private function readProcessStateViaPs(int $pid): ?string
+    {
+        if (!\function_exists('exec')) {
+            $this->logger->warning('Cannot inspect process state: exec() is disabled; treating process as alive', [
+                'pid' => $pid,
+            ]);
+
+            return null;
+        }
+
+        $output = [];
+        $exitCode = 0;
+        @exec('ps -o stat= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+
+        if ($exitCode === 126 || $exitCode === 127) {
+            $this->logger->warning('Cannot inspect process state: ps command not available; treating process as alive', [
+                'pid' => $pid,
+                'exit_code' => $exitCode,
+            ]);
+
+            return null;
+        }
+
+        if ($exitCode !== 0 || $output === []) {
+            return ''; // process gone
+        }
+
+        return trim($output[0]);
     }
 }

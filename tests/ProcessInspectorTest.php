@@ -209,10 +209,10 @@ final class ProcessInspectorTest extends TestCase
      * Regression test for issue #530: `isProcessAlive()` must return true
      * for a process that is not a direct child of the current process.
      *
-     * On non-Linux platforms, the zombie-detection fallback uses
-     * `pcntl_waitpid()`, which returns `-1` for PIDs that are not direct
-     * children. The helper must treat that case as "alive" (trusting the
-     * `posix_kill` check that already passed) rather than as "dead".
+     * On non-Linux platforms, `pcntl_waitpid()` returns `-1` for PIDs that
+     * are not direct children, so since issue #651 the process state is
+     * read via `ps -o stat=`. A running non-child reports a non-zombie
+     * state (e.g. `S`/`R`) and must be reported as alive.
      *
      * Uses the parent process's PID (always non-child) as the test target.
      *
@@ -232,6 +232,81 @@ final class ProcessInspectorTest extends TestCase
             $this->inspector->isProcessAlive($parentPid),
             'isProcessAlive() must return true for a non-child process on ' . PHP_OS_FAMILY,
         );
+    }
+
+    /**
+     * Regression test for issue #651: `isProcessAlive()` must return false
+     * for a ZOMBIE process that is NOT a direct child of the current
+     * process.
+     *
+     * This reproduces the macOS + grpc failure: a daemonized Workerman
+     * master is a child of the (hung) daemonize intermediate, not of the
+     * CLI process running `workerman:server stop`. When the master dies,
+     * the hung intermediate never reaps it, so the master stays a zombie.
+     * From the stopper's perspective the zombie master is a non-child:
+     * `pcntl_waitpid()` fails with ECHILD, and the old code wrongly treated
+     * that as "alive", looping until `stop_timeout`.
+     *
+     * Setup: fork child A; A forks grandchild B and reports B's PID via a
+     * marker file, then sleeps forever without reaping. B kills itself with
+     * SIGKILL, so it remains a zombie child of A — a non-child zombie from
+     * this test process's perspective. SIGKILL (not `exit()`) is used so
+     * the test cannot hang in extension shutdown handlers on grpc hosts
+     * (see ProcessTerminator).
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsFalseForNonChildZombie(): void
+    {
+        $marker = \sys_get_temp_dir() . '/workerman_zombie_' . \bin2hex(\random_bytes(4));
+
+        $childA = pcntl_fork();
+        if ($childA === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($childA === 0) {
+            $childB = pcntl_fork();
+            if ($childB === -1) {
+                exit(1);
+            }
+            if ($childB > 0) {
+                // Child A: publish the grandchild PID, then sleep forever
+                // WITHOUT reaping B, so B stays a zombie.
+                file_put_contents($marker, (string) $childB);
+                for (;;) {
+                    sleep(1);
+                }
+            }
+            // Grandchild B: die immediately, becoming a zombie under A.
+            posix_kill(posix_getpid(), SIGKILL);
+            exit(1); // safety net, unreachable when SIGKILL is delivered
+        }
+
+        try {
+            $this->waitForFile($marker, 3);
+            $zombiePid = (int) @file_get_contents($marker);
+            $this->assertGreaterThan(0, $zombiePid, 'Child A must publish the grandchild PID');
+
+            // Poll instead of a fixed sleep: B needs a moment to die after
+            // the fork. Once dead, B is a zombie non-child and must be
+            // reported as not alive on every POSIX platform.
+            $deadline = \microtime(true) + 2.0;
+            while ($this->inspector->isProcessAlive($zombiePid) && \microtime(true) < $deadline) {
+                \usleep(20_000);
+            }
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($zombiePid),
+                'isProcessAlive() must return false for a non-child zombie on ' . PHP_OS_FAMILY,
+            );
+        } finally {
+            @\unlink($marker);
+            // Kill A: B is then reparented to init/launchd and reaped.
+            posix_kill($childA, SIGKILL);
+            pcntl_waitpid($childA, $status);
+        }
     }
 
     /**
