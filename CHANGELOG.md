@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- `RequestConverter` no longer re-parses the raw header block on every
+  request. The re-parse in `buildServerHeaders()` exists only to detect
+  duplicate header lines (so `Cookie` can be joined with `'; '` and
+  `Host`/`Content-Length`/`Authorization`/`Transfer-Encoding` reduced to
+  their first value); it is now gated behind an O(1) check that compares
+  the raw header-line count against the parsed-header count (adjusted for
+  middleware-added headers) and falls back to the full parse whenever the
+  counts differ or a header name is whitespace-padded. Duplicate-header
+  handling is unchanged. A header-heavy request converts ~17% faster in
+  `RequestConverterBench` (9.8µs → 8.1µs per op)
+  ([#557](https://github.com/crazy-goat/workerman-bundle/issues/557))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added
