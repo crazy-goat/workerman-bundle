@@ -209,10 +209,10 @@ final class ProcessInspectorTest extends TestCase
      * Regression test for issue #530: `isProcessAlive()` must return true
      * for a process that is not a direct child of the current process.
      *
-     * On non-Linux platforms, the zombie-detection fallback uses
-     * `pcntl_waitpid()`, which returns `-1` for PIDs that are not direct
-     * children. The helper must treat that case as "alive" (trusting the
-     * `posix_kill` check that already passed) rather than as "dead".
+     * On non-Linux platforms, `pcntl_waitpid()` returns `-1` for PIDs that
+     * are not direct children, so since issue #651 the process state is
+     * read via `ps -o stat=`. A running non-child reports a non-zombie
+     * state (e.g. `S`/`R`) and must be reported as alive.
      *
      * Uses the parent process's PID (always non-child) as the test target.
      *
@@ -232,6 +232,85 @@ final class ProcessInspectorTest extends TestCase
             $this->inspector->isProcessAlive($parentPid),
             'isProcessAlive() must return true for a non-child process on ' . PHP_OS_FAMILY,
         );
+    }
+
+    /**
+     * Regression test for issue #651: `isProcessAlive()` must return false
+     * for a ZOMBIE process that is NOT a direct child of the current
+     * process.
+     *
+     * This reproduces the macOS + grpc failure: a daemonized Workerman
+     * master is a child of the (hung) daemonize intermediate, not of the
+     * CLI process running `workerman:server stop`. When the master dies,
+     * the hung intermediate never reaps it, so the master stays a zombie.
+     * From the stopper's perspective the zombie master is a non-child:
+     * `pcntl_waitpid()` fails with ECHILD, and the old code wrongly treated
+     * that as "alive", looping until `stop_timeout`.
+     *
+     * Setup: fork child A; A forks grandchild B and reports B's PID via a
+     * marker file, then sleeps forever without reaping. B kills itself with
+     * SIGKILL, so it remains a zombie child of A — a non-child zombie from
+     * this test process's perspective. SIGKILL (not `exit()`) is used so
+     * the test cannot hang in extension shutdown handlers on grpc hosts
+     * (see ProcessTerminator).
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsProcessAliveReturnsFalseForNonChildZombie(): void
+    {
+        $marker = \sys_get_temp_dir() . '/workerman_zombie_' . \bin2hex(\random_bytes(4));
+
+        $childA = pcntl_fork();
+        if ($childA === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($childA === 0) {
+            $childB = pcntl_fork();
+            if ($childB === -1) {
+                exit(1);
+            }
+            if ($childB > 0) {
+                // Child A: publish the grandchild PID atomically (write to
+                // a temp file then rename) so the parent never observes an
+                // empty marker file and parses PID 0, then sleep forever
+                // WITHOUT reaping B, so B stays a zombie.
+                $tmp = $marker . '.' . \bin2hex(\random_bytes(4)) . '.tmp';
+                \file_put_contents($tmp, (string) $childB);
+                \rename($tmp, $marker);
+                for (;;) {
+                    sleep(1);
+                }
+            }
+            // Grandchild B: die immediately, becoming a zombie under A.
+            posix_kill(posix_getpid(), SIGKILL);
+            exit(1); // safety net, unreachable when SIGKILL is delivered
+        }
+
+        try {
+            $this->waitForFile($marker, 3);
+            $zombiePid = (int) @file_get_contents($marker);
+            $this->assertGreaterThan(0, $zombiePid, 'Child A must publish the grandchild PID');
+
+            // Poll instead of a fixed sleep: B needs a moment to die after
+            // the fork. Once dead, B is a zombie non-child and must be
+            // reported as not alive on every POSIX platform.
+            $deadline = \microtime(true) + 2.0;
+            while ($this->inspector->isProcessAlive($zombiePid) && \microtime(true) < $deadline) {
+                \usleep(20_000);
+            }
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($zombiePid),
+                'isProcessAlive() must return false for a non-child zombie on ' . PHP_OS_FAMILY,
+            );
+        } finally {
+            @\unlink($marker);
+            // Kill A: B is then reparented to init/launchd and reaped.
+            posix_kill($childA, SIGKILL);
+            pcntl_waitpid($childA, $status);
+        }
     }
 
     /**
@@ -789,5 +868,126 @@ PHP;
         }
 
         return new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $uid);
+    }
+
+    /**
+     * Invoke a private method on ProcessInspector via reflection.
+     */
+    private function invokePrivateMethod(string $name, int $pid): mixed
+    {
+        $reflection = new ReflectionClass($this->inspector);
+        $method = $reflection->getMethod($name);
+
+        return $method->invoke($this->inspector, $pid);
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
+     * must return an empty string for a non-existent PID (ps exits non-zero,
+     * PID is unsignalable) on non-Linux POSIX.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateViaPsReturnsEmptyForNonExistentPid(): void
+    {
+        if (!\function_exists('exec')) {
+            $this->markTestSkipped('exec() is disabled, cannot test ps path');
+        }
+
+        $state = $this->invokePrivateMethod('readProcessStateViaPs', 999_999_999);
+
+        $this->assertSame('', $state, 'ps must return empty string for a non-existent PID');
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
+     * must return a non-empty state string for a running PID on non-Linux POSIX.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateViaPsReturnsStateForRunningPid(): void
+    {
+        if (!\function_exists('exec')) {
+            $this->markTestSkipped('exec() is disabled, cannot test ps path');
+        }
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $state = $this->invokePrivateMethod('readProcessStateViaPs', $pid);
+
+            $this->assertNotSame('', $state, 'ps must return a non-empty state for a running PID');
+            $this->assertFalse(
+                str_starts_with($state, 'Z'),
+                'ps must not report a running process as a zombie',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
+     * must report a non-existent PID as not alive (covers the non-zero ps exit
+     * + unsignalable PID branch on non-Linux POSIX).
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsAliveNonLinuxReturnsFalseForNonExistentPid(): void
+    {
+        $this->assertFalse(
+            $this->invokePrivateMethod('isAliveNonLinux', 999_999_999),
+            'isAliveNonLinux() must return false for a non-existent PID',
+        );
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
+     * must report a running direct child as alive (pcntl_waitpid returns 0 →
+     * alive, ps path not reached). Real non-child ps coverage is provided by
+     * `testIsProcessAliveReturnsTrueForNonChildProcess`.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsAliveNonLinuxReturnsTrueForRunningPid(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertTrue(
+                $this->invokePrivateMethod('isAliveNonLinux', $pid),
+                'isAliveNonLinux() must return true for a running direct child',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
     }
 }
