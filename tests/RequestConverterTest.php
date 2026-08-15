@@ -1195,6 +1195,187 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('value-a, value-b, value-c', $symfonyRequest->server->get('HTTP_X_ANOTHER'));
     }
 
+    public function testRawHeadMayHaveDuplicatesReturnsFalseForUniqueHeaders(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "Authorization: Basic dXNlcjpwYXNz\r\n";
+        $buffer .= "Content-Type: application/json\r\n";
+        $buffer .= "Content-Length: 123\r\n";
+        $buffer .= "X-Custom: custom-value\r\n";
+        $buffer .= "Cookie: session=abc123\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+
+        $this->assertFalse($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testRawHeadMayHaveDuplicatesReturnsTrueForDuplicateHeaders(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Accept: text/plain\r\n";
+        $buffer .= "Accept: application/json\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testRawHeadMayHaveDuplicatesReturnsTrueForColonlessLine(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "garbage-line-without-colon\r\n";
+        $buffer .= "X-Custom: value\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testRawHeadMayHaveDuplicatesReturnsTrueForWhitespacePrefixedName(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Fold: a\r\n";
+        $buffer .= " X-Fold: b\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testRawHeadMayHaveDuplicatesAccountsForMiddlewareAddedHeaders(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Cookie: session=abc\r\n";
+        $buffer .= "Cookie: token=xyz\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $rawRequest->setHeader('X-Added', 'middleware-value');
+
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testRawHeadMayHaveDuplicatesIgnoresMiddlewareOverwrites(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Custom: original\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $rawRequest->setHeader('X-Custom', 'overridden');
+
+        $this->assertFalse($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$rawRequest, $rawRequest->header() ?? []]));
+    }
+
+    public function testWhitespacePrefixedDuplicateHeaderIsStillJoined(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Fold: a\r\n";
+        $buffer .= " X-Fold: b\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('a, b', $symfonyRequest->server->get('HTTP_X_FOLD'));
+    }
+
+    public function testColonlessGarbageLineKeepsHeaderConversion(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "garbage-line-without-colon\r\n";
+        $buffer .= "X-Custom: value\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
+        $this->assertSame('value', $symfonyRequest->server->get('HTTP_X_CUSTOM'));
+    }
+
+    public function testMiddlewareAddedHeaderDoesNotMaskDuplicateCookieHeaders(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "Cookie: session=abc\r\n";
+        $buffer .= "Cookie: token=xyz\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $rawRequest->setHeader('X-Added', 'middleware-value');
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('session=abc; token=xyz', $symfonyRequest->server->get('HTTP_COOKIE'));
+        $this->assertSame('abc', $symfonyRequest->cookies->get('session'));
+        $this->assertSame('xyz', $symfonyRequest->cookies->get('token'));
+        $this->assertSame('middleware-value', $symfonyRequest->server->get('HTTP_X_ADDED'));
+    }
+
+    public function testMiddlewareOverwrittenHeaderIsUsedWhenNoDuplicates(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Custom: original\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $rawRequest->setHeader('X-Custom', 'overridden');
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('overridden', $symfonyRequest->server->get('HTTP_X_CUSTOM'));
+    }
+
+    public function testFastPathAndSlowPathProduceIdenticalServerBagForUniqueHeaders(): void
+    {
+        $headers = "Host: example.com\r\n";
+        $headers .= "Accept: application/json\r\n";
+        $headers .= "Authorization: Basic dXNlcjpwYXNz\r\n";
+        $headers .= "Content-Type: application/json\r\n";
+        $headers .= "Content-Length: 123\r\n";
+        $headers .= "X-Custom: custom-value\r\n";
+        $headers .= "Cookie: session=abc123\r\n";
+
+        $fastBuffer = "GET /test HTTP/1.1\r\n" . $headers . "\r\n";
+        $slowBuffer = "GET /test HTTP/1.1\r\n" . $headers . "garbage-line-without-colon\r\n\r\n";
+
+        $fastRequest = new Request($fastBuffer);
+        $slowRequest = new Request($slowBuffer);
+
+        $this->assertFalse($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$fastRequest, $fastRequest->header() ?? []]));
+        $this->assertTrue($this->callPrivateStaticMethod('rawHeadMayHaveDuplicates', [$slowRequest, $slowRequest->header() ?? []]));
+
+        $fastServer = RequestConverter::toSymfonyRequest($fastRequest)->server->all();
+        $slowServer = RequestConverter::toSymfonyRequest($slowRequest)->server->all();
+
+        $relevantKeys = [
+            'HTTP_HOST', 'HTTP_ACCEPT', 'HTTP_AUTHORIZATION',
+            'CONTENT_TYPE', 'CONTENT_LENGTH',
+            'HTTP_X_CUSTOM', 'HTTP_COOKIE',
+        ];
+
+        foreach ($relevantKeys as $key) {
+            $this->assertSame(
+                $fastServer[$key] ?? null,
+                $slowServer[$key] ?? null,
+                \sprintf('Parity failure for %s: fast path and slow path diverged', $key),
+            );
+        }
+    }
+
     public function testHeaderWithControlCharacterIsRejected(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";

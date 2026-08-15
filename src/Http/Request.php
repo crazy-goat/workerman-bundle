@@ -36,6 +36,14 @@ namespace CrazyGoat\WorkermanBundle\Http;
 class Request extends \Workerman\Protocols\Http\Request
 {
     /**
+     * Number of header names setHeader() added that were not present in the
+     * raw parse. RequestConverter subtracts this from the parsed-header count
+     * when deciding whether the raw head may contain duplicate header lines.
+     * Reset by resetHeaders(), which restores the raw parse.
+     */
+    private int $addedHeaderCount = 0;
+
+    /**
      * Set a header value on this request.
      *
      * Unlike PSR-7's immutable {@see withHeader()}, this method **mutates** the
@@ -67,6 +75,9 @@ class Request extends \Workerman\Protocols\Http\Request
         }
 
         $name = strtolower($name);
+        if (!\array_key_exists($name, $this->data['headers'])) {
+            ++$this->addedHeaderCount;
+        }
         $this->data['headers'][$name] = $value;
 
         return $this;
@@ -75,6 +86,12 @@ class Request extends \Workerman\Protocols\Http\Request
     public function resetHeaders(): void
     {
         $this->parseHeaders();
+        $this->addedHeaderCount = 0;
+    }
+
+    public function addedHeaderCount(): int
+    {
+        return $this->addedHeaderCount;
     }
 
     /**

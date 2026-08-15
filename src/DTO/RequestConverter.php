@@ -191,7 +191,9 @@ final class RequestConverter
     private static function buildServerHeaders(\Workerman\Protocols\Http\Request $rawRequest, array $server): array
     {
         $workermanHeaders = $rawRequest->header() ?? [];
-        $rawHeaders = self::parseRawHeaderLines($rawRequest->rawHead());
+        $rawHeaders = self::rawHeadMayHaveDuplicates($rawRequest, $workermanHeaders)
+            ? self::parseRawHeaderLines($rawRequest->rawHead())
+            : [];
 
         foreach ($workermanHeaders as $name => $value) {
             $name = (string) $name;
@@ -292,6 +294,45 @@ final class RequestConverter
         } catch (\Throwable) {
             \error_log($message);
         }
+    }
+
+    /**
+     * Decide whether the raw head must be re-parsed for duplicate header lines.
+     *
+     * Workerman's header() map holds one entry per distinct header name, so
+     * its size (minus any names middleware added via setHeader()) can only
+     * equal the raw header-line count when no line was skipped (colon-less
+     * garbage, CR-only lines) and no name occurred twice. rawHead() never
+     * ends with CRLF and cannot contain an empty line, so the CRLF count is
+     * exactly the number of lines after the request line. Names that differ
+     * from their trim() (obs-fold continuation lines, space-before-colon)
+     * also force a re-parse: parseRawHeaderLines() trims names while
+     * Workerman does not, so two such lines can collide into a duplicate
+     * that the distinct-key count alone would not reveal. The check may
+     * return true when there are no duplicates (false positive), but never
+     * false when duplicates exist.
+     *
+     * @param array<array-key, mixed> $workermanHeaders
+     */
+    private static function rawHeadMayHaveDuplicates(
+        \Workerman\Protocols\Http\Request $rawRequest,
+        array $workermanHeaders,
+    ): bool {
+        $addedHeaders = $rawRequest instanceof \CrazyGoat\WorkermanBundle\Http\Request
+            ? $rawRequest->addedHeaderCount()
+            : 0;
+
+        if (\substr_count($rawRequest->rawHead(), "\r\n") !== \count($workermanHeaders) - $addedHeaders) {
+            return true;
+        }
+
+        foreach ($workermanHeaders as $name => $value) {
+            if ((string) $name !== \trim((string) $name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
