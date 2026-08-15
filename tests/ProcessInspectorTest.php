@@ -272,9 +272,13 @@ final class ProcessInspectorTest extends TestCase
                 exit(1);
             }
             if ($childB > 0) {
-                // Child A: publish the grandchild PID, then sleep forever
+                // Child A: publish the grandchild PID atomically (write to
+                // a temp file then rename) so the parent never observes an
+                // empty marker file and parses PID 0, then sleep forever
                 // WITHOUT reaping B, so B stays a zombie.
-                file_put_contents($marker, (string) $childB);
+                $tmp = $marker . '.' . \bin2hex(\random_bytes(4)) . '.tmp';
+                \file_put_contents($tmp, (string) $childB);
+                \rename($tmp, $marker);
                 for (;;) {
                     sleep(1);
                 }
@@ -864,5 +868,125 @@ PHP;
         }
 
         return new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $uid);
+    }
+
+    /**
+     * Invoke a private method on ProcessInspector via reflection.
+     */
+    private function invokePrivateMethod(string $name, int $pid): mixed
+    {
+        $reflection = new ReflectionClass($this->inspector);
+        $method = $reflection->getMethod($name);
+
+        return $method->invoke($this->inspector, $pid);
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
+     * must return an empty string for a non-existent PID (ps exits non-zero,
+     * PID is unsignalable) on non-Linux POSIX.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateViaPsReturnsEmptyForNonExistentPid(): void
+    {
+        if (!\function_exists('exec')) {
+            $this->markTestSkipped('exec() is disabled, cannot test ps path');
+        }
+
+        $state = $this->invokePrivateMethod('readProcessStateViaPs', 999_999_999);
+
+        $this->assertSame('', $state, 'ps must return empty string for a non-existent PID');
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
+     * must return a non-empty state string for a running PID on non-Linux POSIX.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateViaPsReturnsStateForRunningPid(): void
+    {
+        if (!\function_exists('exec')) {
+            $this->markTestSkipped('exec() is disabled, cannot test ps path');
+        }
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $state = $this->invokePrivateMethod('readProcessStateViaPs', $pid);
+
+            $this->assertNotSame('', $state, 'ps must return a non-empty state for a running PID');
+            $this->assertFalse(
+                str_starts_with($state, 'Z'),
+                'ps must not report a running process as a zombie',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
+     * must report a non-existent PID as not alive (covers the non-zero ps exit
+     * + unsignalable PID branch on non-Linux POSIX).
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsAliveNonLinuxReturnsFalseForNonExistentPid(): void
+    {
+        $this->assertFalse(
+            $this->invokePrivateMethod('isAliveNonLinux', 999_999_999),
+            'isAliveNonLinux() must return false for a non-existent PID',
+        );
+    }
+
+    /**
+     * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
+     * must report a running non-child as alive on non-Linux POSIX (the happy
+     * path after the fix — ps returns a non-Z state).
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testIsAliveNonLinuxReturnsTrueForRunningPid(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertTrue(
+                $this->invokePrivateMethod('isAliveNonLinux', $pid),
+                'isAliveNonLinux() must return true for a running direct child',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
     }
 }

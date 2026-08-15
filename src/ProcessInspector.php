@@ -340,8 +340,10 @@ final readonly class ProcessInspector
      * Read the kernel process state via `ps -o stat= -p <pid>`.
      *
      * Returns the trimmed state string (e.g. "Ss", "R+", "Z"), an empty
-     * string when the process no longer exists, or null when `ps` itself
-     * could not be executed (the caller must then fail closed).
+     * string when the process no longer exists (ps exit 0 with no output,
+     * or non-zero exit on an unsignalable PID), or null when `ps` itself
+     * could not be executed or exited abnormally on a still-signalable
+     * PID (the caller must then fail closed — treat as alive).
      *
      * @phpstan-impure
      */
@@ -368,8 +370,28 @@ final readonly class ProcessInspector
             return null;
         }
 
-        if ($exitCode !== 0 || $output === []) {
-            return ''; // process gone
+        // `ps` exited abnormally (not 0/126/127). An empty result on a
+        // still-signalable PID means the process is gone; a non-zero exit
+        // on a PID that `posix_kill($pid, 0)` just confirmed as signalable
+        // means `ps` itself misbehaved (sandbox, resource limits, non-
+        // conforming build). Fail closed in that case so a live master is
+        // never read as dead — `stop()` would otherwise report success and
+        // delete the pid/fingerprint files while the master still runs.
+        if ($exitCode !== 0) {
+            if (posix_kill($pid, 0)) {
+                $this->logger->warning('Cannot inspect process state: ps exited non-zero on a signalable PID; treating process as alive', [
+                    'pid' => $pid,
+                    'exit_code' => $exitCode,
+                ]);
+
+                return null;
+            }
+
+            return ''; // PID unsignalable + ps failed: process gone
+        }
+
+        if ($output === []) {
+            return ''; // ps succeeded with no output: process gone
         }
 
         return trim($output[0]);
