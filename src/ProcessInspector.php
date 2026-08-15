@@ -370,13 +370,13 @@ final readonly class ProcessInspector
             return null;
         }
 
-        // `ps` exited abnormally (not 0/126/127). An empty result on a
-        // still-signalable PID means the process is gone; a non-zero exit
-        // on a PID that `posix_kill($pid, 0)` just confirmed as signalable
-        // means `ps` itself misbehaved (sandbox, resource limits, non-
-        // conforming build). Fail closed in that case so a live master is
-        // never read as dead — `stop()` would otherwise report success and
-        // delete the pid/fingerprint files while the master still runs.
+        // `ps` exited abnormally (not 0/126/127). A non-zero exit on a PID
+        // that `posix_kill($pid, 0)` just confirmed as signalable means `ps`
+        // itself misbehaved (sandbox, resource limits, non-conforming build)
+        // — fail closed so a live master is never read as dead (stop() would
+        // otherwise report success and delete the pid/fingerprint files while
+        // the master still runs). Only when the PID is no longer signalable
+        // does a failed ps mean the process is gone.
         if ($exitCode !== 0) {
             if (posix_kill($pid, 0)) {
                 $this->logger->warning('Cannot inspect process state: ps exited non-zero on a signalable PID; treating process as alive', [

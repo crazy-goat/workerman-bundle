@@ -959,8 +959,9 @@ PHP;
 
     /**
      * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
-     * must report a running non-child as alive on non-Linux POSIX (the happy
-     * path after the fix — ps returns a non-Z state).
+     * must report a running direct child as alive (pcntl_waitpid returns 0 →
+     * alive, ps path not reached). Real non-child ps coverage is provided by
+     * `testIsProcessAliveReturnsTrueForNonChildProcess`.
      *
      * @requires OS Darwin
      * @requires extension pcntl
