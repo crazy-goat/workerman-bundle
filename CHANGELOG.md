@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `ProcessInspector::isProcessAlive()` no longer reports a non-child zombie
+  master as alive on macOS/BSD. On non-Linux POSIX the liveness check used
+  `pcntl_waitpid`, which only answers for direct children of the calling
+  process; a daemonized Workerman master stopped from a separate CLI is not
+  a direct child, so a zombie master (left behind when the daemonize
+  intermediate hangs in `grpc_shutdown()` on macOS+grpc hosts) was treated
+  as alive and `workerman:server stop` timed out with
+  "Workerman stop failed (timeout)". The non-Linux path now falls back to
+  `ps -o stat= -p <pid>` when `pcntl_waitpid` returns ECHILD: state `Z`
+  (or empty output) means not alive, mirroring the Linux `/proc` State
+  check. Inspection-tool failures (exec disabled, `ps` not found, abnormal
+  exit on a still-signalable PID) fail closed — the process is treated as
+  alive and a warning is logged — so a live master is never read as dead
+  ([#651](https://github.com/crazy-goat/workerman-bundle/issues/651))
+
 ### Performance
 
 - `RequestConverter` no longer re-parses the raw header block on every
