@@ -23,15 +23,6 @@ class PollingMonitorWatcher extends FileMonitorWatcher
      */
     private array $iterators = [];
 
-    /**
-     * Dir indexes whose sweep is still in progress (iterator not yet
-     * exhausted).  When non-empty the next tick resumes from where the
-     * previous tick stopped; when empty a fresh sweep begins.
-     *
-     * @var array<int, true>
-     */
-    private array $resumeDirs = [];
-
     public function start(): void
     {
         $this->lastMTime = time();
@@ -61,8 +52,6 @@ class PollingMonitorWatcher extends FileMonitorWatcher
                     // first one after a resume — so the tick bound is real.
                     $filesProcessed++;
                     if ($filesProcessed > self::MAX_FILES_PER_TICK) {
-                        $this->resumeDirs[$dirIdx] = true;
-
                         return;
                     }
 
@@ -70,7 +59,20 @@ class PollingMonitorWatcher extends FileMonitorWatcher
                     $file = $iterator->current();
 
                     if ($this->checkPattern($file->getFilename())) {
-                        $mtime = $file->getMTime();
+                        // The iterator is held across ticks (3 s polling
+                        // interval), so the file at current() may have been
+                        // deleted between ticks.  A deleted file is not a
+                        // modification — skip it.  SplFileInfo::getMTime()
+                        // on a missing path throws \RuntimeException
+                        // ("stat failed"), which the outer catch below does
+                        // not cover (it only handles directory removal).
+                        try {
+                            $mtime = $file->getMTime();
+                        } catch (\RuntimeException) {
+                            $iterator->next();
+
+                            continue;
+                        }
                         if ($mtime > $this->lastMTime) {
                             $this->lastMTime = $mtime;
                             $this->resetSweep();
@@ -86,15 +88,16 @@ class PollingMonitorWatcher extends FileMonitorWatcher
             } catch (\UnexpectedValueException) {
                 // A directory was removed mid-sweep (e.g. between ticks the
                 // operator deleted a subdir the iterator had not yet
-                // descended into).  Discard this dir's iterator and start
-                // fresh on the next tick instead of crashing the worker.
-                unset($this->iterators[$dirIdx], $this->resumeDirs[$dirIdx]);
+                // descended into, or a subtree the iterator was about to
+                // open).  Discard this dir's iterator and start fresh on
+                // the next tick instead of crashing the worker.
+                unset($this->iterators[$dirIdx]);
 
                 continue;
             }
 
             // Iterator exhausted — this dir's sweep is complete.
-            unset($this->iterators[$dirIdx], $this->resumeDirs[$dirIdx]);
+            unset($this->iterators[$dirIdx]);
         }
     }
 
@@ -105,6 +108,5 @@ class PollingMonitorWatcher extends FileMonitorWatcher
     private function resetSweep(): void
     {
         $this->iterators = [];
-        $this->resumeDirs = [];
     }
 }

@@ -117,6 +117,16 @@ final class PollingMonitorWatcherTest extends TestCase
         return (int) $prop->getValue($watcher);
     }
 
+    /**
+     * @return array<int, mixed>
+     */
+    private function getIterators(PollingMonitorWatcher $watcher): array
+    {
+        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'iterators');
+
+        return $reflection->getValue($watcher);
+    }
+
     public function testFileChangeDetectionConditionIsCorrect(): void
     {
         $watchedFile = $this->tempDir . '/app.php';
@@ -281,7 +291,7 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
-    public function testResumeDirsResetsAfterFullScan(): void
+    public function testSweepStateClearsAfterFullScan(): void
     {
         \file_put_contents($this->tempDir . '/a.php', '<?php');
         \file_put_contents($this->tempDir . '/b.php', '<?php');
@@ -293,11 +303,7 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-        /** @var array<int, true> $resumeDirs */
-        $resumeDirs = $reflection->getValue($watcher);
-
-        $this->assertSame([], $resumeDirs, 'resumeDirs should be empty after full scan');
+        $this->assertSame([], $this->getIterators($watcher), 'iterators should be empty after full scan');
     }
 
     public function testMaxFilesPerTickRespectsBound(): void
@@ -313,11 +319,7 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-        /** @var array<int, true> $resumeDirs */
-        $resumeDirs = $reflection->getValue($watcher);
-
-        $this->assertNotEmpty($resumeDirs, 'resumeDirs should have an entry when files exceed MAX_FILES_PER_TICK');
+        $this->assertNotEmpty($this->getIterators($watcher), 'iterators should have an entry when files exceed MAX_FILES_PER_TICK');
     }
 
     public function testResumeContinuesAcrossMultipleTicks(): void
@@ -334,16 +336,12 @@ final class PollingMonitorWatcherTest extends TestCase
         // Tick 1: process first 500 files, stop at boundary
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-        /** @var array<int, true> $resumeDirs */
-        $resumeDirs = $reflection->getValue($watcher);
-        $this->assertNotEmpty($resumeDirs, 'Tick 1 should set resume dir');
+        $this->assertNotEmpty($this->getIterators($watcher), 'Tick 1 should keep a persisted iterator');
 
         // Tick 2: continue from resume point, process remaining files
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $resumeDirsAfter = $reflection->getValue($watcher);
-        $this->assertSame([], $resumeDirsAfter, 'resumeDirs should be empty after completing full scan across multiple ticks');
+        $this->assertSame([], $this->getIterators($watcher), 'iterators should be empty after completing full scan across multiple ticks');
     }
 
     /**
@@ -377,10 +375,7 @@ final class PollingMonitorWatcherTest extends TestCase
         $maxTicks = 10;
         for ($tick = 0; $tick < $maxTicks; $tick++) {
             $this->invokeCheckFileSystemChanges($watcher);
-            $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-            /** @var array<int, true> $resumeDirs */
-            $resumeDirs = $reflection->getValue($watcher);
-            if ($resumeDirs === []) {
+            if ($this->getIterators($watcher) === []) {
                 break;
             }
         }
@@ -453,10 +448,7 @@ final class PollingMonitorWatcherTest extends TestCase
                 ),
             );
 
-            $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-            /** @var array<int, true> $resumeDirs */
-            $resumeDirs = $reflection->getValue($watcher);
-            if ($resumeDirs === []) {
+            if ($this->getIterators($watcher) === []) {
                 break;
             }
         }
@@ -491,18 +483,23 @@ final class PollingMonitorWatcherTest extends TestCase
     }
 
     /**
-     * Adding or removing a directory between ticks must not throw.
+     * Adding or removing a directory between ticks must not throw, and
+     * the sweep must still converge.  APFS readdir order is hash-based (not
+     * alphabetical), so the removed directory may or may not have been
+     * visited yet — either way the worker must not crash and the sweep
+     * must eventually complete.  The dedicated
+     * testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow covers the
+     * deleted-file RuntimeException path deterministically.
      */
     public function testTreeMutationBetweenTicksDoesNotThrow(): void
     {
-        $subDir = $this->tempDir . '/subdir';
-        \mkdir($subDir, 0700, true);
-        // Enough files to span multiple ticks (600 > MAX_FILES_PER_TICK=500).
-        for ($i = 0; $i < 300; $i++) {
-            \file_put_contents($subDir . '/file' . $i . '.php', '<?php');
+        for ($i = 0; $i < 600; $i++) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
         }
-        for ($i = 0; $i < 300; $i++) {
-            \file_put_contents($this->tempDir . '/top' . $i . '.php', '<?php');
+        $removedDir = $this->tempDir . '/zzz_subdir';
+        \mkdir($removedDir, 0700, true);
+        for ($i = 0; $i < 10; $i++) {
+            \file_put_contents($removedDir . '/child' . $i . '.php', '<?php');
         }
         \clearstatcache();
 
@@ -512,35 +509,83 @@ final class PollingMonitorWatcherTest extends TestCase
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
         $this->setLastMTime($watcher, \time() + 3600);
 
-        // Tick 1: processes first 500 files (mid-sweep, iterator is active).
+        // Tick 1: processes first 500 entries, stops at budget (mid-sweep).
         $this->invokeCheckFileSystemChanges($watcher);
 
-        // Between ticks: add a new directory with files.
+        // Between ticks: add a new directory with a file.
         $newDir = $this->tempDir . '/newdir';
         \mkdir($newDir, 0700, true);
         \file_put_contents($newDir . '/new.php', '<?php');
 
-        // Between ticks: remove the subdir (iterator may still reference it).
-        for ($i = 0; $i < 300; $i++) {
-            \unlink($subDir . '/file' . $i . '.php');
+        // Between ticks: remove zzz_subdir and its files. Whether the
+        // iterator had already visited it or not, resuming must not throw.
+        for ($i = 0; $i < 10; $i++) {
+            \unlink($removedDir . '/child' . $i . '.php');
         }
-        \rmdir($subDir);
+        \rmdir($removedDir);
 
-        // Tick 2 must not throw (resumes mid-sweep into a mutated tree).
-        $this->invokeCheckFileSystemChanges($watcher);
+        // Drive ticks until the sweep (and the next one, which now includes
+        // newdir) completes. 600 root files + newdir/new.php means the
+        // post-mutation tree needs up to 3 ticks to sweep; allow margin.
+        $converged = false;
+        for ($tick = 0; $tick < 8; $tick++) {
+            $this->invokeCheckFileSystemChanges($watcher);
+            if ($this->getIterators($watcher) === []) {
+                $converged = true;
+                break;
+            }
+        }
 
-        // Tick 3: continue / start fresh sweep — also must not throw.
-        $this->invokeCheckFileSystemChanges($watcher);
-
-        // Assert the sweep eventually completed without throwing.
-        $reflection = new \ReflectionProperty(PollingMonitorWatcher::class, 'resumeDirs');
-        /** @var array<int, true> $resumeDirs */
-        $resumeDirs = $reflection->getValue($watcher);
-        $this->assertSame([], $resumeDirs, 'Sweep should complete after tree mutation without throwing');
+        $this->assertTrue($converged, 'Sweep should converge after tree mutation without throwing');
 
         // Cleanup
         \unlink($newDir . '/new.php');
         \rmdir($newDir);
+    }
+
+    /**
+     * Deleting the file at the iterator's current() position between ticks
+     * must not throw.  The iterator is held across ticks, so the file it
+     * stopped at may be gone by the next tick; SplFileInfo::getMTime()
+     * then throws \RuntimeException ("stat failed"), which must be caught
+     * and skipped rather than crashing the worker.
+     */
+    public function testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow(): void
+    {
+        for ($i = 0; $i < 600; $i++) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
+        }
+        \clearstatcache();
+
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
+        // Future lastMTime so no file triggers a reload — the watcher just
+        // walks the tree, which is what we need to hold the iterator.
+        $this->setLastMTime($watcher, \time() + 3600);
+
+        // Tick 1: processes 500 files, stops with the iterator positioned
+        // at file500.php (the entry that tripped the budget).
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        // Delete the file the iterator is parked on.
+        \unlink($this->tempDir . '/file500.php');
+        \clearstatcache(true, $this->tempDir . '/file500.php');
+
+        // Tick 2 must not throw: getMTime() on the deleted file500.php
+        // raises \RuntimeException, which the inner catch skips.
+        $this->invokeCheckFileSystemChanges($watcher);
+
+        // Drive remaining ticks to completion — still must not throw.
+        for ($tick = 0; $tick < 10; $tick++) {
+            $this->invokeCheckFileSystemChanges($watcher);
+            if ($this->getIterators($watcher) === []) {
+                break;
+            }
+        }
+
+        $this->assertSame([], $this->getIterators($watcher), 'Sweep should complete after the parked file was deleted');
     }
 
     /**

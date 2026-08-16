@@ -1,0 +1,118 @@
+# Findings — review (round 1)
+
+<!-- Append-only: one entry per finding. The coder/main session resolves in step 5. -->
+
+## F1 — RuntimeException from getMTime() on deleted files is not caught
+
+- **File:** `src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php:68`
+- **What is wrong:** The `try/catch` block (line 84) only catches
+  `\UnexpectedValueException`, but `SplFileInfo::getMTime()` on a file
+  deleted between ticks throws `\RuntimeException` ("stat failed"). The
+  new code holds the iterator across ticks (3 s polling interval),
+  creating a window where the file at `current()` can be deleted. When
+  this happens, the exception propagates uncaught and crashes the worker.
+  Verified with a PHP script: `getMTime()` on a deleted file at the
+  iterator's current position throws `RuntimeException`, not
+  `UnexpectedValueException`.
+- **Severity:** medium
+- **Status:** fixed (round 2). The `getMTime()` call is now wrapped in its
+  own `try/catch (\RuntimeException)` that skips the deleted file
+  (`$iterator->next(); continue;`) instead of crashing. The outer
+  `catch (\UnexpectedValueException)` still handles directory removal
+  mid-descent. New test
+  `testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow` deletes
+  the file the iterator is parked on between ticks and asserts the
+  sweep completes without throwing.
+- **Fix direction:** Widen the catch to `catch (\UnexpectedValueException |
+  \RuntimeException)`, or wrap the `getMTime()` call in its own
+  try/catch that discards the iterator on stat failure.
+- **Automated check:** A test that deletes the file at the iterator's
+  current position between ticks and asserts `checkFileSystemChanges`
+  does not throw.
+
+## F2 — try/catch(UnexpectedValueException) does not fire on macOS for removed directories
+
+- **File:** `src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php:84`
+- **What is wrong:** On macOS, `RecursiveDirectoryIterator::hasChildren()`
+  stats the directory path and returns `false` for removed directories,
+  so `getChildren()` (which throws `UnexpectedValueException`) is never
+  called. The removed directory is yielded as a leaf instead. If the
+  file pattern matches the directory name, `getMTime()` throws
+  `RuntimeException` (see F1). On Linux (ext4), `d_type` is cached from
+  `readdir`, so `hasChildren()` returns `true` and `getChildren()` throws
+  `UnexpectedValueException` (caught). The safety net is
+  platform-dependent. Code-decision-1.md acknowledges this.
+- **Severity:** low
+- **Status:** fixed (round 2) — same change as F1. With
+  `\RuntimeException` now caught around `getMTime()`, a removed
+  directory that is yielded as a leaf on macOS (because
+  `hasChildren()` returns false on the missing path) and then
+  `stat`-ed via `getMTime()` is skipped instead of crashing. The
+  platform-dependence of the outer `\UnexpectedValueException` catch
+  is no longer load-bearing for correctness.
+- **Fix direction:** Same as F1 — catch `\RuntimeException` too.
+- **Automated check:** Platform-specific test that removes an unvisited
+  directory between ticks.
+
+## F3 — resumeDirs is redundant dead state
+
+- **File:** `src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php:33-34`
+- **What is wrong:** `$resumeDirs` is set at the budget boundary and
+  unset in three places, but is never read in the control flow. The
+  actual resume decision is based solely on `$this->iterators[$dirIdx]`
+  existence. `$resumeDirs` is only used by tests via reflection.
+- **Severity:** low
+- **Status:** fixed (round 2). `$resumeDirs` removed entirely;
+  tests now inspect `$iterators` via a `getIterators()` helper.
+  The iterator array IS the resume state — no redundant mirror.
+- **Fix direction:** Remove `$resumeDirs`; have tests check `$iterators`
+  or add a public test affordance method.
+- **Automated check:** PHPStan dead-code / unread-property rule.
+
+## F4 — Tree mutation test doesn't exercise the dangerous case
+
+- **File:** `tests/PollingMonitorWatcherTest.php` (`testTreeMutationBetweenTicksDoesNotThrow`)
+- **What is wrong:** The test creates `subdir/` (300 files) before
+  `top*.php` (300 files). On macOS (alphabetical), `subdir` is visited
+  first. After tick 1 (500 entries), `subdir` is fully visited and the
+  iterator is at a top-level file. Removing `subdir` between ticks
+  exercises no exception path. The test does not cover: (a) removal of
+  an unvisited directory, (b) deletion of the file at the iterator's
+  current position.
+- **Severity:** low
+- **Status:** fixed (round 2). The test no longer claims to
+  exercise the unvisited-directory branch (APFS readdir order is
+  hash-based, so which entries are visited in tick 1 is not
+  controllable). It now drives ticks until the sweep converges and
+  asserts no throw + convergence. The deleted-file-at-current-position
+  path (the deterministic RuntimeException case) is covered by the
+  new `testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow`.
+  The Linux-only unvisited-directory `UnexpectedValueException` path
+  remains platform-specific and is not asserted on macOS; it is
+  covered by code inspection and the outer catch.
+- **Fix direction:** Restructure so the removed directory hasn't been
+  visited yet (e.g. `zzz_subdir`). Add a test that deletes the file at
+  the iterator's current position between ticks.
+- **Automated check:** The restructured test itself.
+
+## F5 — Multi-source-dir re-scan: completed dirs re-scanned from scratch
+
+- **File:** `src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php:48-51`
+- **What is wrong:** When a multi-dir sweep spans multiple ticks, dirs
+  that complete early get fresh iterators on subsequent ticks (foreach
+  restarts from dir 0). This adds overhead proportional to completed
+  dirs × remaining ticks. The O(N) claim holds for single-dir; multi-dir
+  has extra re-scan cost. Not a correctness issue — same behavior as old
+  code. The O(N) test only covers single-dir.
+- **Severity:** nit
+- **Status:** deliberately not fixed (round 2). Out of scope for
+  #559: the issue targets the O(N²/budget) root re-traversal, now
+  fixed for the common single-dir case. Re-scanning completed dirs
+  on subsequent ticks is a smaller, separate inefficiency with the
+  same behavior as the old code and no correctness impact. The
+  default config has two small source dirs (src + config), so the
+  overhead is negligible in practice. Candidate follow-up issue
+  to be filed in step 14.
+- **Fix direction:** Track completed dirs and skip them in the foreach
+  until the sweep resets. Design improvement, not a bug fix.
+- **Automated check:** A multi-dir O(N) test.

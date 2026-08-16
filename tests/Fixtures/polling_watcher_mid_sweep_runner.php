@@ -78,10 +78,10 @@ $checkMethod->invoke($watcher);
 $checkMethod->invoke($watcher);
 
 // Verify the sweep completed (no resume state).
-$resumeDirsProp = $watcherClass->getProperty('resumeDirs');
-$resumeDirs = $resumeDirsProp->getValue($watcher);
-if (!empty($resumeDirs)) {
-    fprintf(STDERR, "FAIL: Sweep did not complete after 2 ticks (resumeDirs not empty)\n");
+$iteratorsProp = $watcherClass->getProperty('iterators');
+$iterators = $iteratorsProp->getValue($watcher);
+if (!empty($iterators)) {
+    fprintf(STDERR, "FAIL: Sweep did not complete after 2 ticks (iterators not empty)\n");
     exit(3);
 }
 
