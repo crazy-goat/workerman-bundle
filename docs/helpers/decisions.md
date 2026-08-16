@@ -18,12 +18,12 @@ whole file.
 - `docs` — DEC-012
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
-- `long-running` — DEC-003
+- `long-running` — DEC-003, DEC-014
 - `markdown` — DEC-012
-- `memory` — DEC-004, DEC-005
+- `memory` — DEC-004, DEC-005, DEC-014
 - `performance` — DEC-013
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009
 - `pr` — DEC-011
@@ -31,6 +31,7 @@ whole file.
 - `response-strategy` — DEC-001, DEC-002
 - `security` — DEC-005, DEC-006, DEC-010, DEC-013
 - `static-files` — DEC-004
+- `tests` — DEC-014
 - `timers` — DEC-003
 <!-- kb-index:end -->
 
@@ -211,3 +212,18 @@ count compensation; see FAQ-025) and both were closed by forcing the slow
 path on those shapes. Any future optimization gate on a parser that enforces
 a security property follows the same rule: fail open on unverified input, and
 prove the proof for every input shape before trusting the fast path.
+
+### Bounded static caches in long-lived workers: cap + plausibility skip + test affordance
+<!-- kb: id=DEC-014 date=2026-08-16 tags=memory,long-running,http,tests trigger="adding or reviewing a process-lifetime static/FIFO cache keyed by data the bundle does not control" hits=0 status=active -->
+
+Issue #574 established the house pattern for static caches shared across a
+worker process: an explicit `*_MAX_SIZE` constant enforced on **every insert**
+via `unset($cache[array_key_first($cache)])` (not `array_shift()` — ~5x
+slower, see #558), a plausibility skip so implausibly long keys never enter
+the cache (mirroring Workerman's `MAX_CACHE_STRING_LENGTH`), and public test
+affordances (`::cache()` / `::resetCache()`) so the bound is assertable
+without reflection on a method-local static. Caveat discovered en route: a
+`final readonly class` cannot own the mutable static (PHP rejects static
+properties in readonly classes) — extract an `@internal` utility class
+(`HeaderNameNormalizer`) rather than dropping `readonly`. Complements DEC-004
+and DEC-005.
