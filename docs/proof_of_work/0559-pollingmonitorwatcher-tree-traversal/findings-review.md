@@ -164,3 +164,17 @@
   gone.
 - **Fix direction:** Remove "and resume state" from the docblock.
 - **Automated check:** None (docblock accuracy is not linted).
+
+## Round 3 — no new findings, converged
+
+All findings F1–F7 verified on current branch (HEAD = `3807772`):
+
+- F1: fixed — inner `catch(\RuntimeException)` at `PollingMonitorWatcher.php:70` confirmed load-bearing via mutation test (replacing with `\LogicException` makes `testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow` fail with `RuntimeException: stat failed for .../file351.php`).
+- F2: fixed — same inner catch covers macOS leaf-directory case.
+- F3: fixed — no `$resumeDirs` property exists; `iterators` array is sole resume state.
+- F4: fixed — tree-mutation test drives to convergence; deleted-file path covered by dedicated test.
+- F5: deliberately out of scope (documented).
+- F6: fixed — test reads `$iterators[0]->current()` via reflection, deletes the actual parked file (not a hardcoded name), asserts `.php` suffix so `getMTime()` is exercised. Mutation test confirms real regression guard.
+- F7: fixed — docblock no longer references "resume state".
+
+No new issues introduced by the round-2 fix. `composer lint` passes. All 15 targeted tests pass. Working tree clean after mutation test restoration.
