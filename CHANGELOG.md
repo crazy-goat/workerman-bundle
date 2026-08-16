@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- `RequestConverter::buildServerHeaders()` now checks each header value for
+  control characters with a single `strcspn()` against an explicit 32-byte
+  mask instead of a per-header `preg_match`. Behaviour is byte-identical for
+  all 256 byte values — rejected: `{0–8, 10–31, 127}`; accepted: TAB and
+  everything else, including `0x80–0xFF` (RFC 7230 obs-text) — and the
+  `MalformedRequestException` message escaping is unchanged. The character-
+  class check measures 10–28% faster than the JIT-compiled regex on
+  non-trivial values in `RequestConverterBench` (e.g. ~760-byte accepted
+  value: 0.58µs → 0.46µs; ~940-byte UTF-8 accepted: 0.24µs → 0.21µs); whole-
+  request numbers are within run-to-run noise. A regex-vs-`strpbrk`-
+  vs-`strcspn` micro-benchmark now ships in `RequestConverterBench`;
+  `strpbrk` was rejected because it materialises the remainder substring
+  ([#630](https://github.com/crazy-goat/workerman-bundle/issues/630))
+
 - `PollingMonitorWatcher` now walks the source tree in O(N) total
   advances per sweep instead of O(N²/MAX_FILES_PER_TICK). The watcher
   previously rebuilt a fresh `RecursiveIteratorIterator` at the directory

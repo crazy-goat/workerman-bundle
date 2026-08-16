@@ -318,10 +318,9 @@ final class RequestConverterTest extends TestCase
 
     public function testHeaderControlCharacterBoundaryIsRejectedExceptTab(): void
     {
-        for ($byte = 0; $byte <= 0x1F; ++$byte) {
+        for ($byte = 0; $byte <= 255; ++$byte) {
             $this->assertHeaderByteValidation($byte);
         }
-        $this->assertHeaderByteValidation(0x7F);
     }
 
     private function assertHeaderByteValidation(int $byte): void
@@ -334,7 +333,10 @@ final class RequestConverterTest extends TestCase
         $buffer = "GET /control-byte HTTP/1.1\r\nHost: x\r\nX-A: {$value}\r\n\r\n";
         $rawRequest = new Request($buffer);
 
-        if ($byte === 0x09) {
+        // Accepted: TAB plus all bytes outside {0-8, 10-31, 127}.
+        $isAccepted = $byte === 0x09 || ($byte >= 0x20 && $byte <= 0x7E) || $byte >= 0x80;
+
+        if ($isAccepted) {
             $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
             $this->assertSame($value, $symfonyRequest->server->get('HTTP_X_A'));
 

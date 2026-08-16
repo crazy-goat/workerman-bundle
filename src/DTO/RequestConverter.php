@@ -22,6 +22,14 @@ final class RequestConverter
     private const MAX_METHOD_LENGTH = 32;
 
     /**
+     * Every byte rejected in header values: {0-8, 10-31, 127}. TAB (0x09) and
+     * all other bytes are accepted. Listed byte-by-byte because strcspn()
+     * takes a literal mask, not a range.
+     */
+    private const HEADER_VALUE_CONTROL_CHARS = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0A\x0B\x0C\x0D\x0E\x0F"
+        . "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
+
+    /**
      * Number of distinct underscore header names logged per worker before
      * further names are suppressed. The names come straight off the wire, so
      * this constant — not client input — bounds both the static map's memory
@@ -201,7 +209,7 @@ final class RequestConverter
 
             // Validate header value for control characters
             $stringValue = (string) $value;
-            if (\preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $stringValue)) {
+            if (\strcspn($stringValue, self::HEADER_VALUE_CONTROL_CHARS) < \strlen($stringValue)) {
                 throw new MalformedRequestException(
                     \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
                 );
