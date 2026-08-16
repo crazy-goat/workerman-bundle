@@ -1,18 +1,16 @@
 # FAQ — Recurring Pitfalls and Solutions
 
 **How to read this file:** load the tag index below, pick the tags that match
-the files in your diff, then read only those `###` entries. Do not read the
-whole file.
+your diff, read only those `###` entries — never the whole file.
 
-**Who writes here:** only the retro step. Implementation and review subagents
-*propose* candidate entries in their report — they never append (see
-[README.md](README.md)).
+**Who writes here:** only the retro step; subagents propose, never append
+(see [README.md](README.md)).
 
 ## Tag index
 
 <!-- kb-index:start -->
 - `bc` — FAQ-002
-- `benchmarks` — FAQ-026, FAQ-028
+- `benchmarks` — FAQ-028
 - `binary-file` — FAQ-002
 - `checksum` — FAQ-003
 - `ci` — FAQ-011
@@ -59,7 +57,7 @@ whole file.
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-026, FAQ-028
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -71,12 +69,12 @@ whole file.
 ### HEAD + app-set Content-Length: re-adding the header duplicates it; rewrite the serialized tail instead
 <!-- kb: id=FAQ-001 date=2026-08-10 tags=http,head,content-length,response-strategy trigger="changing HEAD handling or Content-Length in src/Http" hits=0 status=active -->
 
-Workerman's `Response::__toString()` **unconditionally appends** its computed `Content-Length: <strlen(body)>` (only `Transfer-Encoding` input suppresses it), so for a HEAD response (empty body) merely un-stripping the application's Content-Length in `ResponseConverter` emits *two* conflicting `Content-Length` headers — the exact #579 desync hazard. The fix (#643) keeps the strip for non-HEAD, preserves the app value for HEAD, and `DefaultResponseStrategy` hands it to `HeadResponse` (a `WorkermanResponse` subclass) which rewrites the trailing computed value at serialization time. Also: `BinaryFileResponseStrategy` must re-strip the preserved header or `Http::encode()`'s `array_merge_recursive` duplicates it again; Symfony's `prepare()` already removes Content-Length for 1xx/204/304 before the converter sees the response, so no extra guards were needed there.
+Workerman's `Response::__toString()` **unconditionally appends** its computed `Content-Length` (only `Transfer-Encoding` suppresses it), so for HEAD (empty body) merely un-stripping the application's Content-Length in `ResponseConverter` emits *two* conflicting headers — the #579 desync hazard. The fix (#643) strips for non-HEAD, preserves the app value for HEAD, and `HeadResponse` rewrites the trailing computed value at serialization time. Also: `BinaryFileResponseStrategy` must re-strip the preserved header or `Http::encode()`'s `array_merge_recursive` duplicates it; `prepare()` already removes Content-Length for 1xx/204/304, so no extra guards were needed there.
 
 ### BinaryFileResponse HEAD: setContent(null) is a no-op, so withFile() streams the body — thread the method into the strategy
 <!-- kb: id=FAQ-002 date=2026-08-10 tags=http,head,binary-file,streamed-response,response-strategy,bc trigger="touching a response strategy, BinaryFileResponse or StreamedResponse" hits=0 status=active -->
 
-`BinaryFileResponse::setContent(null)` (called by Symfony's `prepare()` for HEAD) returns `$this` without detaching the file, unlike `StreamedResponse` which sets a `streamed` flag. So the #643 Content-Length fix did not help the file path: `BinaryFileResponseStrategy::convert()` still called `withFile()`, and Workerman's `Http::encode()` — which receives only a `Response`, not the `Request` — read and sent the whole file (`$length = 0` means "whole file" in `withFile()`/`encode()`, not "zero bytes"). The strategy interface `convert()` did not receive the request method at all. The fix (#683) adds an opt-in `RequestMethodAwareResponseConverterStrategyInterface` (extends the base interface, redeclares `convert()` with a `$requestMethod` arg); `ResponseConverter` dispatches on `instanceof` so the base `ResponseConverterStrategyInterface` — and any external/custom strategy — stays backward-compatible (adding a param to the base interface is a hard BC break: PHP rejects implementors that omit it even when it has a default). For HEAD the file strategy emits a bodyless `HeadResponse` (Content-Length = the size `prepare()` set; `Range` is `GET`-only) and never calls `withFile()`; a `deleteFileAfterSend` file is unlinked synchronously because the `onBufferDrain` cleanup the GET path relies on does not fire for a bodyless response. `StreamedResponseStrategy` sends only the head for HEAD (no chunked terminator `0\r\n\r\n`, which is a 5-byte message body) and never runs the stream callback.
+`BinaryFileResponse::setContent(null)` (Symfony's `prepare()` for HEAD) is a no-op — it does not detach the file, unlike `StreamedResponse`. So the #643 fix did not help the file path: the strategy still called `withFile()`, and `Http::encode()` (which receives only the `Response`, not the `Request`) read and sent the whole file (`$length = 0` = "whole file", not "zero bytes"). The fix (#683) adds an opt-in `RequestMethodAwareResponseConverterStrategyInterface` (redeclares `convert()` with `$requestMethod`); `ResponseConverter` dispatches on `instanceof` so external strategies stay BC-safe (a param on the base interface is a hard BC break even with a default). For HEAD the file strategy emits a bodyless `HeadResponse` (Content-Length = the size `prepare()` set; `Range` is `GET`-only) and never calls `withFile()`; a `deleteFileAfterSend` file is unlinked synchronously (`onBufferDrain` does not fire for a bodyless response). `StreamedResponseStrategy` sends only the head for HEAD (no chunked terminator) and never runs the stream callback.
 
 ## SFX downloads
 
@@ -155,11 +153,10 @@ affected macOS/Homebrew setups. On such hosts (tracked in
   says to set it; with it set (or `true`) it announces SIGKILL
   termination. They are mutually exclusive, not both emitted.
 
-CI (Linux, no grpc) does not exercise any of this. `pcntl_waitpid` only
-answers for **direct children**; on non-Linux the kernel state for a
-non-child PID comes from `ps`, and any inspection-tool failure (exec
-disabled, `ps` 126/127, abnormal exit on a signalable PID) fails closed
-— the process is treated as alive and a warning is logged.
+CI (Linux, no grpc) does not exercise any of this. `pcntl_waitpid` answers
+only for **direct children**; on non-Linux the state comes from `ps`, and
+any inspection failure (exec disabled, `ps` 126/127) fails closed —
+treated as alive, a warning is logged.
 
 ### Don't write start-up warnings to stderr before daemonize()
 <!-- kb: id=FAQ-008 date=2026-08-09 tags=tests,daemon,logging trigger="adding start-up output in Runner or anything before daemonize()" hits=0 status=active -->
@@ -177,23 +174,9 @@ inside `runAll()` (feof() on null).
 Promoted — ports 8888/9999 and `php tests/App/index.php stop` are documented in `docs/workflow.md` step 7 and `docs/troubleshooting.md`.
 
 ### How the test suite works
-<!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=active -->
+<!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=promoted gate="composer.json test scripts + docs/workflow.md step 7" -->
 
-```bash
-composer test            # unit + E2E (no coverage)
-composer test:coverage   # unit + E2E with coverage → var/coverage.xml
-composer coverage:check  # enforces the 80% floor (see decisions.md)
-```
-
-The `test` script restarts the daemon with `-d` (daemon mode), sleeps 1s,
-runs PHPUnit, then stops the daemon. Phpunit itself is run with
-`php -d phar.readonly=0`. If tests were interrupted, stop the daemon
-manually as above.
-
-Composer runs `test` scripts with a 300 s process timeout; on slow hosts
-(notably grpc/macOS, see the grpc section above) PHPUnit can be killed
-mid-run. Raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test` or
-set `config.process-timeout` in `composer.json`.
+Promoted — the three scripts live in `composer.json`; ports 8888/9999 and the daemon stop command in `docs/workflow.md` step 7 / `docs/troubleshooting.md`. Gotcha that survives here: on slow hosts (grpc/macOS) Composer's 300 s process timeout can kill `phpunit` mid-run — raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test`.
 
 ### CI enforces an 80% line-coverage floor
 <!-- kb: id=FAQ-011 date=2026-08-08 tags=tests,coverage,ci trigger="adding logic that needs coverage" hits=0 status=promoted gate="composer.json coverage:check + tests/CoverageCiGateTest.php" -->
@@ -245,17 +228,17 @@ Promoted — installed by `php bin/install-git-hook.php` and asserted by `tests/
 
 Master identification fails closed since 0.25.0 (issue #584): without the
 `.fingerprint` sidecar next to the pid file, control commands refuse to
-signal. This bites in three situations: (1) the server was started by an
-older version and the code was upgraded without stopping it first — stop
-*before* upgrading; (2) macOS/BSD, where the cmdline fallback does not
-exist — the fingerprint (written on every 0.25.0+ start) is the only
-identity check, so a single restart restores the control plane; (3) the
-instant after `start -d` returns, before the master writes pid file and
-fingerprint — wait for both files to appear, then retry. Recovery when
-the old master cannot be verified: read the PID from the pid file, verify
-with `ps -p <pid> -o pid,comm,args`, kill it by hand (never a bare
-`pkill -f WorkerMan`), remove any stale pid file, and start once. Full
-guidance: UPGRADE.md "Upgrading to 0.25" (issue #640).
+Master identification fails closed since 0.25.0 (issue #584): without the
+`.fingerprint` sidecar next to the pid file, control commands refuse to
+signal. Bites in three situations: (1) upgrade without stopping the old
+server first — stop *before* upgrading; (2) macOS/BSD, where the cmdline
+fallback does not exist — the fingerprint is the only identity check, so
+a single restart restores the control plane; (3) the instant after
+`start -d` returns, before pid file + fingerprint are written — wait for
+both, then retry. Recovery when the old master cannot be verified: PID
+from the pid file, verify with `ps -p <pid> -o pid,comm,args`, kill by
+hand (never a bare `pkill -f WorkerMan`), remove stale pid file, start
+once. Full guidance: UPGRADE.md "Upgrading to 0.25" (issue #640).
 
 ## GitHub CLI
 
@@ -276,11 +259,11 @@ requests. See [docs/troubleshooting.md](../troubleshooting.md) for
 detection and mitigation (`kernel.reset`, `EntityManager::clear()`,
 reload strategies).
 
-The `services_resetter` must run independently of `TerminableInterface` and
-also on kernel/response exceptions. `terminateIfNeeded()` owns the reset and
-must clear request references even when no kernel termination is available;
-controller failure paths reset before rethrowing so the handler can still
-send its error response (issue #572).
+The `services_resetter` must also run on kernel/response exceptions,
+independently of `TerminableInterface`: `terminateIfNeeded()` clears request
+references even when no kernel termination is available, and controller
+failure paths reset before rethrowing so the handler can still send its
+error response (#572).
 
 ## Documentation claims vs. runtime support
 
@@ -332,17 +315,15 @@ stub-configuration time. If the code under test calls `getNextRunDate()` repeate
 ### Mutual by-reference capture (`&$a` / `&$b`) between two closures is a reference cycle
 <!-- kb: id=FAQ-023 date=2026-08-10 tags=closures,gc,memory trigger="closures that reference each other in a long-lived worker" hits=0 status=active -->
 
-Two closures that capture each other **by reference** can never be freed by
-refcounting — only the cycle collector reclaims them. In a long-lived
-Workerman worker that means ~2.4 KB of uncollectable garbage per download and
-a forced full collection every ~3 300 events (or an unbounded leak under
-`gc_disable()`). Solution: both closures capture one small shared state
-object **by value** — capturing the same object handle is not a cycle — and
-self-removal uses a flag on the state instead of identity comparison against
-the closure itself. Corollary: never store a closure *inside* an object that
-closure captures; that is a cycle again (store data, not handlers).
-Reference: `BinaryFileResponseStrategy::scheduleFileCleanup()` +
-`FileCleanupState` (issue #573).
+Two closures that capture each other **by reference** cannot be freed by
+refcounting — only the cycle collector reclaims them (in a long-lived
+worker: ~2.4 KB uncollectable per download, a full collection every
+~3 300 events, unbounded under `gc_disable()`). Solution: both closures
+capture one small shared state object **by value** (same handle is not
+a cycle) and self-removal uses a flag on the state, not identity against
+the closure. Corollary: never store a closure *inside* an object that
+closure captures (store data, not handlers). Reference:
+`scheduleFileCleanup()` + `FileCleanupState` (issue #573).
 
 ## Symfony config tree
 
@@ -365,16 +346,13 @@ Symfony's `ArrayNode::finalizeValue()` (vendor/symfony/config/Definition/ArrayNo
 
 The vendored Workerman (`vendor/workerman/workerman/src/Protocols/Http/Request.php`) header semantics differ from the naive assumption in three ways that all bit the `rawHeadMayHaveDuplicates()` gate in `RequestConverter` (issue #557):
 
-1. **`rawHead()` excludes the trailing CRLF.** It is `strstr($buffer, "\r\n\r\n", true)`, so `substr_count($rawHead, "\r\n")` is exactly the header-line count after the request line. The `substr_count(...)- 1` formula from the issue body assumes the terminator is kept and would disable the optimization entirely (always-true → always slow path). Verify the offset against the vendored `rawHead()` before gating.
-2. **`parseHeaders()` does not trim header names.** It does `strtolower($parts[0])` verbatim, so an obs-fold-style line (`" X-Fold: v"`) becomes a key with a leading space (`" x-fold"`), distinct from `"x-fold"`. The raw parser trims, so two such lines are a duplicate for the raw parser but two distinct keys for Workerman — counts match while a duplicate exists. The gate forces a re-parse whenever `name !== trim(name)`.
-3. **`header()` joins duplicate values with a bare `,` (no space), not last-wins.** Only `count()` is used by the gate so this does not affect correctness, but any test asserting on the joined value must expect `,` not the RFC 7230 `, ` (the bundle's own join, applied on the slow path, is `, `). A fourth gotcha: middleware runs before `SymfonyController` converts, so `header()` may contain names absent from the raw head — an attacker could send exactly as many extra duplicate lines as middleware adds new names, making counts coincide and hiding a duplicate `Cookie` (the #217 class). The gate subtracts `Http\Request::addedHeaderCount()`. Any future count-based gate on headers must verify all four points against the vendored parser, not the issue brief.
+1. **`rawHead()` excludes the trailing CRLF** — `strstr($buffer, "\r\n\r\n", true)`, so `substr_count($rawHead, "\r\n")` is exactly the header-line count; a `- 1` correction disables the optimization (always-true → always slow path). Verify the offset against the vendored `rawHead()` before gating.
+2. **`parseHeaders()` does not trim header names** — `strtolower($parts[0])` verbatim, so `" X-Fold: v"` becomes a distinct `" x-fold"` key: a duplicate for the raw parser, two keys for Workerman. Re-parse whenever `name !== trim(name)`.
+3. **`header()` joins duplicates with a bare `,`** (RFC 7230 uses `, `) — only `count()` matters for the gate, but assertions on the joined value must expect `,`.
 
-### phpbench report name in this repo is `aggregate`, not `average`
-<!-- kb: id=FAQ-026 date=2026-08-15 tags=tests,benchmarks trigger="running RequestConverterBench or any phpbench benchmark in this repo" hits=0 status=active -->
+A fourth gotcha: middleware runs before conversion, so `header()` contains names absent from the raw head — an attacker could hide a duplicate `Cookie` behind equal counts. The gate subtracts `Http\Request::addedHeaderCount()`. Any future count-based gate must verify all four points against the vendored parser, not the issue brief.
 
-`phpbench.json` defines only the `aggregate` report. `vendor/bin/phpbench run ... --report=average` errors out with "Not found in known reports: average" and lists the known names. Use `--report=aggregate` (or omit `--report` and let `phpbench.json` pick the default). Discovered during #557; the task brief said `--report=average`, which does not exist in this repo's phpbench config.
+### phpbench 1.x: only the `aggregate` report exists — and `@ParamProviders` sets arrive as one `array` argument
+<!-- kb: id=FAQ-028 date=2026-08-16 tags=benchmarks,tests,phpbench trigger="running a phpbench benchmark in this repo, or adding a parameterized benchmark method (@ParamProviders)" hits=0 status=active -->
 
-### phpbench 1.x `@ParamProviders`: params arrive as one `array` argument, and the `aggregate` report drops the parameter-set name
-<!-- kb: id=FAQ-028 date=2026-08-16 tags=benchmarks,tests,phpbench trigger="adding a parameterized benchmark method (@ParamProviders) to a bench in this repo" hits=0 status=active -->
-
-In phpbench 1.x a `@ParamProviders` set is injected as a single `array` argument: the bench method must declare `array $params` and read `$params['key']`. Typed named parameters (e.g. `string $value`) fail with a fatal "must not be accessed before initialization" or a TypeError, and the error messages give no hint about the correct shape. The repo's `aggregate` report renders the `params` column as null, so parameterized rows are distinguishable only by provider order — embed the set name in the subject (e.g. `benchFilterStrcspnLongAccepted`) or map rows by provider order and document it, as #630 did. Discovered in #630 (PR #735); report-identifiability part tracked as #736.
+This repo defines only the `aggregate` report (`--report=average` errors with "Not found in known reports"; omit `--report` and `phpbench.json` picks the default). In phpbench 1.x a `@ParamProviders` set is injected as a single `array` argument: the bench method must declare `array $params` and read `$params['key']`. Typed named parameters (e.g. `string $value`) fail with a fatal "must not be accessed before initialization" or a TypeError, and the error messages give no hint about the correct shape. The repo's `aggregate` report renders the `params` column as null, so parameterized rows are distinguishable only by provider order — embed the set name in the subject (e.g. `benchFilterStrcspnLongAccepted`) or map rows by provider order and document it, as #630 did. Discovered in #630 (PR #735); report-identifiability part tracked as #736.

@@ -402,9 +402,11 @@ The PR is created ready — the review rounds (steps 4-6) already happened on
 the branch itself, and CI runs on the PR from its first push.
 
 > **Note:** If you don't use `gh`, create the PR manually via GitHub UI.
-> `master` carries no GitHub branch protection (solo maintainer, single
-> collaborator) — CI passing plus the maintainer's own decision is what gates
-> the merge. See `docs/process-notices.md` (N-13).
+> `master` is protected by the `restric-main` ruleset: every push must come
+> through a pull request with green required status checks (the `ci`
+> aggregator) — direct pushes are declined. The merge decision itself remains
+> the maintainer's own (the ruleset requires no review approval). See
+> `docs/process-notices.md` (N-13).
 
 ---
 
@@ -481,9 +483,11 @@ gh pr merge --squash --delete-branch
 gh issue close <NUMBER>
 ```
 
-> **Note:** `master` has no branch protection, so `gh pr merge` is blocked only
-> by CI (`ci` must be green) — there is no review to obtain. See
-> `docs/process-notices.md` (N-13) for what that does and does not buy.
+> **Note:** the `restric-main` ruleset requires a pull request with green
+> required status checks for any push to `master`, so `gh pr merge` is blocked
+> by CI (`ci` must be green) and by the PR requirement itself — there is no
+> review to obtain. See `docs/process-notices.md` (N-13) for what that does
+> and does not buy.
 
 ---
 
@@ -768,11 +772,13 @@ main session folds accepted candidates in at step 14 (see "Knowledge Base
 ## Notes
 
 - **gh** must be configured and authenticated (`gh auth status`).
-- `master` carries **no GitHub branch protection** — this is a solo-maintainer
-  project with a single collaborator, and GitHub does not allow approving your
-  own pull request, so there is no reviewer to require one from. What actually
-  gates a merge: CI (the `ci` aggregator job) plus the maintainer's own
-  decision to merge.
+- `master` is protected by the **`restric-main` ruleset** — every push must
+  come through a pull request with green required status checks (the `ci`
+  aggregator); direct pushes are declined. This is a solo-maintainer project
+  with a single collaborator, and GitHub does not allow approving your own
+  pull request, so there is still no *review* to require — the ruleset
+  requires none. What actually gates a merge: CI (the `ci` aggregator job)
+  plus the maintainer's own decision to merge.
 - Pre-push hook automatically runs `composer lint` before each push. To skip:
   `git push --no-verify`
 - Keep feature branches short-lived. If a rebase is needed:
