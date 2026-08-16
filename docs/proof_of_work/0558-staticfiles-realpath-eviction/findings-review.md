@@ -139,3 +139,19 @@ with `324-330` or remove the line number since the method no longer exists.
   files by hand. If they are wrong, that is what review is for." The review
   loop keeps catching the class — three occurrences (FR-002, N2, N3), each
   fixed by hand the round it was reported.
+
+---
+
+## Round 3 → 4 outcomes
+
+- **N3 — fixed.** Current-state docs (`code-decision-1.md`,
+  `code-decision-2.md`, `findings-coder.md`) now cite `cacheStore()` at
+  `StaticFilesMiddleware.php:314-330`; historical review records keep the
+  line numbers that were current at their round (including review-3.md's
+  `:459` regression-test ref, actual `:454` — correct as a record).
+- **N4 — fixed.** `findings-coder.md` now cites `isFilePathBlocked` at
+  `:163-181` and `isComponentBlocked` at `:182-227` (was stale `:135-148`,
+  noted in review-3.md §6 without an ID). Same class as FR-002/N2/N3, same
+  disposition: fixed by hand, no linter per the documented decision
+  (`process-changelog.md` entry #3, `proof_of_work/README.md`).
+- Round 4 reported no open code findings — the review loop converged.

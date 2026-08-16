@@ -61,9 +61,10 @@
   noted only because it makes unit tests share state, which is surprising to
   a reader.
 
-- `src/Middleware/StaticFilesMiddleware.php:135-148` (`isFilePathBlocked` /
-  `isComponentBlocked`) — unchanged, but worth recording: `pathinfo()` +
-  the manual dot-chain walk run on *every* served file per request
+- `src/Middleware/StaticFilesMiddleware.php:163-181`
+  (`isFilePathBlocked`) / `:182-227` (`isComponentBlocked`) — unchanged,
+  but worth recording: `pathinfo()` + the manual dot-chain walk run on
+  *every* served file per request
   (documented hotspot in the bench class docblock). Not touched here; the
   pre-filter idea from #558 would interact with these rules (see
   code-decision-1.md). If it is ever revisited, the allowlist check
