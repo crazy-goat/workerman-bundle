@@ -451,6 +451,64 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
     }
 
+    public function testImplausiblyLongPathSkippedFromCacheButStillServed(): void
+    {
+        // DEC-014 plausibility skip: a request path longer than
+        // CACHE_KEY_MAX_BYTES must never enter the cache (a 1024-entry cache
+        // of multi-KB keys would leak memory in a worker process), while a
+        // servable file under such a path must still be served (fail-open,
+        // DEC-013).
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
+
+        // Relative path > 512 bytes, built from components well under the
+        // 255-byte per-segment filesystem limit.
+        $segments = array_fill(0, 5, str_repeat('q', 110));
+        $deepDir = implode('/', $segments);
+        $servedPath = '/' . $deepDir . '/asset.txt';
+
+        $directory = $this->rootDirectory . '/' . $deepDir;
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory . '/asset.txt', 'long-path payload');
+
+        try {
+            // Positive control: the file must still be served (fail-open).
+            $response = $middleware($this->createRequest($servedPath), $next);
+            $this->assertSame(200, $response->getStatusCode(), 'A file under an implausibly long path must still be served');
+            $this->assertArrayNotHasKey(
+                $indexOf($servedPath),
+                StaticFilesRealPathCache::cache(),
+                'Implausibly long served-path keys must never enter the cache',
+            );
+
+            // Missing file under an implausibly long path: falls through to
+            // next, and no negative entry is cached either.
+            $missingPath = '/' . str_repeat('x', 600);
+            $this->assertSame(404, $middleware($this->createRequest($missingPath), $next)->getStatusCode());
+            $this->assertArrayNotHasKey(
+                $indexOf($missingPath),
+                StaticFilesRealPathCache::cache(),
+                'Implausibly long negative keys must never enter the cache',
+            );
+        } finally {
+            @unlink($directory . '/asset.txt');
+
+            // Remove the nested directories bottom-up.
+            $dir = $directory;
+            while ($segments !== []) {
+                if (is_dir($dir)) {
+                    @rmdir($dir);
+                }
+                array_pop($segments);
+                $dir = $this->rootDirectory . ($segments === [] ? '' : '/' . implode('/', $segments));
+            }
+        }
+    }
+
     public function testSymlinkRejectionHitKeepsFixedTtl(): void
     {
         $linkPath = $this->rootDirectory . '/assets';

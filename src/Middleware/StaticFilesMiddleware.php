@@ -60,6 +60,11 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     private const CACHE_MAX_SIZE = 1024;
     private const CACHE_TTL = 60;
     private const CACHE_NEGATIVE_TTL = 5;
+    // DEC-014 plausibility skip: keys larger than this (request paths are data
+    // the bundle does not control) are probed on every request and never enter
+    // the cache — mirroring Workerman's MAX_CACHE_STRING_LENGTH approach in
+    // HeaderNameNormalizer. Servable files are unaffected (fail-open, DEC-013).
+    private const CACHE_KEY_MAX_BYTES = 512;
 
     private string $rootRealPath;
     /** @var string[] */
@@ -247,6 +252,13 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     {
         $now = time();
 
+        // DEC-014 plausibility skip: an implausibly long key would occupy a
+        // cache slot with a multi-KB string payload. Probe without touching
+        // the cache — the file is still served, it just is not cached.
+        if (strlen($cacheKey) > self::CACHE_KEY_MAX_BYTES) {
+            return $this->probeRealPath($cacheKey);
+        }
+
         $cache = &StaticFilesRealPathCache::all();
 
         $cacheIndex = $cacheKey . "\0" . ($this->followSymlinks ? '1' : '0') . "\0" . $this->rootRealPath;
@@ -261,28 +273,37 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             unset($cache[$cacheIndex]);
         }
 
+        return $this->cacheStore($cache, $cacheIndex, $this->probeRealPath($cacheKey), $now);
+    }
+
+    /**
+     * Resolves the real path of a request path without touching the cache.
+     * Returns the absolute path for an existing file, false otherwise
+     * (missing file, symlink in the component chain when followSymlinks is
+     * off — the middleware never follows symlinks by default).
+     */
+    private function probeRealPath(string $cacheKey): string|false
+    {
         $path = $this->joinPaths($this->rootRealPath, $cacheKey);
 
         if ($this->isPharPath($this->rootRealPath)) {
-            $resolved = file_exists($path) ? $path : false;
-        } else {
-            if (!$this->followSymlinks) {
-                $checkPath = $this->rootRealPath;
-                foreach (explode('/', ltrim($cacheKey, '/')) as $component) {
-                    if ($component === '' || $component === '.') {
-                        continue;
-                    }
-                    $checkPath .= DIRECTORY_SEPARATOR . $component;
-                    if (is_link($checkPath)) {
-                        return $this->cacheStore($cache, $cacheIndex, false, $now);
-                    }
-                }
-            }
-
-            $resolved = realpath($path);
+            return file_exists($path) ? $path : false;
         }
 
-        return $this->cacheStore($cache, $cacheIndex, $resolved, $now);
+        if (!$this->followSymlinks) {
+            $checkPath = $this->rootRealPath;
+            foreach (explode('/', ltrim($cacheKey, '/')) as $component) {
+                if ($component === '' || $component === '.') {
+                    continue;
+                }
+                $checkPath .= DIRECTORY_SEPARATOR . $component;
+                if (is_link($checkPath)) {
+                    return false;
+                }
+            }
+        }
+
+        return realpath($path);
     }
 
     /**

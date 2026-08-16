@@ -25,10 +25,9 @@
   misreads the 100k figure.
 
 - **The cache is a process-wide static shared across all tests AND all
-  middleware instances** (method-local `static $cache` in
-  `getRealPathCache()`, `src/Middleware/StaticFilesMiddleware.php:229-236` —
-  since round 1 extracted into `src/Middleware/StaticFilesRealPathCache.php`,
-  DEC-014 pattern),
+  middleware instances** (method-local `static $cache` in the now-removed
+  `getRealPathCache()`; storage extracted into
+  `src/Middleware/StaticFilesRealPathCache.php` in round 2, DEC-014 pattern),
   and `StaticFilesMiddlewareTest::setUp()` reuses the same root directory
   (`tests/StaticFilesMiddlewareTest.php:22-24`), so every test in the class
   shares one cache-index space. Any test that asserts on "the" cache must

@@ -46,3 +46,65 @@ The new `testEvictionRemovesLeastRecentlyUsedEntry()` fills the process-wide sta
   `getRealPathCache()` reflection sites migrated to the affordance. Behavior
   is unchanged — keys, cap, TTL, eviction identical (full middleware suite
   green; see `code-decision-2.md`).
+
+---
+
+## Round 2 findings
+
+### FR-001 → fixed (round 2 verified)
+
+`git status` clean; `stash@{0}` (WIP on `perf/polling-monitor-sharded-scan`)
+preserved. PHP CS Fixer 0/247, PHPStan level 8 OK, Rector OK, PHPUnit 121/121.
+No conflict markers in the working tree.
+
+### FR-002 → fixed (round 2 verified, with nit residual N2)
+
+`code-decision-1.md:16` and `findings-coder.md:9` now cite
+`StaticFilesMiddleware.php:293-307` for `cacheStore()` — verified correct
+(method at line 293). `findings-coder.md:29` still has `229-236` for the
+removed `getRealPathCache()` (was at `324-330` in `8848d8a`); annotated
+"since round 1 extracted into..." but the line number was not corrected.
+See N2.
+
+### FR-003 → fixed (round 2 verified)
+
+`code-decision-1.md:42` says `tests/data/public`, matching `setUp()`'s
+`__DIR__ . '/data/public'`.
+
+### FR-004 → fixed (round 2 verified)
+
+`CHANGELOG.md:57-68` now says "the eviction itself stays O(1)" and clarifies
+"the remaining growth being the hash-table insert, not the eviction".
+
+### FR-005 → fixed (round 2 verified)
+
+`src/Middleware/StaticFilesRealPathCache.php` extracted per DEC-014.
+`StaticFilesMiddleware::resolveRealPath()` uses
+`&StaticFilesRealPathCache::all()` (line 250). `getRealPathCache()` removed.
+`setUp()` calls `resetCache()` (line 24). Three `ReflectionMethod` sites
+migrated to `::cache()`. `grep -rn getRealPathCache src/ tests/` → no
+matches. Behavior neutral: same keys, cap, TTL, eviction (121/121 tests
+pass). See review-2.md §4.1 for the full proof.
+
+### N1 | src/Middleware/StaticFilesRealPathCache.php / StaticFilesMiddleware.php:293-307 | DEC-014 plausibility skip not implemented | low
+
+DEC-014 lists three pillars: cap + plausibility skip + test affordances.
+This cache has the cap (`CACHE_MAX_SIZE = 1024`) and the test affordances
+(`::cache()` / `::resetCache()`) but lacks the plausibility skip. The cache
+key includes the request path (unbounded client input). The
+`HeaderNameNormalizer` reference implements `HEADER_NAME_MAX_BYTES = 128`
+(mirroring Workerman's `MAX_CACHE_STRING_LENGTH`). The cap bounds the entry
+count, but each key can be multi-KB. Pre-existing (the cache never had a
+plausibility skip), but this PR explicitly invokes DEC-014 as the extraction
+rationale. Not a blocker. Fix direction: add a `CACHE_KEY_MAX_BYTES` constant
+and skip the insert in `cacheStore()` when `strlen($index)` exceeds it.
+Automated check: a KB-lint checklist item tied to DEC-014's trigger would
+catch this.
+
+### N2 | docs/proof_of_work/0558-staticfiles-realpath-eviction/findings-coder.md:29 | Stale line number 229-236 for removed getRealPathCache() | nit
+
+`findings-coder.md:29` still cites `StaticFilesMiddleware.php:229-236` for
+`getRealPathCache()` (was at `324-330` in `8848d8a`, removed in `ae2b4a7`).
+The round-2 fix annotated it ("since round 1 extracted into...") but did not
+correct the line number. Proof-of-work docs only. Fix direction: replace
+with `324-330` or remove the line number since the method no longer exists.
