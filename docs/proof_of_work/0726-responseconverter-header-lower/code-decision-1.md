@@ -65,7 +65,7 @@ isolated.
    public surface and needs a private `lookup()` core to avoid duplicating
    logic, for a single caller. Rejected as needless API growth.
 4. **Inlining `normalizeHeaderName()` into `extractHeaders()`** — dead-end
-   cleanuup, not required by the issue; the seam with the out-param keeps the
+   cleanup, not required by the issue; the seam with the out-param keeps the
    diff minimal.
 
 ## Everything I was unsure about
