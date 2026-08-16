@@ -39,7 +39,7 @@ final class HeaderNameNormalizer
      * deserve a permanent cache slot. Mirrors Workerman's
      * MAX_CACHE_STRING_LENGTH approach.
      */
-    private const HEADER_NAME_MAX_BYTES = 128;
+    public const HEADER_NAME_MAX_BYTES = 128;
 
     private const CORRECTIONS = [
         'etag' => 'ETag',
@@ -65,7 +65,7 @@ final class HeaderNameNormalizer
 
         // Implausibly long header names are normalised every time instead of
         // occupying a permanent cache slot.
-        if (strlen($name) > self::HEADER_NAME_MAX_BYTES) {
+        if (strlen($lower) > self::HEADER_NAME_MAX_BYTES) {
             return $normalized;
         }
 

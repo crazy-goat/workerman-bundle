@@ -25,6 +25,11 @@ final class ResponseConverterTest extends TestCase
         HeaderNameNormalizer::resetCache();
     }
 
+    protected function tearDown(): void
+    {
+        HeaderNameNormalizer::resetCache();
+    }
+
     public function testConvertUsesCorrectStrategy(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -432,7 +437,7 @@ final class ResponseConverterTest extends TestCase
         // but no key longer than the plausibility limit may be present.
         $this->assertArrayNotHasKey($longName, HeaderNameNormalizer::cache());
         foreach (array_keys(HeaderNameNormalizer::cache()) as $key) {
-            $this->assertLessThanOrEqual(128, strlen((string) $key));
+            $this->assertLessThanOrEqual(HeaderNameNormalizer::HEADER_NAME_MAX_BYTES, strlen((string) $key));
         }
     }
 
