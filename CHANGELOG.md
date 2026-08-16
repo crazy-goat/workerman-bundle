@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- `ResponseConverter::extractHeaders()` no longer re-lowercases the
+  proper-cased header name it just asked `HeaderNameNormalizer` for.
+  `HeaderNameNormalizer::normalize()` already computes `strtolower($name)`
+  internally as its cache key; the caller re-applying `strtolower()` to the
+  result for the `TRANSPORT_HEADERS` strip was a redundant ASCII
+  `strtolower` per header per response on the hot path of every response.
+  `normalize()` now exposes that key through a by-ref out-parameter
+  (`?string &$lower = null`) so `extractHeaders()` reuses the exact cache key
+  instead of recomputing it — one `strtolower` total per header, no
+  allocation on the hit path, and the `@internal` surface stays unchanged
+  ([#726](https://github.com/crazy-goat/workerman-bundle/issues/726))
+
 - `RequestConverter::buildServerHeaders()` now checks each header value for
   control characters with a single `strcspn()` against an explicit 32-byte
   mask instead of a per-header `preg_match`. Behaviour is byte-identical for

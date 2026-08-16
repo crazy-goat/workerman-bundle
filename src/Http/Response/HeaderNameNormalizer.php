@@ -51,7 +51,18 @@ final class HeaderNameNormalizer
     /** @var array<string, string> */
     private static array $cache = [];
 
-    public static function normalize(string $name): string
+    /**
+     * Normalizes one header name. The already-computed strtolower() cache key
+     * is exposed through the $lower out-parameter so callers (extractHeaders())
+     * can reuse it instead of lowercasing the result again (issue #726). This
+     * is safe because normalization never lowercases: strtolower(normalize($name))
+     * always equals strtolower($name).
+     *
+     * @param string|null $lower Receives the internal lowercased cache key.
+     *                           Pass a variable; the value is always assigned.
+     * @param-out string $lower  Always assigned before return.
+     */
+    public static function normalize(string $name, ?string &$lower = null): string
     {
         $lower = strtolower($name);
 
