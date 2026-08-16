@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RequestConverterBench` (9.8µs → 8.1µs per op)
   ([#557](https://github.com/crazy-goat/workerman-bundle/issues/557))
 
+- `StaticFilesMiddleware`'s realpath-cache eviction is O(1): the oldest entry
+  is dropped with `unset(array_key_first())` instead of `array_shift()` —
+  measured ~4.7x faster at `CACHE_MAX_SIZE` (0.965 → 0.205 µs/op) and flat
+  where `array_shift()` grows linearly with cache size (49.4 → 2.6 µs/op at
+  100k entries); the unique-URL middleware workload dropped from 3.936 to
+  3.261 µs/op. A regression test pins the LRU semantics: a cache hit moves
+  the entry to the most-recently-used end, so the evicted victim is the
+  least-recently-*used* entry, not merely the least-recently-inserted one
+  ([#558](https://github.com/crazy-goat/workerman-bundle/issues/558))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added

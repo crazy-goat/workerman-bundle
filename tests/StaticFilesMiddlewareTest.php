@@ -410,6 +410,62 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
+    public function testEvictionRemovesLeastRecentlyUsedEntry(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        $cache = function () use ($middleware): array {
+            $method = new \ReflectionMethod($middleware, 'getRealPathCache');
+            $cache = $method->invoke($middleware);
+            assert(is_array($cache));
+
+            return $cache;
+        };
+
+        $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
+        $maxSize = $maxSizeReflection->getValue();
+        assert(is_int($maxSize));
+
+        $indexOf = function (string $path) use ($middleware): string {
+            $rootRealPathReflection = new \ReflectionProperty($middleware, 'rootRealPath');
+            $rootRealPath = $rootRealPathReflection->getValue($middleware);
+            assert(is_string($rootRealPath));
+
+            return $path . "\0" . '0' . "\0" . $rootRealPath;
+        };
+
+        // Fill the cache past the cap with unique missing paths. The cache is a
+        // process-wide static that may already hold entries from earlier tests,
+        // but CACHE_MAX_SIZE is enforced on every insert, so after maxSize + 1
+        // fresh inserts the survivors are exactly the last maxSize entries made
+        // here, in insertion order.
+        $paths = [];
+        for ($i = 0; $i <= $maxSize; $i++) {
+            $paths[$i] = sprintf('/lru-pad-%d.css', $i);
+            $middleware($this->createRequest($paths[$i]), $next);
+        }
+
+        $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
+
+        $oldest = $paths[1];
+        $secondOldest = $paths[2];
+        $this->assertArrayHasKey($indexOf($oldest), $cache());
+        $this->assertArrayHasKey($indexOf($secondOldest), $cache());
+
+        // Hitting the oldest entry must move it to the most-recently-used end.
+        $middleware($this->createRequest($oldest), $next);
+
+        // One more unique path forces an eviction: the victim must be the
+        // least-recently-*used* entry (the previously second-oldest), not the
+        // least-recently-inserted one (which was just touched).
+        $middleware($this->createRequest('/lru-evictor.css'), $next);
+
+        $this->assertArrayHasKey($indexOf($oldest), $cache(), 'The most recently used entry must survive eviction');
+        $this->assertArrayNotHasKey($indexOf($secondOldest), $cache(), 'The least-recently-used entry must be evicted');
+        $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
+    }
+
     public function testSymlinkRejectionHitKeepsFixedTtl(): void
     {
         $linkPath = $this->rootDirectory . '/assets';
