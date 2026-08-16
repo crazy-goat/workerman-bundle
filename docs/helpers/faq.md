@@ -12,6 +12,7 @@ your diff, read only those `###` entries — never the whole file.
 - `bc` — FAQ-002
 - `benchmarks` — FAQ-028
 - `binary-file` — FAQ-002
+- `by-ref` — FAQ-029
 - `checksum` — FAQ-003
 - `ci` — FAQ-011
 - `closures` — FAQ-023
@@ -22,7 +23,7 @@ your diff, read only those `###` entries — never the whole file.
 - `coverage` — FAQ-010, FAQ-011
 - `daemon` — FAQ-007, FAQ-008, FAQ-009
 - `date-time` — FAQ-021, FAQ-022
-- `deprecation` — FAQ-024
+- `deprecation` — FAQ-024, FAQ-029
 - `docker` — FAQ-005
 - `docs` — FAQ-019
 - `download` — FAQ-003
@@ -46,8 +47,9 @@ your diff, read only those `###` entries — never the whole file.
 - `mocks` — FAQ-022
 - `permissions` — FAQ-005
 - `php-strings` — FAQ-027
+- `php84` — FAQ-029
 - `phpbench` — FAQ-028
-- `phpstan` — FAQ-014
+- `phpstan` — FAQ-014, FAQ-029
 - `ports` — FAQ-009
 - `process` — FAQ-007
 - `response-strategy` — FAQ-001, FAQ-002
@@ -356,3 +358,10 @@ A fourth gotcha: middleware runs before conversion, so `header()` contains names
 <!-- kb: id=FAQ-028 date=2026-08-16 tags=benchmarks,tests,phpbench trigger="running a phpbench benchmark in this repo, or adding a parameterized benchmark method (@ParamProviders)" hits=0 status=active -->
 
 This repo defines only the `aggregate` report (`--report=average` errors with "Not found in known reports"; omit `--report` and `phpbench.json` picks the default). In phpbench 1.x a `@ParamProviders` set is injected as a single `array` argument: the bench method must declare `array $params` and read `$params['key']`. Typed named parameters (e.g. `string $value`) fail with a fatal "must not be accessed before initialization" or a TypeError, and the error messages give no hint about the correct shape. The repo's `aggregate` report renders the `params` column as null, so parameterized rows are distinguishable only by provider order — embed the set name in the subject (e.g. `benchFilterStrcspnLongAccepted`) or map rows by provider order and document it, as #630 did. Discovered in #630 (PR #735); report-identifiability part tracked as #736.
+
+## PHP / PHPStan pitfalls
+
+### By-ref out-params: PHPStan wants `@param-out`, and "fixing" `?string &$x` by dropping the `?` is a PHP 8.4 deprecation trap
+<!-- kb: id=FAQ-029 date=2026-08-16 tags=phpstan,php84,deprecation,by-ref trigger="adding a by-ref out-parameter, or hitting PHPStan error parameterByRef.unusedType" hits=0 status=active -->
+
+PHPStan level 8 rejects a by-ref out-param that is always written before return (`?string &$lower = null`) with `parameterByRef.unusedType`: the method never assigns null, so the nullable part of the type looks unused. The canonical fix is `@param-out string $lower`, which narrows the caller-visible post-call type. Do NOT "fix" it by dropping the `?` — `string &$lower = null` is an *implicitly-nullable* type, deprecated at function-declaration time on PHP >= 8.4. Minimum supported versions (`^8.2` here) are irrelevant: CI runs 8.4/8.5 legs and users install the bundle on them, so the deprecation fires there (verified on 8.5.9: `E_DEPRECATED` for `string &$x = null`, silent for `?string &$x = null`). Also: an uninitialized variable passed by-ref is fine — the callee creates it. Discovered in #726, where the trick shared the callee's internal `strtolower()` cache key with the caller; the invariant that makes that safe (`strtolower(normalize($name)) === strtolower($name)`) is gate-covered by `testNormalizedHeaderNameLowercasesBackToInput`, not by this entry.
