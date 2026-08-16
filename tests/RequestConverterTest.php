@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Benchmark\RequestConverterBench;
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface;
 use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
@@ -321,6 +322,14 @@ final class RequestConverterTest extends TestCase
         for ($byte = 0; $byte <= 255; ++$byte) {
             $this->assertHeaderByteValidation($byte);
         }
+    }
+
+    public function testBenchmarkControlCharMaskMatchesProduction(): void
+    {
+        $production = (new \ReflectionClassConstant(RequestConverter::class, 'HEADER_VALUE_CONTROL_CHARS'))->getValue();
+        $benchmark = (new \ReflectionClassConstant(RequestConverterBench::class, 'CONTROL_CHAR_MASK'))->getValue();
+
+        $this->assertSame($production, $benchmark);
     }
 
     private function assertHeaderByteValidation(int $byte): void
