@@ -102,8 +102,8 @@ class PollingMonitorWatcher extends FileMonitorWatcher
     }
 
     /**
-     * Discard all persisted iterators and resume state so the next tick
-     * starts a fresh sweep from the root of every source dir.
+     * Discard all persisted iterators so the next tick starts a fresh
+     * sweep from the root of every source dir.
      */
     private function resetSweep(): void
     {

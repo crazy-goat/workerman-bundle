@@ -565,16 +565,39 @@ final class PollingMonitorWatcherTest extends TestCase
         // walks the tree, which is what we need to hold the iterator.
         $this->setLastMTime($watcher, \time() + 3600);
 
-        // Tick 1: processes 500 files, stops with the iterator positioned
-        // at file500.php (the entry that tripped the budget).
+        // Tick 1: processes 500 entries, stops at the budget boundary with
+        // the iterator positioned on the 501st entry (the one that tripped
+        // the budget). readdir order is filesystem-dependent (hash-based on
+        // APFS / ext4+htree), so do NOT assume which file that is — read it
+        // from the persisted iterator's current(). Hardcoding a filename
+        // would make the test pass vacuously when the parked file is
+        // elsewhere in the readdir order.
         $this->invokeCheckFileSystemChanges($watcher);
 
-        // Delete the file the iterator is parked on.
-        \unlink($this->tempDir . '/file500.php');
-        \clearstatcache(true, $this->tempDir . '/file500.php');
+        $iterators = $this->getIterators($watcher);
+        $this->assertNotEmpty($iterators, 'Tick 1 should leave a persisted iterator at the budget boundary');
+        $iterator = $iterators[0] ?? null;
+        self::assertInstanceOf(\Iterator::class, $iterator, 'Persisted iterator must be an Iterator');
+        $this->assertTrue($iterator->valid(), 'Iterator must be parked on a valid entry at the budget boundary');
 
-        // Tick 2 must not throw: getMTime() on the deleted file500.php
-        // raises \RuntimeException, which the inner catch skips.
+        $parkedFile = $iterator->current();
+        self::assertInstanceOf(\SplFileInfo::class, $parkedFile, 'Parked entry must be an SplFileInfo');
+        $parkedPath = $parkedFile->getPathname();
+        $this->assertFileExists($parkedPath, 'Parked file must exist before deletion');
+        // The parked file must match the watched pattern, otherwise
+        // checkPattern() returns false and getMTime() is never called on
+        // it — deleting it would not exercise the RuntimeException path.
+        $this->assertStringEndsWith('.php', $parkedPath, 'Parked file must match the watched pattern so getMTime() is actually called on it');
+
+        // Delete the file the iterator is parked on.
+        \unlink($parkedPath);
+        \clearstatcache(true, $parkedPath);
+
+        // Tick 2 must not throw: getMTime() on the deleted parked file
+        // raises \RuntimeException, which the inner catch skips. Without
+        // that catch the exception escapes the outer
+        // catch(\UnexpectedValueException) and crashes the worker — so
+        // this test is a real regression guard for the F1 fix.
         $this->invokeCheckFileSystemChanges($watcher);
 
         // Drive remaining ticks to completion — still must not throw.

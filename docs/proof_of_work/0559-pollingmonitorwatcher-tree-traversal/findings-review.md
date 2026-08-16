@@ -116,3 +116,51 @@
 - **Fix direction:** Track completed dirs and skip them in the foreach
   until the sweep resets. Design improvement, not a bug fix.
 - **Automated check:** A multi-dir O(N) test.
+
+## F6 — testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow does not exercise the RuntimeException path on hash-based-readdir filesystems
+
+- **File:** `tests/PollingMonitorWatcherTest.php:567` (test method at line 553)
+- **What is wrong:** The test creates 600 files (`file0.php`–`file599.php`),
+  runs tick 1 (500 entries), then deletes `file500.php` — assuming the
+  iterator is parked on `file500.php` (the 501st entry in alphabetical
+  order). But `RecursiveDirectoryIterator` uses `readdir()`, which on APFS
+  and ext4-with-htree returns entries in **hash-based order**, not
+  alphabetical. On this system, `file500.php` is at readdir index 184 —
+  already visited in tick 1. The iterator is actually parked on
+  `file351.php` (index 500), which still exists. In tick 2,
+  `getMTime()` is never called on the deleted `file500.php`, so the
+  `RuntimeException` path is never triggered. The test passes with or
+  without the inner `catch(\RuntimeException)`, providing false confidence.
+  Verified at runtime: without the inner catch, tick 2 does not throw
+  because the deleted file is never reached.
+- **Severity:** medium
+- **Status:** fixed (round 3). The test now reads the persisted
+  iterator via reflection, calls `current()` to get the actual parked
+  file's path, and deletes that file instead of hardcoding `file500.php`.
+  It also asserts the parked file matches the watched pattern (so
+  `getMTime()` is actually called on it). Verified as a real regression
+  guard: with the inner `catch(\RuntimeException)` removed, the test
+  fails with `RuntimeException: stat failed for .../file351.php`
+  (the actual parked file on this APFS system); with the catch in place
+  it passes.
+- **Fix direction:** Use reflection to read the persisted iterator, call
+  `current()` to get the actual parked file's path, and delete that file
+  instead of hardcoding `file500.php`. This makes the test deterministic
+  regardless of readdir ordering.
+- **Automated check:** A mutation test (remove the inner catch, assert at
+  least one test fails) would catch it. No static analysis can detect this.
+
+## F7 — resetSweep() docblock references removed "resume state"
+
+- **File:** `src/Reboot/FileMonitorWatcher/PollingMonitorWatcher.php:104`
+- **What is wrong:** The docblock says "Discard all persisted iterators
+  **and resume state** so the next tick starts a fresh sweep." The
+  `$resumeDirs` property was removed in the F3 fix, so "resume state" is
+  stale.
+- **Severity:** nit
+- **Status:** fixed (round 3). Docblock now reads "Discard all
+  persisted iterators so the next tick starts a fresh sweep from the
+  root of every source dir." — the stale "and resume state" phrase is
+  gone.
+- **Fix direction:** Remove "and resume state" from the docblock.
+- **Automated check:** None (docblock accuracy is not linted).
