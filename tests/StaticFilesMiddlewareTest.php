@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesRealPathCache;
 use PHPUnit\Framework\TestCase;
 use Workerman\Protocols\Http\Response;
 
@@ -20,6 +21,7 @@ final class StaticFilesMiddlewareTest extends TestCase
             mkdir($this->rootDirectory, 0777, true);
         }
         file_put_contents($this->rootDirectory . '/test.txt', 'test file content');
+        StaticFilesRealPathCache::resetCache();
     }
 
     protected function tearDown(): void
@@ -363,11 +365,7 @@ final class StaticFilesMiddlewareTest extends TestCase
                 symlink($subDir, $linkPath);
             }
 
-            $cacheCount = function () use ($middleware): int {
-                $method = new \ReflectionMethod($middleware, 'getRealPathCache');
-
-                return count($method->invoke($middleware));
-            };
+            $cacheCount = static fn(): int => count(StaticFilesRealPathCache::cache());
 
             $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
             $maxSize = $maxSizeReflection->getValue();
@@ -410,6 +408,107 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
+    public function testEvictionRemovesLeastRecentlyUsedEntry(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        $cache = static fn(): array => StaticFilesRealPathCache::cache();
+
+        $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
+        $maxSize = $maxSizeReflection->getValue();
+        assert(is_int($maxSize));
+
+        $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
+
+        // Fill the cache past the cap with unique missing paths. setUp()
+        // resets the process-wide cache, and CACHE_MAX_SIZE is enforced on
+        // every insert, so after maxSize + 1 fresh inserts the survivors are
+        // exactly the last maxSize entries made here, in insertion order.
+        $paths = [];
+        for ($i = 0; $i <= $maxSize; $i++) {
+            $paths[$i] = sprintf('/lru-pad-%d.css', $i);
+            $middleware($this->createRequest($paths[$i]), $next);
+        }
+
+        $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
+
+        $oldest = $paths[1];
+        $secondOldest = $paths[2];
+        $this->assertArrayHasKey($indexOf($oldest), $cache());
+        $this->assertArrayHasKey($indexOf($secondOldest), $cache());
+
+        // Hitting the oldest entry must move it to the most-recently-used end.
+        $middleware($this->createRequest($oldest), $next);
+
+        // One more unique path forces an eviction: the victim must be the
+        // least-recently-*used* entry (the previously second-oldest), not the
+        // least-recently-inserted one (which was just touched).
+        $middleware($this->createRequest('/lru-evictor.css'), $next);
+
+        $this->assertArrayHasKey($indexOf($oldest), $cache(), 'The most recently used entry must survive eviction');
+        $this->assertArrayNotHasKey($indexOf($secondOldest), $cache(), 'The least-recently-used entry must be evicted');
+        $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
+    }
+
+    public function testImplausiblyLongPathSkippedFromCacheButStillServed(): void
+    {
+        // DEC-014 plausibility skip: a request path longer than
+        // CACHE_KEY_MAX_BYTES must never enter the cache (a 1024-entry cache
+        // of multi-KB keys would leak memory in a worker process), while a
+        // servable file under such a path must still be served (fail-open,
+        // DEC-013).
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
+
+        // Relative path > 512 bytes, built from components well under the
+        // 255-byte per-segment filesystem limit.
+        $segments = array_fill(0, 5, str_repeat('q', 110));
+        $deepDir = implode('/', $segments);
+        $servedPath = '/' . $deepDir . '/asset.txt';
+
+        $directory = $this->rootDirectory . '/' . $deepDir;
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory . '/asset.txt', 'long-path payload');
+
+        try {
+            // Positive control: the file must still be served (fail-open).
+            $response = $middleware($this->createRequest($servedPath), $next);
+            $this->assertSame(200, $response->getStatusCode(), 'A file under an implausibly long path must still be served');
+            $this->assertArrayNotHasKey(
+                $indexOf($servedPath),
+                StaticFilesRealPathCache::cache(),
+                'Implausibly long served-path keys must never enter the cache',
+            );
+
+            // Missing file under an implausibly long path: falls through to
+            // next, and no negative entry is cached either.
+            $missingPath = '/' . str_repeat('x', 600);
+            $this->assertSame(404, $middleware($this->createRequest($missingPath), $next)->getStatusCode());
+            $this->assertArrayNotHasKey(
+                $indexOf($missingPath),
+                StaticFilesRealPathCache::cache(),
+                'Implausibly long negative keys must never enter the cache',
+            );
+        } finally {
+            @unlink($directory . '/asset.txt');
+
+            // Remove the nested directories bottom-up.
+            $dir = $directory;
+            while ($segments !== []) {
+                if (is_dir($dir)) {
+                    @rmdir($dir);
+                }
+                array_pop($segments);
+                $dir = $this->rootDirectory . ($segments === [] ? '' : '/' . implode('/', $segments));
+            }
+        }
+    }
+
     public function testSymlinkRejectionHitKeepsFixedTtl(): void
     {
         $linkPath = $this->rootDirectory . '/assets';
@@ -441,11 +540,8 @@ final class StaticFilesMiddlewareTest extends TestCase
                 return $path . "\0" . '0' . "\0" . $rootRealPath;
             };
 
-            $storedTime = function () use ($middleware, $cacheIndex): ?int {
-                $cacheMethod = new \ReflectionMethod($middleware, 'getRealPathCache');
-                $cache = $cacheMethod->invoke($middleware);
-                assert(is_array($cache));
-                $entry = $cache[$cacheIndex()] ?? null;
+            $storedTime = function () use ($cacheIndex): ?int {
+                $entry = StaticFilesRealPathCache::cache()[$cacheIndex()] ?? null;
 
                 return is_array($entry) && is_int($entry['time']) ? $entry['time'] : null;
             };
