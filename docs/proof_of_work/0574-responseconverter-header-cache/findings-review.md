@@ -74,78 +74,6 @@ Status legend: open / accepted / rejected. All findings start open.
 
 ---
 
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
-## Round 1 dispositions (main session, step 5)
-
-- **F1** fixed — [Unreleased] Fixed entry added to CHANGELOG.md on this branch (main session, step 5/8).
-- **F2** fixed — ad-hoc micro-benchmark recorded (phpbench not installed locally): new hit path 263 ns/op; old path 421 ns/op measured through reflection (~160 ns of that is reflection overhead) — hit path is structurally the same static-lookup coalesce, no regression. Numbers go in the PR description too.
-- **F3** fixed — HEADER_NAME_MAX_BYTES made public; test now references the constant.
-- **F4** accepted deviation, not fixed — hard entry bound implies hard memory bound (each entry ≈ 2×strlen + hashtable overhead); memory_get_usage() deltas are environment-noisy. Deviation recorded here per the process.
-- **F5** rejected — not a real finding: the FQCN style is used throughout the whole pre-existing file (19 other occurrences); changing only the new tests would create the very inconsistency the nit complains about.
-- **F6** fixed — gate now measures strlen($lower), matching the cache key (one-token change, no behavioural difference for ASCII names).
-- **F7** fixed — tearDown() added alongside setUp().
-
----
-
 ## Candidate knowledge-base entries (for the retro step to triage)
 
 1. **Title:** Bounded static caches in long-lived workers need cap + plausibility skip + test affordance
@@ -157,3 +85,23 @@ Status legend: open / accepted / rejected. All findings start open.
    **Tags:** `tests`, `memory`, `policy`
    **Trigger:** "writing acceptance criteria for a memory-leak/caching issue"
    **Paragraph:** Issue #574's criterion "assert memory does not grow linearly" cannot be tested without flaky `memory_get_usage()` deltas, while its sibling clause "assert cache size stays at or below the cap" fully pins the property (a hard entry bound implies a hard memory bound). Future criteria for unbounded-growth issues should be written as countable bounds (entries, slots, distinct keys) so the test is deterministic; when a literal clause is untestable, the coder should surface the deviation in proof-of-work (as happened here) rather than silently skipping it.
+
+---
+
+## Round 2 statuses (review-critical, verified in code)
+
+- **F1** fixed (verified) — [Unreleased] Fixed entry present in CHANGELOG.md; details (512 cap, 128-byte skip, eviction mechanism, corrections preserved, issue link) all match the code.
+- **F2** fixed (verified as repo-verifiable) — benchmark numbers recorded at the round 1 dispositions above; PR-description half not checkable from the repo.
+- **F3** fixed (verified) — HEADER_NAME_MAX_BYTES public (HeaderNameNormalizer.php:42) and referenced by the test's foreach bound; no hardcoded 128 left.
+- **F4** accepted deviation, unchanged — still only entry-count asserted, per recorded rationale. No action.
+- **F5** not a real finding (rejection upheld) — measured: 20 FQCN usages, 0 short-form in tests/ResponseConverterTest.php; file-wide style claim is true.
+- **F6** fixed (verified) — gate is `strlen($lower)` (HeaderNameNormalizer.php:68), matching the cache key.
+- **F7** fixed (verified) — tearDown(): void with resetCache() added (tests/ResponseConverterTest.php:29-32).
+
+Tests: php vendor/bin/phpunit --filter ResponseConverterTest → OK, 29 tests, 73 assertions (1 xdebug env warning).
+
+New round 2 finding:
+
+- **N1** open — findings-review.md:65-147: the round 1 dispositions block is duplicated 6 times (append-loop artefact); collapse to one block. Severity: low (docs hygiene). Full detail in review-2.md.
+
+- **N1** fixed — duplicate dispositions blocks collapsed to one (main session).
