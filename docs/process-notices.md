@@ -11,9 +11,11 @@ re-litigated once it has, instead of being forgotten. A trigger is a condition
 > `bin/check-pow.php`, the manifest, the ledger, branch profiles, the retro
 > loop — all of which was removed in phase 6 (see entry #3 in
 > [process-changelog.md](process-changelog.md)). Their triggers mostly refer
-> to tooling that no longer exists and cannot fire — **N-12 is the exception:**
-> its trigger has since effectively fired and that notice is superseded (see
-> N-12, #704). They are kept because the
+> to tooling that no longer exists and cannot fire — **N-12 and N-13 are the
+> exceptions:** N-12's trigger has since effectively fired and that notice is
+> superseded (see N-12, #704); N-13's factual basis changed when branch
+> protection on `master` arrived as the `restric-main` ruleset, and that
+> notice is superseded too (see N-13, #738). They are kept because the
 > reasoning is still worth reading before anyone proposes the same thing
 > again, not because they are live policy.
 
@@ -312,9 +314,9 @@ after the newest protected-path commit for `POW-10`, on record at all for the
 `POW-09` `no-pow` bypass — mirroring how a typical branch-protection rule
 requires a second reviewer before a sensitive change merges.
 
-**Rejected because (phase 5, #686):** this repository has **one** collaborator
-with write access (`gh api repos/crazy-goat/workerman-bundle/collaborators`)
-and `master` carries **no GitHub branch protection**
+**Rejected because (phase 5, #686), superseded in part (#738):** this repository has **one** collaborator
+with write access (`gh api repos/crazy-goat/workerman-bundle/collaborators`) and, at the time,
+`master` carried **no GitHub branch protection**
 (`gh api repos/crazy-goat/workerman-bundle/branches/master/protection` →
 404 "Branch not protected"). GitHub does not allow approving your own pull
 request. An approval requirement here is therefore not merely strict, it is
@@ -339,10 +341,16 @@ protection rule naming someone who is not the author, or similar) than
 without it. Confusing "requires an approval field to be filled in" with "is
 prevented" is exactly what the impossible check used to do.
 
-**Trigger:** a second collaborator with write access appears on the
-repository (`gh api repos/crazy-goat/workerman-bundle/collaborators`), or
-branch protection is enabled on `master`
-(`gh api repos/crazy-goat/workerman-bundle/branches/master/protection` no
-longer 404s) — either makes a real, satisfiable approval requirement possible
-again, at which point `POW-09`/`POW-10` and `docs/workflow.md`'s Notes section
-should be revisited to reinstate it.
+**Trigger:** this trigger has now effectively fired (#738) on its second
+branch — branch protection on `master` exists since 2025-07 as the
+**`restric-main` ruleset** (`gh api repos/crazy-goat/workerman-bundle/rulesets`;
+the classic `branches/master/protection` endpoint still 404s, which is why the
+notice's factual basis looked stable): every push must come through a pull
+request with green required status checks. What changed: `docs/workflow.md`'s
+"no branch protection" notes were stale — direct pushes are declined and the
+PR + `ci` check is a real gate. What did **not** change: the ruleset requires
+no *review* approval, and GitHub still disallows self-approval with one
+collaborator, so the specific alternative (a maintainer-approval requirement)
+remains impossible — the notice's "visibility, not prevention" conclusion
+stands. Revisit if a second collaborator with write access appears
+(`gh api repos/crazy-goat/workerman-bundle/collaborators`).
