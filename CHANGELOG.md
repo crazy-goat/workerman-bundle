@@ -39,6 +39,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- `PollingMonitorWatcher` now walks the source tree in O(N) total
+  advances per sweep instead of O(N²/MAX_FILES_PER_TICK). The watcher
+  previously rebuilt a fresh `RecursiveIteratorIterator` at the directory
+  root on every poll tick and fast-forwarded through already-seen entries
+  with `continue` — those skipped entries were not counted against the
+  `MAX_FILES_PER_TICK=500` budget but still cost full directory traversal
+  (readdir + stat), so total work for one complete sweep grew as roughly
+  N²/budget. The iterator is now held as an instance property and advanced
+  across ticks using `valid()`/`current()`/`next()` (no `foreach` rewind);
+  every entry counts against the budget including the first one after a
+  resume; the sweep resets (iterators discarded) when it completes or when
+  a reload is triggered; tree mutations between ticks (directories added or
+  removed) are caught and recovered from. `getMTime()` is also called once
+  per file per tick instead of twice
+  ([#559](https://github.com/crazy-goat/workerman-bundle/issues/559))
+
 - `RequestConverter` no longer re-parses the raw header block on every
   request. The re-parse in `buildServerHeaders()` exists only to detect
   duplicate header lines (so `Cookie` can be joined with `'; '` and
