@@ -12,7 +12,7 @@ whole file.
 
 <!-- kb-index:start -->
 - `bc` — FAQ-002
-- `benchmarks` — FAQ-026
+- `benchmarks` — FAQ-026, FAQ-028
 - `binary-file` — FAQ-002
 - `checksum` — FAQ-003
 - `ci` — FAQ-011
@@ -33,8 +33,8 @@ whole file.
 - `git-hooks` — FAQ-015
 - `grpc` — FAQ-007
 - `head` — FAQ-001, FAQ-002
-- `headers` — FAQ-012, FAQ-025
-- `http` — FAQ-001, FAQ-002, FAQ-012, FAQ-025
+- `headers` — FAQ-012, FAQ-025, FAQ-027
+- `http` — FAQ-001, FAQ-002, FAQ-012, FAQ-025, FAQ-027
 - `inotify` — FAQ-006
 - `jitter` — FAQ-020
 - `lint` — FAQ-015
@@ -47,16 +47,19 @@ whole file.
 - `middleware` — FAQ-004
 - `mocks` — FAQ-022
 - `permissions` — FAQ-005
+- `php-strings` — FAQ-027
+- `phpbench` — FAQ-028
 - `phpstan` — FAQ-014
 - `ports` — FAQ-009
 - `process` — FAQ-007
 - `response-strategy` — FAQ-001, FAQ-002
 - `scheduler` — FAQ-020, FAQ-021
+- `security` — FAQ-027
 - `sfx` — FAQ-003
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-026
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-026, FAQ-028
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -348,6 +351,13 @@ Reference: `BinaryFileResponseStrategy::scheduleFileCleanup()` +
 
 Symfony's `ArrayNode::finalizeValue()` (vendor/symfony/config/Definition/ArrayNode.php) triggers a child node's deprecation only in the `array_key_exists($name, $value)` branch — an absent key takes the node's default and `continue`s silently. So marking a node deprecated while it keeps `addDefaultsIfNotSet()` / a default value is safe: users who never set the key see no deprecation, users who do set it get the notice. This is how `servers[].static_files` was deprecated alongside `serve_files`/`root_dir` (issue #591) without spamming every config load. The `static_files` deprecation also doubles as the "visible signal" for the allowlist trap: setting `static_files.allowed_extensions` with a service-registered `StaticFilesMiddleware` is still a no-op for the middleware, but no longer silent.
 
+## Control-character filters (RequestConverter)
+
+### `strcspn()`/`strpbrk()` masks are literal byte sets — `..` ranges only exist in `addcslashes()`/`trim()`
+<!-- kb: id=FAQ-027 date=2026-08-16 tags=http,headers,security,php-strings trigger="writing or reviewing a byte-mask argument to strcspn()/strpbrk(), or replacing an explicit byte list with a range" hits=0 status=active -->
+
+`strcspn()`/`strpbrk()` treat the mask as a literal set of bytes: `php_charmask` range syntax is not applied, so `"\x00..\x08"` matches only {0x00, '.', 0x08} and would let bytes 1–7 through a control-character filter — a silent security regression. List every byte explicitly, as `RequestConverter::HEADER_VALUE_CONTROL_CHARS` does. By contrast `addcslashes($s, "\x00..\x1F\x7F")` (the `MalformedRequestException` message) *does* honour `..` ranges: do not unify the two forms. Discovered while replacing the #581 regex filter (PR #735).
+
 ## HTTP header parsing / Workerman internals
 
 ### Workerman `header()` joins duplicates with `,`, never trims names, and `rawHead()` excludes the trailing CRLF — count-based gates need three corrections
@@ -363,3 +373,8 @@ The vendored Workerman (`vendor/workerman/workerman/src/Protocols/Http/Request.p
 <!-- kb: id=FAQ-026 date=2026-08-15 tags=tests,benchmarks trigger="running RequestConverterBench or any phpbench benchmark in this repo" hits=0 status=active -->
 
 `phpbench.json` defines only the `aggregate` report. `vendor/bin/phpbench run ... --report=average` errors out with "Not found in known reports: average" and lists the known names. Use `--report=aggregate` (or omit `--report` and let `phpbench.json` pick the default). Discovered during #557; the task brief said `--report=average`, which does not exist in this repo's phpbench config.
+
+### phpbench 1.x `@ParamProviders`: params arrive as one `array` argument, and the `aggregate` report drops the parameter-set name
+<!-- kb: id=FAQ-028 date=2026-08-16 tags=benchmarks,tests,phpbench trigger="adding a parameterized benchmark method (@ParamProviders) to a bench in this repo" hits=0 status=active -->
+
+In phpbench 1.x a `@ParamProviders` set is injected as a single `array` argument: the bench method must declare `array $params` and read `$params['key']`. Typed named parameters (e.g. `string $value`) fail with a fatal "must not be accessed before initialization" or a TypeError, and the error messages give no hint about the correct shape. The repo's `aggregate` report renders the `params` column as null, so parameterized rows are distinguishable only by provider order — embed the set name in the subject (e.g. `benchFilterStrcspnLongAccepted`) or map rows by provider order and document it, as #630 did. Discovered in #630 (PR #735); report-identifiability part tracked as #736.
