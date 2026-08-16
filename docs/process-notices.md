@@ -341,8 +341,8 @@ protection rule naming someone who is not the author, or similar) than
 without it. Confusing "requires an approval field to be filled in" with "is
 prevented" is exactly what the impossible check used to do.
 
-**Trigger (has now effectively fired, #738):** the second branch of the old
-check fired — branch protection on `master` exists since 2025-07 as the
+**Trigger:** this trigger has now effectively fired (#738) on its second
+branch — branch protection on `master` exists since 2025-07 as the
 **`restric-main` ruleset** (`gh api repos/crazy-goat/workerman-bundle/rulesets`;
 the classic `branches/master/protection` endpoint still 404s, which is why the
 notice's factual basis looked stable): every push must come through a pull
