@@ -486,4 +486,92 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('1', $second->getHeader('DNT'));
         $this->assertSame('multi', $second->getHeader('X-Multi-Segment-Header-Name'));
     }
+
+    /**
+     * Issue #726: extractHeaders() reuses the normalizer's internal lowercased
+     * cache key for the transport-header comparison, so the normalized form
+     * must always lowercase back to the input. Any future CORRECTIONS entry
+     * whose value lowercases differently from its key (e.g. 'dnt' →
+     * 'Do-Not-Track') would silently break the transport-header strip.
+     *
+     * @dataProvider normalizeLowercaseInvariantProvider
+     */
+    public function testNormalizedHeaderNameLowercasesBackToInput(string $name): void
+    {
+        $this->assertSame(
+            strtolower($name),
+            strtolower(HeaderNameNormalizer::normalize($name)),
+            "strtolower(normalize('{$name}')) must equal strtolower('{$name}')",
+        );
+    }
+
+    /**
+     * @return list<array{string}>
+     */
+    public static function normalizeLowercaseInvariantProvider(): array
+    {
+        return [
+            ['etag'],
+            ['content-md5'],
+            ['www-authenticate'],
+            ['dnt'],
+            ['content-type'],
+            ['CONTENT-TYPE'],
+            ['X-Custom-Header'],
+            ['x-custom-header'],
+            ['ETag'],
+            ['WWW-Authenticate'],
+            ['Content-Length'],
+            ['Set-Cookie'],
+            ['x-multi-segment-header-name'],
+        ];
+    }
+
+    /**
+     * Issue #726: the out-parameter must expose the exact cache key, both on a
+     * miss and on a hit reached through a differently-cased input of the same
+     * header name.
+     */
+    public function testNormalizeExposesInternalLowercaseCacheKey(): void
+    {
+        // Cache miss with a proper-cased input.
+        $normalized = HeaderNameNormalizer::normalize('Content-Length', $lower);
+        $this->assertSame('Content-Length', $normalized);
+        $this->assertSame('content-length', $lower);
+
+        // Cache hit with a differently-cased input of the same header: the
+        // out-param must be the same key, not a value derived from the
+        // normalized result.
+        $normalizedHit = HeaderNameNormalizer::normalize('CONTENT-LENGTH', $lowerHit);
+        $this->assertSame('Content-Length', $normalizedHit);
+        $this->assertSame('content-length', $lowerHit);
+        $this->assertSame($lower, $lowerHit);
+    }
+
+    /**
+     * Issue #726: extractHeaders() compares the transport-header strip against
+     * the normalizer's lowercased cache key. On a warm cache the key must still
+     * identify the header case-insensitively — in particular the HEAD
+     * Content-Length exception (issue #643) must survive a cache hit.
+     */
+    public function testHeadContentLengthExceptionSurvivesWarmNormalizerCache(): void
+    {
+        HeaderNameNormalizer::normalize('content-length'); // warm the cache
+
+        $strategies = [new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $response = new Response('', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'Content-Length' => '777',
+            'Accept-Ranges' => 'bytes',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'HEAD');
+
+        $wire = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'HEAD must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 777\r\n", $wire);
+        $this->assertStringNotContainsString('Accept-Ranges:', $wire);
+    }
 }

@@ -93,8 +93,7 @@ final readonly class ResponseConverter
         $isHead = strcasecmp($requestMethod, 'HEAD') === 0;
         $normalized = [];
         foreach ($response->headers->all() as $name => $values) {
-            $normalizedName = $this->normalizeHeaderName($name);
-            $lowerName = strtolower($normalizedName);
+            $normalizedName = $this->normalizeHeaderName($name, $lowerName);
 
             if (in_array($lowerName, self::TRANSPORT_HEADERS, true) && (!$isHead || $lowerName !== 'content-length')) {
                 continue;
@@ -136,9 +135,13 @@ final readonly class ResponseConverter
      * is bounded per issue #574. Per RFC 9110 header names are
      * case-insensitive, so uncorrected forms would still be valid; the
      * normalisation just matches common usage.
+     *
+     * The normalizer exposes its lowercased cache key through $lower so the
+     * transport-header comparison in extractHeaders() does not lower-case the
+     * result again (issue #726).
      */
-    private function normalizeHeaderName(string $name): string
+    private function normalizeHeaderName(string $name, ?string &$lower = null): string
     {
-        return HeaderNameNormalizer::normalize($name);
+        return HeaderNameNormalizer::normalize($name, $lower);
     }
 }
