@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ResponseConverter`'s header-name normalisation cache is now bounded. The
+  static cache behind `normalizeHeaderName()` had no cap and no eviction, so
+  an application deriving response header **names** from request data could
+  grow it without limit for the lifetime of the worker (a memory leak
+  shaped like the ones Workerman guards against in its own header caches).
+  Normalisation now lives in an `@internal` `HeaderNameNormalizer` with a
+  512-entry cap enforced on every insert (`unset` + `array_key_first`
+  eviction), and names longer than 128 bytes are not cached at all. The
+  cache-hit path is unchanged (same static lookup); normalisation output is
+  identical, including the `ETag`/`Content-MD5`/`WWW-Authenticate`/`DNT`
+  corrections
+  ([#574](https://github.com/crazy-goat/workerman-bundle/issues/574))
+
 - `ProcessInspector::isProcessAlive()` no longer reports a non-child zombie
   master as alive on macOS/BSD. On non-Linux POSIX the liveness check used
   `pcntl_waitpid`, which only answers for direct children of the calling
