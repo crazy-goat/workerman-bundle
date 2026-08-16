@@ -108,3 +108,34 @@ catch this.
 The round-2 fix annotated it ("since round 1 extracted into...") but did not
 correct the line number. Proof-of-work docs only. Fix direction: replace
 with `324-330` or remove the line number since the method no longer exists.
+
+---
+
+## Round 2 → 3 outcomes
+
+- **N1 (DEC-014 plausibility skip) — fixed.** `CACHE_KEY_MAX_BYTES = 512`
+  (mirroring Workerman's `MAX_CACHE_STRING_LENGTH`) guards
+  `resolveRealPath()`: request paths longer than 512 bytes are probed by the
+  newly extracted pure `probeRealPath()` (phar branch + no-follow-symlinks
+  `is_link` component walk + `realpath`) and never enter the cache. Fail-open
+  per DEC-013 — servable files unchanged; NUL/backslash rejection,
+  root-containment and extension/filename/allowlist blocking all run outside
+  the cache. `testImplausiblyLongPathSkippedFromCacheButStillServed()` proves
+  fail-open serving (200), no positive cache entry, and no negative cache
+  entry. All three DEC-014 pillars are now present.
+- **N2 (stale 229-236 ref in findings-coder.md) — fixed.** The removed
+  `getRealPathCache()` no longer carries a line number; the extraction to
+  `StaticFilesRealPathCache` is stated instead.
+- **N3 (stale 293-307 refs re-introduced by the round-3 line shift) — fixed.**
+  `cacheStore()` is now at `StaticFilesMiddleware.php:314-330`; the
+  current-state docs (`code-decision-1.md`, `code-decision-2.md`,
+  `findings-coder.md`) cite the corrected range. Historical records
+  (`review-1.md`, `review-2.md`) intentionally keep the numbers that were
+  current at their round. — A linter that verifies `file:line` refs in
+  proof-of-work docs is **deliberately not being added**: the project
+  removed all POW validation machinery (`bin/pow.php`, `bin/check-pow.php`,
+  ~4,000 lines + 3,300 lines of tests) by documented decision
+  (`process-changelog.md` entry #3, `proof_of_work/README.md`): "Write the
+  files by hand. If they are wrong, that is what review is for." The review
+  loop keeps catching the class — three occurrences (FR-002, N2, N3), each
+  fixed by hand the round it was reported.

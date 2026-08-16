@@ -15,7 +15,7 @@ four fixed, one resolved by the main session's earlier tree cleanup:
   entered this PR.
 - **FR-002 (low, stale line numbers in proof-of-work docs):** fixed —
   `code-decision-1.md` and `findings-coder.md` now cite the current lines
-  (`cacheStore()` at `StaticFilesMiddleware.php:293-307`) and the new
+  (`cacheStore()` at `StaticFilesMiddleware.php:314-330`) and the new
   `StaticFilesRealPathCache` location.
 - **FR-003 (low, wrong test-root path in docs):** fixed — `tests/App/data/public`
   → `tests/data/public` in `code-decision-1.md`.

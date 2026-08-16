@@ -6,7 +6,7 @@
   contains no `array_shift()` anywhere (grep + `git log -S array_shift`
   both confirm). Commit `ba60a7f` (PR #607, closes #570) replaced it with
   `unset($cache[array_key_first($cache)])` in a new `cacheStore()` helper
-  (`src/Middleware/StaticFilesMiddleware.php:293-307`) while fixing the
+  (`src/Middleware/StaticFilesMiddleware.php:314-330`) while fixing the
   unbounded negative-cache growth. The issue's line references (:174-230,
   :225-227) describe a pre-#607 revision. Work on #558 that assumed the old
   shape would have re-litigated an already-shipped fix; the real remaining

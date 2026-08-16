@@ -13,7 +13,7 @@ scope unless compelling.
 `ba60a7f` (PR #607, "fix: cap negative realpath cache", closes #570) rewrote
 the eviction path into the `cacheStore()` helper, which already enforces
 `CACHE_MAX_SIZE` on every insert and evicts via
-`unset($cache[array_key_first($cache)])` (`src/Middleware/StaticFilesMiddleware.php:293-307`).
+`unset($cache[array_key_first($cache)])` (`src/Middleware/StaticFilesMiddleware.php:314-330`).
 No `array_shift()` remains in the file (verified with `git log -S array_shift`
 and a grep). The CHANGELOG `[Unreleased]` → Fixed section already documents
 that change and cites #558.
