@@ -214,7 +214,7 @@ a security property follows the same rule: fail open on unverified input, and
 prove the proof for every input shape before trusting the fast path.
 
 ### Bounded static caches in long-lived workers: cap + plausibility skip + test affordance
-<!-- kb: id=DEC-014 date=2026-08-16 tags=memory,long-running,http,tests trigger="adding or reviewing a process-lifetime static/FIFO cache keyed by data the bundle does not control" hits=0 status=active -->
+<!-- kb: id=DEC-014 date=2026-08-16 tags=memory,long-running,http,tests trigger="adding or reviewing a process-lifetime static/FIFO cache keyed by data the bundle does not control" hits=1 status=active -->
 
 Issue #574 established the house pattern for static caches shared across a
 worker process: an explicit `*_MAX_SIZE` constant enforced on **every insert**
@@ -227,3 +227,11 @@ without reflection on a method-local static. Caveat discovered en route: a
 properties in readonly classes) — extract an `@internal` utility class
 (`HeaderNameNormalizer`) rather than dropping `readonly`. Complements DEC-004
 and DEC-005.
+
+Applied to the `StaticFilesMiddleware` realpath cache in the #558 cycle: the
+planted three pillars landed there too — `StaticFilesRealPathCache`
+(`@internal`, `::cache()` / `::resetCache()` affordances) and a 512-byte
+`CACHE_KEY_MAX_BYTES` key guard (mirroring Workerman's
+`MAX_CACHE_STRING_LENGTH`) that probes implausibly long request paths without
+caching, fail-open per DEC-013 — plus an LRU-semantics regression test that
+distinguishes least-recently-*used* eviction from FIFO.
