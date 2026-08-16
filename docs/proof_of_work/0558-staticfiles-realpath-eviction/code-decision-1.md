@@ -13,7 +13,7 @@ scope unless compelling.
 `ba60a7f` (PR #607, "fix: cap negative realpath cache", closes #570) rewrote
 the eviction path into the `cacheStore()` helper, which already enforces
 `CACHE_MAX_SIZE` on every insert and evicts via
-`unset($cache[array_key_first($cache)])` (`src/Middleware/StaticFilesMiddleware.php:215-225`).
+`unset($cache[array_key_first($cache)])` (`src/Middleware/StaticFilesMiddleware.php:293-307`).
 No `array_shift()` remains in the file (verified with `git log -S array_shift`
 and a grep). The CHANGELOG `[Unreleased]` → Fixed section already documents
 that change and cites #558.
@@ -39,9 +39,10 @@ What I changed:
 
 ## Design of the LRU test
 
-The cache is a process-wide static (`getRealPathCache()`), shared by all
-instances and therefore by all tests in this class, and the test root
-directory is fixed (`tests/App/data/public`), so the cache index space is
+The cache is a process-wide static (`StaticFilesRealPathCache::all()`,
+extracted per DEC-014 because the middleware is `final readonly`), shared by
+all instances and therefore by all tests in this class, and the test root
+directory is fixed (`tests/data/public`), so the cache index space is
 shared. The test is still deterministic because of the invariant the
 production code itself guarantees: **every insert enforces the cap**, so at
 any moment the cache holds at most `CACHE_MAX_SIZE` foreign entries. Inserting
@@ -99,12 +100,15 @@ temporarily mutating the source, observing the failure, and restoring it.
   the perf framing + numbers + test coverage are new content. If reviewers
   consider it redundant with the #570 entry, dropping the new bullet is a
   two-line revert.
-- **Reflection-based assertions.** The existing tests use
-  `ReflectionMethod::invoke()` on `getRealPathCache()` for size assertions;
-  I extended the same pattern to membership assertions. Behavioral
+- **Reflection-based assertions.** Round 1's review flagged this (FR-005):
+  the existing tests use `ReflectionMethod::invoke()` on `getRealPathCache()`
+  for size assertions, which is exactly what DEC-014's public `cache()`/
+  `resetCache()` affordances exist to avoid. Rounds 1→2 (see
+  `code-decision-2.md`) replaced the reflection with
+  `StaticFilesRealPathCache::cache()`/`resetCache()`. Behavioral
   distinguishability of a cache hit vs. a re-probe is impossible here (both
-  fall through to `$next`), so reflection is the only way to assert the
-  victim, and the pattern is already established in this file.
+  fall through to `$next`), so the affordance is the only way to assert the
+  victim.
 - **Phar root paths** (`isPharPath()`): the cache can hold positive entries
   too. My test only exercises negative entries (missing files), which is the
   high-cardinality case from the issue; positive-entry LRU ordering goes

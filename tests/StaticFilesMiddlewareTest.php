@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesRealPathCache;
 use PHPUnit\Framework\TestCase;
 use Workerman\Protocols\Http\Response;
 
@@ -20,6 +21,7 @@ final class StaticFilesMiddlewareTest extends TestCase
             mkdir($this->rootDirectory, 0777, true);
         }
         file_put_contents($this->rootDirectory . '/test.txt', 'test file content');
+        StaticFilesRealPathCache::resetCache();
     }
 
     protected function tearDown(): void
@@ -363,11 +365,7 @@ final class StaticFilesMiddlewareTest extends TestCase
                 symlink($subDir, $linkPath);
             }
 
-            $cacheCount = function () use ($middleware): int {
-                $method = new \ReflectionMethod($middleware, 'getRealPathCache');
-
-                return count($method->invoke($middleware));
-            };
+            $cacheCount = static fn(): int => count(StaticFilesRealPathCache::cache());
 
             $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
             $maxSize = $maxSizeReflection->getValue();
@@ -415,31 +413,18 @@ final class StaticFilesMiddlewareTest extends TestCase
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
         $next = fn(Request $req): Response => new Response(404);
 
-        $cache = function () use ($middleware): array {
-            $method = new \ReflectionMethod($middleware, 'getRealPathCache');
-            $cache = $method->invoke($middleware);
-            assert(is_array($cache));
-
-            return $cache;
-        };
+        $cache = static fn(): array => StaticFilesRealPathCache::cache();
 
         $maxSizeReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_MAX_SIZE');
         $maxSize = $maxSizeReflection->getValue();
         assert(is_int($maxSize));
 
-        $indexOf = function (string $path) use ($middleware): string {
-            $rootRealPathReflection = new \ReflectionProperty($middleware, 'rootRealPath');
-            $rootRealPath = $rootRealPathReflection->getValue($middleware);
-            assert(is_string($rootRealPath));
+        $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
 
-            return $path . "\0" . '0' . "\0" . $rootRealPath;
-        };
-
-        // Fill the cache past the cap with unique missing paths. The cache is a
-        // process-wide static that may already hold entries from earlier tests,
-        // but CACHE_MAX_SIZE is enforced on every insert, so after maxSize + 1
-        // fresh inserts the survivors are exactly the last maxSize entries made
-        // here, in insertion order.
+        // Fill the cache past the cap with unique missing paths. setUp()
+        // resets the process-wide cache, and CACHE_MAX_SIZE is enforced on
+        // every insert, so after maxSize + 1 fresh inserts the survivors are
+        // exactly the last maxSize entries made here, in insertion order.
         $paths = [];
         for ($i = 0; $i <= $maxSize; $i++) {
             $paths[$i] = sprintf('/lru-pad-%d.css', $i);
@@ -497,11 +482,8 @@ final class StaticFilesMiddlewareTest extends TestCase
                 return $path . "\0" . '0' . "\0" . $rootRealPath;
             };
 
-            $storedTime = function () use ($middleware, $cacheIndex): ?int {
-                $cacheMethod = new \ReflectionMethod($middleware, 'getRealPathCache');
-                $cache = $cacheMethod->invoke($middleware);
-                assert(is_array($cache));
-                $entry = $cache[$cacheIndex()] ?? null;
+            $storedTime = function () use ($cacheIndex): ?int {
+                $entry = StaticFilesRealPathCache::cache()[$cacheIndex()] ?? null;
 
                 return is_array($entry) && is_int($entry['time']) ? $entry['time'] : null;
             };

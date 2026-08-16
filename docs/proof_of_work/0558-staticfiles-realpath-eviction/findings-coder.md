@@ -6,7 +6,7 @@
   contains no `array_shift()` anywhere (grep + `git log -S array_shift`
   both confirm). Commit `ba60a7f` (PR #607, closes #570) replaced it with
   `unset($cache[array_key_first($cache)])` in a new `cacheStore()` helper
-  (`src/Middleware/StaticFilesMiddleware.php:215-225`) while fixing the
+  (`src/Middleware/StaticFilesMiddleware.php:293-307`) while fixing the
   unbounded negative-cache growth. The issue's line references (:174-230,
   :225-227) describe a pre-#607 revision. Work on #558 that assumed the old
   shape would have re-litigated an already-shipped fix; the real remaining
@@ -26,7 +26,9 @@
 
 - **The cache is a process-wide static shared across all tests AND all
   middleware instances** (method-local `static $cache` in
-  `getRealPathCache()`, `src/Middleware/StaticFilesMiddleware.php:229-236`),
+  `getRealPathCache()`, `src/Middleware/StaticFilesMiddleware.php:229-236` —
+  since round 1 extracted into `src/Middleware/StaticFilesRealPathCache.php`,
+  DEC-014 pattern),
   and `StaticFilesMiddlewareTest::setUp()` reuses the same root directory
   (`tests/StaticFilesMiddlewareTest.php:22-24`), so every test in the class
   shares one cache-index space. Any test that asserts on "the" cache must
@@ -51,7 +53,8 @@
   Suggested fix: add the case with the middleware built on a fresh temp root,
   asserting nothing — bench only.
 
-- `src/Middleware/StaticFilesMiddleware.php:229-236` (`getRealPathCache`):
+- `src/Middleware/StaticFilesRealPathCache.php` (storage extracted from
+  `StaticFilesMiddleware::getRealPathCache()` after review round 1, FR-005):
   the static cache is keyed per (path, followSymlinks, rootRealPath), but the
   static itself never resets — in the test process, cache entries survive
   across middleware instances and tests (by design). In production each class

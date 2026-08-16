@@ -247,7 +247,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     {
         $now = time();
 
-        $cache = &$this->getRealPathCache();
+        $cache = &StaticFilesRealPathCache::all();
 
         $cacheIndex = $cacheKey . "\0" . ($this->followSymlinks ? '1' : '0') . "\0" . $this->rootRealPath;
 
@@ -316,15 +316,5 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     private function isPharPath(string $path): bool
     {
         return str_starts_with($path, 'phar://');
-    }
-
-    /**
-     * @return array<string, array{path: string|false, time: int}>
-     */
-    private function &getRealPathCache(): array
-    {
-        static $cache = [];
-
-        return $cache;
     }
 }
