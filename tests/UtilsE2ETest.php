@@ -60,11 +60,16 @@ pcntl_signal(SIGUSR1, function () use (&$signalReceived) {
 
 \CrazyGoat\WorkermanBundle\Utils::reload();
 
-$start = microtime(true);
-while (!$signalReceived && (microtime(true) - $start) < 2) {
-    pcntl_signal_dispatch();
-    usleep(10000);
-}
+$signalReceived = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+    static function () use (&$signalReceived): bool {
+        pcntl_signal_dispatch();
+
+        return $signalReceived;
+    },
+    2,
+    initialDelayMs: 10,
+    maxDelayMs: 10,
+);
 
 exit($signalReceived ? 0 : 1);
 PHP,
@@ -98,11 +103,16 @@ set_error_handler(function (int $errno, string $errstr) {
 \CrazyGoat\WorkermanBundle\Utils::reboot();
 restore_error_handler();
 
-$start = microtime(true);
-while (!$signalReceived && (microtime(true) - $start) < 2) {
-    pcntl_signal_dispatch();
-    usleep(10000);
-}
+$signalReceived = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+    static function () use (&$signalReceived): bool {
+        pcntl_signal_dispatch();
+
+        return $signalReceived;
+    },
+    2,
+    initialDelayMs: 10,
+    maxDelayMs: 10,
+);
 
 exit($signalReceived ? 0 : 1);
 PHP,

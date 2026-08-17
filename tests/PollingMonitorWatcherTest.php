@@ -141,6 +141,9 @@ final class PollingMonitorWatcherTest extends TestCase
         $targetTime = $originalMTime - 5;
         $this->setLastMTime($watcher, $targetTime);
 
+        // Ensure the file mtime advances past targetTime — a 1ms sleep
+        // guarantees the write timestamp differs. Semantically required, not
+        // a condition wait.
         \usleep(1000);
         \file_put_contents($watchedFile, '<?php // v2');
         \clearstatcache(true, $watchedFile);

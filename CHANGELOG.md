@@ -105,6 +105,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   least-recently-inserted one
   ([#558](https://github.com/crazy-goat/workerman-bundle/issues/558))
 
+### Tests
+
+- Replaced 43 fixed-duration `usleep()`/`sleep()` waits in the test suite
+  with `Util\Wait::until()` polling on the real asynchronous condition
+  (process alive/dead, file exists, port up/down, worker ready, signal
+  handler installed). The `sleep 1` in the `composer test` and
+  `composer test:coverage` scripts is replaced by `bin/wait-for-ports.php`,
+  which polls ports 8888/9999 with exponential backoff until the test
+  daemon is ready or a 15s timeout elapses — so a slow daemon start no
+  longer races the first network-dependent test. Child-side `sleep(1)`
+  keep-alive loops and inotify/mtime pacing delays are left intact with
+  comments explaining they are not condition waits. Total suite wall time
+  on an unloaded machine drops by ~6s of guaranteed sleeping per matrix leg
+  ([#592](https://github.com/crazy-goat/workerman-bundle/issues/592))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added

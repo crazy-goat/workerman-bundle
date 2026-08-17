@@ -12,6 +12,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -228,9 +229,6 @@ final class ServerManagerTest extends TestCase
         $pid = $this->forkChildIgnoringSignals();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Give the child a moment to install signal handlers
-        usleep(200_000);
-
         $this->assertTrue($this->isAlive($pid), 'Child should be alive before stop()');
 
         try {
@@ -261,9 +259,6 @@ final class ServerManagerTest extends TestCase
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGUSR1, $signalFile);
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Give the child time to install the signal handler
-        usleep(200_000);
-
         $this->assertTrue($this->isAlive($pid), 'Child should be alive before reload()');
 
         try {
@@ -284,8 +279,6 @@ final class ServerManagerTest extends TestCase
         $signalFile = $this->tmpDir . '/sigusr2_received';
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGUSR2, $signalFile);
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(200_000);
 
         $this->assertTrue($this->isAlive($pid), 'Child should be alive before reload()');
 
@@ -317,8 +310,6 @@ final class ServerManagerTest extends TestCase
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIOT, $this->statusFile, "ignored header\nworker: running\nmemory: 42MB");
         file_put_contents($this->pidFile, (string) $pid);
 
-        usleep(200_000);
-
         $this->assertTrue($this->isAlive($pid), 'Child should be alive before getStatus()');
 
         try {
@@ -341,8 +332,6 @@ final class ServerManagerTest extends TestCase
     {
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIOT, $this->statusFile, "header\ndata");
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(200_000);
 
         try {
             $this->manager->getStatus();
@@ -372,8 +361,6 @@ final class ServerManagerTest extends TestCase
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIO, $this->connectionsFile, $expectedContent);
         file_put_contents($this->pidFile, (string) $pid);
 
-        usleep(200_000);
-
         $this->assertTrue($this->isAlive($pid), 'Child should be alive before getConnections()');
 
         try {
@@ -394,8 +381,6 @@ final class ServerManagerTest extends TestCase
     {
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIO, $this->connectionsFile, "data");
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(200_000);
 
         try {
             $this->manager->getConnections();
@@ -418,8 +403,6 @@ final class ServerManagerTest extends TestCase
         $pid = $this->forkChildIgnoringSignal(SIGIOT);
         file_put_contents($this->pidFile, (string) $pid);
 
-        usleep(200_000);
-
         try {
             $status = $this->manager->getStatus();
             $this->assertNull($status, 'getStatus() should return null when no status file appears');
@@ -436,8 +419,6 @@ final class ServerManagerTest extends TestCase
     {
         $pid = $this->forkChildIgnoringSignal(SIGIO);
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(200_000);
 
         try {
             $connections = $this->manager->getConnections();
@@ -459,8 +440,6 @@ final class ServerManagerTest extends TestCase
     {
         $pid = $this->forkMasterLikeChild();
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(100_000);
 
         try {
             $this->expectException(ServerAlreadyRunningException::class);
@@ -488,8 +467,6 @@ final class ServerManagerTest extends TestCase
     {
         $pid = $this->forkChildIgnoringSignals();
         file_put_contents($this->pidFile, (string) $pid);
-
-        usleep(200_000);
 
         try {
             $this->expectException(ServerStopFailedException::class);
@@ -1089,6 +1066,7 @@ final class ServerManagerTest extends TestCase
      */
     private function forkMasterLikeChildWithSignalHandler(int $signal, string $signalFile, ?string $content = null): int
     {
+        $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
         $pid = pcntl_fork();
         if ($pid === -1) {
             $this->markTestSkipped('pcntl_fork failed');
@@ -1102,12 +1080,18 @@ final class ServerManagerTest extends TestCase
                 file_put_contents($signalFile, $content ?? 'received');
             });
 
+            // Signal the parent that handlers are installed.
+            @touch($readyMarker);
+
             for (;;) {
+                // Keep-alive loop — NOT a wait. The usleep paces signal
+                // delivery; it must not be replaced with Wait::until().
                 usleep(100_000);
             }
         }
 
         $this->writeMatchingFingerprint($pid);
+        $this->waitForChildReady($readyMarker);
 
         return $pid;
     }
@@ -1200,6 +1184,7 @@ PHP;
      */
     private function forkChildIgnoringSignals(): int
     {
+        $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
         $pid = pcntl_fork();
         if ($pid === -1) {
             $this->markTestSkipped('pcntl_fork failed');
@@ -1211,12 +1196,16 @@ PHP;
             });
             pcntl_signal(SIGQUIT, static function (): void {
             });
+            // Signal the parent that handlers are installed.
+            @touch($readyMarker);
             for (;;) {
+                // Keep-alive loop — NOT a wait.
                 usleep(100_000);
             }
         }
 
         $this->writeMatchingFingerprint($pid);
+        $this->waitForChildReady($readyMarker);
 
         return $pid;
     }
@@ -1230,6 +1219,7 @@ PHP;
      */
     private function forkChildIgnoringSignal(int $signal): int
     {
+        $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
         $pid = pcntl_fork();
         if ($pid === -1) {
             $this->markTestSkipped('pcntl_fork failed');
@@ -1239,12 +1229,16 @@ PHP;
             pcntl_async_signals(true);
             pcntl_signal($signal, static function (): void {
             });
+            // Signal the parent that the handler is installed.
+            @touch($readyMarker);
             for (;;) {
+                // Keep-alive loop — NOT a wait.
                 usleep(100_000);
             }
         }
 
         $this->writeMatchingFingerprint($pid);
+        $this->waitForChildReady($readyMarker);
 
         return $pid;
     }
@@ -1255,10 +1249,19 @@ PHP;
 
     private function waitForFile(string $path, int $timeout): void
     {
-        $deadline = microtime(true) + $timeout;
-        while (!file_exists($path) && microtime(true) < $deadline) {
-            usleep(50_000);
-        }
+        Wait::until(static fn(): bool => file_exists($path), $timeout);
+    }
+
+    /**
+     * Wait until a forked child has installed its signal handlers by
+     * polling for a readiness marker file, replacing the fixed
+     * `usleep(200_000)` that guessed at handler-install latency.
+     */
+    private function waitForChildReady(string $marker): void
+    {
+        $ready = Wait::until(static fn(): bool => file_exists($marker), 5);
+        @unlink($marker);
+        $this->assertTrue($ready, 'Child did not install signal handlers within 5s');
     }
 
     private function isAlive(int $pid): bool
