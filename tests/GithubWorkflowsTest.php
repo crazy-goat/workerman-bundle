@@ -84,7 +84,7 @@ final class GithubWorkflowsTest extends TestCase
         );
 
         $this->assertMatchesRegularExpression(
-            '/^  schedule:\n    - cron: \'([1-9]|[1-5][0-9]) \d+ \* \* \d+/m',
+            '/^  schedule:\n    - cron: \'((0?[1-9])|([1-5][0-9])) \d+ \* \* \d+/m',
             $this->workflowContent,
             'A weekly scheduled run must exist, at a quiet minute not on the top of the hour',
         );
@@ -122,6 +122,33 @@ final class GithubWorkflowsTest extends TestCase
             1,
             preg_match_all('/^ {10}- php-version:/m', $scheduled),
             'The scheduled run must execute exactly one matrix leg',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^  benchmark:\n    name: Benchmark\n    runs-on: ubuntu-latest\n    needs: lint\n    if: github\.event_name != \'schedule\'/m',
+            $this->workflowContent,
+            'The advisory benchmark must not run on the weekly schedule',
+        );
+    }
+
+    public function testScheduledRunFailureOpensAnIssue(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/^      - name: Open issue on scheduled failure\n        if: failure\(\) && github\.event_name == \'schedule\'/m',
+            $this->workflowContent,
+            'A failing scheduled run must produce a visible signal: an issue',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^    permissions:\n      contents: read\n      issues: write$/m',
+            $this->workflowContent,
+            'The ci job must hold issues: write for the issue opener',
+        );
+
+        $this->assertStringContainsString(
+            'marker="Scheduled CI run failed"',
+            $this->workflowContent,
+            'The issue opener must deduplicate open issues by a title marker',
         );
     }
 }

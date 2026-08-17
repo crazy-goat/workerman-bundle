@@ -99,3 +99,104 @@ subsequent rounds.
   current guard already provides (opener runs only on `schedule`, sets no
   user-controlled values, and fails loud rather than silent). Tradeoff
   recorded in `code-decision-1.md` and `review-1.md`.
+
+- **Round 2 reviewer verdict:** confirmed fixed. Step 10 now lists five
+  jobs (lint, tests, tests-scheduled, benchmark, ci), describes the full
+  trigger set (PR / push-to-master / weekly schedule / workflow_dispatch),
+  and the concurrency paragraph states PR runs are cancelled while master
+  runs are never cancelled. Every claim cross-referenced against the YAML
+  and matches. The "ci aggregator on schedule" phrasing — "fails unless
+  `lint` and `tests` succeeded (and, on schedule, `tests-scheduled`)" —
+  accurately describes the OR-gate in natural language. No residual
+  inaccuracy.
+
+---
+
+## F-2 (round 2 reviewer verdict)
+
+- **Round 2 reviewer verdict:** confirmed fixed. The block-capture regex
+  `/^  tests-scheduled:.*?(?=^  \w[\w-]*:$)/ms` correctly stops at the
+  next job heading (`  benchmark:`), excluding the nine-leg `tests` job.
+  A simulated regression adding a second `- php-version: '8.3'` entry to
+  the `tests-scheduled` block (targeting that block specifically) raised
+  the count to 2, which would fail `assertSame(1, 2)`. All
+  `- php-version:` lines in the file are at exactly 10 spaces; the count
+  regex `^ {10}- php-version:` matches only those. Guard would both pass
+  on the current YAML and fail on the regression it guards.
+
+---
+
+## F-3 (round 2 reviewer verdict)
+
+- **Round 2 reviewer verdict:** confirmed fixed. The minute field regex
+  `([1-9]|[1-5][0-9])` matches 1–59 and excludes 0. Verified
+  programmatically: `0 0 * * 1` → NO match (correctly rejected), `60 5 *
+  * 1` → NO match (correctly rejected), `23 5 * * 1` → MATCH. Minor
+  edge: `05 5 * * 1` (valid cron, leading-zero minute 5) also fails —
+  see F-5 below.
+
+---
+
+## F-4 (round 2 reviewer verdict)
+
+- **Round 2 reviewer verdict:** accepted as documented. The `issues:
+  write` permission remains at job level. Not a security vulnerability —
+  the "Check test results" step does not set `GH_TOKEN` in its `env`, so
+  the scope is not exploitable through it. The tradeoff is documented in
+  `code-decision-1.md`. No KB violation (DEC-006 covers loosening
+  existing hardening; this is a new CI-scope grant, not a loosening).
+
+---
+
+## F-5
+
+- **File:line:** `tests/GithubWorkflowsTest.php:91`
+- **What is wrong:** The cron minute regex `([1-9]|[1-5][0-9])` rejects
+  valid leading-zero minutes (e.g., `05 5 * * 1` is valid cron for
+  minute 5, not top of the hour, but the regex would not match it).
+- **Severity:** nit
+- **What happened to it:** round 2 → new. The F-3 fix introduced this by
+  constraining the minute to 1–59 without allowing a leading zero. The
+  current YAML uses `23` (no leading zero) so the test passes. A
+  false-fail would only occur if someone changed the cron to use a
+  leading-zero minute, which is unlikely given repo convention and
+  GitHub's own examples.
+- **Smallest safe fix direction:** Change `([1-9]|[1-5][0-9])` to
+  `(0?[1-9]|[1-5][0-9])` to accept `5` and `05` while still rejecting
+  `0` and `00`. Or leave as-is and treat the no-leading-zero convention
+  as intentional enforcement.
+- **Automated check that would have caught it:** A parameterized
+  `GithubWorkflowsTest` with multiple cron-string inputs. No existing
+  check covers this.
+- **Round 3 outcome:** fixed — minute field is now `((0?[1-9])|([1-5][0-9]))`,
+  accepting `5` and `05` while still rejecting `0`/`00`. The cron-guard
+  test file passes (11 tests, 34 assertions).
+
+---
+
+## F-6
+
+- **File:line:** `tests/GithubWorkflowsTest.php` (missing assertion)
+- **What is wrong:** No test guard verifies that the `benchmark` job has
+  `if: github.event_name != 'schedule'`. The `tests` job's schedule-skip
+  is asserted (line 110), but `benchmark`'s is not. A regression removing
+  this `if:` from `benchmark` would cause scheduled runs to execute the
+  benchmark unnecessarily, but no test would fail. Similarly, no test
+  guards the existence of the "Open issue on scheduled failure" step.
+- **Severity:** low
+- **What happened to it:** round 2 → new. The issue's acceptance
+  criteria require benchmark to be skipped on schedule; CONTRIBUTING.md
+  states it; the YAML implements it; but no test enforces it.
+- **Smallest safe fix direction:** Add an assertion in
+  `testScheduledRunsTrimTheMatrixToASingleLeg` matching the benchmark
+  job's `if:` condition, and optionally an assertion that the issue
+  opener step exists.
+- **Automated check that would have caught it:** An extended
+  `GithubWorkflowsTest` assertion. No PHPStan or lint rule covers YAML
+  workflow structure.
+- **Round 3 outcome:** fixed — `testScheduledRunsTrimTheMatrixToASingleLeg`
+  now asserts the `benchmark` job's `if: github.event_name != 'schedule'`
+  guard, and a new `testScheduledRunFailureOpensAnIssue` asserts the
+  issue-opener step's `if: failure() && github.event_name == 'schedule'`
+  condition, the `ci` job's `permissions: {contents: read, issues: write}`
+  block, and the `marker="Scheduled CI run failed"` dedup line.
