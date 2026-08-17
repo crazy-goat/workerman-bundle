@@ -171,6 +171,14 @@ subsequent rounds.
 - **Round 3 outcome:** fixed — minute field is now `((0?[1-9])|([1-5][0-9]))`,
   accepting `5` and `05` while still rejecting `0`/`00`. The cron-guard
   test file passes (11 tests, 34 assertions).
+- **Round 3 reviewer verdict:** confirmed fixed. The minute field is now
+  `((0?[1-9])|([1-5][0-9]))`. Verified programmatically against nine cron
+  strings: `23`, `05`, `09`, `5`, `59`, `1` (minutes) → match; `0`, `00`,
+  `60` → reject. The F-3 contract (reject top of the hour) is preserved
+  (`0`/`00` still rejected) and F-5's concern (accept leading-zero minutes)
+  is resolved (`05`/`09` now match). The full test file passes: 11 tests,
+  34 assertions.
+
 
 ---
 
@@ -200,3 +208,16 @@ subsequent rounds.
   issue-opener step's `if: failure() && github.event_name == 'schedule'`
   condition, the `ci` job's `permissions: {contents: read, issues: write}`
   block, and the `marker="Scheduled CI run failed"` dedup line.
+- **Round 3 reviewer verdict:** confirmed fixed.
+  `testScheduledRunsTrimTheMatrixToASingleLeg` now ends with an
+  `assertMatchesRegularExpression` for
+  `/^  benchmark:\n    name: Benchmark\n    runs-on: ubuntu-latest\n    needs: lint\n    if: github\.event_name != 'schedule'/m`
+  (line 129). Simulated regression removing `benchmark`'s `if:` → regex
+  match 0, assertion fails. New `testScheduledRunFailureOpensAnIssue`
+  asserts (a) the opener step's
+  `if: failure() && github.event_name == 'schedule'`, (b) the `ci` job's
+  `permissions: {contents: read, issues: write}` block (4-space anchored,
+  ties to job level), and (c) the `marker="Scheduled CI run failed"` dedup
+  line. Simulated regression removing the opener step → assertions (a)
+  and (c) fail (catch it); (b) is independent and guards the permission
+  grant separately. All three assertions pass on the current YAML.
