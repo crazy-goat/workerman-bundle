@@ -142,12 +142,12 @@ rm .git/hooks/pre-push
 
 ### CI Configuration
 
-The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request:
+The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request, on every push to `master`, on a weekly schedule (Monday 05:23 UTC), and on demand via `workflow_dispatch`:
 
-- **Lint job**: Validates `composer.json`, runs security audit, and checks code style
-- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix; the PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in `composer.json` → `coverage:check`)
-- **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge)
-- **CI job**: Aggregator that fails unless the Lint and Tests jobs succeeded (benchmark stays advisory); see `docs/workflow.md` for the full CI layout
+- **Lint job**: Validates `composer.json`, runs the security audit (`composer audit`), and checks code style. The audit is the main value of the scheduled run: it catches advisories published after a merge and dependency drift in the unpinned Symfony ranges
+- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix; the PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in `composer.json` → `coverage:check`). Scheduled runs execute only the PHP 8.2 / Symfony 6.4 leg
+- **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge); skipped on scheduled runs
+- **CI job**: Aggregator that fails unless the Lint and Tests jobs succeeded (benchmark stays advisory); on a failing scheduled run it opens a "Scheduled CI run failed" issue (or comments on the existing one) so the failure is visible without manual monitoring. Superseded pull-request runs are cancelled, but a `master` run is never cancelled by a later one; see `docs/workflow.md` for the full CI layout
 
 ## Code Standards
 

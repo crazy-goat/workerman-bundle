@@ -2,13 +2,18 @@ name: Tests
 
 on:
   pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
 
-# Marking a draft ready, or pushing again while a run is still going, used to
-# leave two full matrices grinding on the same pull request. Only the newest
-# one can still be relevant.
+# A newer pull request run cancels an older one on the same pull request; a
+# master run is never cancelled by a later run, so a post-merge failure stays
+# visible.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -40,6 +45,7 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     needs: lint
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -114,10 +120,52 @@ jobs:
           path: var/coverage.xml
           if-no-files-found: ignore
 
+  tests-scheduled:
+    name: Tests (scheduled)
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name == 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php-version: '8.2'
+            symfony-version: '6.4.*'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: zip, inotify, pcntl, posix
+          coverage: pcov
+          ini-values: pcov.directory=src,phar.readonly=0
+
+      - name: Create var directory
+        run: mkdir -p var
+
+      - name: Update Symfony constraints in composer.json
+        run: |
+          export SYMFONY_VERSION=${{ matrix.symfony-version }}
+          sed -i -E "s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run tests with coverage
+        run: composer test:coverage
+
+      - name: Check coverage threshold
+        run: composer coverage:check
+
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
     needs: lint
+    if: github.event_name != 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -136,14 +184,36 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, tests, benchmark]
+    needs: [lint, tests, benchmark, tests-scheduled]
     runs-on: ubuntu-latest
     if: always()
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Check test results
         run: |
           if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
-          if [ "${{ needs.tests.result }}" != "success" ]; then exit 1; fi
+          # Scheduled runs trim the matrix to a single leg, so the rest of
+          # the tests job is skipped; either tests job succeeding is enough.
+          if [ "${{ needs.tests.result }}" != "success" ] && [ "${{ needs.tests-scheduled.result }}" != "success" ]; then exit 1; fi
           # Benchmark is intentionally advisory: CI runner timing varies too
           # much to gate merges on it — log status but do not block merge
           echo "Benchmark status: ${{ needs.benchmark.result }}"
+
+      - name: Open issue on scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          marker="Scheduled CI run failed"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$marker in:title" --limit 1 --json number --jq '.[0].number // empty')"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "$marker ($(date -u +%Y-%m-%d))" \
+              --body "The weekly scheduled CI run ([#$GITHUB_RUN_ID]($run_url)) failed. Likely causes: a new composer audit advisory, dependency drift, or a broken master. Check the run logs, then close this issue once resolved."
+          else
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "Failed again in [run #$GITHUB_RUN_ID]($run_url)."
+          fi
