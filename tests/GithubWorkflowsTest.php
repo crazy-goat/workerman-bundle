@@ -55,20 +55,100 @@ final class GithubWorkflowsTest extends TestCase
     /**
      * Marking a draft ready and pushing a moment later once left two full
      * matrices — eighteen legs — running against the same pull request, and
-     * nothing cancelled the one that was already obsolete.
+     * nothing cancelled the one that was already obsolete. Since #597 the
+     * group is per-ref and cancellation applies to pull requests only: a
+     * push-triggered master run is never cancelled by a later run, so a
+     * post-merge failure stays visible.
      */
     public function testASupersededRunIsCancelledInsteadOfFinishing(): void
     {
         $this->assertMatchesRegularExpression(
-            '/^concurrency:\n  group: .+\n  cancel-in-progress: true$/m',
+            '/^concurrency:\n  group: .+\n  cancel-in-progress: \${{ github\.event_name == \'pull_request\' }}$/m',
             $this->workflowContent,
             'Overlapping runs on one pull request must cancel the older one',
         );
 
         $this->assertMatchesRegularExpression(
-            '/^  group: .*pull_request\.number.*$/m',
+            '/^  group: \${{ github\.workflow }}-\${{ github\.ref }}$/m',
             $this->workflowContent,
-            'The group must be per-pull-request, or one PR would cancel another PR run',
+            'The group must be per-ref, or one PR would cancel another PR run',
+        );
+    }
+
+    public function testWorkflowRunsOnMasterPushScheduleAndDispatch(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/^on:\n  pull_request:\n  push:\n    branches: \[master\]/m',
+            $this->workflowContent,
+            'The workflow must run on pull requests and on every push to master',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^  schedule:\n    - cron: \'((0?[1-9])|([1-5][0-9])) \d+ \* \* \d+/m',
+            $this->workflowContent,
+            'A weekly scheduled run must exist, at a quiet minute not on the top of the hour',
+        );
+
+        $this->assertStringContainsString(
+            '  workflow_dispatch:',
+            $this->workflowContent,
+            'Maintainers must be able to start a run manually via workflow_dispatch',
+        );
+    }
+
+    public function testScheduledRunsTrimTheMatrixToASingleLeg(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/^  tests:\n    name: Tests\n    runs-on: ubuntu-latest\n    needs: lint\n    if: github\.event_name != \'schedule\'/m',
+            $this->workflowContent,
+            'The nine-leg tests matrix must not run on the weekly schedule',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^  tests-scheduled:\n    name: Tests \(scheduled\)/m',
+            $this->workflowContent,
+            'A single-leg tests job must run on the weekly schedule',
+        );
+
+        // The scheduled job must run exactly one matrix leg — capture its own
+        // block (up to the next job heading) and count the entries, so a
+        // regression adding more legs fails even though the job still exists.
+        $scheduled = '';
+        if (preg_match('/^  tests-scheduled:.*?(?=^  \w[\w-]*:$)/ms', $this->workflowContent, $m) === 1) {
+            $scheduled = $m[0];
+        }
+        $this->assertNotSame('', $scheduled, 'The tests-scheduled job must be present');
+        $this->assertSame(
+            1,
+            preg_match_all('/^ {10}- php-version:/m', $scheduled),
+            'The scheduled run must execute exactly one matrix leg',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^  benchmark:\n    name: Benchmark\n    runs-on: ubuntu-latest\n    needs: lint\n    if: github\.event_name != \'schedule\'/m',
+            $this->workflowContent,
+            'The advisory benchmark must not run on the weekly schedule',
+        );
+    }
+
+    public function testScheduledRunFailureOpensAnIssue(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/^      - name: Open issue on scheduled failure\n        if: failure\(\) && github\.event_name == \'schedule\'/m',
+            $this->workflowContent,
+            'A failing scheduled run must produce a visible signal: an issue',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/^    permissions:\n      contents: read\n      issues: write$/m',
+            $this->workflowContent,
+            'The ci job must hold issues: write for the issue opener',
+        );
+
+        $this->assertStringContainsString(
+            'marker="Scheduled CI run failed"',
+            $this->workflowContent,
+            'The issue opener must deduplicate open issues by a title marker',
         );
     }
 }

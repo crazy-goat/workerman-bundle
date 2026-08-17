@@ -420,21 +420,29 @@ gh pr view --json statusCheckRollup
 gh pr checks --watch
 ```
 
-CI workflow (`.github/workflows/tests.yaml`) has four jobs:
+CI workflow (`.github/workflows/tests.yaml`) triggers on pull requests,
+pushes to `master`, a weekly schedule, and manual `workflow_dispatch`. It
+has five jobs:
 
 1. **lint** – `composer validate --strict`, `composer audit`, then
    `composer lint` (php-cs-fixer, phpstan, rector dry-run and
    `bin/kb-lint.php`)
 2. **tests matrix** (PHP 8.2–8.5 × Symfony 6.4–8.0) – unit + E2E tests;
    `needs: lint`. The PHP 8.2 / Symfony 6.4 leg also enforces the
-   line-coverage floor
-3. **benchmark** – advisory; CI runner timing varies too much to gate merges
-   on it
-4. **ci** – aggregator: fails unless `lint` and `tests` succeeded
+   line-coverage floor. Runs on every trigger except `schedule`
+3. **tests-scheduled** – the same tests as a single representative leg
+   (PHP 8.2 × Symfony 6.4), scheduled runs only, so the nine-leg matrix
+   is not executed every week
+4. **benchmark** – advisory; CI runner timing varies too much to gate
+   merges on it
+5. **ci** – aggregator: fails unless `lint` and `tests` succeeded (and,
+   on schedule, `tests-scheduled`); opens an issue if a scheduled run
+   fails with nobody watching
 
-A run superseded by a newer push on the same pull request is cancelled
-(`concurrency: cancel-in-progress`), so two full matrices never grind against
-the same PR at once.
+Runs on a pull request are cancelled by a newer push to the same PR
+(`concurrency: cancel-in-progress` for `pull_request` events), so two full
+matrices never grind against the same PR at once. Runs on `master` are
+never cancelled, so a post-merge failure stays visible.
 
 ---
 

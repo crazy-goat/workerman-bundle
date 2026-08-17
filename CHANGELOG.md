@@ -120,6 +120,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on an unloaded machine drops by ~6s of guaranteed sleeping per matrix leg
   ([#592](https://github.com/crazy-goat/workerman-bundle/issues/592))
 
+### Added
+
+- CI now verifies `master`: the tests workflow triggers on push to
+  `master`, on a weekly schedule, and via manual `workflow_dispatch` —
+  previously it ran on `pull_request` only, so master was never verified
+  after a merge and `composer audit` never re-ran. The weekly scheduled
+  run (Monday 05:23 UTC) executes lint — including `composer audit` —
+  plus a single representative test leg (PHP 8.2 × Symfony 6.4) instead
+  of the full nine-leg matrix, and opens a GitHub issue when it fails, so
+  a new advisory or dependency-drift breakage is surfaced even in a quiet
+  week. Concurrency is now per-ref: a newer push cancels an older run on
+  the same pull request, but a `master` run is never cancelled
+  ([#597](https://github.com/crazy-goat/workerman-bundle/issues/597))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added
