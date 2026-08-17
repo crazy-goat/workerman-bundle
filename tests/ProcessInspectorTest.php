@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ProcessInspector;
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -161,8 +162,9 @@ final class ProcessInspectorTest extends TestCase
             $this->assertTrue($this->inspector->isProcessAlive($pid), 'Child should be alive before kill');
 
             posix_kill($pid, SIGKILL);
-            // Give the kernel a moment to mark the child as a zombie.
-            usleep(50_000);
+            // Poll until the kernel marks the child as dead (zombie),
+            // replacing the fixed 50ms guess.
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 2);
 
             $this->assertFalse(
                 $this->inspector->isProcessAlive($pid),
@@ -296,10 +298,7 @@ final class ProcessInspectorTest extends TestCase
             // Poll instead of a fixed sleep: B needs a moment to die after
             // the fork. Once dead, B is a zombie non-child and must be
             // reported as not alive on every POSIX platform.
-            $deadline = \microtime(true) + 2.0;
-            while ($this->inspector->isProcessAlive($zombiePid) && \microtime(true) < $deadline) {
-                \usleep(20_000);
-            }
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($zombiePid), 2);
 
             $this->assertFalse(
                 $this->inspector->isProcessAlive($zombiePid),
@@ -610,10 +609,7 @@ final class ProcessInspectorTest extends TestCase
      */
     private function waitForProcessDeath(int $pid): void
     {
-        $deadline = \microtime(true) + 1.0;
-        while ($this->inspector->isProcessAlive($pid) && \microtime(true) < $deadline) {
-            \usleep(20_000);
-        }
+        Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 1);
     }
 
     /**
@@ -683,10 +679,7 @@ PHP;
 
     private function waitForFile(string $path, int $timeout): void
     {
-        $deadline = \microtime(true) + $timeout;
-        while (!\file_exists($path) && \microtime(true) < $deadline) {
-            \usleep(20_000);
-        }
+        Wait::until(static fn(): bool => \file_exists($path), $timeout);
     }
 
     /**
@@ -775,8 +768,10 @@ PHP;
         try {
             $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
 
-            // Give the kernel a moment (in case the kill was sent).
-            usleep(100_000);
+            // Poll briefly for death — the kill should NOT have been sent,
+            // so the condition never becomes true and Wait::until times out
+            // after 1s, which is the "did it die?" observation window.
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 1);
 
             $this->assertTrue(
                 $this->inspector->isProcessAlive($pid),
@@ -820,7 +815,9 @@ PHP;
             // so the check does NOT kill it.
             $this->inspector->killOrphanedIntermediateFork($pid);
 
-            usleep(100_000);
+            // Poll briefly for death — the legacy cmdline check should NOT
+            // kill a non-WorkerMan process, so Wait::until times out after 1s.
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 1);
 
             $this->assertTrue(
                 $this->inspector->isProcessAlive($pid),

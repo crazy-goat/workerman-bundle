@@ -125,6 +125,8 @@ final class StatusFileReaderTest extends TestCase
 
         $pid = pcntl_fork();
         if ($pid === 0) {
+            // Deliberate pacing delay before creating the file — tests that
+            // waitForFile polls instead of checking once. Not a condition wait.
             usleep(100_000);
             file_put_contents($tempFile, 'status data');
             posix_kill(posix_getpid(), SIGKILL);

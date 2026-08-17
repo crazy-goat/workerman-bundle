@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Test\App\ProcessMarkerPaths;
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class ProcessTest extends KernelTestCase
@@ -153,20 +154,16 @@ final class ProcessTest extends KernelTestCase
 
         // Wait for the supervisor to restart the worker and dispatch a new
         // ProcessStartEvent. The marker timestamp must advance.
-        $deadline = microtime(true) + 5;
-        $refreshed = false;
-        while (microtime(true) < $deadline) {
+        $refreshed = Wait::until(function () use ($beforeTimestamp): bool {
             $content = @file_get_contents($this->varDir . '/' . ProcessMarkerPaths::START_MARKER);
-            if ($content !== false) {
-                $entries = $this->parseMarkerEntries($content);
-                $latest = $this->findLatestEntryForProcess($entries, 'Test process');
-                if ($latest !== null && $latest['timestamp'] > $beforeTimestamp) {
-                    $refreshed = true;
-                    break;
-                }
+            if ($content === false) {
+                return false;
             }
-            usleep(100_000);
-        }
+            $entries = $this->parseMarkerEntries($content);
+            $latest = $this->findLatestEntryForProcess($entries, 'Test process');
+
+            return $latest !== null && $latest['timestamp'] > $beforeTimestamp;
+        }, 5);
 
         $this->assertTrue(
             $refreshed,
@@ -272,14 +269,16 @@ final class ProcessTest extends KernelTestCase
 
     private function waitForFile(string $relativePath): string|null
     {
-        $i = 0;
-        do {
-            if (($content = @file_get_contents($this->varDir . '/' . $relativePath)) !== false) {
-                return $content;
-            }
-            usleep(200000);
-        } while (++$i < 10);
-        return null;
+        $path = $this->varDir . '/' . $relativePath;
+        $found = Wait::until(static fn(): bool => @file_get_contents($path) !== false, 2);
+
+        if (!$found) {
+            return null;
+        }
+
+        $content = @file_get_contents($path);
+
+        return $content === false ? null : $content;
     }
 
     /**
@@ -299,20 +298,28 @@ final class ProcessTest extends KernelTestCase
      */
     private function waitForMarkerEntries(string $relativePath, string $processName, int $freshAfter): array
     {
-        $i = 0;
-        do {
-            $content = @file_get_contents($this->varDir . '/' . $relativePath);
-            if ($content !== false && $content !== '') {
-                $entries = $this->parseMarkerEntries($content);
-                foreach ($entries as $entry) {
-                    if ($entry['process'] === $processName && $entry['timestamp'] >= $freshAfter) {
-                        return $entries;
-                    }
+        $path = $this->varDir . '/' . $relativePath;
+        $found = Wait::until(function () use ($path, $processName, $freshAfter): bool {
+            $content = @file_get_contents($path);
+            if ($content === false || $content === '') {
+                return false;
+            }
+            foreach ($this->parseMarkerEntries($content) as $entry) {
+                if ($entry['process'] === $processName && $entry['timestamp'] >= $freshAfter) {
+                    return true;
                 }
             }
-            usleep(200000);
-        } while (++$i < 75);
-        return [];
+
+            return false;
+        }, 15);
+
+        if (!$found) {
+            return [];
+        }
+
+        $content = @file_get_contents($path);
+
+        return $content !== false ? $this->parseMarkerEntries($content) : [];
     }
 
     /**

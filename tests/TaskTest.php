@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class TaskTest extends KernelTestCase
@@ -63,13 +64,15 @@ final class TaskTest extends KernelTestCase
 
     private function getTaskStatusFileContent(): string|null
     {
-        $i = 0;
-        do {
-            if (($content = @file_get_contents(dirname(__DIR__) . '/var/task_status.log')) !== false) {
-                return $content;
-            }
-            usleep(200000);
-        } while (++$i < 10);
-        return null;
+        $path = dirname(__DIR__) . '/var/task_status.log';
+        $found = Wait::until(static fn(): bool => @file_get_contents($path) !== false, 2);
+
+        if (!$found) {
+            return null;
+        }
+
+        $content = @file_get_contents($path);
+
+        return $content === false ? null : $content;
     }
 }

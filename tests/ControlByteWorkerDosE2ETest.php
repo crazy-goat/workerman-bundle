@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -101,8 +102,11 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         );
         $this->assertStringContainsString('Bad Request', $response);
 
-        // Brief settle so a crashing worker would have exited / been respawned.
-        \usleep(200_000);
+        // Poll briefly for a PID change — a crashing worker would have
+        // been respawned with a new PID. The condition should never become
+        // true, so Wait::until times out after 2s, which is the observation
+        // window that a fixed 200ms usleep only guessed at.
+        Wait::until(fn(): bool => $this->readWorkerPid() !== $before, 2);
 
         $after = $this->readWorkerPid();
         $this->assertSame(
@@ -178,7 +182,8 @@ final class ControlByteWorkerDosE2ETest extends TestCase
             'Backstop mode must not complete the happy-path 200 for a control-byte request',
         );
 
-        \usleep(300_000);
+        // Poll briefly for a PID change — the worker should NOT crash.
+        Wait::until(fn(): bool => $this->readWorkerPid() !== $workerPid, 3);
 
         $after = $this->readWorkerPid();
         $this->assertSame(
@@ -243,28 +248,37 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         $this->pipes = $pipes;
         \fclose($this->pipes[0]);
 
-        $deadline = \microtime(true) + 15.0;
-        while (\microtime(true) < $deadline) {
-            if (\is_file($readyFile) && \is_file($pidFile)) {
-                $status = \proc_get_status($this->process);
-                if ($status['running'] === false) {
-                    break;
-                }
-                $pid = (int) \trim((string) \file_get_contents($pidFile));
-                if ($pid > 0 && $this->portIsOpen()) {
-                    return $pid;
-                }
+        $ready = Wait::until(function (): bool {
+            if (!\is_file($this->tempDir . '/ready') || !\is_file($this->tempDir . '/worker.pid')) {
+                return false;
             }
-            \usleep(50_000);
+            if ((int) \trim((string) \file_get_contents($this->tempDir . '/worker.pid')) <= 0) {
+                return false;
+            }
+            $proc = $this->process;
+            if ($proc === null) {
+                return true; // process exited / not started
+            }
+            $status = \proc_get_status($proc);
+            if ($status['running'] === false) {
+                return true; // break — process exited early
+            }
+
+            return $this->portIsOpen();
+        }, 15);
+
+        $status = \proc_get_status($this->process);
+        if (!$ready || $status['running'] === false) {
+            $stderr = \stream_get_contents($this->pipes[2]) ?: '';
+            $stdout = \stream_get_contents($this->pipes[1]) ?: '';
+            $this->fail(sprintf(
+                "Worker did not become ready within 15s.\nstderr: %s\nstdout: %s",
+                $stderr,
+                $stdout,
+            ));
         }
 
-        $stderr = \stream_get_contents($this->pipes[2]) ?: '';
-        $stdout = \stream_get_contents($this->pipes[1]) ?: '';
-        $this->fail(sprintf(
-            "Worker did not become ready within 15s.\nstderr: %s\nstdout: %s",
-            $stderr,
-            $stdout,
-        ));
+        return (int) \trim((string) \file_get_contents($this->tempDir . '/worker.pid'));
     }
 
     private function stopWorker(): void
@@ -286,15 +300,13 @@ final class ControlByteWorkerDosE2ETest extends TestCase
                     @\posix_kill($child, SIGTERM);
                 }
             }
-            $deadline = \microtime(true) + 3.0;
-            while (\microtime(true) < $deadline) {
-                $s = \proc_get_status($this->process);
-                if (!$s['running']) {
-                    break;
-                }
-                \usleep(50_000);
-            }
-            if (\proc_get_status($this->process)['running']) {
+            // Poll until the process exits (or timeout), then SIGKILL if still running.
+            $stopped = Wait::until(function (): bool {
+                $proc = $this->process;
+
+                return $proc === null || !\proc_get_status($proc)['running'];
+            }, 3);
+            if (!$stopped) {
                 @\posix_kill($pid, SIGKILL);
             }
         }

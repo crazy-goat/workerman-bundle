@@ -70,15 +70,24 @@ function assertFileNotExists(string $path, string $message): void
  */
 function waitForChild(int $timeoutMs = 5000): int
 {
-    $deadline = microtime(true) + ($timeoutMs / 1000);
-    while (microtime(true) < $deadline) {
-        $pid = pcntl_wait($status, WNOHANG);
-        if ($pid > 0 || $pid === -1) {
-            return $pid === -1 ? -1 : $status;
-        }
-        usleep(10_000);
+    $pid = 0;
+    $status = 0;
+    $found = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        function () use (&$pid, &$status): bool {
+            $pid = pcntl_wait($status, WNOHANG);
+
+            return $pid > 0 || $pid === -1;
+        },
+        (int) ($timeoutMs / 1000),
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
+
+    if (!$found) {
+        return -2;
     }
-    return -2;
+
+    return $pid === -1 ? -1 : $status;
 }
 
 $pidDir = $tempDir . '/pids';

@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
 use CrazyGoat\WorkermanBundle\Exception\SfxExtractionException;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -971,23 +972,24 @@ PHP_WRAP);
         self::$serverProcess = $process;
 
         // Wait until the server accepts connections.
-        $deadline = microtime(true) + 5.0;
-        while (microtime(true) < $deadline) {
-            $errno = 0;
-            $errstr = '';
-            $sock = @fsockopen('127.0.0.1', (int) self::$serverPort, $errno, $errstr, 0.2);
+        $port = (int) self::$serverPort;
+        $ready = Wait::until(static function () use ($port): bool {
+            $sock = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
             if ($sock !== false) {
                 fclose($sock);
 
-                return;
+                return true;
             }
-            usleep(50000);
-        }
 
-        throw new \RuntimeException(sprintf(
-            'Test HTTP server did not start on port %d.',
-            self::$serverPort,
-        ));
+            return false;
+        }, 5);
+
+        if (!$ready) {
+            throw new \RuntimeException(sprintf(
+                'Test HTTP server did not start on port %d.',
+                self::$serverPort,
+            ));
+        }
     }
 
     private function invokeBuildContext(string $url, bool $allowInsecure): mixed

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Command\ServerAction;
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -49,7 +50,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
         // Stop via console command.
         \shell_exec(\workerman_create_console_command('stop'));
-        \usleep(500_000);
+        self::assertTrue($this->waitForPortDown(8888, 5), 'Server port 8888 should be down after stop');
 
         // Server should be down.
         try {
@@ -69,7 +70,7 @@ final class WorkermanCommandTest extends KernelTestCase
             \proc_close($process);
         }
 
-        \usleep(500_000);
+        self::assertTrue($this->waitForPortUp(8888, 10), 'Server port 8888 should be back up after restart');
 
         // Server should be back up.
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
@@ -85,7 +86,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
 
-        \usleep(500_000);
+        self::assertTrue($this->waitForPortUp(8888, 5), 'Server port 8888 should still be up after reload');
         $client = new Client(['http_errors' => false]);
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
         self::assertSame(200, $response->getStatusCode());
@@ -200,5 +201,34 @@ final class WorkermanCommandTest extends KernelTestCase
         $application = new Application(self::bootKernel());
 
         return new CommandTester($application->find('workerman:server'));
+    }
+
+    private function waitForPortUp(int $port, int $timeoutSeconds): bool
+    {
+        return Wait::until(static function () use ($port): bool {
+            $sock = @\fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+
+            if ($sock !== false) {
+                \fclose($sock);
+
+                return true;
+            }
+
+            return false;
+        }, $timeoutSeconds);
+    }
+
+    private function waitForPortDown(int $port, int $timeoutSeconds): bool
+    {
+        return Wait::until(static function () use ($port): bool {
+            $sock = @\fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+            if ($sock !== false) {
+                \fclose($sock);
+
+                return false;
+            }
+
+            return true;
+        }, $timeoutSeconds);
     }
 }

@@ -832,6 +832,10 @@ final class InotifyMonitorWatcherTest extends TestCase
 
     private function waitForInotifyEvents(): void
     {
+        // Fixed delay for inotify kernel event delivery — not a condition
+        // wait. inotify events are pushed asynchronously by the kernel and
+        // there is no userspace condition to poll, so a fixed settle is
+        // the correct approach here.
         usleep(200000);
     }
 

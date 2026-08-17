@@ -78,6 +78,33 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('*,process,*)              TYPE=process ;;', $script);
     }
 
+    public function testWaitForPortsScriptExists(): void
+    {
+        $this->assertFileExists($this->projectDir . '/bin/wait-for-ports.php');
+    }
+
+    /**
+     * bin/wait-for-ports.php polls TCP ports until they accept connections.
+     * It replaces the fixed `sleep 1` in the composer test scripts (#592).
+     */
+    public function testWaitForPortsRejectsMissingArgs(): void
+    {
+        $output = [];
+        $code = null;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->projectDir . '/bin/wait-for-ports.php') . ' 2>&1', $output, $code);
+        $this->assertSame(2, $code, 'wait-for-ports.php must exit 2 on missing args');
+        $this->assertStringContainsString('Usage:', implode("\n", $output));
+    }
+
+    public function testWaitForPortsTimesOutOnUnreachablePort(): void
+    {
+        $output = [];
+        $code = null;
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->projectDir . '/bin/wait-for-ports.php') . ' 19999 --timeout=1 2>&1', $output, $code);
+        $this->assertSame(1, $code, 'wait-for-ports.php must exit 1 on timeout');
+        $this->assertStringContainsString('did not become ready', implode("\n", $output));
+    }
+
     public function testReadmeDisambiguatesBinConsole(): void
     {
         $content = file_get_contents($this->projectDir . '/README.md');

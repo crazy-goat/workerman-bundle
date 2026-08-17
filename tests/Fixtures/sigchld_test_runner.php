@@ -27,6 +27,9 @@ if ($argc < 2) {
 
 $testName = $argv[1];
 
+// Wait::until() is used by the shared helper functions below.
+require __DIR__ . '/../../vendor/autoload.php';
+
 /** @var array<string> */
 $logMessages = [];
 
@@ -60,15 +63,16 @@ function installSigchldHandler(array &$logMessages): void
  */
 function waitForChildren(array &$logMessages, int $expectedCount, int $timeoutMs = 5000): void
 {
-    $deadline = microtime(true) + ($timeoutMs / 1000);
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        function () use (&$logMessages, $expectedCount): bool {
+            pcntl_signal_dispatch();
 
-    while (microtime(true) < $deadline) {
-        pcntl_signal_dispatch();
-        if (count($logMessages) >= $expectedCount) {
-            return;
-        }
-        usleep(10_000); // 10ms
-    }
+            return count($logMessages) >= $expectedCount;
+        },
+        (int) ($timeoutMs / 1000),
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
 
     // Final dispatch attempt
     pcntl_signal_dispatch();
@@ -83,17 +87,18 @@ function waitForChildren(array &$logMessages, int $expectedCount, int $timeoutMs
  */
 function waitForChildReap(int $childPid, int $timeoutMs = 5000): void
 {
-    $deadline = microtime(true) + ($timeoutMs / 1000);
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($childPid): bool {
+            pcntl_signal_dispatch();
+            // Check if child is still alive
+            $result = pcntl_waitpid($childPid, $status, WNOHANG);
 
-    while (microtime(true) < $deadline) {
-        pcntl_signal_dispatch();
-        // Check if child is still alive
-        $result = pcntl_waitpid($childPid, $status, WNOHANG);
-        if ($result === $childPid || $result === -1) {
-            return;
-        }
-        usleep(10_000);
-    }
+            return $result === $childPid || $result === -1;
+        },
+        (int) ($timeoutMs / 1000),
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
 }
 
 function fail(string $message): never
@@ -200,8 +205,8 @@ function testSignalKill(): void
         fail('Fork failed');
     }
 
-    // Small delay to ensure child is running
-    usleep(50_000);
+    // Wait until the child process is scheduled by the kernel before signalling.
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
 
     posix_kill($pid, SIGTERM);
 
@@ -304,18 +309,21 @@ function testSchedulerWorkerHandler(): void
         fail('Fork failed for non-zero exit test');
     }
 
-    $deadline = microtime(true) + 5;
-    $foundNonZero = false;
-    while (microtime(true) < $deadline && !$foundNonZero) {
-        pcntl_signal_dispatch();
-        foreach ($readLogs() as $log) {
-            if (str_contains($log, 'exited with code 42')) {
-                $foundNonZero = true;
-                break;
+    $foundNonZero = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($readLogs): bool {
+            pcntl_signal_dispatch();
+            foreach ($readLogs() as $log) {
+                if (str_contains($log, 'exited with code 42')) {
+                    return true;
+                }
             }
-        }
-        usleep(10_000);
-    }
+
+            return false;
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
     if (!$foundNonZero) {
         fail('Should have logged non-zero exit (expected "exited with code 42")');
     }
@@ -336,15 +344,16 @@ function testSchedulerWorkerHandler(): void
         fail('Fork failed for zero exit test');
     }
 
-    $deadline = microtime(true) + 5;
-    $foundZeroExit = false;
-    while (microtime(true) < $deadline && !$foundZeroExit) {
-        $r = pcntl_waitpid($pid2, $ws, WNOHANG);
-        if ($r === $pid2 || $r === -1) {
-            $foundZeroExit = true;
-        }
-        usleep(10_000);
-    }
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($pid2): bool {
+            $r = pcntl_waitpid($pid2, $ws, WNOHANG);
+
+            return $r === $pid2 || $r === -1;
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
     pcntl_signal_dispatch();
 
     // Check that no warning log was produced for zero exit
@@ -366,22 +375,26 @@ function testSchedulerWorkerHandler(): void
         fail('Fork failed for signal kill test');
     }
 
-    usleep(50_000);
+    // Wait until the child process is scheduled by the kernel before signalling.
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid3, 0), 2);
     posix_kill($pid3, SIGTERM);
 
-    $deadline = microtime(true) + 5;
-    $foundKill = false;
-    while (microtime(true) < $deadline && !$foundKill) {
-        pcntl_signal_dispatch();
-        $newLogs = array_slice($readLogs(), $logCountBefore);
-        foreach ($newLogs as $log) {
-            if (str_contains($log, 'was killed by signal')) {
-                $foundKill = true;
-                break;
+    $foundKill = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($readLogs, $logCountBefore): bool {
+            pcntl_signal_dispatch();
+            $newLogs = array_slice($readLogs(), $logCountBefore);
+            foreach ($newLogs as $log) {
+                if (str_contains($log, 'was killed by signal')) {
+                    return true;
+                }
             }
-        }
-        usleep(10_000);
-    }
+
+            return false;
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
     if (!$foundKill) {
         fail('Should have logged signal kill message (expected "was killed by signal")');
     }
@@ -487,15 +500,16 @@ function testSchedulerWorkerExceptionLogging(): void
     }
 
     $status = 0;
-    $deadline = microtime(true) + 10;
-    $reaped = false;
-    while (microtime(true) < $deadline && !$reaped) {
-        $result = pcntl_waitpid($pid, $status, WNOHANG);
-        if ($result === $pid || $result === -1) {
-            $reaped = true;
-        }
-        usleep(10_000);
-    }
+    $reaped = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        function () use ($pid, &$status): bool {
+            $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+            return $result === $pid || $result === -1;
+        },
+        10,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
 
     if (!$reaped) {
         fail('Child process did not terminate within timeout');
@@ -587,18 +601,23 @@ function testSigkillNormalWhenGrpc(): void
         fail('Fork failed');
     }
 
-    $deadline = microtime(true) + 5;
-    $childAlive = true;
-    while (microtime(true) < $deadline && $childAlive) {
-        pcntl_signal_dispatch();
-        // The handler reaps the child silently (normal completion), so
-        // existence-check the pid instead of waitpid.
-        $childAlive = \posix_kill($pid, 0);
-        usleep(10_000);
-    }
-    if ($childAlive) {
+    $reaped = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($pid): bool {
+            pcntl_signal_dispatch();
+            // The handler reaps the child silently (normal completion), so
+            // existence-check the pid instead of waitpid.
+            return !\posix_kill($pid, 0);
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
+    if (!$reaped) {
         fail('SIGKILL child was not reaped by SIGCHLD handler');
     }
+    // Brief settle for the log file write to flush before checking it.
+    // This is a pacing delay, not a condition wait — the test asserts the
+    // log does NOT contain a crash message, so there is no condition to poll.
     usleep(50_000);
     pcntl_signal_dispatch();
 
@@ -615,22 +634,23 @@ function testSigkillNormalWhenGrpc(): void
     if ($pid2 === -1) {
         fail('Fork failed');
     }
-    usleep(50_000);
+    // Wait until the child process is scheduled by the kernel before signalling.
     // SIGUSR1 is SIG_IGN in this process (inherited from the PHPUnit
     // bootstrap across exec), so use SIGTERM to kill the child.
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid2, 0), 2);
     \posix_kill($pid2, \SIGTERM);
 
-    $found = false;
-    $deadline = microtime(true) + 5;
-    while (microtime(true) < $deadline && !$found) {
-        pcntl_signal_dispatch();
-        $log = (string) file_get_contents($logFilePath);
-        if (str_contains($log, 'was killed by signal')) {
-            $found = true;
-            continue;
-        }
-        usleep(10_000);
-    }
+    $found = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($logFilePath): bool {
+            pcntl_signal_dispatch();
+            $log = (string) file_get_contents($logFilePath);
+
+            return str_contains($log, 'was killed by signal');
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
     if (!$found) {
         fail('Non-SIGKILL signal death must still be logged on grpc hosts');
     }
@@ -672,16 +692,16 @@ function testSigkillWarnsWithoutGrpc(): void
         fail('Fork failed');
     }
 
-    $found = false;
-    $deadline = microtime(true) + 5;
-    while (microtime(true) < $deadline && !$found) {
-        pcntl_signal_dispatch();
-        if (str_contains((string) file_get_contents($logFilePath), 'was killed by signal 9')) {
-            $found = true;
-            continue;
-        }
-        usleep(10_000);
-    }
+    $found = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function () use ($logFilePath): bool {
+            pcntl_signal_dispatch();
+
+            return str_contains((string) file_get_contents($logFilePath), 'was killed by signal 9');
+        },
+        5,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
     if (!$found) {
         fail('SIGKILL death must still warn on hosts without grpc');
     }

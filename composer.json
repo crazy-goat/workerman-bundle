@@ -81,13 +81,13 @@
     "scripts": {
         "test": [
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
-            "sleep 1",
+            "php bin/wait-for-ports.php 8888 9999",
             "php -d phar.readonly=0 vendor/bin/phpunit --no-coverage",
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
         "test:coverage": [
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
-            "sleep 1",
+            "php bin/wait-for-ports.php 8888 9999",
             "php -d phar.readonly=0 vendor/bin/phpunit --coverage-clover var/coverage.xml",
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],

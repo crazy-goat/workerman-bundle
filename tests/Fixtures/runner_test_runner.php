@@ -27,6 +27,9 @@ if ($argc < 2) {
 
 $testName = $argv[1];
 
+// Wait::until() is used by some test functions below.
+require __DIR__ . '/../../vendor/autoload.php';
+
 function fail(string $message): never
 {
     fwrite(STDERR, "FAIL: $message\n");
@@ -164,7 +167,8 @@ function testSignalKilledChild(): void
         exit(0);
     }
 
-    usleep(50_000);
+    // Wait until the child process is scheduled by the kernel before signalling.
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
     posix_kill($pid, SIGTERM);
 
     $status = 0;
@@ -267,8 +271,8 @@ function testTimeoutKillsChild(): void
         exit(0); // unreachable
     }
 
-    // Wait a short time
-    usleep(100_000); // 100ms
+    // Confirm the child is still alive (simulating a timeout check before SIGKILL).
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
 
     // Child should still be alive, kill it with SIGKILL (simulating timeout behavior)
     posix_kill($pid, SIGKILL);

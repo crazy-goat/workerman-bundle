@@ -36,7 +36,20 @@ function workerman_start(): void
         \proc_close($process);
     }
 
-    \usleep(500_000);
+    // Wait for the daemon to bind its ports instead of a fixed sleep, so a
+    // slow start (cold cache, loaded CI runner) does not race the first test.
+    \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        static function (): bool {
+            $sock = @\fsockopen('127.0.0.1', 8888, $errno, $errstr, 0.2);
+            if ($sock === false) {
+                return false;
+            }
+            \fclose($sock);
+
+            return true;
+        },
+        15,
+    );
 }
 
 function workerman_stop(): void
