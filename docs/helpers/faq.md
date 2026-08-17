@@ -15,7 +15,7 @@ your diff, read only those `###` entries — never the whole file.
 - `binary-file` — FAQ-002
 - `by-ref` — FAQ-029
 - `checksum` — FAQ-003
-- `ci` — FAQ-011
+- `ci` — FAQ-011, FAQ-032, FAQ-033, FAQ-034
 - `closures` — FAQ-023
 - `config` — FAQ-024
 - `config-cache` — FAQ-005
@@ -31,6 +31,7 @@ your diff, read only those `###` entries — never the whole file.
 - `gc` — FAQ-023
 - `gh` — FAQ-017
 - `git-hooks` — FAQ-015
+- `github-actions` — FAQ-033
 - `grpc` — FAQ-007
 - `head` — FAQ-001, FAQ-002
 - `headers` — FAQ-012, FAQ-025, FAQ-027
@@ -52,7 +53,7 @@ your diff, read only those `###` entries — never the whole file.
 - `phpbench` — FAQ-028
 - `phpstan` — FAQ-014, FAQ-029
 - `ports` — FAQ-009
-- `process` — FAQ-007, FAQ-030
+- `process` — FAQ-007, FAQ-030, FAQ-032
 - `response-strategy` — FAQ-001, FAQ-002
 - `scheduler` — FAQ-020, FAQ-021
 - `security` — FAQ-027
@@ -60,11 +61,12 @@ your diff, read only those `###` entries — never the whole file.
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
 - `vendor` — FAQ-025
+- `yaml` — FAQ-034
 <!-- kb-index:end -->
 
 ## HTTP responses
@@ -387,3 +389,20 @@ This repo defines only the `aggregate` report (`--report=average` errors with "N
 <!-- kb: id=FAQ-029 date=2026-08-16 tags=phpstan,php84,deprecation,by-ref trigger="adding a by-ref out-parameter, or hitting PHPStan error parameterByRef.unusedType" hits=0 status=active -->
 
 PHPStan level 8 rejects a by-ref out-param that is always written before return (`?string &$lower = null`) with `parameterByRef.unusedType`: the method never assigns null, so the nullable part of the type looks unused. The canonical fix is `@param-out string $lower`, which narrows the caller-visible post-call type. Do NOT "fix" it by dropping the `?` — `string &$lower = null` is an *implicitly-nullable* type, deprecated at function-declaration time on PHP >= 8.4. Minimum supported versions (`^8.2` here) are irrelevant: CI runs 8.4/8.5 legs and users install the bundle on them, so the deprecation fires there (verified on 8.5.9: `E_DEPRECATED` for `string &$x = null`, silent for `?string &$x = null`). Also: an uninitialized variable passed by-ref is fine — the callee creates it. Discovered in #726, where the trick shared the callee's internal `strtolower()` cache key with the caller; the invariant that makes that safe (`strtolower(normalize($name)) === strtolower($name)`) is gate-covered by `testNormalizedHeaderNameLowercasesBackToInput`, not by this entry.
+
+## CI / GitHub Actions
+
+### Multiple test files can pin the same workflow YAML — a filter-matched review run catches only one
+<!-- kb: id=FAQ-032 date=2026-08-17 tags=ci,tests,process trigger="reviewing or locally validating a .github/workflows/* diff; scoping a review's test run" hits=0 status=active -->
+
+The workflow file is pinned by more than one test class: `tests/GithubWorkflowsTest.php` (the obvious one) and `tests/CoverageCiGateTest.php` (`substr_count('run: composer coverage:check') === 1`, plus the presence checks). In #597 (PR #749) review rounds 1–3 each ran `phpunit --filter GithubWorkflowsTest` only — all green, "no open findings" — while the coder had duplicated the coverage gate into the new `tests-scheduled` job. The full local `composer test` at step 7 caught it (F-7). For a workflow diff, scope the review's test run either to the full suite or to a sweep: `grep -rl 'tests.yaml' tests/` (or `grep -rl '<changed file>' tests/`) — never to the single most obvious test.
+
+### Concurrency group must be per-`github.ref`, with `cancel-in-progress` scoped to the trigger type that wants cancellation
+<!-- kb: id=FAQ-033 date=2026-08-17 tags=ci,github-actions trigger="adding a second trigger type to a GitHub Actions workflow that has a concurrency block" hits=0 status=active -->
+
+`group: ${{ github.workflow }}-${{ github.event.pull_request.number }}` is safe only while the workflow triggers exclusively on `pull_request`. Any second trigger (push, schedule, workflow_dispatch) makes non-PR events evaluate the group to `<workflow>-` — one shared group — so `cancel-in-progress: true` starts cancelling unrelated master pushes. The group must be per-run: `github.ref` (or another non-empty per-run value), with `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` so a master run is never cancelled by a later one (post-merge failures stay visible). Discovered in #597: the old group was a latent trap that only became live the moment a push trigger was added.
+
+### Local YAML 1.1 validators read the workflow's top-level `on:` as the boolean `true`
+<!-- kb: id=FAQ-034 date=2026-08-17 tags=ci,yaml,tests trigger="locally validating a GitHub Actions workflow with a YAML deserializer" hits=0 status=active -->
+
+PyYAML `safe_load` and Ruby `YAML.load` (YAML 1.1) parse the workflow's top-level `on:` key as the boolean `true` (a YAML 1.1 bool word), so `yaml.safe_load(...)['on']` silently inspects the wrong key. A parse-error check stays sound, but structural assertions on the trigger block need either a custom loader that keeps raw scalar keys (`construct_mapping`), or — the repo's own convention — regexes on the raw text (the workflow-pinning tests use `assertMatchesRegularExpression` on the file contents, which also survives the `on:` gotcha). First hit in #597 (PR #749) while validating the trigger set locally.
