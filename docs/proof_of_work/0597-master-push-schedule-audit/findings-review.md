@@ -258,3 +258,47 @@ subsequent rounds.
   line. Simulated regression removing the opener step → assertions (a)
   and (c) fail (catch it); (b) is independent and guards the permission
   grant separately. All three assertions pass on the current YAML.
+
+---
+
+## F-7 (round 4 reviewer verdict)
+
+- **Round 4 reviewer verdict:** confirmed fixed. Commit `e251930` stripped
+  the coverage machinery from `tests-scheduled` exactly as prescribed:
+  `coverage: pcov` and `pcov.directory=src` removed from the setup-php
+  step; "Run tests with coverage" (`composer test:coverage`) and "Check
+  coverage threshold" (`composer coverage:check`) steps replaced with a
+  single "Run tests" step (`composer test`). Verified programmatically:
+  `substr_count($workflow, 'run: composer coverage:check') === 1` (the
+  `tests` job's 8.2/6.4 leg is the sole owner). All `CoverageCiGateTest`
+  assertions pass: `coverage: pcov` present (in `tests`), `composer
+  test:coverage` present (in `tests`), `composer coverage:check` present
+  (in `tests`), `bin/check-coverage.php` absent, threshold step regex
+  matches, upload step regex matches. Full structural verification: 21
+  tests (GithubWorkflowsTest 11 + CoverageCiGateTest 8 + other filtered),
+  68 assertions, 0 failures. The full `composer test` suite (2193 tests)
+  was run by the main session post-fix with 0 failures.
+
+  **Sibling sweep:** only two test files read the workflow YAML
+  (`CoverageCiGateTest.php`, `GithubWorkflowsTest.php`). The only
+  count-on-coverage-string assertion in the entire codebase is the one
+  F-7 tripped (`substr_count` on `run: composer coverage:check`). No
+  sibling test asserts a count on `coverage: pcov`,
+  `composer test:coverage`, `pcov.directory`, or any other coverage
+  string — all other coverage checks are `assertStringContainsString`
+  (presence-only), which pass because the `tests` job retains coverage
+  machinery. No missed siblings.
+
+  **Schedule-intent:** the scheduled run still satisfies the issue's
+  intent. Lint (incl. `composer audit`) runs; one representative tests
+  leg runs via plain `composer test`; benchmark is skipped; the `ci`
+  aggregator OR-gate reduces correctly; the issue opener fires on
+  failure. Coverage not running on schedule is correct — the coverage
+  gate is a merge-quality signal (runs on every PR/push), not a
+  drift-detection signal. No code changes between scheduled runs, so
+  coverage cannot drift; the threshold is stable (~0.1pp variance); a
+  weekly coverage run would provide no actionable signal.
+
+  **PR/push/workflow_dispatch:** unchanged from round 3. Commit `e251930`
+  touched only `tests-scheduled` steps; all other jobs, triggers, and the
+  concurrency block are byte-identical to the round-3 state.
