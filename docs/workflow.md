@@ -226,6 +226,10 @@ on the record.
 #  fixed / not a real finding (with evidence). Only then look for NEW issues.
 #  Check: type correctness, error handling, PSR-12 compliance,
 #  missing tests, outdated documentation.
+#  For a diff touching .github/workflows/*, do NOT scope your test run to
+#  the single most obvious test — other classes may pin the same YAML
+#  (grep -rl '<changed file>' tests/ ), so either sweep or run the full
+#  suite; see FAQ-032.
 #
 #  Write two files under docs/proof_of_work/<NNNN>-<slug>/:
 #  - review-<x>.md (x = this round): your full review for this round

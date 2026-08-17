@@ -302,3 +302,43 @@ subsequent rounds.
   **PR/push/workflow_dispatch:** unchanged from round 3. Commit `e251930`
   touched only `tests-scheduled` steps; all other jobs, triggers, and the
   concurrency block are byte-identical to the round-3 state.
+
+---
+
+## Step 14 outcome (main session)
+
+Candidates verified by a read-only reviewer subagent on master:
+
+- C1 (`tests`/`tests-scheduled` step duplication, tests.yaml:44–161) —
+  **skip**: accepted tradeoff, documented in code-decision-1.md with an
+  explicit revisit trigger (extract a composite action only if a third
+  consumer appears); trigger not met.
+- C2 (review-process gap: workflow-pinning tests beyond the obvious
+  filter; the F-7 escaped-defect lesson) — **real, untracked**: filed as
+  **#750** (`[Process]`, labels `process` + `enhancement` + `minor`) on
+  user confirmation; resolved by this docs PR (workflow.md step-4 note +
+  FAQ-032).
+- C3 (YAML 1.1 `on:`-parses-as-boolean gotcha) — **skip as issue**:
+  general knowledge, repo tests already use regex-on-raw-text; folded as
+  FAQ-034 instead.
+
+Knowledge-base candidates folded into `docs/helpers/` (single writer:
+this main session, on this branch):
+
+- **FAQ-032** — multiple test files can pin the same workflow YAML
+  (tags: ci, tests, process); prefer a sweep / full suite over a
+  filter-matched run.
+- **FAQ-033** — concurrency group must be per-`github.ref` with
+  `cancel-in-progress` scoped to the trigger type (tags: ci,
+  github-actions).
+- **FAQ-034** — YAML 1.1 validators read the workflow's `on:` as boolean
+  `true` (tags: ci, yaml, tests).
+
+Dropped candidates: the round-1 "OR-logic aggregator over mutually
+exclusive `needs` jobs" and the coder's "job-level `if` can't be locally
+validated" — both are niche and now embedded in the workflow YAML's own
+comments and code-decision-1.md; a FAQ entry each was judged low-return
+against the file's line budget (faq.md is already over the 300-line
+budget — tracked concern #744). Prefer the gate over the entry: FAQ-032's
+sweep instruction is the actionable part, and the workflow.md step-4
+note makes it normative for review rounds.
