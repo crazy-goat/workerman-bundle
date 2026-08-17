@@ -1091,7 +1091,7 @@ final class ServerManagerTest extends TestCase
         }
 
         $this->writeMatchingFingerprint($pid);
-        $this->waitForChildReady($readyMarker);
+        $this->waitForChildReadyOrKill($readyMarker, $pid);
 
         return $pid;
     }
@@ -1205,7 +1205,7 @@ PHP;
         }
 
         $this->writeMatchingFingerprint($pid);
-        $this->waitForChildReady($readyMarker);
+        $this->waitForChildReadyOrKill($readyMarker, $pid);
 
         return $pid;
     }
@@ -1238,7 +1238,7 @@ PHP;
         }
 
         $this->writeMatchingFingerprint($pid);
-        $this->waitForChildReady($readyMarker);
+        $this->waitForChildReadyOrKill($readyMarker, $pid);
 
         return $pid;
     }
@@ -1262,6 +1262,22 @@ PHP;
         $ready = Wait::until(static fn(): bool => file_exists($marker), 5);
         @unlink($marker);
         $this->assertTrue($ready, 'Child did not install signal handlers within 5s');
+    }
+
+    /**
+     * Wait for a child readiness marker, killing the child when the wait
+     * fails: waitForChildReady's AssertionFailedError would propagate
+     * out of the fork helper before the test method's try/finally is
+     * entered, orphaning the child.
+     */
+    private function waitForChildReadyOrKill(string $marker, int $pid): void
+    {
+        try {
+            $this->waitForChildReady($marker);
+        } catch (\PHPUnit\Framework\AssertionFailedError $e) {
+            $this->killChildBlocking($pid);
+            throw $e;
+        }
     }
 
     private function isAlive(int $pid): bool

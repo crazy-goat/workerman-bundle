@@ -25,7 +25,6 @@ declare(strict_types=1);
  */
 
 $argv = $_SERVER['argv'] ?? [];
-$argc = $_SERVER['argc'] ?? 0;
 
 $ports = [];
 $timeoutSeconds = 15;
@@ -60,7 +59,7 @@ $check = static function () use ($ports): bool {
     return true;
 };
 
-$ready = CrazyGoat\WorkermanBundle\Util\Wait::until($check, (int) $timeoutSeconds);
+$ready = CrazyGoat\WorkermanBundle\Util\Wait::until($check, (int) ceil($timeoutSeconds));
 
 if (!$ready) {
     fwrite(STDERR, sprintf(

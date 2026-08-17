@@ -89,3 +89,48 @@ Rector caught these. Fixed by removing them.
 excluded), over the 300-line budget. Not related to this issue.
 **Suggested fix:** Promote or drop entries per the knowledge-base decay
 rules. Out of scope for #592.
+
+---
+
+## Fix round (review round 1) — obstacles and findings
+
+### 6. R1-F1 failure path is hard to test directly — accepted as untested
+**File:** `tests/ServerManagerTest.php:1271` (new `waitForChildReadyOrKill`)
+**Description:** Making the orphan-child fix provable would require a
+child that fails to touch the readiness marker within 5s (e.g. a child
+that sleeps 6s before touching), which adds a 5s+ test to every run for a
+path that exists only on pathological hosts. Decided against it: the
+try/catch–kill–rethrow helper is 6 lines, trivially reviewable, and the
+review itself stated "none automated" is expected for this finding.
+**Suggested fix:** None — documented in findings-review.md as
+deliberately not regression-tested.
+
+### 7. `(int) ceil()` vs truncation: error message still prints the float
+**File:** `bin/wait-for-ports.php:62,68`
+**Description:** After the ceil fix, `--timeout=1.5` prints "within 1.5
+seconds" but `Wait::until` got 2. Message stays honest ("at least what
+the message claims") but a purist could argue for printing the effective
+int. Keeping the float is deliberate — the user typed 1.5 and the wait is
+>= 1.5.
+**Suggested fix:** None.
+
+### 8. Two unrelated `AndIsExecutable` tests exist — only one was flagged
+**File:** `tests/CoverageCiGateTest.php:83`
+**Description:** `testCoverageScriptExistsAndIsExecutable()` has the same
+name/behavior mismatch the review flagged for `BinDirectoryTest`. Review
+round 1 did not flag it (possibly because `bin/check-coverage.php` is
+meant to be executable, or an oversight). Left untouched — out of the
+review's scope; flag for the next review round if desired.
+**Suggested fix:** Rename or add an `is_executable()` assertion after
+confirming whether check-coverage.php is meant to be chmod +x.
+
+### 9. `startWorker()` still re-reads the PID file after the condition
+**File:** `tests/ControlByteWorkerDosE2ETest.php:269`
+**Description:** After adding the `<= 0` guard to the Wait::until
+condition, the method still does an unconditional
+`\file_get_contents($this->tempDir . '/worker.pid')` read on return. A
+TOCTOU window (worker re-writes the file between the last poll and the
+read) could in theory return a stale value; for PID files this is not a
+real failure mode. Per the review, "preserve the later unconditional read
+or align it with the validated value" — preserved.
+**Suggested fix:** None.

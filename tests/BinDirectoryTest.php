@@ -78,7 +78,7 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('*,process,*)              TYPE=process ;;', $script);
     }
 
-    public function testWaitForPortsScriptExistsAndIsExecutable(): void
+    public function testWaitForPortsScriptExists(): void
     {
         $this->assertFileExists($this->projectDir . '/bin/wait-for-ports.php');
     }

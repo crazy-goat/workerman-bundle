@@ -252,6 +252,9 @@ final class ControlByteWorkerDosE2ETest extends TestCase
             if (!\is_file($this->tempDir . '/ready') || !\is_file($this->tempDir . '/worker.pid')) {
                 return false;
             }
+            if ((int) \trim((string) \file_get_contents($this->tempDir . '/worker.pid')) <= 0) {
+                return false;
+            }
             $proc = $this->process;
             if ($proc === null) {
                 return true; // process exited / not started
