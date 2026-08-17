@@ -11,6 +11,7 @@ your diff, read only those `###` entries — never the whole file.
 <!-- kb-index:start -->
 - `bc` — FAQ-002
 - `benchmarks` — FAQ-028
+- `bin` — FAQ-031
 - `binary-file` — FAQ-002
 - `by-ref` — FAQ-029
 - `checksum` — FAQ-003
@@ -36,7 +37,7 @@ your diff, read only those `###` entries — never the whole file.
 - `http` — FAQ-001, FAQ-002, FAQ-012, FAQ-025, FAQ-027
 - `inotify` — FAQ-006
 - `jitter` — FAQ-020
-- `lint` — FAQ-015
+- `lint` — FAQ-015, FAQ-031
 - `listen-scheme` — FAQ-019
 - `logging` — FAQ-008
 - `long-running` — FAQ-018
@@ -51,7 +52,7 @@ your diff, read only those `###` entries — never the whole file.
 - `phpbench` — FAQ-028
 - `phpstan` — FAQ-014, FAQ-029
 - `ports` — FAQ-009
-- `process` — FAQ-007
+- `process` — FAQ-007, FAQ-030
 - `response-strategy` — FAQ-001, FAQ-002
 - `scheduler` — FAQ-020, FAQ-021
 - `security` — FAQ-027
@@ -59,7 +60,7 @@ your diff, read only those `###` entries — never the whole file.
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -184,6 +185,27 @@ Promoted — the three scripts live in `composer.json`; ports 8888/9999 and the 
 <!-- kb: id=FAQ-011 date=2026-08-08 tags=tests,coverage,ci trigger="adding logic that needs coverage" hits=0 status=promoted gate="composer.json coverage:check + tests/CoverageCiGateTest.php" -->
 
 Promoted — the floor is defined once in `composer.json` (`coverage:check`) and asserted by `tests/CoverageCiGateTest.php`; rationale in [decisions.md](decisions.md) (DEC-007).
+
+### Fork-helper readiness markers must kill the child when the wait fails
+<!-- kb: id=FAQ-030 date=2026-08-17 tags=tests,process trigger="moving a readiness wait into a fork helper, or adding a marker-file wait inside a helper that returns \$pid" hits=0 status=active -->
+
+A fork helper that waits for a child-side readiness marker **inside the helper**
+(before `return $pid`) orphans the child when the wait fails: the exception
+propagates before the test method's `try/finally { killChildBlocking($pid); }`
+is entered, and the child runs forever. Wrap the wait in a try/catch
+(`\PHPUnit\Framework\AssertionFailedError`) that kills the child
+(`killChildBlocking`, which guards with `posix_kill($pid, 0)` so there is no
+double-kill) and re-throws. Helpers that use `waitForFile` do not need the
+wrapper — it does not assert and always returns `$pid`. Introduced in #592.
+
+### `bin/` is inside linter scope in this repo
+<!-- kb: id=FAQ-031 date=2026-08-17 tags=lint,bin,tests trigger="reviewing or editing a file under bin/, or relying on 'bin/ is outside linter scope'" hits=0 status=active -->
+
+Both `phpstan.neon.dist` and `.php-cs-fixer.dist.php` include `bin/`, so
+`composer lint` covers scripts there — the review prompts' blanket claim that
+they don't is wrong for this repo. Still review `bin/` by reading (coverage
+floor excludes it: `phpunit.xml` `<source>` includes only `src/`), but do not
+hand-wave past a lint failure in `bin/`. Verified in #592's review round 1.
 
 ### Underscore header test fixtures need a literal `_` character
 <!-- kb: id=FAQ-012 date=2026-08-09 tags=tests,http,headers trigger="writing a fixture for the underscore-header drop path" hits=0 status=active -->

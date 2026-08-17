@@ -235,3 +235,28 @@ the error message, or leave as-is.
 The review itself records this as a deliberate design choice (the wait
 is always >= the message's claim — the honest direction), documented in
 `code-decision-2.md` and `findings-coder.md` item 7. No action taken.
+
+---
+
+## Step 14 outcome (main session)
+
+Candidates verified by a read-only reviewer subagent on master:
+
+- C1 (faq.md over 300-line budget — 307 budgeted vs limit 300) — **skip**:
+  real (kb-lint warns on every `composer lint`), but already tracked as
+  open issue **#744** (`minor`, `code-quality`); no duplicate filed.
+- C2 (`static` keyword on fixtures closures — `sigchld_test_runner.php`
+  7 instances) — **skip**: cosmetic only, below the project's tracking bar.
+
+No new GitHub issues created.
+
+Knowledge-base candidates folded into `docs/helpers/faq.md`:
+- FAQ-030 — fork-helper readiness markers must clean up the child on
+  failure (review candidate, rounds 1–2; the failure path is not
+  automatable as a check — a regression test would need to simulate a
+  child that never touches its marker, judged fragile, so the entry is
+  the right form).
+- FAQ-031 — `bin/` *is* inside linter scope in this repo (phpstan
+  `phpstan.neon.dist` and php-cs-fixer include `bin/`), contrary to the
+  review prompts' blanket claim — future reviews of `bin/` scripts should
+  trust the gates for it.
