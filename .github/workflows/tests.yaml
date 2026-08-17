@@ -141,8 +141,7 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           extensions: zip, inotify, pcntl, posix
-          coverage: pcov
-          ini-values: pcov.directory=src,phar.readonly=0
+          ini-values: phar.readonly=0
 
       - name: Create var directory
         run: mkdir -p var
@@ -155,11 +154,8 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Run tests with coverage
-        run: composer test:coverage
-
-      - name: Check coverage threshold
-        run: composer coverage:check
+      - name: Run tests
+        run: composer test
 
   benchmark:
     name: Benchmark

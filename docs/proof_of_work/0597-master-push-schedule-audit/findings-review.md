@@ -208,6 +208,43 @@ subsequent rounds.
   issue-opener step's `if: failure() && github.event_name == 'schedule'`
   condition, the `ci` job's `permissions: {contents: read, issues: write}`
   block, and the `marker="Scheduled CI run failed"` dedup line.
+
+---
+
+## F-7
+
+- **File:line:** `.github/workflows/tests.yaml:157–162` (the
+  `tests-scheduled` job's coverage steps)
+- **What is wrong:** `tests-scheduled` duplicated the "Run tests with
+  coverage" and "Check coverage threshold" steps from the `tests` job.
+  `tests/CoverageCiGateTest::testCoverageGateRunsOnceOnLowestMatrixLegOnly`
+  asserts `substr_count($workflow, 'run: composer coverage:check') === 1`
+  — the gate is textual-exactly-once, on the single designated 8.2/6.4
+  leg. The duplicate made the count 2, failing `composer test` locally.
+  Three review rounds missed it because every run exercised only the
+  filtered `GithubWorkflowsTest`, never the full suite (which includes
+  `CoverageCiGateTest`, another test pinning tests.yaml).
+- **Severity:** high (blocked CI green locally; would have failed the
+  PR's tests matrix)
+- **What happened to it:** found at step 7 (local `composer test` gate),
+  after review round 3 had declared no open findings — the escaped-defect
+  pattern the workflow warns about.
+- **Smallest safe fix direction:** strip the coverage machinery from
+  `tests-scheduled` — the weekly run exists to catch advisories and
+  dependency drift, not to re-politick the coverage gate; the gate stays
+  with the `tests` job's 8.2/6.4 leg (its single designated owner). Run
+  plain `composer test` there. Do NOT relax the `substr_count === 1`
+  gate to reach green.
+- **Automated check that would have caught it:** `composer test` (the
+  full suite) pulls in `CoverageCiGateTest`; review rounds should have
+  run it once, not only the filter-matched test file.
+- **Fix applied:** `tests-scheduled` now runs plain `composer test`;
+  its `coverage: pcov` setup, the `pcov.directory` ini pair, the
+  "Run tests with coverage" step and the "Check coverage threshold"
+  step were removed. `composer coverage:check` appears exactly once
+  (the `tests` job's 8.2/6.4 leg). `CoverageCiGateTest`
+  (8 tests) + `GithubWorkflowsTest` (11 tests) pass; full suite: 2193
+  tests, 0 failures.
 - **Round 3 reviewer verdict:** confirmed fixed.
   `testScheduledRunsTrimTheMatrixToASingleLeg` now ends with an
   `assertMatchesRegularExpression` for
