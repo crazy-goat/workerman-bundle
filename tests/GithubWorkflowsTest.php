@@ -84,7 +84,7 @@ final class GithubWorkflowsTest extends TestCase
         );
 
         $this->assertMatchesRegularExpression(
-            '/^  schedule:\n    - cron: \'\d+ \d+ \* \* \d+/m',
+            '/^  schedule:\n    - cron: \'([1-9]|[1-5][0-9]) \d+ \* \* \d+/m',
             $this->workflowContent,
             'A weekly scheduled run must exist, at a quiet minute not on the top of the hour',
         );
@@ -108,6 +108,20 @@ final class GithubWorkflowsTest extends TestCase
             '/^  tests-scheduled:\n    name: Tests \(scheduled\)/m',
             $this->workflowContent,
             'A single-leg tests job must run on the weekly schedule',
+        );
+
+        // The scheduled job must run exactly one matrix leg — capture its own
+        // block (up to the next job heading) and count the entries, so a
+        // regression adding more legs fails even though the job still exists.
+        $scheduled = '';
+        if (preg_match('/^  tests-scheduled:.*?(?=^  \w[\w-]*:$)/ms', $this->workflowContent, $m) === 1) {
+            $scheduled = $m[0];
+        }
+        $this->assertNotSame('', $scheduled, 'The tests-scheduled job must be present');
+        $this->assertSame(
+            1,
+            preg_match_all('/^ {10}- php-version:/m', $scheduled),
+            'The scheduled run must execute exactly one matrix leg',
         );
     }
 }
