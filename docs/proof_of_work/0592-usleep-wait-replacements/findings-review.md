@@ -166,3 +166,72 @@ rule). No other test or script referenced the old name (only
 All Round 1 findings addressed in a single commit;
 `CHANGELOG.md` unchanged (the entry's claims do not materially change —
 these are test/tooling correctness fixes, not behavior changes).
+
+---
+
+## Round 2
+
+### R1-F1 → fixed | tests/ServerManagerTest.php:1273 | Orphaned child if waitForChildReady throws | medium
+
+**Verified fixed in 4a821c9.** `waitForChildReadyOrKill(string $marker, int $pid)`
+at line 1273 wraps `waitForChildReady` in try/catch
+(`\PHPUnit\Framework\AssertionFailedError`) → `killChildBlocking($pid)` →
+re-throw. All three signal-handler helpers call it (lines 1094, 1208,
+1241). No double-kill race: `killChildBlocking` (line 1291) guards with
+`isAlive($pid)` → `posix_kill($pid, 0)` before SIGKILL + `pcntl_waitpid`.
+The test method's `try/finally` is not reached on the failure path
+because the helper call is outside the try block (verified at lines
+259/263, 403/408, 468/473), so `killChildBlocking` runs exactly once.
+No fourth straggler: `forkSleepingChild` (1016) has no wait;
+`forkMasterLikeChild` (1040) and `forkChildWithMasterTitle` (1108) use
+`waitForFile` (non-throwing — does not assert the return value), so
+they always return `$pid`.
+
+### R1-F2 → fixed | bin/wait-for-ports.php:61,67 | Fractional --timeout truncated | low
+
+**Verified fixed in 4a821c9.** Line 61 now uses `(int) ceil($timeoutSeconds)`.
+Verified empirically: `--timeout=1` → "within 1 seconds", elapsed 1.27s;
+`--timeout=1.5` → "within 1.5 seconds", elapsed 2.30s (ceil=2 + backoff).
+Wait is always >= what the message claims.
+
+### R1-F3 → fixed | tests/ControlByteWorkerDosE2ETest.php:255 | PID > 0 validation | low
+
+**Verified fixed in 4a821c9.** Guard added at line 255:
+`if ((int) \trim((string) \file_get_contents(.../worker.pid)) <= 0) return false;`
+Handles `false`-from-`file_get_contents` via string cast → `""` → `0` → `<= 0`
+→ `return false` (wait continues). Empty PID file now times out into the
+existing "Worker did not become ready within 15s" fail().
+
+### R1-F4 → fixed | bin/wait-for-ports.php | Unused $argc | nit
+
+**Verified fixed in 4a821c9.** Line removed; no references remain.
+
+### R1-F5 → fixed | tests/BinDirectoryTest.php:81 | Misleading test name | nit
+
+**Verified fixed in 4a821c9.** Renamed to `testWaitForPortsScriptExists()`.
+No `is_executable()` assertion (script runs via `php bin/...`).
+
+### R2-N1 | bin/wait-for-ports.php:61,67 | Error message prints float while wait uses ceil()→int | nit
+
+After the R1-F2 ceil() fix, `Wait::until` receives `(int) ceil($timeoutSeconds)`
+but the error message prints the original float. For `--timeout=1.5`:
+message says "within 1.5 seconds", actual wait ~2.3s. The wait is always
+>= the message's claim (ceil guarantees this), so the message
+under-reports the actual wait — the honest direction. Deliberate design
+choice (code-decision-2.md, findings-coder.md item 7).
+
+**Status:** open (nit — no action required)
+**Severity:** nit
+**Smallest fix (if desired):** Print `(int) ceil($timeoutSeconds)` in
+the error message, or leave as-is.
+**Automated check:** none — deliberate UX/cosmetics choice.
+
+---
+
+## Round 2 → answer
+
+### R2-N1 | bin/wait-for-ports.php:61,67 | Error message prints float while wait uses ceil()→int | nit → deliberately not fixed
+
+The review itself records this as a deliberate design choice (the wait
+is always >= the message's claim — the honest direction), documented in
+`code-decision-2.md` and `findings-coder.md` item 7. No action taken.
