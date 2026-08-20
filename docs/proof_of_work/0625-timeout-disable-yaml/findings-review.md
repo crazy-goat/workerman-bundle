@@ -26,6 +26,8 @@ One entry per finding. Status is `open` for round 1 unless noted.
   — if `->min(0)` is dropped from that node, `-1` is accepted, no exception
   thrown, `expectException` fails. See F-4 for the partial-coverage gap on
   `keepalive_timeout`.
+  Verified round 3: the test is now a `@dataProvider` with two cases, each
+  exercising one field independently. 10 tests, 42 assertions pass.
 
 ---
 
@@ -51,6 +53,8 @@ One entry per finding. Status is `open` for round 1 unless noted.
   `setValue(null, $saved)` restores it. Property name `'event'` matches
   `vendor/workerman/workerman/src/Timer.php:55`. Test-only coupling to
   Workerman internals is acceptable.
+  Verified round 3: no changes to `tests/RunnerTest.php` since round 2.
+  Unchanged, still correct.
 
 ---
 
@@ -68,6 +72,8 @@ One entry per finding. Status is `open` for round 1 unless noted.
   before `restoreWorkerState`. Verified round 2: the `$openedStream` guard
   prevents accessing an undefined `$stream` variable when the stream was
   pre-existing. Correct and clean.
+  Verified round 3: no changes to `tests/RunnerTest.php` since round 2.
+  Unchanged, still correct.
 
 ---
 
@@ -89,3 +95,13 @@ One entry per finding. Status is `open` for round 1 unless noted.
   (`provideNegativeTimeoutOverrides`, one field negative at a time), so each
   node's `min(0)` is exercised independently (expected exception is thrown by
   whichever node is invalid). Verified: 10 tests, 42 assertions pass.
+  Verified round 3: the data provider genuinely exercises each node
+  independently. Case `connection_timeout`: only `connection_timeout` is -1,
+  `keepalive_timeout` uses default (30) — throws because of
+  `connection_timeout`'s `min(0)`. Case `keepalive_timeout`: only
+  `keepalive_timeout` is -1, `connection_timeout` uses default (120) — throws
+  because of `keepalive_timeout`'s `min(0)`. All regression scenarios (drop
+  one or both `min(0)` calls) are caught. PHPStan clean on the test file.
+  The `@param array<string, int> $override` phpdoc (commit `2bec127`) resolves
+  PHPStan's `missingType.iterableValue` diagnostic. Fix is correct and
+  complete.
