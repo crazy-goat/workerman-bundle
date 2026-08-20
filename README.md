@@ -158,8 +158,8 @@ All top-level `workerman` configuration options:
 | `log_file` | `string` | `%kernel.project_dir%/var/log/workerman.log` | Log file. |
 | `stdout_file` | `string` | `%kernel.project_dir%/var/log/workerman.stdout.log` | File to write all output (echo, var_dump, etc.) to when running as daemon. |
 | `max_package_size` | `int` | `10485760` (10 MB) | Maximum accepted package size in bytes. |
-| `connection_timeout` | `int` | `120` | Max seconds to wait for a complete request before closing the connection (slowloris protection). See [security.md](docs/security.md). |
-| `keepalive_timeout` | `int` | `30` | Max idle seconds for keep-alive connections before closing. See [security.md](docs/security.md). |
+| `connection_timeout` | `int` | `120` | Max seconds to wait for a complete request before closing the connection (slowloris protection). `0` disables the timeout. See [security.md](docs/security.md). |
+| `keepalive_timeout` | `int` | `30` | Max idle seconds for keep-alive connections before closing. `0` disables the timeout. See [security.md](docs/security.md). |
 | `response_chunk_size` | `int` | `2048` | Streamed response chunk size in bytes. |
 | `trusted_hosts` | `string[]` | `[]` | List of regex patterns for trusted hostnames. Requests with a non-matching `Host` header are rejected with `SuspiciousOperationException`. See [security.md](docs/security.md). |
 | `servers` | `array` | `[]` | List of server definitions — one entry per worker group and listening socket. See [servers[] options](#servers-options). |

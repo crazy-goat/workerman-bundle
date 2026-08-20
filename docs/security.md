@@ -234,13 +234,13 @@ The HTTP server exposes configurable timeouts to protect against slowloris-style
 
 The maximum time (in seconds) to wait for a complete request (headers + body) on a newly established connection. If the client does not send the complete request within this window, the connection is closed. This prevents slow-read attacks where an attacker sends headers or body data byte-by-byte.
 
-Default: `120` seconds. Timeout checks run from a shared worker-level sweeper, so a connection may remain open until the next sweep (at most approximately one quarter of the smallest configured timeout, with a minimum one-second interval). Because activity is tracked at whole-second granularity, a connection may also be closed up to about one second *before* its exact timeout.
+Default: `120` seconds. Timeout checks run from a shared worker-level sweeper, so a connection may remain open until the next sweep (at most approximately one quarter of the smallest configured timeout, with a minimum one-second interval). Because activity is tracked at whole-second granularity, a connection may also be closed up to about one second *before* its exact timeout. Set to `0` to disable the timeout entirely: the sweeper is not armed and incomplete requests are never closed by the bundle (not recommended — removes slowloris protection).
 
 ### keepalive_timeout
 
 The maximum idle time (in seconds) to keep a keep-alive connection open after the previous request has been fully processed. If no new request arrives within this window, the connection is closed. This prevents idle connections from consuming worker capacity indefinitely.
 
-Default: `30` seconds. As with `connection_timeout`, enforcement uses the shared sweeper's interval rather than a dedicated timer for each connection.
+Default: `30` seconds. As with `connection_timeout`, enforcement uses the shared sweeper's interval rather than a dedicated timer for each connection. Set to `0` to disable the timeout: idle keep-alive connections are then never closed by the bundle.
 
 ### body_size_cap (per-server)
 
@@ -277,7 +277,7 @@ workerman:
 - **connection_timeout protects against slowloris**: Without this timeout, an attacker can open many connections and send data extremely slowly, holding each worker process indefinitely. Setting this to a reasonable value (e.g., 30-120 seconds) limits the window of exposure.
 - **keepalive_timeout limits idle connections**: Long-lived idle keep-alive connections reduce the number of available worker slots. A short keepalive timeout (e.g., 15-30 seconds) frees capacity quickly.
 - **body_size_cap for defense-in-depth**: Even with a global `max_package_size`, setting tighter per-server limits on endpoints that expect small payloads (e.g., API endpoints) provides an additional layer of protection against oversized payloads.
-- **Timers are per-connection**: Each connection's timers are independent. A slowloris attack on one connection does not affect timing on others.
+- **Timeouts share one worker-level sweeper**: enforcement runs from a single persistent timer per worker, not per-connection timers, so individual connection events never add or remove timers. A slowloris attack on one connection affects other connections only through the shared sweep interval derived from the smallest configured timeout.
 
 ## SSL Certificate and Key Validation
 

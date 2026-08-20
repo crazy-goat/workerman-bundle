@@ -109,6 +109,26 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(15, $config['keepalive_timeout']);
     }
 
+    public function testConfiguredTreeAcceptsZeroTimeouts(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'connection_timeout' => 0,
+            'keepalive_timeout' => 0,
+        ]]);
+
+        self::assertSame(0, $config['connection_timeout']);
+        self::assertSame(0, $config['keepalive_timeout']);
+    }
+
     public function testConfiguredTreeParsesServerBodySizeCap(): void
     {
         $configurator = $this->createDefinitionConfigurator();

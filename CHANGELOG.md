@@ -134,6 +134,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same pull request, but a `master` run is never cancelled
   ([#597](https://github.com/crazy-goat/workerman-bundle/issues/597))
 
+- `connection_timeout` and `keepalive_timeout` can now be set to `0` in YAML
+  to disable the timeout, matching the runtime's `0`-disables semantics (see
+  the sweeper note in the Fixed section, #555). The config tree previously
+  rejected `0` with `InvalidConfigurationException` (`->min(1)`), so the
+  disable capability was unreachable for bundle users; setting both to `0`
+  leaves the worker without any timeout sweeper
+  ([#625](https://github.com/crazy-goat/workerman-bundle/issues/625))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added
@@ -346,7 +354,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stop manually splitting buffered responses into 8 KiB sends. `DefaultResponseStrategy` now returns the complete body to Workerman's transport, avoiding redundant `substr()` copies and write syscalls; preserve the request's HTTP protocol version on converted responses ([#556](https://github.com/crazy-goat/workerman-bundle/issues/556))
 
-- Replace per-request connection timers with one worker-level sweeper and activity timestamps, preventing cancelled `Select` timer entries from retaining memory under sustained keep-alive traffic ([#555](https://github.com/crazy-goat/workerman-bundle/issues/555)). The earlier per-connection timer-cleanup approach ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571)) is superseded: `onClose` no longer cancels per-connection timers — it clears the connection context so the sweeper skips closed connections — and `BinaryFileResponseStrategy` temp-file cleanup still chains with the worker-level `onClose` base callback. Note: when `ServerWorker` is constructed directly with `connectionTimeout: 0`, the timeout is now disabled (previously it armed an immediate close); the YAML configuration still enforces a minimum of 1 second.
+- Replace per-request connection timers with one worker-level sweeper and activity timestamps, preventing cancelled `Select` timer entries from retaining memory under sustained keep-alive traffic ([#555](https://github.com/crazy-goat/workerman-bundle/issues/555)). The earlier per-connection timer-cleanup approach ([#571](https://github.com/crazy-goat/workerman-bundle/issues/571)) is superseded: `onClose` no longer cancels per-connection timers — it clears the connection context so the sweeper skips closed connections — and `BinaryFileResponseStrategy` temp-file cleanup still chains with the worker-level `onClose` base callback. Note: when `ServerWorker` is constructed directly with `connectionTimeout: 0`, the timeout is now disabled (previously it armed an immediate close); the YAML configuration accepts `0` with the same disabled semantics ([#625](https://github.com/crazy-goat/workerman-bundle/issues/625)).
 
 ### Security
 

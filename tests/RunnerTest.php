@@ -6,11 +6,15 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Runner;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
+use Workerman\Events\Select;
+use Workerman\Timer;
 use Workerman\Worker;
 
 /**
@@ -445,6 +449,75 @@ final class RunnerTest extends TestCase
             }
             $this->assertTrue($found, 'Worker with timeout config should exist');
         } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    public function testConfigWithZeroTimeoutsDisablesSweeper(): void
+    {
+        $saved = $this->saveWorkerState();
+        $eventLoop = new Select();
+        Timer::init($eventLoop);
+
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+        Worker::$logFile = $tmpDir . '/workerman.log';
+
+        if (Worker::$outputStream === null) {
+            $stream = fopen('php://memory', 'w');
+            if ($stream === false) {
+                throw new \RuntimeException('Failed to open memory stream');
+            }
+            Worker::$outputStream = $stream;
+        }
+
+        try {
+            $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)
+                ->disableOriginalConstructor()
+                ->onlyMethods(['withStaticFileConfig', 'withRootDirectory'])
+                ->addMethods(['__invoke'])
+                ->getMock();
+
+            $container = $this->createMock(ContainerInterface::class);
+            $container->method('get')->with('workerman.http_request_handler')->willReturn($handler);
+
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('boot');
+            $kernel->method('getContainer')->willReturn($container);
+
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $config = [
+                'servers' => [
+                    ['name' => 'zero-timeout-test', 'listen' => 'http://0.0.0.0:8085'],
+                ],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+                'connection_timeout' => 0,
+                'keepalive_timeout' => 0,
+            ];
+
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+
+            $workers = $this->getWorkersProperty();
+            $found = false;
+            foreach ($workers as $w) {
+                if ($w->name === '[Server] zero-timeout-test') {
+                    $onWorkerStart = $w->onWorkerStart;
+                    $this->assertNotNull($onWorkerStart);
+                    $onWorkerStart($w);
+                    $this->assertSame(0, $eventLoop->getTimerCount(), 'zero timeouts must flow through as disabled: no sweeper armed');
+                    $found = true;
+                    break;
+                }
+            }
+            $this->assertTrue($found, 'Worker with zero timeout config should exist');
+        } finally {
+            Timer::delAll();
             $this->restoreWorkerState($saved);
             $this->removeDir($tmpDir);
         }
