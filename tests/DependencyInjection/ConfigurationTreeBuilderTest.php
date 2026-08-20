@@ -144,6 +144,8 @@ final class ConfigurationTreeBuilderTest extends TestCase
      * node's bound (F-4, review round 2).
      *
      * @dataProvider provideNegativeTimeoutOverrides
+     *
+     * @param array<string, int> $override
      */
     public function testConfiguredTreeRejectsNegativeTimeouts(array $override): void
     {
