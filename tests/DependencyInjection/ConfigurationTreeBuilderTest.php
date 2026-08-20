@@ -129,7 +129,23 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(0, $config['keepalive_timeout']);
     }
 
-    public function testConfiguredTreeRejectsNegativeTimeouts(): void
+    /**
+     * @return iterable<string, array{array<string, int>}>
+     */
+    public static function provideNegativeTimeoutOverrides(): iterable
+    {
+        yield 'connection_timeout' => [['connection_timeout' => -1]];
+        yield 'keepalive_timeout' => [['keepalive_timeout' => -1]];
+    }
+
+    /**
+     * One field at a time: Symfony's Processor throws on the first invalid
+     * child, so a combined payload would only exercise the first-declared
+     * node's bound (F-4, review round 2).
+     *
+     * @dataProvider provideNegativeTimeoutOverrides
+     */
+    public function testConfiguredTreeRejectsNegativeTimeouts(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
         (new ConfigurationTreeBuilder())->configure($configurator);
@@ -142,10 +158,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
 
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
 
-        $processor->process($node, [[
-            'connection_timeout' => -1,
-            'keepalive_timeout' => -1,
-        ]]);
+        $processor->process($node, [[$override]]);
     }
 
     public function testConfiguredTreeParsesServerBodySizeCap(): void
