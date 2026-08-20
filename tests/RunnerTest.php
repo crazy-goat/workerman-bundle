@@ -457,6 +457,8 @@ final class RunnerTest extends TestCase
     public function testConfigWithZeroTimeoutsDisablesSweeper(): void
     {
         $saved = $this->saveWorkerState();
+        $timerEventRef = new \ReflectionProperty(Timer::class, 'event');
+        $savedTimerEvent = $timerEventRef->getValue();
         $eventLoop = new Select();
         Timer::init($eventLoop);
 
@@ -464,12 +466,14 @@ final class RunnerTest extends TestCase
         mkdir($tmpDir, 0700, true);
         Worker::$logFile = $tmpDir . '/workerman.log';
 
+        $openedStream = false;
         if (Worker::$outputStream === null) {
             $stream = fopen('php://memory', 'w');
             if ($stream === false) {
                 throw new \RuntimeException('Failed to open memory stream');
             }
             Worker::$outputStream = $stream;
+            $openedStream = true;
         }
 
         try {
@@ -518,6 +522,10 @@ final class RunnerTest extends TestCase
             $this->assertTrue($found, 'Worker with zero timeout config should exist');
         } finally {
             Timer::delAll();
+            $timerEventRef->setValue(null, $savedTimerEvent);
+            if ($openedStream) {
+                fclose($stream);
+            }
             $this->restoreWorkerState($saved);
             $this->removeDir($tmpDir);
         }

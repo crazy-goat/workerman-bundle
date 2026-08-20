@@ -129,6 +129,25 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(0, $config['keepalive_timeout']);
     }
 
+    public function testConfiguredTreeRejectsNegativeTimeouts(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($node, [[
+            'connection_timeout' => -1,
+            'keepalive_timeout' => -1,
+        ]]);
+    }
+
     public function testConfiguredTreeParsesServerBodySizeCap(): void
     {
         $configurator = $this->createDefinitionConfigurator();
