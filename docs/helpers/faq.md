@@ -17,7 +17,7 @@ your diff, read only those `###` entries — never the whole file.
 - `checksum` — FAQ-003
 - `ci` — FAQ-011, FAQ-032, FAQ-033, FAQ-034
 - `closures` — FAQ-023
-- `config` — FAQ-024
+- `config` — FAQ-024, FAQ-035
 - `config-cache` — FAQ-005
 - `content-length` — FAQ-001
 - `control-plane` — FAQ-016
@@ -61,7 +61,8 @@ your diff, read only those `###` entries — never the whole file.
 - `state` — FAQ-018
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034
+- `symfony-config` — FAQ-035
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -352,6 +353,11 @@ closure captures (store data, not handlers). Reference:
 `scheduleFileCleanup()` + `FileCleanupState` (issue #573).
 
 ## Symfony config tree
+
+### Changing a `->min()`/`->max()` bound needs an accept AND a reject test — and one field per `process()` call
+<!-- kb: id=FAQ-035 date=2026-08-20 tags=config,tests,symfony-config trigger="loosening or tightening a Symfony Config ->min()/->max() bound on a node, or writing a config validation test" hits=0 status=active -->
+
+When a bound changes (e.g. #625 loosened `connection_timeout`/`keepalive_timeout` from `min(1)` to `min(0)`), pin BOTH sides: one test asserting the new boundary value is accepted (and passed through unchanged), one asserting the just-out-of-range value still raises `InvalidConfigurationException`. Without the reject test, a later edit that drops `->min(0)` lets negative values pass silently into a runtime that treats them as "disabled" — the config-level guard erodes with no test failure. Second gotcha: Symfony's `Processor` throws on the FIRST invalid child node, so a single `process()` call feeding two out-of-range fields only exercises the first-declared node's bound. Feed one field per call — a `@dataProvider` yielding one override at a time, the other fields taking their tree defaults — so every constrained node is pinned independently (review rounds 2–3 of #625). The config tree being stricter than the runtime (negatives rejected while the runtime tolerates them) is fine and intentional; the tests just pin it.
 
 ### `setDeprecated()` fires only when the key is actually present in config
 <!-- kb: id=FAQ-024 date=2026-08-10 tags=config,deprecation trigger="deprecating a node in the Symfony config tree" hits=0 status=active -->
