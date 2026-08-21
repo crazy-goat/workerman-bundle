@@ -21,3 +21,18 @@
 | F-5 | `tests/Phar/SfxDownloaderTest.php` | No test for directory cleanup on mid-extraction `\RuntimeException` path. | nit | fixed — verified correct: `testExtractZipRemovesDirectoriesOnMidExtractionFailure` added (lines 629–669); however only covers single-level nesting |
 | F-6 | `src/Phar/SfxDownloader.php:555-561` | `array_reverse(array_keys($parents))` reverses insertion order (deepest-first from the while-loop) producing shallowest-first — the opposite of what `rmdir` needs. For a multi-level nested file entry like `a/b/c/d.txt`, parents are processed `a` → `a/b` → `a/b/c`; `rmdir('a')` and `rmdir('a/b')` fail silently (non-empty), leaving `a/` and `a/b/` orphaned on disk. Confirmed with end-to-end test. | medium | fixed — replaced `array_reverse` with `usort` by path depth descending (deepest first); added `testExtractZipRemovesMultiLevelParentsOnMidExtractionFailure` test |
 | F-7 | `tests/Phar/SfxDownloaderTest.php` | No test verifies the `error_log()` warnings added by the F-1 fix in `removeExtractedEntries()` are actually emitted on removal failure. The analogous test for `fetch()`'s archive-unlink warning exists (`testExtractZipLogsWarningWhenFailedArchiveCannotBeRemoved`) but no equivalent was added for the new cleanup warnings. | low | not fixed — simulating a cleanup failure requires `chmod`-ing the directory read-only *after* extraction but *before* cleanup, which is not reliably triggerable in the current test flow (the failure happens inside `extractToDirectory()` before control returns to the test); the `error_log()` calls are simple and consistent with the tested `fetch()` pattern |
+
+---
+
+## Round 3
+
+| ID | File:line | What is wrong | Severity | Status |
+|----|-----------|---------------|----------|--------|
+| F-1 | `src/Phar/SfxDownloader.php:539-541` | `removeExtractedEntries()` silently `@`-suppresses `rmdir`/`unlink` failures without checking return value or `error_log()`-ing. | medium | fixed — verified correct: return values checked, `error_log()` warnings emitted (lines 567–598) |
+| F-2 | `src/Phar/SfxDownloader.php:535-543` | Reverse-order cleanup leaves orphaned parent directories. | low | fixed — verified correct: auto-created parents collected (lines 543–553), depth-descending sort (lines 560–564) |
+| F-3 | `tests/Phar/SfxDownloaderTest.php:591-599` | Misleading test comment. | low | fixed — verified correct |
+| F-4 | `tests/Phar/SfxDownloaderTest.php` | No test for `extractTo()` returning `false`. | nit | not fixed — accepted (path is extremely rare, cannot be reliably triggered without mocking) |
+| F-5 | `tests/Phar/SfxDownloaderTest.php` | No test for directory cleanup on mid-extraction `\RuntimeException` path. | nit | fixed — verified correct: single-level test (lines 629–669) + multi-level test (lines 680–717) |
+| F-6 | `src/Phar/SfxDownloader.php:555-561` | `array_reverse(array_keys($parents))` reverses insertion order (shallowest-first), not depth. Multi-level nesting orphans intermediate parents. | medium | fixed — verified correct: `usort` by `substr_count` of `/` descending (lines 560–564); multi-level test confirms |
+| F-7 | `tests/Phar/SfxDownloaderTest.php` | No test for `error_log()` warnings in `removeExtractedEntries()`. | low | not fixed — accepted (cleanup failure not reliably triggerable in current test flow) |
+| F-8 | `src/Phar/SfxDownloader.php:520-522` | Docblock says "Entries are processed in reverse extraction order" but F-6 fix changed the implementation to depth-descending `usort` by path separator count. The inline comment (lines 555–558) was updated but the docblock was not. | nit | fixed — docblock updated to describe depth-descending sort |

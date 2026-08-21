@@ -518,17 +518,18 @@ final readonly class SfxDownloader
      * Remove entries that were extracted during a failed fetch.
      *
      * Both files and directories created by the extraction are removed.
-     * Entries are processed in reverse extraction order so that nested
-     * directories are removed before their parents (e.g. "sub/nested/"
-     * is removed before "sub/"). Auto-created parent directories that
-     * have no corresponding zip entry are also removed when they become
-     * empty. Any entry that is no longer on disk (already gone, or never
-     * materialised for empty-dir entries on some platforms) is silently
-     * skipped. Pre-existing entries are never touched: we only remove
-     * paths whose name matches an extracted entry or was auto-created
-     * as a parent of one. Removal failures are logged via error_log()
-     * so the operator can investigate leftover partial files — the same
-     * principle as the archive unlink in {@see fetch()}.
+     * Tracked entries and auto-created parent directories are merged and
+     * sorted by path depth descending so that deeper directories are
+     * removed before their parents (e.g. "sub/nested/" is removed before
+     * "sub/"). Auto-created parent directories that have no corresponding
+     * zip entry are also removed when they become empty. Any entry that is
+     * no longer on disk (already gone, or never materialised for empty-dir
+     * entries on some platforms) is silently skipped. Pre-existing entries
+     * are never touched: we only remove paths whose name matches an
+     * extracted entry or was auto-created as a parent of one. Removal
+     * failures are logged via error_log() so the operator can investigate
+     * leftover partial files — the same principle as the archive unlink
+     * in {@see fetch()}.
      *
      * @param string[] $extractedEntries Names of successfully extracted entries
      * @param string   $destinationDir   Directory entries were extracted into
