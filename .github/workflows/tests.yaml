@@ -41,11 +41,71 @@ jobs:
       - name: Run code style checks
         run: composer lint
 
+  # A pull request that touches only documentation does not need the nine-leg
+  # tests matrix or the benchmark. This job classifies the diff once, so the
+  # heavy jobs can skip themselves while lint (fast, and the only job that
+  # catches a broken workflow YAML) and the ci aggregator still report. The
+  # job runs on every trigger so its dependents never inherit a skip: on
+  # non-pull-request events it always reports docs-only=false.
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    needs: lint
+    outputs:
+      docs-only: ${{ steps.classify.outputs.docs-only }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: classify
+        run: |
+          set -euo pipefail
+          # Only pull requests carry the file list needed to decide; pushes,
+          # the weekly schedule and manual dispatch always run the full
+          # matrix (the scheduled run exists to cover master).
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          # Fall back to the PR merge-base when the base sha is unavailable
+          # (for example on a freshly force-pushed branch); an empty base
+          # would make git diff list every file in history.
+          if [ -z "$base" ]; then
+            base="$(git merge-base "$head" "origin/${{ github.base_ref }}" || true)"
+          fi
+          if [ -z "$base" ]; then
+            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$base" "$head")"
+          # No changed files is not a docs-only change; run the full matrix.
+          if [ -z "$files" ]; then
+            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A change is docs-only when every touched file lives under docs/
+          # or is a Markdown file. A broken workflow YAML under .github/ is
+          # not documentation, so it falls through to the default branch and
+          # keeps the full matrix running.
+          docs_only=true
+          while IFS= read -r file; do
+            case "$file" in
+              docs/*|*.md|*.mdx) ;;
+              *) docs_only=false; break ;;
+            esac
+          done <<< "$files"
+          echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
+
   tests:
     name: Tests
     runs-on: ubuntu-latest
-    needs: lint
-    if: github.event_name != 'schedule'
+    needs: [lint, detect-changes]
+    if: github.event_name != 'schedule' && needs.detect-changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -160,8 +220,8 @@ jobs:
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
-    needs: lint
-    if: github.event_name != 'schedule'
+    needs: [lint, detect-changes]
+    if: github.event_name != 'schedule' && needs.detect-changes.outputs.docs-only != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -180,7 +240,7 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, tests, benchmark, tests-scheduled]
+    needs: [lint, tests, benchmark, tests-scheduled, detect-changes]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -190,6 +250,14 @@ jobs:
       - name: Check test results
         run: |
           if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
+          # A docs-only pull request intentionally skips the tests and
+          # benchmark jobs; that is a green result, not a failure. On
+          # non-pull-request events detect-changes reports docs-only=false.
+          docs_only="${{ needs.detect-changes.outputs.docs-only }}"
+          if [ "$docs_only" = "true" ]; then
+            echo "Docs-only change: tests and benchmark intentionally skipped"
+            exit 0
+          fi
           # Scheduled runs trim the matrix to a single leg, so the rest of
           # the tests job is skipped; either tests job succeeding is enough.
           if [ "${{ needs.tests.result }}" != "success" ] && [ "${{ needs.tests-scheduled.result }}" != "success" ]; then exit 1; fi
