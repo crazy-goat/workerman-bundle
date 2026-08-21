@@ -80,3 +80,76 @@ exit 0 even when cs-fixer exited 16 (see F-2). Any scripted gate that pipes
 tool output must use `set -o pipefail` or capture `${PIPESTATUS[0]}`.
 Worth remembering for CI step authoring; no repo change needed (CI steps run
 tools unpiped).
+
+---
+
+# Round 2 — dispositions for review round 1 (findings-review.md)
+
+## What was fixed
+
+- **:6 (equality boundary)** — new fixture
+  `testDuplicateReleasedVersionHeadingsFail`: `## [0.2.0] - 2025-01-01` twice
+  must fail with "not strictly older"; relaxing `version_compare(...) >= 0`
+  to `> 0` now breaks the suite.
+- **:7 (fixture gaps)** — all four added: no `## [...]` headings at all →
+  fail; only-`[Unreleased]` file → fail "no released version headings"
+  (F-6 behaviour now pinned explicitly); unknown `### Fix` subheading →
+  passes (silent skip pinned); reference on a wrapped continuation line →
+  passes.
+- **:8 (fences)** — `outsideFences()` blanks fenced lines (and fence markers)
+  1:1 before any scanning, so line numbers survive; kb-lint's toggle
+  semantics (`str_starts_with(trim($line), '```')`) mirrored. Fixtures:
+  released heading only inside a fence → still fails "no released version
+  headings"; one real + one fenced `### Fixed` → passes; two real + one
+  fenced → fails with exactly "has 2".
+- **:9 (reference false positives)** — rule 4 now matches prose only:
+  inline-code spans stripped first (`entryProse()`), then `](#N)` anchor
+  links removed. Accepted forms unchanged: `[#N](url)` and bare `(#N)`.
+  Fixtures: `` `(#123)` `` only → fail; `[x](#123)` only → fail.
+- **:11 (this script's globals)** — renamed to `checkChangelogMain()`,
+  `checkChangelogParseArgs()`, `checkChangelogPrintUsage()`. The remaining
+  helpers were already unique. pick-issue.php / kb-lint.php untouched per
+  instruction.
+- **:10 (PoW misstatement)** — code-decision-1.md rewritten: kb-lint declares
+  `main(): int` (internal exits, declared return never observed), pick-issue's
+  void main returns normally on success, and the actual PHPStan fix was
+  dropping `exit(...)` around the bare call.
+- **:12a (semantic dates)** — released-heading regex now captures the date and
+  `checkChangelogIsIsoDate()` (shape + `checkdate()`, mirroring kb-lint's
+  helper) rejects impossible ones. Fixture: `2026-13-45` → fail.
+- **:13 (rtrim)** — `versionHeadings()`/`versionBlocks()` rtrim captured
+  headings, so a trailing space on `## [Unreleased] ` is recognised instead of
+  producing the misleading "found 0" + "does not match" pair. Fixture:
+  trailing-space Unreleased file → passes.
+
+## Deliberate non-fix (answered, not changed)
+
+- **:12b (date monotonicity vs version order)** — out of scope by review
+  disposition. Recorded as possible follow-up: today `## [1.0.0] - 2030-01-01`
+  above `## [0.9.0] - 2020-01-01` passes because versions descend even though
+  dates ascend. A future check could require release dates to be
+  non-increasing alongside versions; it would need a decision about backdated
+  patch releases first.
+
+## Notes and new observations from round 2
+
+- **Ambiguity resolved in :8's second fixture.** The instruction said
+  "duplicate `### Fixed` where one copy is inside a fence → fails", but with
+  exactly one unfenced copy the correct post-fix outcome is *pass* (the fence
+  copy is documentation). Both readings are now pinned: one-real-plus-one-
+  fenced passes, two-real-plus-one-fenced fails with "has 2" (fenced copy
+  neither hides nor inflates the duplicate).
+- **Subheading capture still does not rtrim** (bin/check-changelog.php,
+  versionBlocks): `### Fixed ` with a trailing space is silently skipped as an
+  unknown subheading — the same diagnostic class review flagged for
+  `## [Unreleased] ` in :13, one level down. Left out of scope; suggested fix:
+  trim the `### (.+)$` capture the same way.
+- **`entryProse()` is a heuristic**: an unbalanced backtick in an entry strips
+  text up to the next backtick (possibly on a later continuation line), which
+  could hide a genuine reference there. Keep-a-Changelog entries rarely have
+  stray backticks; acceptable for a lint, worth remembering if a false pass is
+  ever reported.
+- **The unreachable branch is gone**: merging shape-matching and version/date
+  extraction into one regex (`^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$`)
+  eliminated the dead "unable to extract the version" violation the old
+  two-step code carried over from the pre-refactor test.

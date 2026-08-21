@@ -50,10 +50,17 @@ input as usage/environment error rather than a lint failure).
   with `main(): int`. PHPStan failed it: "Result of function main (void) is
   used" — because `bin/pick-issue.php` also declares a global `function main()`
   (void) and PHPStan resolved my call against *that* declaration. Rather than
-  inventing a differently-named bootstrap for one script, I matched the sibling
-  convention (void `main()` that exits internally, like kb-lint.php and
-  pick-issue.php). The underlying collision is recorded in findings-coder.md as
-  a latent repo-wide hazard.
+  inventing a differently-named bootstrap for one script, I kept the `main()`
+  name and dropped the `exit(...)` around the call, so the declared return is
+  never used — which is exactly how the siblings behave, though they do not
+  share one convention: kb-lint.php declares `main(): int` (it exits
+  internally on every path, so the declared return type is never observed),
+  while pick-issue.php's void `main()` returns normally on success and only
+  exits early on failure. The underlying collision is recorded in
+  findings-coder.md as a latent repo-wide hazard; review round 1 widened it
+  (this script's `parseArgs()`/`printUsage()` collide with pick-issue's too),
+  and the round-2 fix renames this script's bootstrap trio to
+  `checkChangelog*` — pick-issue.php and kb-lint.php stay out of scope.
 - **Missing CHANGELOG.md: exit 1 or 2?** kb-lint treats a missing knowledge-base
   file as a lint error (1); check-coverage treats an unreadable input as usage
   error (2). I chose 2 because the changelog path here is an *input* like the

@@ -324,6 +324,307 @@ final class ChangelogStructureTest extends TestCase
         self::assertStringContainsString('Unknown argument: --nope', $result['err']);
     }
 
+    public function testDuplicateReleasedVersionHeadingsFail(): void
+    {
+        // Pins the equality boundary of the descending-order rule: equal
+        // versions are not strictly older, so relaxing version_compare() >= 0
+        // to > 0 would let this pass.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ## [0.2.0] - 2025-01-01
+
+            ### Fixed
+
+            - First ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            ## [0.2.0] - 2025-01-01
+
+            ### Fixed
+
+            - Second ([#898](https://github.com/crazy-goat/workerman-bundle/issues/898))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('line 15: version 0.2.0 is not strictly older than', $result['err']);
+    }
+
+    public function testAFileWithNoVersionHeadingsAtAllFails(): void
+    {
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            - An orphan entry with nowhere to live ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('CHANGELOG.md has no "## [...]" version headings at all', $result['err']);
+        self::assertStringContainsString('must have exactly one "## [Unreleased]" heading, found 0', $result['err']);
+    }
+
+    public function testAnOnlyUnreleasedFileFailsForWantOfReleasedHeadings(): void
+    {
+        // Pins the F-6 behaviour deliberately inherited from the pre-refactor
+        // test: a changelog with nothing released yet does not pass.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('CHANGELOG.md has no released version headings', $result['err']);
+    }
+
+    public function testAnUnknownSubheadingIsSilentlySkipped(): void
+    {
+        // `### Fix` is not a Keep a Changelog subheading — misspelled or
+        // custom sections are outside this gate's scope, so they neither
+        // fail nor take part in duplicate detection.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Fix
+
+            - Something ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Fix
+
+            - Older ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err']);
+    }
+
+    public function testAReferenceOnAContinuationLineIsAccepted(): void
+    {
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - A long wrapped entry that keeps talking across the line break
+              and only cites its issue where the sentence ends
+              ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err']);
+    }
+
+    public function testAFencedHeadingNeverCountsAsStructure(): void
+    {
+        // The only released heading in the file lives inside a code fence —
+        // documentation showing what a heading looks like, not a heading.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ```
+            ## [0.26.0] - 2026-08-15
+            ```
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('CHANGELOG.md has no released version headings', $result['err']);
+    }
+
+    public function testAFencedSubheadingCopyIsIgnoredSoOneRealSubheadingPasses(): void
+    {
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Fixed
+
+            - The real one ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ```
+            ### Fixed
+            ```
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Added
+
+            - Released ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+    }
+
+    public function testADuplicateSubheadingIsStillCaughtWhenACopyHidesInAFence(): void
+    {
+        // Two real duplicates plus a fenced copy: the fenced copy must not
+        // inflate the count past the two genuine ones.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Fixed
+
+            - First ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ### Fixed
+
+            - Second ([#901](https://github.com/crazy-goat/workerman-bundle/issues/901))
+
+            ```
+            ### Fixed
+            ```
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Added
+
+            - Released ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('"## [Unreleased]" has 2 "### Fixed" subheadings', $result['err']);
+    }
+
+    public function testABacktickedReferenceShapeIsNotAReference(): void
+    {
+        // Inline code quotes the shape of a reference without being one.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - Mentions the convention `(#123)` in passing
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('line 7: - Mentions the convention', $result['err']);
+    }
+
+    public function testAnAnchorLinkIsNotAReference(): void
+    {
+        // `[x](#123)` links inside the page; it cites no issue.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - Jumps to [the sweeper note](#123) further down
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('changelog entries with no issue/PR reference and not on the frozen legacy list: 1', $result['err']);
+        self::assertStringContainsString('line 7: - Jumps to [the sweeper note](#123) further down', $result['err']);
+    }
+
+    public function testAnImpossibleCalendarDateFails(): void
+    {
+        // Shape alone accepts 2026-13-45; the date must be real.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ## [0.3.0] - 2026-13-45
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('line 9: "2026-13-45" is not an ISO-8601 calendar date (YYYY-MM-DD)', $result['err']);
+    }
+
+    public function testATrailingSpaceOnTheUnreleasedHeadingIsTolerated(): void
+    {
+        // Markdown ignores trailing whitespace; the diagnostic used to be a
+        // misleading "found 0" + "does not match" pair.
+        $this->writeChangelog("# Changelog\n\n## [Unreleased] \n\n### Added\n\n"
+            . "- New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))\n\n"
+            . "## [0.26.0] - 2026-08-15\n\n### Fixed\n\n"
+            . "- Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))\n");
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+    }
+
     /**
      * A minimal changelog that satisfies every rule of the script.
      */

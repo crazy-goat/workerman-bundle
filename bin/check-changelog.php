@@ -17,14 +17,19 @@ declare(strict_types=1);
  * Rules enforced:
  *   - exactly one `## [Unreleased]` heading, and it is the first version
  *     heading in the file;
- *   - released headings match `## [x.y.z] - YYYY-MM-DD` and are strictly
- *     descending;
+ *   - released headings match `## [x.y.z] - YYYY-MM-DD` (with a real calendar
+ *     date) and are strictly descending;
  *   - a Keep a Changelog subheading (`### Added`, `### Changed`, `### Fixed`,
  *     `### Removed`, `### Deprecated`, `### Security`) appears at most once
  *     per version block;
  *   - every top-level `- ` entry carries an issue reference (`[#123]` link or
  *     a bare `(#123)`), except entries frozen in
  *     LEGACY_ENTRIES_WITHOUT_A_REFERENCE.
+ *
+ * Lines inside fenced code blocks (``` … ```) are ignored: a fenced example
+ * showing a changelog heading is documentation, not structure. Issue
+ * references are matched against prose only — inline-code spans are stripped
+ * first, and an anchor link (`[x](#123)`) does not count as a reference.
  *
  * Usage: php bin/check-changelog.php [options]
  *
@@ -75,6 +80,46 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
 ];
 
 /**
+ * Blank every line inside a fenced code block (and the fence markers
+ * themselves), keeping positions 1:1 so line numbers survive. A fenced
+ * example showing what a changelog heading looks like is documentation, not
+ * structure — without this, `## [x.y.z] - date` inside ``` ``` ``` counts as
+ * a released heading and splits version blocks.
+ *
+ * @param list<string> $lines
+ *
+ * @return list<string>
+ */
+function outsideFences(array $lines): array
+{
+    $inFence = false;
+
+    foreach ($lines as $index => $line) {
+        if (str_starts_with(trim($line), '```')) {
+            $inFence = !$inFence;
+            $lines[$index] = '';
+
+            continue;
+        }
+
+        if ($inFence) {
+            $lines[$index] = '';
+        }
+    }
+
+    return $lines;
+}
+
+/**
+ * The prose of an entry: its text with inline-code spans removed (a backticked
+ * `` `(#123)` `` quotes a reference shape without being one).
+ */
+function entryProse(string $text): string
+{
+    return (string) preg_replace('/`[^`]*`/', '', $text);
+}
+
+/**
  * Every structural violation in the given changelog lines, each a
  * human-readable message ("line N: …" wherever a line applies). An empty list
  * means the changelog is structurally valid.
@@ -86,6 +131,7 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
 function validateChangelogLines(array $lines): array
 {
     $violations = [];
+    $lines = outsideFences($lines);
     $headings = versionHeadings($lines);
 
     if ($headings === []) {
@@ -118,19 +164,25 @@ function validateChangelogLines(array $lines): array
 
         $releasedCount++;
 
-        if (preg_match('/^## \[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}$/', $heading['raw']) !== 1) {
+        if (preg_match('/^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/', $heading['raw'], $matches) !== 1) {
             $violations[] = sprintf('line %d: "%s" does not match "## [x.y.z] - YYYY-MM-DD"', $heading['line'], $heading['raw']);
 
             continue;
         }
 
-        if (preg_match('/^## \[(\d+\.\d+\.\d+)\]/', $heading['raw'], $matches) !== 1) {
-            $violations[] = 'line ' . $heading['line'] . ': unable to extract the version from "' . $heading['raw'] . '"';
+        $version = $matches[1];
+
+        // Shape alone is not enough: 2026-13-45 matches the pattern but is
+        // not a date.
+        if (!checkChangelogIsIsoDate($matches[2])) {
+            $violations[] = sprintf(
+                'line %d: "%s" is not an ISO-8601 calendar date (YYYY-MM-DD)',
+                $heading['line'],
+                $matches[2],
+            );
 
             continue;
         }
-
-        $version = $matches[1];
 
         if ($previousVersion !== null && version_compare($version, $previousVersion) >= 0) {
             $violations[] = sprintf(
@@ -177,7 +229,11 @@ function validateChangelogLines(array $lines): array
     $missingReferences = [];
 
     foreach (topLevelEntries($lines) as $entry) {
-        if (preg_match('/\[#\d+\]|\(#\d+\)/', $entry['text']) === 1) {
+        // An anchor link (`[x](#123)`) points inside the page, not at an
+        // issue — remove it before looking for a reference.
+        $prose = (string) preg_replace('/\]\(#\d+\)/', '', entryProse($entry['text']));
+
+        if (preg_match('/\[#\d+\]|\(#\d+\)/', $prose) === 1) {
             continue;
         }
 
@@ -203,7 +259,9 @@ function validateChangelogLines(array $lines): array
 }
 
 /**
- * All `## [` headings with their 1-based line numbers.
+ * All `## [` headings with their 1-based line numbers. The raw heading is
+ * rtrimmed so a trailing space still compares equal to `## [Unreleased]` and
+ * never produces a misleading "does not match" pair instead.
  *
  * @param list<string> $lines
  *
@@ -215,11 +273,24 @@ function versionHeadings(array $lines): array
 
     foreach ($lines as $index => $line) {
         if (preg_match('/^## \[/', $line) === 1) {
-            $headings[] = ['raw' => $line, 'line' => $index + 1];
+            $headings[] = ['raw' => rtrim($line), 'line' => $index + 1];
         }
     }
 
     return $headings;
+}
+
+/**
+ * True when the value is a real ISO-8601 calendar date — shape (YYYY-MM-DD)
+ * plus a valid month/day, so `2026-13-45` is rejected.
+ */
+function checkChangelogIsIsoDate(string $value): bool
+{
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $matches) !== 1) {
+        return false;
+    }
+
+    return checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1]);
 }
 
 /**
@@ -241,7 +312,7 @@ function versionBlocks(array $lines): array
                 $blocks[] = $current;
             }
 
-            $current = ['heading' => $line, 'subheadings' => []];
+            $current = ['heading' => rtrim($line), 'subheadings' => []];
 
             continue;
         }
@@ -304,7 +375,7 @@ function topLevelEntries(array $lines): array
 }
 
 /** @param list<string> $args */
-function printUsage(array $args): void
+function checkChangelogPrintUsage(array $args): void
 {
     fwrite(STDOUT, ($args[0] ?? 'bin/check-changelog.php') . " — validate the structure of CHANGELOG.md\n\n");
     fwrite(STDOUT, "Usage: php bin/check-changelog.php [options]\n\n");
@@ -321,7 +392,7 @@ function printUsage(array $args): void
  *
  * @return array{root: string, root_from_env: bool}
  */
-function parseArgs(array $argv): array
+function checkChangelogParseArgs(array $argv): array
 {
     $envRoot = getenv(CHANGELOG_ROOT_ENV);
     $fromEnv = \is_string($envRoot) && $envRoot !== '';
@@ -333,7 +404,7 @@ function parseArgs(array $argv): array
 
     foreach (\array_slice($argv, 1) as $arg) {
         if ($arg === '--help' || $arg === '-h') {
-            printUsage($argv);
+            checkChangelogPrintUsage($argv);
             exit(0);
         }
 
@@ -363,7 +434,7 @@ function parseArgs(array $argv): array
 /**
  * @param array{root: string, root_from_env: bool} $options
  */
-function main(array $options): void
+function checkChangelogMain(array $options): void
 {
     $path = $options['root'] . '/' . CHANGELOG_FILE;
 
@@ -402,7 +473,7 @@ function main(array $options): void
 }
 
 try {
-    main(parseArgs($_SERVER['argv'] ?? []));
+    checkChangelogMain(checkChangelogParseArgs($_SERVER['argv'] ?? []));
 } catch (Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     exit(2);
