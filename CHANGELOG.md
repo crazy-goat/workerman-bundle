@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/security.md` now lists cookie-count capping alongside the other
+  known intentional deviations from `$_COOKIE`: PHP's SAPI stops registering
+  cookies once `max_input_vars` (default 1000) is reached and drops the
+  remaining pairs, while `RequestConverter::parseCookiesFromServerBag()`
+  parses every pair in the header — so a request carrying 1001+ cookie pairs
+  yields all of its cookies under Workerman but only the first 1000 under
+  PHP-FPM. Documentation only, no behaviour change; a characterisation test
+  pins the uncapped parsing ([#628](https://github.com/crazy-goat/workerman-bundle/issues/628))
+
 ### Fixed
 
 - `ResponseConverter`'s header-name normalisation cache is now bounded. The
