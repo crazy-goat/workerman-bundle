@@ -86,3 +86,63 @@ code/tests; all gates re-run: PHPStan level 8 full-repo OK, PHPUnit full suite
 | N1 | src/ConfigCacheGuardConfig.php:76 | New boot-critical `getenv()` call: with `getenv` in `disable_functions` (hardened setups), `resolve()` fatals `Error: Call to undefined function getenv()` at boot even in strict mode (demonstrated with `php -d disable_functions=getenv`). Fail-loud but confusing; fix: `function_exists('getenv')` guard. | low | **FIXED** — getenv() call wrapped in `function_exists('getenv')` (src/ConfigCacheGuardConfig.php:80-83); resolve() degrades to '' when the fallback is unavailable, strict mode intact. |
 | N2 | tests/ConfigCacheGuardConfigTest.php:12-22, tests/ConfigLoaderTest.php:23-27 + src/ConfigCacheGuardConfig.php:76 | Suite hermeticity: setUp/tearDown clear superglobals + holder but never the process env; the getenv fallback makes a shell-exported `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1` break `testResolveIsFalseByDefault`, `testResolveTreatsAbsentEmptyAndFalsyEnvValuesAsStrict`, and strict ConfigLoaderTest tests (demonstrated). Realistic when a developer tests the opt-out in the same shell as `composer test`. Fix: putenv-delete/restore in both setUp/tearDown pairs. | low | **FIXED** — both test classes capture the process env in setUp, delete it (`putenv(ENV_VAR)` without `=`), and restore the captured value in tearDown; superglobals unset as before. |
 | N3 | tests/ConfigLoaderTest.php:421-423, :848-850 | F7 fix comments assert warm-up-created dirs would be world-writable under umask 000 — mechanically false (`warmUp()` pins umask 0077; Filesystem::mkdir 0777 → 0700; verified empirically). Round-1 F7 was likely a phantom; pins harmless but redundant; disposition also overcounts ("all three" vs two chown tests). Fix: correct/drop comments or pins. | nit | **FIXED** — both comments now state the true rationale (pin keeps the test independent of how the dir mode is established / assertCount determinism); pins kept as defense-in-depth. F7 disposition corrected below ("both" chown tests, `:424` and `:851`). |
+
+## Round 3 (review of commit ee727f9; full narrative in review-3.md)
+
+Per-finding verdicts on the round-2 dispositions (evidence read from the actual
+code/tests and re-derived empirically; gates re-run: PHPStan level 8 full-repo OK,
+cs-fixer 0/252, rector full OK, kb-lint OK, check-changelog OK, full suite green in
+both env directions):
+
+- N1: **fixed** — `function_exists('getenv')` guard at src/ConfigCacheGuardConfig.php:79
+  inside the last-resort fallback block (:76-81); `php -d disable_functions=getenv`
+  probe yields `resolve() === false` with exit 0 (no fatal), and the `$_SERVER`-driven
+  downgrade still resolves true when getenv is disabled. Behavior on normal runtimes is
+  bit-identical to round 2 (function_exists is true). Pre-existing unguarded
+  `\getenv('GRPC_ENABLE_FORK_SUPPORT')` at src/Runner.php:207 is unchanged from
+  origin/master — out of scope, recorded.
+- N2: **fixed** — both test classes capture the process env in setUp
+  (`function_exists('getenv') ? getenv(ENV_VAR) : false`), delete it
+  (`putenv(ENV_VAR)` without `=`), restore in tearDown (delete when false,
+  `putenv('X='.$old)` otherwise), and unset the superglobals in BOTH setUp and tearDown
+  (ConfigCacheGuardConfigTest.php:12-39; ConfigLoaderTest.php:16-48). The latter also
+  closes the pre-existing superglobal leak round 2 flagged in ConfigLoaderTest ("unset
+  as before" understates it). Empirically: `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1
+  vendor/bin/phpunit tests/ConfigLoaderTest.php tests/ConfigCacheGuardConfigTest.php`
+  → 54 tests/122 assertions/3 skipped/0 failures; identical without the var; full suite
+  with the var exported green (2301 tests/16884 assertions/32 skipped/0 failures, under
+  `-d phar.readonly=0` — this host's Homebrew PHP has phar.readonly=On, which fails the
+  repo's own PharReadOnlyGuardTest identically with and without the exported var,
+  unrelated to the branch). Mechanism demo: old-setUp behaviour (superglobals only)
+  leaks the exported value (resolve()=true); new setUp deletes it (resolve()=false).
+- N3: **fixed** — comments at tests/ConfigLoaderTest.php:442-445 and :870-873 state the
+  true rationale (mechanism-independent pin / assertCount determinism); no false umask
+  claim remains; F7 disposition wording corrected to "both" chown tests (:424/:851 in
+  the 7124f3c state; pins at :446/:874 at HEAD, drift = the +18 setUp lines).
+
+Edge cases examined and closed (proven, not asserted):
+
+- Cross-class putenv contamination: impossible — each tearDown restores exactly what
+  its own setUp captured; the invariant "process env after tearDown == value at suite
+  start" holds for any class order; the only mid-test putenv restores in `finally`.
+- `testResolveFallsBackToGetenvWhenSuperglobalsAreEmpty` remains non-vacuous: the body
+  sets `putenv('=1')` itself after setUp's deletion, so `resolve() === true` is only
+  reachable via the getenv fallback; setUp deletion makes the pre-body capture
+  deterministic (`false`), so the finally branch no longer depends on the shell.
+  Verified passing with and without the exported var.
+- Residual corner (not a finding): with putenv/getenv in disable_functions in the TEST
+  environment, cleanup degrades and the fallback test would fatal — tests are not run
+  under hardened ini; production is guarded (N1).
+
+### NEW findings (round 3)
+
+| # | file:line | What is wrong | Severity | Handled later |
+|---|---|---|---|---|
+| R3-N1 | tests/ConfigCacheGuardConfigTest.php:13, tests/ConfigLoaderTest.php:17 | `private string\|false $savedTrustEnv;` is an uninitialized typed property read in tearDown. PHPUnit runs tearDown even when setUp throws (fixture teardown sits outside the main try, in its own catch-all — vendor/phpunit/phpunit/src/Framework/TestCase.php:778-807), so a throw in ConfigLoaderTest::setUp's `mkdir` (I/O error, full disk) would mask the original error with "Typed property ... must not be accessed before initialization". ConfigCacheGuardConfigTest is safe (capture precedes any throwable op). Fix: `$savedTrustEnv = false;` default (one token). | nit | **FIXED** — both properties now default to `false` (one-token initializer). |
+| R3-N2 | tests (suite accounting) | Full-suite count vs round-2 record: 2301 vs 2299 tests with no test-method change in the round-3 delta (git diff confirms); both today's runs (var exported / not) are internally identical (2301/16884/32, 0 failures). Cause of the round-2 mismatch not identified; informational only. | info | No action — informational (count drift not reproduced either way). |
+
+Informational (not findings): round-2 dispositions F1–F9 remain verified as recorded —
+no round-3 change touches the allowlist, the precedence pins, the integration tests, or
+the docs; C1 (pre-existing, out of scope) and the FAQ-005 KB amendment stay open as
+recorded. Strict-path byte-identity re-verified this round by tokenizer (0 master
+strings missing; HEAD adds exactly the 2 downgrade-warning halves).

@@ -14,7 +14,7 @@ final class ConfigLoaderTest extends TestCase
     private string $tempDir;
 
     /** @var string|false the process env value captured at setUp, restored at tearDown */
-    private string|false $savedTrustEnv;
+    private string|false $savedTrustEnv = false;
 
     protected function setUp(): void
     {

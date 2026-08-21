@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 final class ConfigCacheGuardConfigTest extends TestCase
 {
     /** @var string|false the process env value captured at setUp, restored at tearDown */
-    private string|false $savedTrustEnv;
+    private string|false $savedTrustEnv = false;
 
     protected function setUp(): void
     {
