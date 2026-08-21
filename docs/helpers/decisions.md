@@ -13,9 +13,11 @@ whole file.
 <!-- kb-index:start -->
 - `architecture` — DEC-002
 - `ci` — DEC-007
+- `config-cache` — DEC-016
 - `cookies` — DEC-010, DEC-015
 - `coverage` — DEC-007
 - `docs` — DEC-012
+- `env` — DEC-016
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
 - `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015
@@ -25,11 +27,11 @@ whole file.
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005, DEC-014
 - `performance` — DEC-013
-- `policy` — DEC-006, DEC-007, DEC-008, DEC-009
+- `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
-- `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015
+- `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015, DEC-016
 - `static-files` — DEC-004
 - `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
@@ -112,6 +114,21 @@ code paths:
   `Content-Length` (#579, #602).
 
 Do not loosen these without an explicit, documented reason.
+
+### Security-guard opt-outs live in the environment, are fail-closed, and keep the strict default (#648)
+<!-- kb: id=DEC-016 date=2026-08-21 tags=security,policy,config-cache,env trigger="adding or removing a security opt-out, or a config node that loosens hardening" hits=0 status=active -->
+
+Per DEC-006, hardening must not be loosened without an explicit, documented
+reason; when a legitimate opt-out exists (e.g. #648's trusted-cache-dir
+downgrade, `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE`), it should be an env var
+rather than a YAML node, because (a) the loading path that trips the guard
+can run before the kernel — and its config tree — exists, (b) YAML may be
+baked into an image built by another user, and (c) env vars are visible in
+container specs and compose files, keeping the downgrade explicit. Parsing
+fails closed: only unambiguous truthy values (`1`/`true`/`on`/`yes`) enable
+the downgrade; a typo must never silently unlock a guard. The strict default
+stays, and every degraded check keeps emitting its warning so the downgrade
+is never silent. (Implemented in #648/#758; `ConfigCacheGuardConfig`.)
 
 ## Process / repository policy
 
