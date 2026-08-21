@@ -535,6 +535,188 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * When a mid-extraction failure occurs (e.g. a later entry escapes the
+     * destination via a pre-existing symlink), entries extracted before the
+     * failure must be removed so the destination directory is left as it was.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesPreviouslyExtractedEntriesOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            // First entry is valid and will be extracted before the failure.
+            'goodfile.bin' => 'good-content',
+            // Second entry escapes via the pre-existing symlink.
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        // The archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The previously extracted entry must also be removed — a failed
+        // fetch must leave the destination directory as it was.
+        self::assertFileDoesNotExist($this->tempDir . '/goodfile.bin');
+    }
+
+    /**
+     * When locateSfxEntry() fails (archive has no usable SFX entry), all
+     * extracted files must be removed so the destination directory is left
+     * as it was — not just the zip archive.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesExtractedEntriesWhenNoSfxEntryFound(): void
+    {
+        $zipPath = $this->tempDir . '/orphan.sfx.zip';
+
+        // Create an archive containing only empty directory entries.
+        // Since there are no file entries, locateSfxEntry() cannot find
+        // a usable SFX entry and throws SfxExtractionException. The
+        // nested directories verify that cleanup removes both parent
+        // and child directories created during extraction.
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        $zip->addEmptyDir('subdir');
+        $zip->addEmptyDir('subdir/nested');
+        $zip->close();
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/orphan.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected SfxExtractionException for an archive with no usable entry.');
+        } catch (SfxExtractionException $e) {
+            self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
+        }
+
+        // The archive must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The extracted directories must also be removed — a failed fetch
+        // must leave the destination directory as it was.
+        self::assertDirectoryDoesNotExist($this->tempDir . '/subdir');
+    }
+
+    /**
+     * When a mid-extraction failure occurs, directories extracted before
+     * the failure (including auto-created parent directories) must be
+     * removed — not just files.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesDirectoriesOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            // First two entries are valid and will be extracted before
+            // the failure: a file in a subdirectory (which auto-creates
+            // the "gooddir/" parent) and a standalone file.
+            'gooddir/goodfile.bin' => 'good-content',
+            'standalone.bin' => 'standalone-content',
+            // Third entry escapes via the pre-existing symlink.
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        // The archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The extracted files must be removed.
+        self::assertFileDoesNotExist($this->tempDir . '/gooddir/goodfile.bin');
+        self::assertFileDoesNotExist($this->tempDir . '/standalone.bin');
+
+        // The auto-created parent directory must also be removed.
+        self::assertDirectoryDoesNotExist($this->tempDir . '/gooddir');
+    }
+
+    /**
+     * Multi-level nested file entries (e.g. "a/b/c/d.txt") auto-create
+     * parent directories that have no zip entry. On mid-extraction failure,
+     * all levels of auto-created parents must be removed — not just the
+     * deepest or shallowest. This tests the depth-descending sort of the
+     * cleanup paths.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesMultiLevelParentsOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            // A deeply nested file — extraction auto-creates a/, a/b/, a/b/c/.
+            'a/b/c/d.txt' => 'deep-content',
+            // Failing entry escapes via symlink.
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        // The archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The extracted file and all auto-created parent directories
+        // must be removed, leaving the destination as it was.
+        self::assertFileDoesNotExist($this->tempDir . '/a/b/c/d.txt');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a/b/c');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a/b');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a');
+    }
+
+    /**
      * @requires extension zip
      */
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void

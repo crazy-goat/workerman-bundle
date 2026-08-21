@@ -377,9 +377,13 @@ final readonly class SfxDownloader
      *  3. Extract all entries to the destination directory, one at a time:
      *     each entry is re-validated by name and its resolved target must
      *     stay inside the destination directory (containment backstop).
+     *     Successfully extracted entries are tracked so they can be removed
+     *     if a later stage fails, leaving the destination as it was.
      *  4. Locate the SFX entry:
      *     a. Try the entry whose basename matches the zip filename (minus .zip).
      *     b. Fall back to the first regular file entry from the archive.
+     *     If no usable entry is found, all extracted entries are removed
+     *     before the exception propagates.
      *
      * @throws SfxExtractionException when no suitable SFX entry is found
      * @throws \RuntimeException on archive open, validation, or extraction failures
@@ -390,12 +394,17 @@ final readonly class SfxDownloader
 
         try {
             $entryNames = $this->listEntryNames($zip);
-            $this->extractToDirectory($zip, $zipPath, $destinationDir);
+            $extractedEntries = $this->extractToDirectory($zip, $zipPath, $destinationDir);
         } finally {
             $zip->close();
         }
 
-        return $this->locateSfxEntry($entryNames, $zipPath, $destinationDir);
+        try {
+            return $this->locateSfxEntry($entryNames, $zipPath, $destinationDir);
+        } catch (SfxExtractionException $e) {
+            $this->removeExtractedEntries($extractedEntries, $destinationDir);
+            throw $e;
+        }
     }
 
     /**
@@ -451,11 +460,14 @@ final readonly class SfxDownloader
      * rather than creating links — the containment check guards the
      * destination's pre-existing state, which name rules alone cannot see.
      *
+     * @return string[] Names of the entries that were successfully extracted,
+     *                   in extraction order (for rollback on a later failure)
+     *
      * @throws \RuntimeException if the destination cannot be resolved, an
      *                           entry fails validation, escapes the destination,
      *                           or extraction fails
      */
-    private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir): void
+    private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir): array
     {
         $resolvedDestination = realpath($destinationDir);
         if ($resolvedDestination === false) {
@@ -463,28 +475,127 @@ final readonly class SfxDownloader
         }
         $destinationBase = rtrim($resolvedDestination, '/\\');
 
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $name = $zip->getNameIndex($i);
-            if (!is_string($name) || $name === '') {
-                throw new \RuntimeException(sprintf(
-                    'Zip archive "%s" contains an entry with an unreadable name (index %d); refusing to extract it.',
-                    $zipPath,
-                    $i,
-                ));
+        $extractedEntries = [];
+
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (!is_string($name) || $name === '') {
+                    throw new \RuntimeException(sprintf(
+                        'Zip archive "%s" contains an entry with an unreadable name (index %d); refusing to extract it.',
+                        $zipPath,
+                        $i,
+                    ));
+                }
+
+                // Name-level zip-slip rules stay the first line of defence; they
+                // run here against exactly the entry being extracted.
+                $this->validateEntryName($name);
+
+                $this->assertEntryContainedIn($destinationBase, $name, $zipPath);
+
+                if (!$zip->extractTo($destinationDir, $name)) {
+                    throw new \RuntimeException(sprintf(
+                        'Failed to extract entry "%s" from zip archive "%s".',
+                        $name,
+                        $zipPath,
+                    ));
+                }
+
+                $extractedEntries[] = $name;
             }
+        } catch (\RuntimeException $e) {
+            // A mid-extraction failure leaves entries 1..N-1 on disk; remove
+            // them so a failed fetch leaves the destination as it was.
+            $this->removeExtractedEntries($extractedEntries, $destinationDir);
+            throw $e;
+        }
 
-            // Name-level zip-slip rules stay the first line of defence; they
-            // run here against exactly the entry being extracted.
-            $this->validateEntryName($name);
+        return $extractedEntries;
+    }
 
-            $this->assertEntryContainedIn($destinationBase, $name, $zipPath);
+    /**
+     * Remove entries that were extracted during a failed fetch.
+     *
+     * Both files and directories created by the extraction are removed.
+     * Tracked entries and auto-created parent directories are merged and
+     * sorted by path depth descending so that deeper directories are
+     * removed before their parents (e.g. "sub/nested/" is removed before
+     * "sub/"). Auto-created parent directories that have no corresponding
+     * zip entry are also removed when they become empty. Any entry that is
+     * no longer on disk (already gone, or never materialised for empty-dir
+     * entries on some platforms) is silently skipped. Pre-existing entries
+     * are never touched: we only remove paths whose name matches an
+     * extracted entry or was auto-created as a parent of one. Removal
+     * failures are logged via error_log() so the operator can investigate
+     * leftover partial files — the same principle as the archive unlink
+     * in {@see fetch()}.
+     *
+     * @param string[] $extractedEntries Names of successfully extracted entries
+     * @param string   $destinationDir   Directory entries were extracted into
+     */
+    private function removeExtractedEntries(array $extractedEntries, string $destinationDir): void
+    {
+        $base = rtrim($destinationDir, '/\\');
 
-            if (!$zip->extractTo($destinationDir, $name)) {
-                throw new \RuntimeException(sprintf(
-                    'Failed to extract entry "%s" from zip archive "%s".',
-                    $name,
-                    $zipPath,
-                ));
+        // Collect all parent directories of extracted entries — these are
+        // auto-created by ZipArchive::extractTo() and have no corresponding
+        // zip entry, so they must be cleaned up alongside tracked entries.
+        $parents = [];
+        foreach ($extractedEntries as $name) {
+            $dir = ltrim(dirname($name), '/');
+            while ($dir !== '' && $dir !== '.') {
+                $parents[$dir] = true;
+                $dir = dirname($dir);
+                if ($dir === '.' || $dir === '/') {
+                    break;
+                }
+            }
+        }
+
+        // Sort all paths by depth descending so that deeper directories are
+        // removed before their parents (rmdir requires an empty directory).
+        // Tracked entries and auto-created parents are merged and sorted
+        // together by the number of path separators.
+        $allPaths = array_merge($extractedEntries, array_keys($parents));
+        usort(
+            $allPaths,
+            static fn(string $a, string $b): int =>
+            substr_count(rtrim($b, '/'), '/') <=> substr_count(rtrim($a, '/'), '/'),
+        );
+
+        foreach ($allPaths as $name) {
+            $path = $base . DIRECTORY_SEPARATOR . rtrim($name, '/');
+
+            if (is_link($path)) {
+                if (!@unlink($path)) {
+                    error_log(sprintf(
+                        'Unable to remove extracted symlink "%s" during cleanup; the entry stays on disk. Remove it manually.',
+                        $path,
+                    ));
+                }
+            } elseif (is_dir($path)) {
+                if (!@rmdir($path)) {
+                    // rmdir fails on non-empty dirs — this is expected for
+                    // parents whose children haven't been removed yet, or
+                    // for pre-existing directories we didn't create. Only
+                    // log when the directory is empty but still can't be
+                    // removed (permissions, etc.).
+                    $items = @scandir($path);
+                    if ($items !== false && count($items) <= 2) {
+                        error_log(sprintf(
+                            'Unable to remove extracted directory "%s" during cleanup; the directory stays on disk. Remove it manually.',
+                            $path,
+                        ));
+                    }
+                }
+            } elseif (is_file($path)) {
+                if (!@unlink($path)) {
+                    error_log(sprintf(
+                        'Unable to remove extracted file "%s" during cleanup; the entry stays on disk and may be trusted by a later fetch(). Remove it manually.',
+                        $path,
+                    ));
+                }
             }
         }
     }
