@@ -237,6 +237,15 @@ aborts `workerman:server start` with a `RuntimeException`, not a warning. See
 [Config Cache File Protection](docs/security.md#config-cache-file-protection)
 for the full threat model.
 
+> **Note:** Deployments that explicitly trust the cache directory but cannot
+> change who warms it (managed build systems, sudoless image builders, frozen
+> base images) can opt out with the documented env var
+> `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`, which downgrades the refusals to
+> warnings. This is a **security downgrade** — the cache file is executed
+> PHP — and must not be enabled for directories untrusted users can write.
+> Strict mode remains the default. See
+> [Guard downgrade](docs/security.md#guard-downgrade-explicit-opt-out).
+
 > **Note:** This is the upgrade-relevant change in 0.25.0. The most common
 > containerised layout trips it: the cache is warmed at image build time
 > (as `root`), the server runs as a non-root user.
