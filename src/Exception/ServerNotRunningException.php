@@ -13,7 +13,7 @@ namespace CrazyGoat\WorkermanBundle\Exception;
  * constructors build cause-specific messages so the operator can distinguish
  * "not running" from "running but unverifiable":
  *
- *  - {@see self::noPidFile()} — no pid file found (or empty), process dead.
+ *  - {@see self::noPidFile()} — no pid file found (or empty/unreadable).
  *  - {@see self::processDead()} — pid file points to a PID that is not alive.
  *  - {@see self::unverifiable()} — the PID is alive but its identity cannot
  *    be confirmed: the fingerprint sidecar is missing (pre-0.25.0 start or

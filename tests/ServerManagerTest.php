@@ -747,7 +747,7 @@ final class ServerManagerTest extends TestCase
                 $thrown = true;
                 $this->assertStringContainsString('Cannot verify', $e->getMessage());
                 $this->assertStringContainsString((string) $pid, $e->getMessage());
-                $this->assertStringContainsString('fingerprint', $e->getMessage());
+                $this->assertStringContainsString('does not match', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -792,7 +792,7 @@ final class ServerManagerTest extends TestCase
                 $thrown = true;
                 $this->assertStringContainsString('Cannot verify', $e->getMessage());
                 $this->assertStringContainsString((string) $pid, $e->getMessage());
-                $this->assertStringContainsString('fingerprint', $e->getMessage());
+                $this->assertStringContainsString('does not match', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -911,8 +911,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->getStatus();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -948,8 +951,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->getConnections();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
