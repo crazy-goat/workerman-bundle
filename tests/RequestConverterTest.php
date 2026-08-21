@@ -1090,6 +1090,35 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('x y', $symfonyRequest->cookies->get('token'));
     }
 
+    /**
+     * Characterisation pin for a documented deviation from `$_COOKIE`
+     * (docs/security.md, "Known intentional deviations"): PHP's SAPI stops
+     * registering cookies once max_input_vars (default 1000) is reached and
+     * drops the remaining pairs, while the bundle parses every pair in the
+     * Cookie header. If this behaviour ever changes, the deviation paragraph
+     * in docs/security.md must change with it.
+     *
+     * @see https://github.com/crazy-goat/workerman-bundle/issues/628
+     */
+    public function testCookieParsingIsNotCappedAtMaxInputVars(): void
+    {
+        $pairs = [];
+        for ($i = 0; $i < 1001; ++$i) {
+            $pairs[] = \sprintf('c%04d=v%04d', $i, $i);
+        }
+
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= 'Cookie: ' . \implode('; ', $pairs) . "\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+
+        $this->assertCount(1001, $symfonyRequest->cookies->all());
+        $this->assertSame('v0000', $symfonyRequest->cookies->get('c0000'));
+        $this->assertSame('v1000', $symfonyRequest->cookies->get('c1000'));
+    }
+
     public function testMultipleHostHeadersKeepsFirstOnly(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";

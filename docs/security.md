@@ -60,7 +60,11 @@ first), and PHP's cookie-name rewriting (` ` and `.` → `_`, `name[key]` array
 syntax) is not reproduced — the bundle treats names verbatim. One further
 whitespace micro-deviation: PHP strips leading whitespace of a value
 (`a= b` → `b`) but keeps trailing whitespace, while the bundle trims both
-ends on the raw pair.
+ends on the raw pair. Finally, PHP's SAPI stops registering cookies once
+`max_input_vars` (default 1000) is reached and drops the remaining pairs
+(logging an E_WARNING), while the bundle parses every pair in the header —
+so a request carrying 1001+ cookie pairs sees all of its cookies here but
+only the first 1000 under PHP-FPM.
 
 ### Duplicate Sensitive Headers
 

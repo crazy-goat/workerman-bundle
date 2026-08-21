@@ -389,6 +389,10 @@ final class RequestConverter
      * reinterpreted as a cookie separator and reintroduce the smuggling class
      * closed by #217. Cookie names are not decoded, matching PHP.
      *
+     * Unlike PHP's SAPI, the loop is not capped by max_input_vars: every
+     * pair in the header is registered even past PHP's default limit of
+     * 1000 (an intentional deviation — see docs/security.md).
+     *
      * @param array<string, mixed> $server
      *
      * @return array<string, string>
