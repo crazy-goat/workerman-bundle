@@ -582,11 +582,13 @@ downgrade**, acceptable only when the cache directory is trusted as-is:
 WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1 bin/console workerman:server start
 ```
 
-The variable is read from the environment (`$_SERVER`/`$_ENV`) of the
-booting process, so it works in every mode that loads the cache — the
-console, the launcher, the runtime, and PHAR/BIN builds. Any value other
-than `0`, `false`, `no`, `off` or empty enables the downgrade; the variable
-absent means strict behaviour.
+The variable is read from the environment (`$_SERVER`/`$_ENV`/`getenv()`) of
+the booting process, so it works in every mode that loads the cache — the
+console, the launcher, the runtime, and PHAR/BIN builds. Only an unambiguous
+truthy value (`1`, `true`, `on`, `yes`, case- and whitespace-insensitive)
+enables the downgrade; the variable absent, empty, or set to anything else
+(`0`, `false`, `no`, `off`, or a typo such as `ture`) means strict behaviour.
+The opt-out fails closed: a mistyped value never unlocks the guard.
 
 **With the opt-out set**, the four refusal checks — directory world-writable,
 directory group-writable by a foreign group, cache file owned by another

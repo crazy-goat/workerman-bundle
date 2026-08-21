@@ -92,4 +92,37 @@ final class ConfigCacheGuardConfigTest extends TestCase
             unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR]);
         }
     }
+
+    public function testResolveTreatsUnrecognisedEnvValuesAsStrict(): void
+    {
+        // Fail-closed: a typo must never silently unlock a security guard.
+        foreach (['banana', 'ture', 'enabled', '1.0', 'yes please', 'ONN'] as $value) {
+            $_SERVER[ConfigCacheGuardConfig::ENV_VAR] = $value;
+            self::assertFalse(ConfigCacheGuardConfig::resolve(), "value '$value' should resolve to false");
+            unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR]);
+        }
+    }
+
+    public function testResolveFallsBackToEnvWhenServerValueIsEmpty(): void
+    {
+        // An empty $_SERVER value must not shadow a truthy $_ENV value.
+        $_SERVER[ConfigCacheGuardConfig::ENV_VAR] = '';
+        $_ENV[ConfigCacheGuardConfig::ENV_VAR] = '1';
+        self::assertTrue(ConfigCacheGuardConfig::resolve());
+    }
+
+    public function testResolveFallsBackToGetenvWhenSuperglobalsAreEmpty(): void
+    {
+        $env = getenv(ConfigCacheGuardConfig::ENV_VAR);
+        putenv(ConfigCacheGuardConfig::ENV_VAR . '=1');
+        try {
+            self::assertTrue(ConfigCacheGuardConfig::resolve());
+        } finally {
+            if ($env === false) {
+                putenv(ConfigCacheGuardConfig::ENV_VAR);
+            } else {
+                putenv(ConfigCacheGuardConfig::ENV_VAR . '=' . $env);
+            }
+        }
+    }
 }

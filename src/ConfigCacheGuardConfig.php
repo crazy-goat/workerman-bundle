@@ -47,21 +47,44 @@ final class ConfigCacheGuardConfig
         self::$trustCacheDir = null;
     }
 
+    /**
+     * Resolve whether the guard downgrade is active.
+     *
+     * The value is read from the environment (`$_SERVER`, then `$_ENV`, then
+     * `getenv()`) on every call, so the holder works on paths that construct
+     * the ConfigLoader before the kernel boots. Only an unambiguous truthy
+     * value enables the downgrade: `1`, `true`, `on` or `yes` (case- and
+     * whitespace-insensitive). Everything else — absent, empty, `0`, `false`,
+     * `off`, `no`, or any unrecognised value such as a typo like `ture` —
+     * keeps the strict guard (fail-closed: a mistyped opt-out must never
+     * silently unlock a security guard).
+     *
+     * @internal `set()`/`reset()` are test affordances; production code must
+     *           not use them.
+     */
     public static function resolve(): bool
     {
         if (self::$trustCacheDir !== null) {
             return self::$trustCacheDir;
         }
 
-        $raw = $_SERVER[self::ENV_VAR] ?? $_ENV[self::ENV_VAR] ?? null;
+        $raw = $_SERVER[self::ENV_VAR] ?? '';
+        if ($raw === '') {
+            $raw = $_ENV[self::ENV_VAR] ?? '';
+        }
+        if ($raw === '') {
+            $env = getenv(self::ENV_VAR);
+            $raw = $env === false ? '' : $env;
+        }
 
-        if ($raw === null || $raw === '') {
+        if ($raw === '') {
             return false;
         }
 
         $normalized = strtolower(trim((string) $raw));
 
-        return $normalized !== ''
-            && !in_array($normalized, ['0', 'false', 'off', 'no'], true);
+        // Fail-closed allowlist: only the values below enable the downgrade;
+        // anything else (typos, "enabled", "1.0", ...) keeps the strict guard.
+        return in_array($normalized, ['1', 'true', 'on', 'yes'], true);
     }
 }
