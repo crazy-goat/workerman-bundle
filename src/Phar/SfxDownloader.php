@@ -552,12 +552,15 @@ final readonly class SfxDownloader
             }
         }
 
-        // Reverse-merge: tracked entries first (deepest paths removed first),
-        // then auto-created parents (also reverse-sorted so deeper parents
-        // are removed before shallower ones).
-        $allPaths = array_merge(
-            array_reverse($extractedEntries),
-            array_reverse(array_keys($parents)),
+        // Sort all paths by depth descending so that deeper directories are
+        // removed before their parents (rmdir requires an empty directory).
+        // Tracked entries and auto-created parents are merged and sorted
+        // together by the number of path separators.
+        $allPaths = array_merge($extractedEntries, array_keys($parents));
+        usort(
+            $allPaths,
+            static fn(string $a, string $b): int =>
+            substr_count(rtrim($b, '/'), '/') <=> substr_count(rtrim($a, '/'), '/'),
         );
 
         foreach ($allPaths as $name) {

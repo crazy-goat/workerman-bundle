@@ -669,6 +669,54 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * Multi-level nested file entries (e.g. "a/b/c/d.txt") auto-create
+     * parent directories that have no zip entry. On mid-extraction failure,
+     * all levels of auto-created parents must be removed — not just the
+     * deepest or shallowest. This tests the depth-descending sort of the
+     * cleanup paths.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesMultiLevelParentsOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            // A deeply nested file — extraction auto-creates a/, a/b/, a/b/c/.
+            'a/b/c/d.txt' => 'deep-content',
+            // Failing entry escapes via symlink.
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        // The archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The extracted file and all auto-created parent directories
+        // must be removed, leaving the destination as it was.
+        self::assertFileDoesNotExist($this->tempDir . '/a/b/c/d.txt');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a/b/c');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a/b');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/a');
+    }
+
+    /**
      * @requires extension zip
      */
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void
