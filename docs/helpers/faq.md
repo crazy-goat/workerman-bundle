@@ -275,22 +275,25 @@ Promoted — installed by `php bin/install-git-hook.php` and asserted by `tests/
 
 ## Control plane / master identification
 
-### `stop`/`reload`/`status` report "Workerman is not running." after a 0.25.0 upgrade
-<!-- kb: id=FAQ-016 date=2026-08-10 tags=control-plane,master,upgrade trigger="control commands refuse to signal a running master" hits=0 status=active -->
+### `stop`/`reload`/`status` refuse to signal after a 0.25.0 upgrade
+<!-- kb: id=FAQ-016 date=2026-08-10 tags=control-plane,master,upgrade trigger="control commands refuse to signal a running master" hits=1 status=active -->
 
 Master identification fails closed since 0.25.0 (issue #584): without the
 `.fingerprint` sidecar next to the pid file, control commands refuse to
-Master identification fails closed since 0.25.0 (issue #584): without the
-`.fingerprint` sidecar next to the pid file, control commands refuse to
-signal. Bites in three situations: (1) upgrade without stopping the old
-server first — stop *before* upgrading; (2) macOS/BSD, where the cmdline
-fallback does not exist — the fingerprint is the only identity check, so
-a single restart restores the control plane; (3) the instant after
-`start -d` returns, before pid file + fingerprint are written — wait for
-both, then retry. Recovery when the old master cannot be verified: PID
-from the pid file, verify with `ps -p <pid> -o pid,comm,args`, kill by
-hand (never a bare `pkill -f WorkerMan`), remove stale pid file, start
-once. Full guidance: UPGRADE.md "Upgrading to 0.25" (issue #640).
+signal. Since #657 the operator-facing message distinguishes the causes:
+"Workerman is not running (no pid file found …)" / "(master process \<pid\>
+is not alive)" vs "Cannot verify master process \<pid\>: …" for the
+unverifiable cases (fingerprint mismatch or no sidecar). The fail-closed
+behaviour is unchanged — only the message improved. Bites in three
+situations: (1) upgrade without stopping the old server first — stop
+*before* upgrading; (2) macOS/BSD, where the cmdline fallback does not
+exist — the fingerprint is the only identity check, so a single restart
+restores the control plane; (3) the instant after `start -d` returns,
+before pid file + fingerprint are written — wait for both, then retry.
+Recovery when the old master cannot be verified: PID from the pid file,
+verify with `ps -p <pid> -o pid,comm,args`, kill by hand (never a bare
+`pkill -f WorkerMan`), remove stale pid file, start once. Full guidance:
+UPGRADE.md "Upgrading to 0.25" (issue #640).
 
 ## GitHub CLI
 
