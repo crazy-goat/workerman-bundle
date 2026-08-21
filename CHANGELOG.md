@@ -159,7 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heading placed first, released version headings matching
   `## [x.y.z] - YYYY-MM-DD` with a real calendar date, in strictly descending
   order, unique Keep a Changelog subheadings per version block (lines inside
-  fenced code blocks are ignored), and an issue reference on every top-level
+  fenced code blocks — ``` or `~~~` — are ignored, and an unterminated fence
+  is reported at its opening line), and an issue reference on every top-level
   entry outside a frozen legacy list — matched against prose only, so quoted
   shapes like `` `(#123)` `` and in-page anchor links do not count — closing
   the lint-time gap behind #641 (duplicate `### Fixed` heading), #255

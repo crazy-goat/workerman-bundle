@@ -45,9 +45,11 @@ calendar date, in strictly descending order, Keep a Changelog subheadings
 (`Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security`) appear at
 most once per version block, and every top-level entry carries an issue
 reference — except the entries frozen in the script's
-`LEGACY_ENTRIES_WITHOUT_A_REFERENCE` list. Lines inside fenced code blocks are
-ignored (a fenced example heading is documentation, not structure), and
-references are matched against prose only: inline-code spans are stripped and
+`LEGACY_ENTRIES_WITHOUT_A_REFERENCE` list. Lines inside fenced code blocks
+(``` or `~~~`) are ignored — a fenced example heading is documentation, not
+structure — and an unterminated fence is reported at its opening line instead
+of producing misleading downstream messages. References are matched against
+prose only: inline-code spans are stripped and
 an anchor link (`[x](#123)`) does not count. Wired into `composer lint`, so
 the pre-push hook and the CI Lint job run it too;
 `tests/ChangelogStructureTest.php` drives the same script as a subprocess

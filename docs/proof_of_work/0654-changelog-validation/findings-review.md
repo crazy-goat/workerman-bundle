@@ -18,3 +18,37 @@ docs/proof_of_work/0654-changelog-validation/code-decision-1.md:53–55 | Proof-
 bin/check-changelog.php:121 | Dates validated by shape only — `2026-13-45` passes (probed) — and never checked for monotonicity against the version order. Inherited verbatim from the pre-refactor test, so not a regression | nit | OPEN
 
 bin/check-changelog.php:98 | Exact whitespace-sensitive match on `'## [Unreleased]'`: a trailing space yields the misleading pair "found 0" + "does not match ## [x.y.z] - YYYY-MM-DD" instead of one precise message (probed); rtrim before comparison would fix the diagnostics | nit | OPEN
+
+---
+
+# Round 2 — dispositions for round-1 findings (commit 27cbe28)
+
+Format: original finding → disposition (FIXED / PARTIALLY FIXED / ANSWERED / NOT A REAL FINDING), with evidence. New findings appended at the end.
+
+bin/check-changelog.php:135 + tests/ChangelogStructureTest.php (equality boundary) | FIXED — `testDuplicateReleasedVersionHeadingsFail` pins `## [0.2.0]` twice failing with "line 15: version 0.2.0 is not strictly older than"; fixture comment states relaxing `>= 0` to `> 0` breaks the suite; verified green in run | medium | FIXED
+
+tests/ChangelogStructureTest.php (fixture gaps) | FIXED — all four behaviors pinned: `testAFileWithNoVersionHeadingsAtAllFails`, `testAnOnlyUnreleasedFileFailsForWantOfReleasedHeadings` (F-6 now deliberate), `testAnUnknownSubheadingIsSilentlySkipped`, `testAReferenceOnAContinuationLineIsAccepted`. Residual: `--help`/`-h` exit-0 still unpinned (leftover nit, non-blocking) | medium | FIXED
+
+bin/check-changelog.php:217,239,249 (fences) | PARTIALLY FIXED — `outsideFences()` blanks ``` -fenced lines and markers 1:1 with line numbers preserved (fixtures + probes confirm: fenced-only heading fails "no released version headings"; one-real+one-fenced passes; two-real+one-fenced fails "has 2"). Tilde fences (`~~~`) remain invisible → new NF-1 | low | PARTIALLY FIXED
+
+bin/check-changelog.php:180 (reference false positives) | FIXED — prose-only matching: inline-code spans stripped (`entryProse()`), `\]\(#\d+\)` anchors removed before matching; both round-1 shapes pinned by `testABacktickedReferenceShapeIsNotAReference` and `testAnAnchorLinkIsNotAReference`; canonical forms verified unaffected (real tree OK) | low | FIXED
+
+bin/check-changelog.php:307,324,366 (global symbol collisions) | FIXED for this script — bootstrap trio renamed `checkChangelogMain/ParseArgs/PrintUsage`; grep confirms every symbol in bin/check-changelog.php is unique to it. Residual kb-lint ↔ pick-issue collisions pre-existing and out of scope per instruction | low | FIXED
+
+docs/proof_of_work/0654-changelog-validation/code-decision-1.md:53–55 (PoW misstatement) | FIXED — rewritten accurately: kb-lint `main(): int` with internal exits and never-observed return, pick-issue void main returns normally, bare call was the actual PHPStan fix | low | FIXED
+
+bin/check-changelog.php:121 (date shape only) | FIXED — merged regex captures date, `checkChangelogIsIsoDate()` adds `checkdate()` with correct (month, day, year) order; `testAnImpossibleCalendarDateFails` pins `2026-13-45`; dead "unable to extract version" branch eliminated as a side-effect | nit | FIXED
+
+bin/check-changelog.php:121 (date monotonicity vs versions) | ANSWERED — deliberate non-fix with recorded rationale (needs a decision on backdated patch releases); logged in findings-coder.md as possible follow-up | nit | ANSWERED (WONTFIX, rationale recorded)
+
+bin/check-changelog.php:98 (trailing-space `[Unreleased]`) | FIXED — `versionHeadings()`/`versionBlocks()` rtrim headings; `testATrailingSpaceOnTheUnreleasedHeadingIsTolerated` pins the pass. Side-effect accepted: trailing space on released headings also tolerated now (consistent). Residual one level down → new NF-3 | nit | FIXED
+
+## Round 2 — new findings
+
+bin/check-changelog.php:93–110 | `outsideFences()` toggles only on ``` markers; CommonMark `~~~` fences are unrecognized, so a tilde-fenced example heading still counts as structure (probed: file whose only released heading is inside `~~~ … ~~~` passes). Same class as round-1's fence finding, one syntax over; latent (real file has no fences) | low | OPEN
+
+bin/check-changelog.php:93–110 | Unterminated ``` fence blanks the rest of the file: lint fails closed (correct) but with generic messages ("no released version headings") that never mention the unclosed fence (probed) | nit | OPEN
+
+bin/check-changelog.php:304–325 | Subheading capture `### (.+)$` is not rtrimmed: `### Fixed ` (trailing space) is silently treated as unknown and escapes duplicate detection — a whitespace dodge vector; same diagnostic class as the fixed `[Unreleased]` rtrim issue. Self-reported by coder in round-2 notes, left out of scope there | nit | OPEN
+
+bin/check-changelog.php:117–121 | `entryProse()` unbalanced-backtick heuristic can misjudge references on malformed entries (odd tick counts): probed a stray-tick span swallowing an entry's only ref (flagged — fail-closed here, mirrored input would false-pass). Only reachable via malformed Markdown; coder self-documented. Acceptable lint heuristic | nit | OPEN

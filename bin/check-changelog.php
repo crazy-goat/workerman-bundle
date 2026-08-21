@@ -26,8 +26,10 @@ declare(strict_types=1);
  *     a bare `(#123)`), except entries frozen in
  *     LEGACY_ENTRIES_WITHOUT_A_REFERENCE.
  *
- * Lines inside fenced code blocks (``` … ```) are ignored: a fenced example
- * showing a changelog heading is documentation, not structure. Issue
+ * Lines inside fenced code blocks (``` or ~~~, CommonMark) are ignored: a
+ * fenced example showing a changelog heading is documentation, not structure.
+ * An unterminated fence is reported at its opening line and no other checks
+ * run — the parse is incomplete past that point. Issue
  * references are matched against prose only — inline-code spans are stripped
  * first, and an anchor link (`[x](#123)`) does not count as a reference.
  *
@@ -81,33 +83,51 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
 
 /**
  * Blank every line inside a fenced code block (and the fence markers
- * themselves), keeping positions 1:1 so line numbers survive. A fenced
- * example showing what a changelog heading looks like is documentation, not
- * structure — without this, `## [x.y.z] - date` inside ``` ``` ``` counts as
- * a released heading and splits version blocks.
+ * themselves), keeping positions 1:1 so line numbers survive. Both CommonMark
+ * fence syntaxes are honoured — ``` and ~~~ — and a fence is closed only by
+ * its own marker, so a ``` line inside a ~~~ fence stays blanked.
+ *
+ * A fenced example showing what a changelog heading looks like is
+ * documentation, not structure — without this, `## [x.y.z] - date` inside a
+ * fence counts as a released heading and splits version blocks.
  *
  * @param list<string> $lines
  *
- * @return list<string>
+ * @return array{lines: list<string>, unterminated_at: int|null} the sanitized
+ *         lines and, when a fence was opened but never closed, the 1-based
+ *         line of the opening marker
  */
 function outsideFences(array $lines): array
 {
-    $inFence = false;
+    /** @var string|null $fence the marker that opened the current fence */
+    $fence = null;
+    $unterminatedAt = null;
 
     foreach ($lines as $index => $line) {
-        if (str_starts_with(trim($line), '```')) {
-            $inFence = !$inFence;
+        $trimmed = trim($line);
+
+        if ($fence !== null) {
+            if (str_starts_with($trimmed, $fence)) {
+                $fence = null;
+            }
+
             $lines[$index] = '';
 
             continue;
         }
 
-        if ($inFence) {
+        if (str_starts_with($trimmed, '```') || str_starts_with($trimmed, '~~~')) {
+            $fence = substr($trimmed, 0, 3);
+            $unterminatedAt = $index + 1;
             $lines[$index] = '';
         }
     }
 
-    return $lines;
+    if ($fence === null) {
+        $unterminatedAt = null;
+    }
+
+    return ['lines' => $lines, 'unterminated_at' => $unterminatedAt];
 }
 
 /**
@@ -131,7 +151,19 @@ function entryProse(string $text): string
 function validateChangelogLines(array $lines): array
 {
     $violations = [];
-    $lines = outsideFences($lines);
+    $fenced = outsideFences($lines);
+    $lines = $fenced['lines'];
+
+    // An unterminated fence blinds the checker to everything after its
+    // opening line, so no verdict beyond "close it" is reliable — report the
+    // cause and stop instead of emitting misleading downstream messages.
+    if ($fenced['unterminated_at'] !== null) {
+        return [sprintf(
+            'line %d: unterminated code fence opened here — nothing after this line was checked',
+            $fenced['unterminated_at'],
+        )];
+    }
+
     $headings = versionHeadings($lines);
 
     if ($headings === []) {
@@ -318,7 +350,10 @@ function versionBlocks(array $lines): array
         }
 
         if ($current !== null && preg_match('/^### (.+)$/', $line, $matches) === 1) {
-            $current['subheadings'][] = $matches[1];
+            // rtrimmed like the `## [` headings: a trailing space must not
+            // turn a known subheading into an unknown one and dodge duplicate
+            // detection.
+            $current['subheadings'][] = rtrim($matches[1]);
         }
     }
 

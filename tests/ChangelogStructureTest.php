@@ -625,6 +625,126 @@ final class ChangelogStructureTest extends TestCase
         self::assertSame(0, $result['code'], $result['err'] . $result['out']);
     }
 
+    public function testATildeFencedHeadingNeverCountsAsStructure(): void
+    {
+        // CommonMark's second fence syntax: ~~~ must blank exactly like ```.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ~~~
+            ## [0.26.0] - 2026-08-15
+            ~~~
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('CHANGELOG.md has no released version headings', $result['err']);
+    }
+
+    public function testABacktickFenceIsNotClosedByATildeMarker(): void
+    {
+        // A fence is closed by its own marker only: the ``` fence swallows
+        // the ~~~ line and everything in it stays blanked.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ```
+            ~~~
+            ### Fixed
+            ~~~
+            ```
+
+            ## [0.26.0] - 2026-08-15
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+    }
+
+    public function testAnUnterminatedFenceIsReportedAtItsOpeningLine(): void
+    {
+        // Everything past the opener is invisible to the checker, so the one
+        // message that matters names the cause instead of misleading
+        // downstream generics.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ```
+            ## [0.26.0] - 2026-08-15
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('line 9: unterminated code fence opened here', $result['err']);
+        self::assertStringNotContainsString('no released version headings', $result['err']);
+    }
+
+    public function testASubheadingWithTrailingSpaceStillCountsAsADuplicate(): void
+    {
+        // `### Fixed ` must not escape duplicate detection as an unknown
+        // subheading just because of trailing whitespace. The trailing spaces
+        // are injected via regex so they survive any editor's trailing-
+        // whitespace stripping of this source file.
+        $this->writeChangelog((string) preg_replace(
+            '/^### Fixed$/m',
+            '### Fixed ',
+            <<<MARKDOWN
+                # Changelog
+
+                ## [Unreleased]
+
+                ### Fixed
+
+                - First ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+                ### Fixed
+
+                - Second ([#901](https://github.com/crazy-goat/workerman-bundle/issues/901))
+
+                ## [0.26.0] - 2026-08-15
+
+                ### Added
+
+                - Released ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+                MARKDOWN,
+        ));
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('"## [Unreleased]" has 2 "### Fixed" subheadings', $result['err']);
+    }
+
     /**
      * A minimal changelog that satisfies every rule of the script.
      */

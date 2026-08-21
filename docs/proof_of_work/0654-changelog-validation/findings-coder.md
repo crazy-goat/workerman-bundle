@@ -153,3 +153,48 @@ tools unpiped).
   extraction into one regex (`^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$`)
   eliminated the dead "unable to extract the version" violation the old
   two-step code carried over from the pre-refactor test.
+
+---
+
+# Round 3 — dispositions for review round-2 findings (NF-1…NF-4)
+
+## What was fixed
+
+- **NF-1 (tilde fences)** — `outsideFences()` now tracks which marker opened
+  the current fence (``` or `~~~`) and closes it only on the same marker, so
+  a ``` line inside a ~~~ fence stays blanked. Fixtures:
+  `testATildeFencedHeadingNeverCountsAsStructure` (tilde-fenced released
+  heading → still fails "no released version headings") and
+  `testABacktickFenceIsNotClosedByATildeMarker` (mixed markers).
+- **NF-2 (unterminated fence)** — `outsideFences()` returns the opening
+  line of an unclosed fence; `validateChangelogLines()` then reports exactly
+  one violation, `line N: unterminated code fence opened here — nothing after
+  this line was checked`, and skips all other checks. Rationale: everything
+  past the opener is invisible to the parse, so any verdict beyond "close it"
+  is unreliable — this is also why the generic downstream messages are gone
+  rather than merely accompanied. Fixture asserts both the message and the
+  absence of "no released version headings".
+- **NF-3 (subheading rtrim)** — `versionBlocks()` rtrimms captured
+  subheadings like the `## [` headings already did. Fixture:
+  `testASubheadingWithTrailingSpaceStillCountsAsADuplicate` — two `### Fixed `
+  (trailing space) still fail with "has 2". The trailing spaces are injected
+  via `preg_replace` in the test rather than typed into the heredoc, so no
+  editor's strip-trailing-whitespace setting can silently defuse the fixture.
+
+## Answered, not fixed
+
+- **NF-4 (unbalanced-backtick heuristic in `entryProse()`)** — accepted as a
+  documented limitation, per disposition. The heuristic fails closed for
+  well-formed input and only misjudges malformed Markdown (odd tick counts);
+  making it a real inline-code parser is not worth it for a lint gate. The
+  round-2 note in this file stands as the documentation of record.
+
+## Notes
+
+- The unterminated-fence early return slightly changes failure ergonomics: a
+  file with an unterminated fence AND genuine violations before the fence
+  reports only the fence until it is fixed. Accepted — one clear action item
+  beats a partial report from a half-blind parse.
+- Residual nit acknowledged by review in round 2 but not dispatched:
+  `--help`/`-h` exit-0 behaviour is still unpinned by a test. Left as-is
+  (cosmetic); noting it here so it is not lost.
