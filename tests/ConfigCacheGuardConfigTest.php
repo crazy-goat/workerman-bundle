@@ -9,16 +9,33 @@ use PHPUnit\Framework\TestCase;
 
 final class ConfigCacheGuardConfigTest extends TestCase
 {
+    /** @var string|false the process env value captured at setUp, restored at tearDown */
+    private string|false $savedTrustEnv;
+
     protected function setUp(): void
     {
         ConfigCacheGuardConfig::reset();
         unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
+        // The process env must not leak into tests either: a developer who
+        // exported WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE while running the
+        // suite would otherwise break strict-mode tests.
+        $this->savedTrustEnv = function_exists('getenv') ? getenv(ConfigCacheGuardConfig::ENV_VAR) : false;
+        if (function_exists('putenv')) {
+            putenv(ConfigCacheGuardConfig::ENV_VAR);
+        }
     }
 
     protected function tearDown(): void
     {
         ConfigCacheGuardConfig::reset();
         unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
+        if (function_exists('putenv')) {
+            if ($this->savedTrustEnv === false) {
+                putenv(ConfigCacheGuardConfig::ENV_VAR);
+            } else {
+                putenv(ConfigCacheGuardConfig::ENV_VAR . '=' . $this->savedTrustEnv);
+            }
+        }
     }
 
     public function testGetReturnsNullInitially(): void

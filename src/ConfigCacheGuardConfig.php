@@ -73,7 +73,10 @@ final class ConfigCacheGuardConfig
             $raw = $_ENV[self::ENV_VAR] ?? '';
         }
         if ($raw === '') {
-            $env = getenv(self::ENV_VAR);
+            // function_exists(): getenv() may be disabled via disable_functions;
+            // resolve() runs at boot on every path, so it must not fatal even
+            // in strict mode when the fallback is unavailable.
+            $env = function_exists('getenv') ? getenv(self::ENV_VAR) : false;
             $raw = $env === false ? '' : $env;
         }
 

@@ -13,16 +13,37 @@ final class ConfigLoaderTest extends TestCase
 {
     private string $tempDir;
 
+    /** @var string|false the process env value captured at setUp, restored at tearDown */
+    private string|false $savedTrustEnv;
+
     protected function setUp(): void
     {
         $this->tempDir = sys_get_temp_dir() . '/config-loader-test-' . uniqid();
         mkdir($this->tempDir . '/config/packages', 0777, true);
         mkdir($this->tempDir . '/cache', 0777, true);
+
+        // Hermeticity: an exported WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE must
+        // not leak into strict-mode tests from the developer's shell — it can
+        // arrive via the process env (getenv) or via the superglobals, which
+        // PHP populates from the environment at startup.
+        unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
+        $this->savedTrustEnv = function_exists('getenv') ? getenv(ConfigCacheGuardConfig::ENV_VAR) : false;
+        if (function_exists('putenv')) {
+            putenv(ConfigCacheGuardConfig::ENV_VAR);
+        }
     }
 
     protected function tearDown(): void
     {
         ConfigCacheGuardConfig::reset();
+        unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
+        if (function_exists('putenv')) {
+            if ($this->savedTrustEnv === false) {
+                putenv(ConfigCacheGuardConfig::ENV_VAR);
+            } else {
+                putenv(ConfigCacheGuardConfig::ENV_VAR . '=' . $this->savedTrustEnv);
+            }
+        }
         $this->removeDirectory($this->tempDir);
     }
 
@@ -418,9 +439,10 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // Pin the containing directory to 0700: under a permissive umask
-        // (e.g. 0000) the directory created during warm-up would itself be
-        // world-writable and fire a different refusal first.
+        // The containing directory must not contribute a second warning:
+        // warmUp() pins umask(0077) internally, but pinning the mode here
+        // keeps the test independent of how the directory is created and of
+        // future changes, so exactly one refusal signal fires.
         chmod(dirname($cachePath), 0700);
         chmod($cachePath, 0644);
         if (!@chown($cachePath, 65534)) {
@@ -845,9 +867,10 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // Pin the containing directory to 0700: under a permissive umask
-        // (e.g. 0000) the directory created during warm-up would itself be
-        // world-writable and fire a second warning, breaking assertCount(1).
+        // The containing directory must not contribute a second warning:
+        // warmUp() pins umask(0077) internally, but pinning the mode here
+        // keeps the test independent of how the directory is created and of
+        // future changes, so assertCount(1) stays deterministic.
         chmod(dirname($cachePath), 0700);
         chmod($cachePath, 0644);
         if (!@chown($cachePath, 65534)) {
