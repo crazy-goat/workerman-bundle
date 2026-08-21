@@ -1116,6 +1116,7 @@ final class RequestConverterTest extends TestCase
 
         $this->assertCount(1001, $symfonyRequest->cookies->all());
         $this->assertSame('v0000', $symfonyRequest->cookies->get('c0000'));
+        $this->assertSame('v0500', $symfonyRequest->cookies->get('c0500'));
         $this->assertSame('v1000', $symfonyRequest->cookies->get('c1000'));
     }
 
