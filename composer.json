@@ -94,6 +94,9 @@
         "coverage:check": [
             "php bin/check-coverage.php var/coverage.xml 80.0"
         ],
+        "changelog:check": [
+            "php bin/check-changelog.php"
+        ],
         "lint-fix": [
             "vendor/bin/php-cs-fixer fix -v",
             "vendor/bin/rector process",
@@ -103,7 +106,8 @@
             "vendor/bin/php-cs-fixer fix -v --dry-run",
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run",
-            "php bin/kb-lint.php"
+            "php bin/kb-lint.php",
+            "php bin/check-changelog.php"
         ],
         "kb-lint": [
             "php bin/kb-lint.php"
