@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\ConfigCacheGuardConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
@@ -21,6 +22,7 @@ final class ConfigLoaderTest extends TestCase
 
     protected function tearDown(): void
     {
+        ConfigCacheGuardConfig::reset();
         $this->removeDirectory($this->tempDir);
     }
 
@@ -670,6 +672,172 @@ final class ConfigLoaderTest extends TestCase
         $this->assertNull($verdict['error']);
         $this->assertNotNull($verdict['warn']);
         $this->assertStringContainsString('/tmp/cache/workerman/config.cache.php', $verdict['warn']);
+    }
+
+    public function testCheckCacheFilePermissionsWithTrustDowngradesWorldWritableDirectoryToWarning(): void
+    {
+        $verdict = ConfigLoader::checkCacheFilePermissions(
+            '/tmp/cache/workerman/config.cache.php',
+            0777,
+            33,
+            0644,
+            1000,
+            1000,
+            [33],
+            true,
+        );
+
+        $this->assertNull($verdict['error']);
+        $this->assertNotNull($verdict['warn']);
+        $this->assertStringContainsString('world-writable', $verdict['warn']);
+        $this->assertStringContainsString(ConfigCacheGuardConfig::ENV_VAR, $verdict['warn']);
+    }
+
+    public function testCheckCacheFilePermissionsWithTrustDowngradesForeignGroupWritableDirectoryToWarning(): void
+    {
+        $verdict = ConfigLoader::checkCacheFilePermissions(
+            '/tmp/cache/workerman/config.cache.php',
+            0770,
+            200,
+            0644,
+            1000,
+            1000,
+            [33],
+            true,
+        );
+
+        $this->assertNull($verdict['error']);
+        $this->assertNotNull($verdict['warn']);
+        $this->assertStringContainsString('is writable by group 200', $verdict['warn']);
+    }
+
+    public function testCheckCacheFilePermissionsWithTrustDowngradesForeignOwnedFileToWarning(): void
+    {
+        $verdict = ConfigLoader::checkCacheFilePermissions(
+            '/tmp/cache/workerman/config.cache.php',
+            0700,
+            33,
+            0644,
+            65534,
+            1000,
+            [33],
+            true,
+        );
+
+        $this->assertNull($verdict['error']);
+        $this->assertNotNull($verdict['warn']);
+        $this->assertStringContainsString('is owned by uid 65534', $verdict['warn']);
+    }
+
+    public function testCheckCacheFilePermissionsWithTrustDowngradesWorldWritableFileToWarning(): void
+    {
+        $verdict = ConfigLoader::checkCacheFilePermissions(
+            '/tmp/cache/workerman/config.cache.php',
+            0700,
+            33,
+            0666,
+            1000,
+            1000,
+            [33],
+            true,
+        );
+
+        $this->assertNull($verdict['error']);
+        $this->assertNotNull($verdict['warn']);
+        $this->assertStringContainsString('world-writable', $verdict['warn']);
+    }
+
+    public function testLoadFromCacheProceedsWithWarningForWorldWritableDirectoryWhenTrustSet(): void
+    {
+        $logger = new class extends AbstractLogger {
+            /** @var array<int, array{level: string, message: string}> */
+            public array $records = [];
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->records[] = ['level' => $level, 'message' => (string) $message];
+            }
+        };
+
+        // Create loader A, set config, warm up to write cache.
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $config = [
+            'server' => ['listen' => 'http://0.0.0.0:8080'],
+        ];
+        $loaderA->setWorkermanConfig($config);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        // The file itself is safe (0644); only the containing directory is world-writable.
+        chmod($cachePath, 0644);
+        chmod($cacheDir, 0777);
+
+        ConfigCacheGuardConfig::set(true);
+        try {
+            // Create loader B (no config set via setters) — with the documented
+            // opt-out the world-writable directory no longer refuses loading;
+            // the advisory warning is emitted instead.
+            $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true, $logger);
+            $this->assertSame($config, $loaderB->getWorkermanConfig());
+
+            $this->assertCount(1, $logger->records);
+            $this->assertSame('warning', $logger->records[0]['level']);
+            $this->assertStringContainsString('world-writable', $logger->records[0]['message']);
+            $this->assertStringContainsString(ConfigCacheGuardConfig::ENV_VAR, $logger->records[0]['message']);
+        } finally {
+            ConfigCacheGuardConfig::reset();
+        }
+    }
+
+    public function testLoadFromCacheProceedsWithWarningForForeignOwnedFileWhenTrustSet(): void
+    {
+        $logger = new class extends AbstractLogger {
+            /** @var array<int, array{level: string, message: string}> */
+            public array $records = [];
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->records[] = ['level' => $level, 'message' => (string) $message];
+            }
+        };
+
+        // Create loader A, set config, warm up to write cache.
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $config = [
+            'server' => ['listen' => 'http://0.0.0.0:8080'],
+        ];
+        $loaderA->setWorkermanConfig($config);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+
+        chmod($cachePath, 0644);
+        if (!@chown($cachePath, 65534)) {
+            $this->markTestSkipped('chown to another user requires root privileges');
+        }
+
+        ConfigCacheGuardConfig::set(true);
+        try {
+            // Create loader B (no config set via setters) — with the
+            // documented opt-out the foreign-owned file no longer refuses
+            // loading; the advisory warning is emitted instead.
+            $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true, $logger);
+            $this->assertSame($config, $loaderB->getWorkermanConfig());
+
+            $this->assertCount(1, $logger->records);
+            $this->assertSame('warning', $logger->records[0]['level']);
+            $this->assertStringContainsString('is owned by uid', $logger->records[0]['message']);
+        } finally {
+            ConfigCacheGuardConfig::reset();
+        }
     }
 
     private function findSupplementaryGroup(): ?int

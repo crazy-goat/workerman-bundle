@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add an explicit opt-out for the config-cache permission guard:
+  `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1` (read from the environment of the
+  booting process) downgrades the four refusal checks — world-writable cache
+  directory, group-writable directory of a foreign group, cache file owned
+  by another uid, world-writable cache file — to the advisory warning path
+  (PSR-3 `warning` or `E_USER_WARNING`) and lets loading proceed. Strict
+  behaviour stays the default: without the variable the guard refuses
+  exactly as before, with the same error messages. The downgrade is a
+  documented security deviation for deployments that explicitly trust the
+  cache directory (managed build systems, sudoless image builders, frozen
+  base images); `docs/security.md` gains a "Guard downgrade" subsection
+  ([#648](https://github.com/crazy-goat/workerman-bundle/issues/648))
+
 - `docs/security.md` now lists cookie-count capping alongside the other
   known intentional deviations from `$_COOKIE`: PHP's SAPI stops registering
   cookies once `max_input_vars` (default 1000) is reached and drops the

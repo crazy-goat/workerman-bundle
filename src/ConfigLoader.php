@@ -116,6 +116,15 @@ final class ConfigLoader implements CacheWarmerInterface
      *    (a file replaced by an attacker would be owned by the attacker);
      * 4. the cache file itself must not be world-writable (secondary signal).
      *
+     * Deployments that explicitly trust the cache directory — managed build
+     * systems, sudoless image builders, frozen base images — can downgrade
+     * the refusals to warnings by setting the documented opt-out
+     * `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` (see
+     * {@see ConfigCacheGuardConfig}); the strict behaviour is the default.
+     * The downgrade is a documented security deviation: the cache file is
+     * executed PHP, and every refused signal is still surfaced as a warning
+     * so misconfiguration stays visible at boot.
+     *
      * If the metadata cannot be read, a warning naming the path is emitted
      * (logged via the PSR-3 logger when one is available, otherwise raised as
      * an \E_USER_WARNING) and loading proceeds (fail-open with a signal). The
@@ -139,6 +148,9 @@ final class ConfigLoader implements CacheWarmerInterface
      * attributes, or filesystems that do not support POSIX permissions.
      *
      * @throws \RuntimeException if the cache directory or file is unsafe
+     *                          (unless the documented opt-out
+     *                          `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` is set,
+     *                          which downgrades the refusals to warnings)
      */
     private function validateCacheFilePermissions(string $cachePath): void
     {
@@ -153,6 +165,7 @@ final class ConfigLoader implements CacheWarmerInterface
             @fileowner($cachePath),
             posix_geteuid(),
             [posix_getegid(), ...($groups === false ? [] : $groups)],
+            ConfigCacheGuardConfig::resolve(),
         );
 
         if ($verdict['error'] !== null) {
@@ -183,10 +196,17 @@ final class ConfigLoader implements CacheWarmerInterface
      * @param int $euid effective user id of the loading process
      * @param int[] $processGroups every group the loading process belongs to
      *                             (effective group id plus supplementary groups)
+     * @param bool $trustCacheDir explicit opt-out (issue #648): when true,
+     *                            the four refusal branches below degrade to
+     *                            the advisory `warn` path and loading may
+     *                            proceed. This is a documented security
+     *                            downgrade for deployments that explicitly
+     *                            trust the cache directory; the default
+     *                            (false/absent) keeps the strict behaviour.
      * @return array{warn: string|null, error: string|null} both null when the
      *         file is safe to load; `warn` set (and no `error`) when the
-     *         metadata is unreadable and loading should proceed with a warning;
-     *         `error` set (and no `warn`) when loading must be refused
+     *         file should be loaded with an advisory warning; `error` set
+     *         (and no `warn`) when loading must be refused
      */
     public static function checkCacheFilePermissions(
         string $cachePath,
@@ -196,6 +216,7 @@ final class ConfigLoader implements CacheWarmerInterface
         int|false $fileOwner,
         int $euid,
         array $processGroups,
+        bool $trustCacheDir = false,
     ): array {
         if ($dirPerms === false || $dirGroup === false || $filePerms === false || $fileOwner === false) {
             return [
@@ -211,23 +232,23 @@ final class ConfigLoader implements CacheWarmerInterface
 
         // 1. Replacing the cache file only needs write access to the directory.
         if (($dirPerms & 0002) !== 0) {
-            return [
-                'warn' => null,
-                'error' => sprintf(
+            return self::verdict(
+                $trustCacheDir,
+                sprintf(
                     'The configuration cache directory "%s" is world-writable (%o). An attacker who can write '
                     . 'to the cache directory can replace the cache file and achieve arbitrary code execution at '
                     . 'boot. Ensure the cache directory is not writable by other users (e.g., chmod 0700 or 0750).',
                     $cacheDir,
                     $dirPerms & 0777,
                 ),
-            ];
+            );
         }
 
         // 2. A group-writable directory is only acceptable when the group is one of the process's own.
         if (($dirPerms & 0020) !== 0 && !\in_array($dirGroup, $processGroups, true)) {
-            return [
-                'warn' => null,
-                'error' => sprintf(
+            return self::verdict(
+                $trustCacheDir,
+                sprintf(
                     'The configuration cache directory "%s" is writable by group %d (%o), which is not a group '
                     . 'the current process belongs to (process groups: %s). Another service in that group could '
                     . 'replace the cache file. Ensure the directory is not group-writable by other groups '
@@ -237,14 +258,14 @@ final class ConfigLoader implements CacheWarmerInterface
                     $dirPerms & 0777,
                     implode(', ', $processGroups),
                 ),
-            ];
+            );
         }
 
         // 3. Ownership: a file replaced by another user would be owned by that user.
         if ($fileOwner !== $euid) {
-            return [
-                'warn' => null,
-                'error' => sprintf(
+            return self::verdict(
+                $trustCacheDir,
+                sprintf(
                     'The configuration cache file "%s" is owned by uid %d, not by the current process user '
                     . '(uid %d). The file may have been replaced by another user. Ensure the cache is written '
                     . 'by the same user that loads it (e.g., warm up with the runtime user, or chown the cache '
@@ -253,24 +274,47 @@ final class ConfigLoader implements CacheWarmerInterface
                     $fileOwner,
                     $euid,
                 ),
-            ];
+            );
         }
 
         // 4. World-writable file: secondary signal, kept from the original check.
         if (($filePerms & 0002) !== 0) {
-            return [
-                'warn' => null,
-                'error' => sprintf(
+            return self::verdict(
+                $trustCacheDir,
+                sprintf(
                     'The configuration cache file "%s" is world-writable (%o). '
                     . 'This is a security risk: the cache directory must not be writable by untrusted users. '
                     . 'Ensure the cache directory has restrictive permissions (e.g., 0700 or 0750).',
                     $cachePath,
                     $filePerms & 0777,
                 ),
-            ];
+            );
         }
 
         return ['warn' => null, 'error' => null];
+    }
+
+    /**
+     * Route a refusal verdict through the strict path or the documented
+     * opt-out downgrade (issue #648).
+     *
+     * @return array{warn: string|null, error: string|null}
+     */
+    private static function verdict(bool $trustCacheDir, string $message): array
+    {
+        if ($trustCacheDir) {
+            return [
+                'warn' => sprintf(
+                    'The config-cache permission guard is explicitly downgraded (%s is set) and the cache '
+                    . 'directory is trusted as-is by the deployment; loading proceeds despite: %s',
+                    ConfigCacheGuardConfig::ENV_VAR,
+                    $message,
+                ),
+                'error' => null,
+            ];
+        }
+
+        return ['warn' => null, 'error' => $message];
     }
 
     /** @return array<string, mixed[]> */

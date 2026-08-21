@@ -461,7 +461,9 @@ containing directory** before loading it:
   the same user. Warm up the cache with the runtime user, or `chown` the
   cache file to that user after warm-up. A mismatch is refused in the
   launcher process (`Runner::run()`, before any worker forks) with a
-  `RuntimeException` naming both UIDs.
+  `RuntimeException` naming both UIDs — unless the documented opt-out is
+  set, in which case it degrades to a warning (see [Guard
+  downgrade](#guard-downgrade-explicit-opt-out)).
 
 ### When this matters
 
@@ -470,7 +472,9 @@ containing directory** before loading it:
   build and starting the server as a non-root user (`USER www-data`) trips
   the ownership check. This is the single most common containerised layout
   and is now a hard boot failure, not a warning — see [Containerised
-  deployments (Docker)](#containerised-deployments-docker) below.
+  deployments (Docker)](#containerised-deployments-docker) below. Deployments
+  that cannot re-own or re-warm may opt out explicitly — see [Guard
+  downgrade](#guard-downgrade-explicit-opt-out) below.
 - **Containerised deployments**: Containers with overly permissive `umask` settings (e.g., `umask 0000`) can produce world-writable cache files and directories.
 - **Development setups**: Developers running with `umask 0000` or cache directories created with `0777` permissions.
 
@@ -508,6 +512,11 @@ or re-own the cache file after warm-up:
 ```bash
 chown <runtime-user> var/cache/<env>/workerman/config.cache.php
 ```
+
+If neither is possible in your deployment (managed build systems, sudoless
+image builders, frozen base images — cases that cannot change who warms the
+cache), the bundle offers an explicit, documented downgrade: see [Guard
+downgrade](#guard-downgrade-explicit-opt-out) below.
 
 ### Containerised deployments (Docker)
 
@@ -560,6 +569,51 @@ CMD ["bin/console", "workerman:server", "start"]
 The same applies to any deploy-user/runtime-user split: deploy scripts, CI
 runs and `sudo` invocations must either run the warm-up as the runtime user
 or re-own the cache afterwards.
+
+### Guard downgrade (explicit opt-out)
+
+Environments that **cannot** remediate — managed build systems that warm the
+cache as another user and offer no re-own hook, sudoless image builders,
+frozen base images whose warm-up step ran before a later ownership change —
+can explicitly opt out of the refusals. This is a **documented security
+downgrade**, acceptable only when the cache directory is trusted as-is:
+
+```bash
+WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1 bin/console workerman:server start
+```
+
+The variable is read from the environment (`$_SERVER`/`$_ENV`) of the
+booting process, so it works in every mode that loads the cache — the
+console, the launcher, the runtime, and PHAR/BIN builds. Any value other
+than `0`, `false`, `no`, `off` or empty enables the downgrade; the variable
+absent means strict behaviour.
+
+**With the opt-out set**, the four refusal checks — directory world-writable,
+directory group-writable by a foreign group, cache file owned by another
+uid, cache file world-writable — no longer refuse loading. Each refusal
+branch degrades to the advisory warning path used for unreadable metadata:
+the message (naming the uid or permission problem) is emitted via the PSR-3
+logger when one is configured and raised as an `E_USER_WARNING` otherwise,
+and loading proceeds. The guard stays on in a degraded sense: every signal
+that would have refused boot is still surfaced at boot, so a previously
+strict deployment that sets the opt-out sees warnings, not silence.
+
+**Without the opt-out**, behaviour is unchanged: all four checks refuse
+loading exactly as described above, with the same error messages. Strict
+mode is the default — there is no behaviour change for existing users.
+
+**Why the downgrade matters**: the cache file is a PHP file that gets
+executed via `require` at boot. Anyone who can write the cache directory
+can replace it and achieve arbitrary code execution in the context of the
+runtime user. The opt-out is sound only when the directory really is
+trusted — a container built by a pipeline you control, mounted read-only,
+with no other user able to write it. It does **not** make a public-writable
+directory safe; it makes the bundle stop refusing to boot on one.
+
+Per the decisions policy (`docs/helpers/decisions.md`, DEC-006: "Do not
+loosen these without an explicit, documented reason"), the downgrade is
+deliberate, named, and visible in the boot log whenever it degrades a
+check.
 
 ## SFX Checksum Requirement
 
