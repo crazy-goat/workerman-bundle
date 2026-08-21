@@ -535,6 +535,95 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * When a mid-extraction failure occurs (e.g. a later entry escapes the
+     * destination via a pre-existing symlink), entries extracted before the
+     * failure must be removed so the destination directory is left as it was.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesPreviouslyExtractedEntriesOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            // First entry is valid and will be extracted before the failure.
+            'goodfile.bin' => 'good-content',
+            // Second entry escapes via the pre-existing symlink.
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        // The archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The previously extracted entry must also be removed — a failed
+        // fetch must leave the destination directory as it was.
+        self::assertFileDoesNotExist($this->tempDir . '/goodfile.bin');
+    }
+
+    /**
+     * When locateSfxEntry() fails (archive has no usable SFX entry), all
+     * extracted files must be removed so the destination directory is left
+     * as it was — not just the zip archive.
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRemovesExtractedEntriesWhenNoSfxEntryFound(): void
+    {
+        $zipPath = $this->tempDir . '/orphan.sfx.zip';
+
+        // Create an archive with a subdirectory file (so extraction does
+        // materialise real content on disk) plus an empty directory. The
+        // zip basename is 'orphan.sfx' (minus .zip), so the primary rule
+        // will not match any entry. The fallback rule picks the first file
+        // entry, but we name it to NOT be picked by the primary rule.
+        // Actually, the fallback picks ANY file entry — so to trigger the
+        // SfxExtractionException we need an archive with only directory
+        // entries. We use a nested empty directory to verify cleanup of
+        // directories created during extraction.
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        $zip->addEmptyDir('subdir');
+        $zip->addEmptyDir('subdir/nested');
+        $zip->close();
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/orphan.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected SfxExtractionException for an archive with no usable entry.');
+        } catch (SfxExtractionException $e) {
+            self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
+        }
+
+        // The archive must not survive for a later fetch() to trust.
+        self::assertFileDoesNotExist($zipPath);
+
+        // The extracted directories must also be removed — a failed fetch
+        // must leave the destination directory as it was.
+        self::assertDirectoryDoesNotExist($this->tempDir . '/subdir');
+    }
+
+    /**
      * @requires extension zip
      */
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void

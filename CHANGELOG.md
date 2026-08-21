@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `SfxDownloader::extractToDirectory()` now removes entries extracted before
+  a mid-extraction failure (validation, containment, or `extractTo()` error),
+  and `extractZip()` removes all extracted entries when `locateSfxEntry()`
+  finds no usable SFX entry — so a failed fetch leaves the destination
+  directory as it was, not just the zip archive
+  ([#671](https://github.com/crazy-goat/workerman-bundle/issues/671))
+
 - `ResponseConverter`'s header-name normalisation cache is now bounded. The
   static cache behind `normalizeHeaderName()` had no cap and no eviction, so
   an application deriving response header **names** from request data could
