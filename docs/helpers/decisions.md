@@ -13,12 +13,12 @@ whole file.
 <!-- kb-index:start -->
 - `architecture` — DEC-002
 - `ci` — DEC-007
-- `cookies` — DEC-010
+- `cookies` — DEC-010, DEC-015
 - `coverage` — DEC-007
 - `docs` — DEC-012
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
 - `long-running` — DEC-003, DEC-014
@@ -29,9 +29,9 @@ whole file.
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
-- `security` — DEC-005, DEC-006, DEC-010, DEC-013
+- `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015
 - `static-files` — DEC-004
-- `tests` — DEC-014
+- `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
 <!-- kb-index:end -->
 
@@ -235,3 +235,17 @@ planted three pillars landed there too — `StaticFilesRealPathCache`
 `MAX_CACHE_STRING_LENGTH`) that probes implausibly long request paths without
 caching, fail-open per DEC-013 — plus an LRU-semantics regression test that
 distinguishes least-recently-*used* eviction from FIFO.
+
+### Cookie parsing has no max_input_vars cap — documented deviation, pinned by test (#628)
+<!-- kb: id=DEC-015 date=2026-08-21 tags=http,cookies,security,tests trigger="touching parseCookiesFromServerBag(), considering an input-count cap, or editing the $_COOKIE deviations paragraph" hits=0 status=active -->
+
+PHP's SAPI stops registering cookies once `max_input_vars` (default 1000) is
+reached — one E_WARNING, remaining pairs silently dropped — while
+`RequestConverter::parseCookiesFromServerBag()` parses every pair in the
+header. This is an **intentional** deviation, recorded in docs/security.md
+("Known intentional deviations from `$_COOKIE`") and pinned by the
+characterisation test `testCookieParsingIsNotCappedAtMaxInputVars` (1001
+pairs → all parsed; first/middle/last asserted). Do not "fix" this by adding
+a cap: capping silently drops data and needs its own decision — the test
+fails first and forces docs/security.md to change with any behavior change.
+(#628 cycle; resolved docs-only per the issue's minimum fix.)
