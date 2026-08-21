@@ -31,3 +31,28 @@ PASS (69 tests, 6 skipped, no failures).
   entry — correct as released history, must not be rewritten.
 - `$fingerprint instanceof MasterFingerprint` vs `!== null`: identical
   semantics; mandated by Rector's FlipTypeControlToUseExclusiveTypeRector.
+
+---
+
+## Round 2 assessment (commit a019a23)
+
+Gates: `composer lint` PASS; `phpunit tests/ServerManagerTest.php
+tests/ProcessInspectorTest.php` PASS (69 tests, 145 assertions — +6 vs
+round 1, matching the new assertions; 6 skipped, 1 environmental coverage
+warning).
+
+| # | file:line | what is wrong | severity | what happened to it |
+|---|-----------|---------------|----------|---------------------|
+| R1-1 | tests/ServerManagerTest.php:750, :795 | (round-1: weak `'fingerprint'` assertion could not catch a branch swap) | low | **fixed** — verified in code: both mismatch tests now assert `'does not match'`, a substring present ONLY in the hasFingerprint=true message (ServerNotRunningException.php:64); `'no fingerprint sidecar'` likewise occurs only in the false branch (:70). Both sub-cases now pinned in both directions. |
+| R1-2 | tests/ServerManagerTest.php:914-918, :954-958 | (round-1: getStatus/getConnections tests asserted type only) | low | **fixed** — verified in code: both bind `$e` and assert `'Cannot verify'` + PID + `'no fingerprint sidecar'`; `$pid` in scope (:903, :943); symmetric with stop/reload twins (:838-840, :877-879). |
+| R1-3 | docs/helpers/faq.md:278-293 (FAQ-016) | Stale wording: title quotes "Workerman is not running." for what is now the "Cannot verify master process \<pid\>" case | low | **still present** — correctly deferred; faq.md untouched by a019a23 (DEC-009 single writer). Behavioral content remains accurate; retro-step update proposed in review-1.md §7. |
+| R1-4 | src/ServerManager.php:213-225 + ServerNotRunningException.php:34-37 | Empty/garbage pid file collapses to "no pid file found" message | nit | **still present** — accepted approximation; re-verified: docblocks (:16, :31) concede "(or empty/unreadable)"; message-only, never behavior. No action. |
+| R1-5 | src/Exception/ServerNotRunningException.php:16 | Docblock bullet misattributed "process dead" to noPidFile() | nit | **fixed** — verified in code: bullet now reads "no pid file found (or empty/unreadable)." |
+| R1-6 | docs/helpers/faq.md:281-284 | Pre-existing verbatim duplicated lines in FAQ-016 | nit | **still present** — correctly deferred; duplication confirmed at faq.md:281-284; a019a23 touches only src/ + tests/ + proof-of-work; retro step per DEC-009. |
+
+New findings this round: **none.** The a019a23 delta (16 lines: one
+docblock line, two assertion swaps, six added assertions) was reviewed
+line by line; asserted substrings cross-checked against the literal
+messages in ServerNotRunningException.php:36/45/64/70 — all correct and
+discriminating. Fail-closed invariant unchanged (no production code
+changed this round; alive-after-refusal assertions still pass).
