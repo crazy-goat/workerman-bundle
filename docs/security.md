@@ -687,7 +687,9 @@ fingerprint is written on every start — but three situations trip it:
 - **Daemon-start window.** `start -d` returns before the master has
   written its pid file; the fingerprint appears only when the master
   reaches `MasterWorker::saveMasterPid()` a moment later. A `stop`,
-  `reload` or `status` in that window reports "Workerman is not running."
+  `reload` or `status` in that window reports "Workerman is not running"
+  (no pid file yet) or "Cannot verify master process \<pid\>" (pid file
+  present but no fingerprint sidecar yet)
   — wait for `<pid_file>.fingerprint` to appear, then retry.
 
 ### When this matters

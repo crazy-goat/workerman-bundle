@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PHP-FPM. Documentation only, no behaviour change; a characterisation test
   pins the uncapped parsing ([#628](https://github.com/crazy-goat/workerman-bundle/issues/628))
 
+- `ServerNotRunningException` now carries a cause-specific message instead
+  of the generic "Workerman is not running." The message distinguishes
+  "not running" (no pid file, or the master process is dead) from "running
+  but unverifiable" (fingerprint mismatch or no fingerprint sidecar) and
+  names the PID and cause. The no-arg constructor is preserved for backward
+  compatibility; the fail-closed behaviour (which exception is thrown and
+  when) is unchanged. `UPGRADE.md`, `docs/security.md` and `README.md`
+  updated to reflect the new wording
+  ([#657](https://github.com/crazy-goat/workerman-bundle/issues/657))
+
 ### Fixed
 
 - `ResponseConverter`'s header-name normalisation cache is now bounded. The

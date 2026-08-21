@@ -24,7 +24,8 @@ limited:
   `cli_set_process_title()` does not rewrite the argv visible there.
 - On **non-Linux hosts (macOS, BSD)** there is no command-line fallback
   at all: without a fingerprint file, `stop`, `reload` and `status`
-  always report `Workerman is not running.`, even while the server is up.
+  report `Cannot verify master process <pid>` (or `Workerman is not running`
+  when no pid file exists), even while the server is up.
 
 Consequence: upgrading the bundle while a server started by an older
 version is still running can silently turn the control commands into
@@ -39,13 +40,15 @@ no-ops.
    from then on.
 
 **If you already upgraded with a running master** and the commands report
-`Workerman is not running.`: recover by terminating the old master by
+`Cannot verify master process <pid>` (the PID is alive but its identity
+cannot be confirmed): recover by terminating the old master by
 hand. Read the PID from the pid file, verify with
 `ps -p <pid> -o pid,comm,args` that it is the process you started, and
 `kill` it (never use a bare `pkill -f WorkerMan` — it would kill
 unrelated Workerman applications on the host). Remove any leftover pid
 file, then start the new version once. A single start restores the
-control plane.
+control plane. If the commands report `Workerman is not running` instead,
+the master is not alive — just remove the stale pid file and start.
 
 ### `start -d` returns before the master has written its pid file
 
@@ -53,7 +56,9 @@ control plane.
 — and with it the fingerprint sidecar — is written by the master process
 itself a moment later (`MasterWorker::saveMasterPid()`, issue #584). A
 `status`, `stop` or `reload` in that short window reports
-`Workerman is not running.`; wait for the pid file (and its
+`Workerman is not running` (no pid file yet) or
+`Cannot verify master process <pid>` (pid file written but no fingerprint
+sidecar yet); wait for the pid file (and its
 `.fingerprint` sidecar) to appear, then retry.
 
 ### Config cache and runtime user
