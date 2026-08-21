@@ -198,3 +198,36 @@ tools unpiped).
 - Residual nit acknowledged by review in round 2 but not dispatched:
   `--help`/`-h` exit-0 behaviour is still unpinned by a test. Left as-is
   (cosmetic); noting it here so it is not lost.
+
+---
+
+# Round 4 — dispositions for review round-3 findings (NF-5…NF-6 + carried nit)
+
+## What was fixed
+
+- **NF-5 (closer-length rule)** — `outsideFences()` now records the opening
+  fence's character and run length and closes only on a line that is a run of
+  the same character at least as long as the opener (regex
+  `^{char}{len,}\s*$`), per CommonMark. Fixture:
+  `testAFourBacktickFenceIsNotClosedByAnInnerTripleBacktick` — the standard
+  nested-fence idiom (```` wrapping ``` wrapping a heading) no longer leaks
+  the inner `## [0.9.9] - 2020-01-01` into the parse; the file still fails
+  "no released version headings".
+- **NF-6 (leading-whitespace subheadings)** — capture now uses `trim()`, so
+  `###   Fixed` counts as "Fixed" for duplicate detection exactly like the
+  rendered Markdown does. Fixture:
+  `testASubheadingWithLeadingSpacesStillCountsAsADuplicate` — two
+  `###   Fixed` entries fail with "has 2"; spaces injected via `str_replace`
+  to survive whitespace-stripping editors.
+- **Carried nit (--help)** — `testHelpExitsZeroAndPrintsUsage` pins both
+  `--help` and `-h`: exit 0, usage line, `--root=DIR` and the env-var name in
+  stdout.
+
+## Notes
+
+- The closer regex requires nothing but optional whitespace after the marker
+  run (`{char}{len,}\s*$`), matching CommonMark's rule that closing fences
+  carry no info string; an opening fence's info string (```php) is fine
+  because only the leading run is captured.
+- No new findings of my own this round; the fence model now matches
+  CommonMark for everything a changelog can plausibly contain.

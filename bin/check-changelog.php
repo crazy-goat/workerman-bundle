@@ -84,8 +84,9 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
 /**
  * Blank every line inside a fenced code block (and the fence markers
  * themselves), keeping positions 1:1 so line numbers survive. Both CommonMark
- * fence syntaxes are honoured — ``` and ~~~ — and a fence is closed only by
- * its own marker, so a ``` line inside a ~~~ fence stays blanked.
+ * fence syntaxes are honoured — ``` and ~~~ — and, per CommonMark, a fence is
+ * closed only by a run of its own character **at least as long as the
+ * opener**, so a ``` line inside a ```` fence stays blanked.
  *
  * A fenced example showing what a changelog heading looks like is
  * documentation, not structure — without this, `## [x.y.z] - date` inside a
@@ -99,7 +100,7 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
  */
 function outsideFences(array $lines): array
 {
-    /** @var string|null $fence the marker that opened the current fence */
+    /** @var array{char: string, length: int}|null $fence the opening marker */
     $fence = null;
     $unterminatedAt = null;
 
@@ -107,7 +108,13 @@ function outsideFences(array $lines): array
         $trimmed = trim($line);
 
         if ($fence !== null) {
-            if (str_starts_with($trimmed, $fence)) {
+            if (
+                str_starts_with($trimmed, $fence['char'])
+                && preg_match(
+                    '/^' . preg_quote($fence['char'], '/') . '{' . $fence['length'] . ',}\s*$/',
+                    $trimmed,
+                ) === 1
+            ) {
                 $fence = null;
             }
 
@@ -116,8 +123,8 @@ function outsideFences(array $lines): array
             continue;
         }
 
-        if (str_starts_with($trimmed, '```') || str_starts_with($trimmed, '~~~')) {
-            $fence = substr($trimmed, 0, 3);
+        if (preg_match('/^(`{3,}|~{3,})/', $trimmed, $matches) === 1) {
+            $fence = ['char' => $matches[1][0], 'length' => \strlen($matches[1])];
             $unterminatedAt = $index + 1;
             $lines[$index] = '';
         }
@@ -350,10 +357,10 @@ function versionBlocks(array $lines): array
         }
 
         if ($current !== null && preg_match('/^### (.+)$/', $line, $matches) === 1) {
-            // rtrimmed like the `## [` headings: a trailing space must not
-            // turn a known subheading into an unknown one and dodge duplicate
-            // detection.
-            $current['subheadings'][] = rtrim($matches[1]);
+            // trimmed like the `## [` headings: extra leading or trailing
+            // spaces must not turn a known subheading into an unknown one and
+            // dodge duplicate detection.
+            $current['subheadings'][] = trim($matches[1]);
         }
     }
 

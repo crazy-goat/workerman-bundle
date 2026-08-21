@@ -745,6 +745,85 @@ final class ChangelogStructureTest extends TestCase
         self::assertStringContainsString('"## [Unreleased]" has 2 "### Fixed" subheadings', $result['err']);
     }
 
+    public function testAFourBacktickFenceIsNotClosedByAnInnerTripleBacktick(): void
+    {
+        // CommonMark: a fence closes on a run of its own character at least
+        // as long as the opener. The ``` inside the ```` fence is content —
+        // without the length rule it would close early and leak the heading
+        // into the parse as a real release.
+        $this->writeChangelog(<<<'MARKDOWN'
+            # Changelog
+
+            ## [Unreleased]
+
+            ### Added
+
+            - New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+            ````
+            ```
+            ## [0.9.9] - 2020-01-01
+            ````
+
+            ### Fixed
+
+            - Something ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+            MARKDOWN);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('CHANGELOG.md has no released version headings', $result['err']);
+    }
+
+    public function testASubheadingWithLeadingSpacesStillCountsAsADuplicate(): void
+    {
+        // `###   Fixed` renders as "Fixed" in Markdown; leading whitespace
+        // must not turn it into an unknown subheading that dodges duplicate
+        // detection. The spaces are injected via str_replace so they survive
+        // any editor's trailing-whitespace stripping of this source file.
+        $this->writeChangelog(str_replace(
+            '### Fixed',
+            '###   Fixed',
+            <<<'MARKDOWN'
+                # Changelog
+
+                ## [Unreleased]
+
+                ### Fixed
+
+                - First ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))
+
+                ### Fixed
+
+                - Second ([#901](https://github.com/crazy-goat/workerman-bundle/issues/901))
+
+                ## [0.26.0] - 2026-08-15
+
+                ### Added
+
+                - Released ([#899](https://github.com/crazy-goat/workerman-bundle/issues/899))
+
+                MARKDOWN,
+        ));
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('"## [Unreleased]" has 2 "### Fixed" subheadings', $result['err']);
+    }
+
+    public function testHelpExitsZeroAndPrintsUsage(): void
+    {
+        foreach ([['--help'], ['-h']] as $flag) {
+            $result = $this->runScript([], $flag);
+
+            self::assertSame(0, $result['code'], $result['err']);
+            self::assertStringContainsString('Usage: php bin/check-changelog.php', $result['out']);
+            self::assertStringContainsString('--root=DIR', $result['out']);
+            self::assertStringContainsString('CHANGELOG_CHECK_ROOT', $result['out']);
+        }
+    }
+
     /**
      * A minimal changelog that satisfies every rule of the script.
      */

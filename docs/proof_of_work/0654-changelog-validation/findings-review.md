@@ -52,3 +52,21 @@ bin/check-changelog.php:93–110 | Unterminated ``` fence blanks the rest of the
 bin/check-changelog.php:304–325 | Subheading capture `### (.+)$` is not rtrimmed: `### Fixed ` (trailing space) is silently treated as unknown and escapes duplicate detection — a whitespace dodge vector; same diagnostic class as the fixed `[Unreleased]` rtrim issue. Self-reported by coder in round-2 notes, left out of scope there | nit | OPEN
 
 bin/check-changelog.php:117–121 | `entryProse()` unbalanced-backtick heuristic can misjudge references on malformed entries (odd tick counts): probed a stray-tick span swallowing an entry's only ref (flagged — fail-closed here, mirrored input would false-pass). Only reachable via malformed Markdown; coder self-documented. Acceptable lint heuristic | nit | OPEN
+
+---
+
+# Round 3 — dispositions for round-2 findings (commit 03d6543)
+
+bin/check-changelog.php:86–128 (NF-1, tilde fences) | FIXED — `outsideFences()` tracks the opening marker and closes only on the same one; fixture `testATildeFencedHeadingNeverCountsAsStructure` pins the original scenario, `testABacktickFenceIsNotClosedByATildeMarker` pins mixed markers, and the reversed mix (~~~ swallowing ```) verified by probe. Residual refinement of the same feature → new NF-5 | low | FIXED
+
+bin/check-changelog.php:86–128 + validateChangelogLines short-circuit (NF-2, unterminated fence) | FIXED — single violation `line N: unterminated code fence opened here — nothing after this line was checked`; fixture asserts message and absence of generic messages. Probes confirm fail-closed exit 1, no stale state across sequential closed fences, and the documented tradeoff that pre-fence violations are suppressed until the fence is fixed (accepted) | nit | FIXED
+
+bin/check-changelog.php:350–355 (NF-3, subheading rtrim) | FIXED for trailing whitespace — capture rtrimmed; editor-proof fixture injects trailing spaces via preg_replace so whitespace-stripping settings cannot defuse it. Leading-whitespace variant persists → new NF-6 | nit | FIXED
+
+bin/check-changelog.php:117–121 (NF-4, entryProse heuristic) | ACCEPTED AS DOCUMENTED per round-2 disposition; findings-coder.md note stands as documentation of record | nit | ACCEPTED
+
+## Round 3 — new findings
+
+bin/check-changelog.php:86–128 | Fence model ignores CommonMark's "closing fence at least as long as opener": in a 4-backtick fence containing ``` lines (standard nested-fence idiom), the inner ``` prematurely closes and later content leaks into the parse — probed a `## [0.9.9] - 2020-01-01` line inside a ```` fence counted as a real released heading (file passed with zero actual releases). Fail-open but requires exotic input for a changelog | nit | OPEN
+
+bin/check-changelog.php:350–355 | Subheading fix rtrims only: extra leading spaces (`###   Fixed`) render as "Fixed" in Markdown but are still treated as unknown here, so the duplicate-detection dodge remains open against leading whitespace (probed: `###   Fixed` + `### Fixed` passes). Catcher: trim()/`^###\s+(.+?)\s*$` + fixture | nit | OPEN
