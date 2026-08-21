@@ -180,10 +180,34 @@ final readonly class ServerManager
         $fingerprint = $this->loadMasterFingerprint();
 
         if (!$this->processInspector->isMasterRunning($masterPid, $fingerprint)) {
-            throw new ServerNotRunningException();
+            throw $this->notRunningException($masterPid, $fingerprint);
         }
 
         return $masterPid;
+    }
+
+    /**
+     * Build a cause-specific {@see ServerNotRunningException} for the
+     * current failure mode.
+     *
+     * Called only after {@see ProcessInspector::isMasterRunning()} has
+     * already returned false, so the fail-closed behaviour is decided: this
+     * method only improves the message quality. A TOCTOU between the
+     * isMasterRunning() call and the isProcessAlive() call here can at worst
+     * mislabel "dead" as "unverifiable" — a minor message inaccuracy, not a
+     * behaviour change.
+     */
+    private function notRunningException(int $masterPid, ?MasterFingerprint $fingerprint): ServerNotRunningException
+    {
+        if ($masterPid <= 0) {
+            return ServerNotRunningException::noPidFile();
+        }
+
+        if (!$this->processInspector->isProcessAlive($masterPid)) {
+            return ServerNotRunningException::processDead($masterPid);
+        }
+
+        return ServerNotRunningException::unverifiable($masterPid, $fingerprint instanceof MasterFingerprint);
     }
 
     private function getMasterPid(): int

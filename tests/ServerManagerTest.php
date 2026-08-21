@@ -165,8 +165,13 @@ final class ServerManagerTest extends TestCase
 
     public function testStopThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
-        $this->expectException(ServerNotRunningException::class);
-        $this->manager->stop();
+        try {
+            $this->manager->stop();
+            $this->fail('Expected ServerNotRunningException was not thrown');
+        } catch (ServerNotRunningException $e) {
+            $this->assertStringContainsString('not running', $e->getMessage());
+            $this->assertStringContainsString('no pid file', $e->getMessage());
+        }
     }
 
     /**
@@ -220,8 +225,14 @@ final class ServerManagerTest extends TestCase
         file_put_contents($this->pidFile, (string) $pid);
         $this->killChildBlocking($pid);
 
-        $this->expectException(ServerNotRunningException::class);
-        $this->manager->stop();
+        try {
+            $this->manager->stop();
+            $this->fail('Expected ServerNotRunningException was not thrown');
+        } catch (ServerNotRunningException $e) {
+            $this->assertStringContainsString('not running', $e->getMessage());
+            $this->assertStringContainsString('not alive', $e->getMessage());
+            $this->assertStringContainsString((string) $pid, $e->getMessage());
+        }
     }
 
     public function testStopReturnsFalseWhenProcessDoesNotStop(): void
@@ -245,8 +256,13 @@ final class ServerManagerTest extends TestCase
 
     public function testReloadThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
-        $this->expectException(ServerNotRunningException::class);
-        $this->manager->reload();
+        try {
+            $this->manager->reload();
+            $this->fail('Expected ServerNotRunningException was not thrown');
+        } catch (ServerNotRunningException $e) {
+            $this->assertStringContainsString('not running', $e->getMessage());
+            $this->assertStringContainsString('no pid file', $e->getMessage());
+        }
     }
 
     /**
@@ -297,8 +313,13 @@ final class ServerManagerTest extends TestCase
 
     public function testGetStatusThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
-        $this->expectException(ServerNotRunningException::class);
-        $this->manager->getStatus();
+        try {
+            $this->manager->getStatus();
+            $this->fail('Expected ServerNotRunningException was not thrown');
+        } catch (ServerNotRunningException $e) {
+            $this->assertStringContainsString('not running', $e->getMessage());
+            $this->assertStringContainsString('no pid file', $e->getMessage());
+        }
     }
 
     /**
@@ -347,8 +368,13 @@ final class ServerManagerTest extends TestCase
 
     public function testGetConnectionsThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
-        $this->expectException(ServerNotRunningException::class);
-        $this->manager->getConnections();
+        try {
+            $this->manager->getConnections();
+            $this->fail('Expected ServerNotRunningException was not thrown');
+        } catch (ServerNotRunningException $e) {
+            $this->assertStringContainsString('not running', $e->getMessage());
+            $this->assertStringContainsString('no pid file', $e->getMessage());
+        }
     }
 
     /**
@@ -717,8 +743,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->stop();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('does not match', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -759,8 +788,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->reload();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('does not match', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -801,8 +833,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->stop();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -837,8 +872,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->reload();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -873,8 +911,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->getStatus();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
@@ -910,8 +951,11 @@ final class ServerManagerTest extends TestCase
             $thrown = false;
             try {
                 $this->manager->getConnections();
-            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException) {
+            } catch (\CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException $e) {
                 $thrown = true;
+                $this->assertStringContainsString('Cannot verify', $e->getMessage());
+                $this->assertStringContainsString((string) $pid, $e->getMessage());
+                $this->assertStringContainsString('no fingerprint sidecar', $e->getMessage());
             }
 
             $this->assertTrue(
