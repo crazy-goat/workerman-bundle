@@ -200,6 +200,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PHPUnit gate and `composer lint` can never drift apart
   ([#654](https://github.com/crazy-goat/workerman-bundle/issues/654))
 
+- `ContentLengthDesyncTest::createSymfonyRequest()` now accepts a `$method`
+  parameter, so HEAD-method tests use the helper instead of manually
+  constructing `Request::create('/', Request::METHOD_HEAD)`. The helper
+  already supported this since #683; this change updates the two remaining
+  bypass call sites to use it
+  ([#684](https://github.com/crazy-goat/workerman-bundle/issues/684))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added

@@ -10,7 +10,6 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
@@ -260,7 +259,7 @@ final class ContentLengthDesyncTest extends TestCase
         $response = new Response('hello world', Response::HTTP_OK, [
             'Content-Length' => '999',
         ]);
-        $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
+        $response->prepare($this->createSymfonyRequest(method: 'HEAD'));
 
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'HEAD');
 
@@ -284,7 +283,7 @@ final class ContentLengthDesyncTest extends TestCase
         $converter = $this->createConverter();
 
         $response = new Response('hello world');
-        $response->prepare(Request::create('/', \Symfony\Component\HttpFoundation\Request::METHOD_HEAD));
+        $response->prepare($this->createSymfonyRequest(method: 'HEAD'));
 
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'HEAD');
 
