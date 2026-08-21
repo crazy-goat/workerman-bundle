@@ -315,8 +315,9 @@ one you chose, in the last `code-decision-<x>.md`.
 Before opening a PR, verify that all linters and tests pass on your machine:
 
 ```bash
-# Run all linters (php-cs-fixer dry-run, phpstan, rector dry-run) and the
-# knowledge-base linter (php bin/kb-lint.php)
+# Run all linters (php-cs-fixer dry-run, phpstan, rector dry-run), the
+# knowledge-base linter (php bin/kb-lint.php) and the CHANGELOG.md structural
+# check (php bin/check-changelog.php)
 composer lint
 
 # Auto-fix fixable issues (php-cs-fixer, rector, kb-lint --fix)
@@ -429,8 +430,8 @@ pushes to `master`, a weekly schedule, and manual `workflow_dispatch`. It
 has five jobs:
 
 1. **lint** – `composer validate --strict`, `composer audit`, then
-   `composer lint` (php-cs-fixer, phpstan, rector dry-run and
-   `bin/kb-lint.php`)
+   `composer lint` (php-cs-fixer, phpstan, rector dry-run,
+   `bin/kb-lint.php` and the `bin/check-changelog.php` structural check)
 2. **tests matrix** (PHP 8.2–8.5 × Symfony 6.4–8.0) – unit + E2E tests;
    `needs: lint`. The PHP 8.2 / Symfony 6.4 leg also enforces the
    line-coverage floor. Runs on every trigger except `schedule`

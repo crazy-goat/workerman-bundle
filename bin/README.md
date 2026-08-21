@@ -37,6 +37,36 @@ git push --no-verify
 Parses a PHPUnit Clover XML file and exits non-zero when total line coverage
 is below a threshold. Used by `composer coverage:check`.
 
+### `check-changelog.php`
+
+Structurally validates `CHANGELOG.md`: exactly one `[Unreleased]` heading and
+it comes first, released headings match `## [x.y.z] - YYYY-MM-DD` with a real
+calendar date, in strictly descending order, Keep a Changelog subheadings
+(`Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security`) appear at
+most once per version block, and every top-level entry carries an issue
+reference — except the entries frozen in the script's
+`LEGACY_ENTRIES_WITHOUT_A_REFERENCE` list. Lines inside fenced code blocks
+(``` or `~~~`) are ignored — a fenced example heading is documentation, not
+structure — and an unterminated fence is reported at its opening line instead
+of producing misleading downstream messages. References are matched against
+prose only: inline-code spans are stripped and
+an anchor-style reference (`[x]` followed by `(#123)`) does not count. Wired into `composer lint`, so
+the pre-push hook and the CI Lint job run it too;
+`tests/ChangelogStructureTest.php` drives the same script as a subprocess
+against synthetic fixtures.
+
+**Usage:**
+```bash
+php bin/check-changelog.php                # what composer lint runs
+composer changelog:check                   # the same, as a composer script
+php bin/check-changelog.php --root=/path/to/checkout
+```
+
+Exit codes: 0 = valid, 1 = violations found, 2 = usage error. `--root=` (or
+the `CHANGELOG_CHECK_ROOT` environment variable, itself reported as a
+warning) points the check at another checkout; the resolved root is always
+printed so it is never ambiguous which tree was checked.
+
 ### `gh-branch`
 
 Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,
