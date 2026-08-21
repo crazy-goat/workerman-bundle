@@ -153,6 +153,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves the worker without any timeout sweeper
   ([#625](https://github.com/crazy-goat/workerman-bundle/issues/625))
 
+- `composer lint` now structurally validates `CHANGELOG.md` through the new
+  `bin/check-changelog.php` (also available standalone as
+  `composer changelog:check`). The check enforces exactly one `[Unreleased]`
+  heading placed first, released version headings matching
+  `## [x.y.z] - YYYY-MM-DD` in strictly descending order, unique Keep a
+  Changelog subheadings per version block, and an issue reference on every
+  top-level entry outside a frozen legacy list — closing the lint-time gap
+  behind #641 (duplicate `### Fixed` heading), #255 (version headings out of
+  order) and #356 (stale `[Unreleased]` section). The rules live only in the
+  script: `tests/ChangelogStructureTest.php` was refactored to drive it as a
+  subprocess instead of duplicating them, so the PHPUnit gate and
+  `composer lint` can never drift apart
+  ([#654](https://github.com/crazy-goat/workerman-bundle/issues/654))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added
