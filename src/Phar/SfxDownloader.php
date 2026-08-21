@@ -520,10 +520,15 @@ final readonly class SfxDownloader
      * Both files and directories created by the extraction are removed.
      * Entries are processed in reverse extraction order so that nested
      * directories are removed before their parents (e.g. "sub/nested/"
-     * is removed before "sub/"). Any entry that is no longer on disk
-     * (already gone, or never materialised for empty-dir entries on some
-     * platforms) is silently skipped. Pre-existing entries are never
-     * touched: we only remove paths whose name matches an extracted entry.
+     * is removed before "sub/"). Auto-created parent directories that
+     * have no corresponding zip entry are also removed when they become
+     * empty. Any entry that is no longer on disk (already gone, or never
+     * materialised for empty-dir entries on some platforms) is silently
+     * skipped. Pre-existing entries are never touched: we only remove
+     * paths whose name matches an extracted entry or was auto-created
+     * as a parent of one. Removal failures are logged via error_log()
+     * so the operator can investigate leftover partial files — the same
+     * principle as the archive unlink in {@see fetch()}.
      *
      * @param string[] $extractedEntries Names of successfully extracted entries
      * @param string   $destinationDir   Directory entries were extracted into
@@ -532,13 +537,61 @@ final readonly class SfxDownloader
     {
         $base = rtrim($destinationDir, '/\\');
 
-        foreach (array_reverse($extractedEntries) as $name) {
+        // Collect all parent directories of extracted entries — these are
+        // auto-created by ZipArchive::extractTo() and have no corresponding
+        // zip entry, so they must be cleaned up alongside tracked entries.
+        $parents = [];
+        foreach ($extractedEntries as $name) {
+            $dir = ltrim(dirname($name), '/');
+            while ($dir !== '' && $dir !== '.') {
+                $parents[$dir] = true;
+                $dir = dirname($dir);
+                if ($dir === '.' || $dir === '/') {
+                    break;
+                }
+            }
+        }
+
+        // Reverse-merge: tracked entries first (deepest paths removed first),
+        // then auto-created parents (also reverse-sorted so deeper parents
+        // are removed before shallower ones).
+        $allPaths = array_merge(
+            array_reverse($extractedEntries),
+            array_reverse(array_keys($parents)),
+        );
+
+        foreach ($allPaths as $name) {
             $path = $base . DIRECTORY_SEPARATOR . rtrim($name, '/');
 
-            if (is_dir($path) && !is_link($path)) {
-                @rmdir($path);
-            } elseif (is_file($path) || is_link($path)) {
-                @unlink($path);
+            if (is_link($path)) {
+                if (!@unlink($path)) {
+                    error_log(sprintf(
+                        'Unable to remove extracted symlink "%s" during cleanup; the entry stays on disk. Remove it manually.',
+                        $path,
+                    ));
+                }
+            } elseif (is_dir($path)) {
+                if (!@rmdir($path)) {
+                    // rmdir fails on non-empty dirs — this is expected for
+                    // parents whose children haven't been removed yet, or
+                    // for pre-existing directories we didn't create. Only
+                    // log when the directory is empty but still can't be
+                    // removed (permissions, etc.).
+                    $items = @scandir($path);
+                    if ($items !== false && count($items) <= 2) {
+                        error_log(sprintf(
+                            'Unable to remove extracted directory "%s" during cleanup; the directory stays on disk. Remove it manually.',
+                            $path,
+                        ));
+                    }
+                }
+            } elseif (is_file($path)) {
+                if (!@unlink($path)) {
+                    error_log(sprintf(
+                        'Unable to remove extracted file "%s" during cleanup; the entry stays on disk and may be trusted by a later fetch(). Remove it manually.',
+                        $path,
+                    ));
+                }
             }
         }
     }
