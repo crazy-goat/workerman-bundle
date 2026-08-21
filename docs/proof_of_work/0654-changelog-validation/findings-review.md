@@ -70,3 +70,19 @@ bin/check-changelog.php:117–121 (NF-4, entryProse heuristic) | ACCEPTED AS DOC
 bin/check-changelog.php:86–128 | Fence model ignores CommonMark's "closing fence at least as long as opener": in a 4-backtick fence containing ``` lines (standard nested-fence idiom), the inner ``` prematurely closes and later content leaks into the parse — probed a `## [0.9.9] - 2020-01-01` line inside a ```` fence counted as a real released heading (file passed with zero actual releases). Fail-open but requires exotic input for a changelog | nit | OPEN
 
 bin/check-changelog.php:350–355 | Subheading fix rtrims only: extra leading spaces (`###   Fixed`) render as "Fixed" in Markdown but are still treated as unknown here, so the duplicate-detection dodge remains open against leading whitespace (probed: `###   Fixed` + `### Fixed` passes). Catcher: trim()/`^###\s+(.+?)\s*$` + fixture | nit | OPEN
+
+---
+
+# Round 4 — dispositions for round-3 findings (commit 3ffb7cc)
+
+bin/check-changelog.php:108–127 (NF-5, closer-length rule) | FIXED — opener captures the full marker run (`{3,}`), closer requires a same-char run ≥ opener length with only trailing whitespace (`^{char}{len,}\s*$`, which also correctly forbids closer info strings per CommonMark). Fixture pins the nested idiom; re-probed round-3's exact false-pass now fails "no released version headings"; edges probed correct: trailing tab closes, info-string line inside fence does not close, longer same-char closer closes, 2-backtick content lines do not close | nit | FIXED
+
+bin/check-changelog.php:350–355 (NF-6, leading-whitespace subheadings) | FIXED — capture uses trim(); fixture injects `###   Fixed` via str_replace and asserts "has 2"; spaces-only capture degrades to "" and is skipped harmlessly | nit | FIXED
+
+tests/ChangelogStructureTest.php (--help carried nit) | FIXED — `testHelpExitsZeroAndPrintsUsage` covers both `--help` and `-h`: exit 0, usage line, `--root=DIR`, env-var name on stdout. Nothing left of the round-1 medium finding | nit | FIXED
+
+## Round 4 — new findings
+
+bin/check-changelog.php:108–127 | Fence toggling runs on trim($line), so a ``` / ~~~ marker indented 4+ spaces — an indented code block per CommonMark, not a fence — still toggles scanner state; structure between two such markers is blanked although CommonMark renders it outside any fence (probed benign direction; misbehavior direction is real but contrived for a changelog) | nit | OPEN
+
+bin/check-changelog.php (versionHeadings/versionBlocks) | `## [` heading detection anchors to column 0, so an ATX heading indented up to 3 spaces — rendered as a real heading by Markdown — is invisible to every heading rule: probed `   ## [Unreleased]` → false "found 0" (fail-closed); an indented released heading would likewise escape ordering/duplicate-version checks (fail-open dodge). Same class as NF-6, one level up. Catcher: allow ≤3 leading spaces in heading matchers + fixtures | nit | OPEN

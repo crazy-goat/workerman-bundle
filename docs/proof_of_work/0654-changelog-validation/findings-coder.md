@@ -231,3 +231,20 @@ tools unpiped).
   because only the leading run is captured.
 - No new findings of my own this round; the fence model now matches
   CommonMark for everything a changelog can plausibly contain.
+
+---
+
+# Closing — review loop closed at four rounds (main-session decision)
+
+- **NF-7 (indented code-block marker toggling)** — ACCEPTED, not fixed.
+- **NF-8 (indented ATX headings invisible)** — ACCEPTED, not fixed.
+
+Rationale: both require contrived input for a CHANGELOG.md (fence markers or
+`##` headings indented by spaces, which Markdown renders as code blocks or
+nothing at all); where they misjudge, the check fails closed or the input is
+exotic enough that no real changelog entry has ever taken that shape. Fixing
+them would add parser complexity to a lint gate for zero observed risk.
+
+Disposition: offered as a follow-up issue at workflow step 14, not fixed in
+this cycle. **NF-4** (unbalanced-backtick heuristic in `entryProse()`)
+remains accepted-as-documented per its round-2/round-3 dispositions.
