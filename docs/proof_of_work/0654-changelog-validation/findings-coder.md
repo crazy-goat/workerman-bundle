@@ -104,8 +104,8 @@ tools unpiped).
   fenced → fails with exactly "has 2".
 - **:9 (reference false positives)** — rule 4 now matches prose only:
   inline-code spans stripped first (`entryProse()`), then `](#N)` anchor
-  links removed. Accepted forms unchanged: `[#N](url)` and bare `(#N)`.
-  Fixtures: `` `(#123)` `` only → fail; `[x](#123)` only → fail.
+  links removed. Accepted forms unchanged: a `[#N]` markdown link and bare `(#N)`.
+  Fixtures: `` `(#123)` `` only → fail; `[x]` + `(#123)` only → fail.
 - **:11 (this script's globals)** — renamed to `checkChangelogMain()`,
   `checkChangelogParseArgs()`, `checkChangelogPrintUsage()`. The remaining
   helpers were already unique. pick-issue.php / kb-lint.php untouched per

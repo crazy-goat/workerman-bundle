@@ -39,7 +39,7 @@ round-1 lows — none blocks merge.
 4. **Reference false positives (low) — FIXED.** Rule 4 now matches prose only:
    `entryProse()` strips inline-code spans, then `\]\(#\d+\)` anchor links are
    removed before the reference regex runs. Fixtures pin both shapes I probed
-   in round 1 (backticked `` `(#123)` `` → fail; `[x](#123)` anchor → fail).
+   in round 1 (backticked `` `(#123)` `` → fail; `[x]` + `(#123)` anchor → fail).
    Canonical forms verified unaffected: real-tree check OK, continuation-line
    link form accepted, bare `(#N)` accepted (pre-existing fixture).
 5. **Global symbol collisions wider than F-1 (low) — FIXED for this script.**

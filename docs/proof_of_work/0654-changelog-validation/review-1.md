@@ -125,9 +125,9 @@ statuses OPEN (round 1).
   duplicates). Latent — the real file has no fences. Catcher: fixture test;
   fence-awareness in the line scanners.
 - **F-R3 (low)** — bin/check-changelog.php:180 — the reference regex accepts
-  non-references: `` `(#123)` `` in inline code or an anchor link `[x](#123)`
+  non-references: `` `(#123)` `` in inline code or an anchor link `[x]` + `(#123)`
   satisfies rule 4 (probed). Extends coder F-5 with concrete false-positive
-  shapes. Catcher: stricter regex (require the `[#n](…)` link form or
+  shapes. Catcher: stricter regex (require the `[#n]` link form or
   end-of-entry position) + fixture.
 - **F-R4 (nit)** — bin/check-changelog.php:121 — dates validated by shape only
   (`2026-13-45` passes) and never checked for monotonicity against the version
@@ -194,7 +194,7 @@ statuses OPEN (round 1).
    **Trigger:** parsing Markdown structure by line regexes (headings, bullets)
    in repository tooling.
    Regex-per-line scanners treat `## [x.y.z] - date` or `### Fixed` inside a
-   ``` ``` ``` fence as real structure: in #654's check-changelog a fenced
+   a triple-backtick fence as real structure: in #654's check-changelog a fenced
    example heading counted as a released version heading and split version
    blocks, which can manufacture violations or hide real ones depending on
    placement. Any tool that classifies Markdown lines must either track fence

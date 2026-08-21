@@ -76,7 +76,7 @@ Carried over (acknowledged by the coder in round-3 notes, still unpinned):
   exercises the round-2 prose heuristic against the updated #654 entry, which
   now contains inline ``` and `~~~` (odd total backtick count): the entry line
   starts with `- ` so the fence scanner never toggles on it, and the trailing
-  `([#654](…))` reference survives span-stripping — no false missing-ref.
+  issue-reference link survives span-stripping — no false missing-ref.
 - `vendor/bin/phpunit --filter ChangelogStructureTest` → 34/34 green (30 prior
   + 4 new), 187 assertions.
 - `vendor/bin/phpstan analyse bin/check-changelog.php tests/ChangelogStructureTest.php`

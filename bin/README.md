@@ -50,7 +50,7 @@ reference — except the entries frozen in the script's
 structure — and an unterminated fence is reported at its opening line instead
 of producing misleading downstream messages. References are matched against
 prose only: inline-code spans are stripped and
-an anchor link (`[x](#123)`) does not count. Wired into `composer lint`, so
+an anchor-style reference (`[x]` followed by `(#123)`) does not count. Wired into `composer lint`, so
 the pre-push hook and the CI Lint job run it too;
 `tests/ChangelogStructureTest.php` drives the same script as a subprocess
 against synthetic fixtures.

@@ -9,7 +9,7 @@ tests/ChangelogStructureTest.php:57–325 | Fixture gaps for four more validator
 
 bin/check-changelog.php:217,239,249 | Fenced code blocks are not skipped by versionHeadings/versionBlocks/subheading capture: a `## [x.y.z] - date` or `### Fixed` line inside ``` ``` ``` becomes phantom structure — it counts as a released heading, splits version blocks, and can both manufacture violations and hide real duplicates (probed: a changelog whose only released heading came from inside a fence was accepted). Latent — real CHANGELOG.md has no fences | low | OPEN
 
-bin/check-changelog.php:180 | Reference regex `\[#\d+\]|\(#\d+\)` accepts non-references: a backtick-wrapped `` `(#123)` `` in inline code or an anchor link `[x](#123)` satisfies rule 4 without being an issue reference (both probed). Extends coder F-5 with concrete false-positive shapes | low | OPEN
+bin/check-changelog.php:180 | Reference regex `\[#\d+\]|\(#\d+\)` accepts non-references: a backtick-wrapped `` `(#123)` `` in inline code or an anchor link `[x]` + `(#123)` satisfies rule 4 without being an issue reference (both probed). Extends coder F-5 with concrete false-positive shapes | low | OPEN
 
 bin/check-changelog.php:307,324,366 | Global symbol collisions are wider than coder F-1 records: besides a third global `main()`, the new script re-declares `parseArgs()` and `printUsage()` already declared by bin/pick-issue.php:345,361 — including any two of these scripts in one process is a redeclare fatal. The void-main-internal-exit change silenced only the PHPStan cross-file resolution symptom, not the hazard (latent today: all invocations are separate processes, tests use proc_open) | low | OPEN
 
