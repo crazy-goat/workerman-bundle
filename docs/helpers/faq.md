@@ -18,7 +18,7 @@ your diff, read only those `###` entries — never the whole file.
 - `ci` — FAQ-011, FAQ-032, FAQ-033, FAQ-034
 - `closures` — FAQ-023
 - `config` — FAQ-024, FAQ-035
-- `config-cache` — FAQ-005
+- `config-cache` — FAQ-005, FAQ-036
 - `content-length` — FAQ-001
 - `control-plane` — FAQ-016
 - `coverage` — FAQ-010, FAQ-011
@@ -28,6 +28,7 @@ your diff, read only those `###` entries — never the whole file.
 - `docker` — FAQ-005
 - `docs` — FAQ-019
 - `download` — FAQ-003
+- `env` — FAQ-036
 - `gc` — FAQ-023
 - `gh` — FAQ-017
 - `git-hooks` — FAQ-015
@@ -47,7 +48,7 @@ your diff, read only those `###` entries — never the whole file.
 - `memory` — FAQ-023
 - `middleware` — FAQ-004
 - `mocks` — FAQ-022
-- `permissions` — FAQ-005
+- `permissions` — FAQ-005, FAQ-036
 - `php-strings` — FAQ-027
 - `php84` — FAQ-029
 - `phpbench` — FAQ-028
@@ -55,6 +56,7 @@ your diff, read only those `###` entries — never the whole file.
 - `ports` — FAQ-009
 - `process` — FAQ-007, FAQ-030, FAQ-032
 - `response-strategy` — FAQ-001, FAQ-002
+- `runner` — FAQ-036
 - `scheduler` — FAQ-020, FAQ-021
 - `security` — FAQ-027
 - `sfx` — FAQ-003
@@ -115,6 +117,29 @@ Docker build and starting the server as another user is a hard boot
 not a warning. Worked examples live in README (§ "Config cache and runtime
 user") and security.md (§ "Containerised deployments (Docker)") — link to
 them instead of restating the pattern in issues or PRs.
+
+Since #648 there is one escape hatch: `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`
+downgrades the refusal checks to warnings for deployments that explicitly
+trust the cache directory (managed build systems, sudoless image builders,
+frozen base images). It is a **documented security downgrade** — the cache
+file is executed PHP — only unambiguous truthy values enable it (fail-closed
+parsing), and strict mode stays the default. Point at security.md
+(§ "Guard downgrade (explicit opt-out)") rather than restating the details;
+never recommend it as a first-line fix for a warm-as-root misconfiguration.
+
+### An env-var bridge set only in `loadExtension()` never reaches consumers constructed before kernel boot — resolve lazily instead
+<!-- kb: id=FAQ-036 date=2026-08-21 tags=config-cache,permissions,env,runner trigger="adding an env-var bridge for a class constructed outside DI, or touching CacheWarmupTimeoutConfig / ConfigCacheGuardConfig" hits=0 status=active -->
+
+`CacheWarmupTimeoutConfig` is set from `WorkermanBundle::loadExtension()`,
+but `Runner` constructs its `ConfigLoader` and validates the config cache in
+the launcher main process **before** any kernel boot, so a
+loadExtension-only bridge is invisible there (the warm-up fork's `set()`
+does not propagate back to the parent; `Runtime::getRunner()` runs
+pre-boot too). The #648 opt-out (`ConfigCacheGuardConfig`) therefore
+resolves `$_SERVER`/`$_ENV`/`getenv()` lazily on every call, with `set()`
+as an override; a bridge that must work on every construction path should
+do the same. This also explains why `WORKERMAN_CACHE_WARMUP_TIMEOUT` is
+inert on the Runner path — tracked as issue #759 (regression from #528).
 
 ## Test suite
 
