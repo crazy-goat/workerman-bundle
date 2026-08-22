@@ -244,15 +244,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bypass call sites to use it
   ([#684](https://github.com/crazy-goat/workerman-bundle/issues/684))
 
-- `Dockerfile` and `.dockerignore` at the repo root provide a self-contained
-  test image on `php:8.2-cli-bookworm` with `pcntl`, `posix`, `zip`,
-  `inotify`, `pcov`, `phar.readonly=0`, `pcov.directory=/app/src` and
-  Composer, mirroring the most restrictive CI leg (PHP 8.2 + Symfony 6.4,
-  PCOV coverage). Contributors can run `composer test`, `test:coverage`,
-  `coverage:check` and `lint` in-container without installing PHP or
-  extensions on the host. A `bin/docker-test` helper wraps the bind-mount
-  run. `CONTRIBUTING.md` documents the workflow, the in-container ports
-  (8888/9999/9991, no `-p` needed) and the macOS/Linux UID caveat
+- `Dockerfile`, `docker-entrypoint.sh` and `.dockerignore` at the repo root
+  provide a self-contained test image on `php:8.2-cli-bookworm` with `pcntl`,
+  `posix`, `zip`, `inotify`, `pcov`, `phar.readonly=0`,
+  `pcov.directory=/app/src`, `memory_limit=512M` and Composer, mirroring the
+  most restrictive CI leg (PHP 8.2 + Symfony 6.4, PCOV coverage). The
+  entrypoint fixes named-volume ownership then drops to a non-root `app` user.
+  Contributors can run `composer test`, `test:coverage`, `coverage:check` and
+  `lint` in-container without installing PHP or extensions on the host. A
+  `bin/docker-test` helper wraps the bind-mount run. `CONTRIBUTING.md`
+  documents the workflow, the in-container ports (8888/9999/9991, no `-p`
+  needed) and the macOS/Linux UID caveat
   ([#674](https://github.com/crazy-goat/workerman-bundle/issues/674))
 
 ## [0.26.0] - 2026-08-15

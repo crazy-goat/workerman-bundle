@@ -20,7 +20,7 @@ ARG APP_GID=1000
 # zip extraction, libzip-dev/libinotifytools-dev as build headers for the PHP
 # extensions below, procps so tests that inspect process state (the daemon
 # start/stop cycle) work as they do on CI's ubuntu-latest.
-RUN apt-get update && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
         unzip \
@@ -41,8 +41,12 @@ RUN docker-php-ext-install pcntl posix zip \
 # pcov.directory scopes coverage to /app/src (the image WORKDIR); the absolute
 # path is required because PCOV resolves it at request time, not relative to
 # the process CWD. phar.readonly=0 lets the PHAR build/build:bin tests run.
+# memory_limit=512M is NOT set by CI (the runner inherits a larger limit from
+# the host), but php:*-cli ships 128M and the suite needs ~150 MB, so the
+# image must raise it explicitly to reproduce a green CI run.
 RUN echo "phar.readonly=0" > /usr/local/etc/php/conf.d/workerman-test.ini \
-    && echo "pcov.directory=/app/src" >> /usr/local/etc/php/conf.d/workerman-test.ini
+    && echo "pcov.directory=/app/src" >> /usr/local/etc/php/conf.d/workerman-test.ini \
+    && echo "memory_limit=512M" >> /usr/local/etc/php/conf.d/workerman-test.ini
 
 # Composer, copied from the official composer:2 image so its version tracks
 # the upstream release without a separate install step.
@@ -63,6 +67,12 @@ RUN groupadd -g "${APP_GID}" app \
 COPY --chown=app:app . /app
 RUN composer install --no-scripts --prefer-dist --no-interaction
 
-USER app
+# Entrypoint fixes named-volume ownership (Docker creates wmb-var/wmb-vendor
+# root-owned; the app user cannot write to them without this) then drops to
+# the non-root `app` user via runuser. The container starts as root so the
+# chown succeeds; the actual command runs as app.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["composer", "test"]

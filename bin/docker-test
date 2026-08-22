@@ -55,11 +55,18 @@ COMMAND="test"
 BUILD=0
 BUILD_ARGS=()
 
-for arg in "$@"; do
+for ((i = 1; i <= $#; i++)); do
+  arg="${!i}"
   if [[ "$arg" == "--build" ]]; then
     BUILD=1
-  elif [[ "$arg" == --build-arg ]]; then
-    die_usage "--build-arg needs a KEY=VALUE argument"
+  elif [[ "$arg" == "--build-arg" ]]; then
+    # Space-separated form: --build-arg KEY=VALUE — consume the next arg
+    next=$((i + 1))
+    if [[ "$next" -gt $# ]]; then
+      die_usage "--build-arg needs a KEY=VALUE argument"
+    fi
+    BUILD_ARGS+=("${!next}")
+    i=$next
   elif [[ "$arg" == --build-arg=* ]]; then
     BUILD_ARGS+=("${arg#--build-arg=}")
   elif [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
