@@ -41,14 +41,14 @@ final class Kernel extends BaseKernel
                 'servers' => [
                     [
                         'name' => 'Test server with files',
-                        'listen' => 'http://127.0.0.1:8888',
+                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':8888',
                         'processes' => 1,
                         'serve_files' => true,
                         'root_dir' => '%kernel.project_dir%/tests/data/',
                     ],
                     [
                         'name' => 'Test server no files',
-                        'listen' => 'http://127.0.0.1:9999',
+                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':9999',
                         'processes' => 1,
                         'serve_files' => false,
                         'middlewares' => [
@@ -57,7 +57,7 @@ final class Kernel extends BaseKernel
                     ],
                     [
                         'name' => 'Test server middleware dispatch contract',
-                        'listen' => 'http://127.0.0.1:9991',
+                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':9991',
                         'processes' => 1,
                         'serve_files' => false,
                         'middlewares' => [

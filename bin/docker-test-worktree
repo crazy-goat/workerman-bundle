@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# docker-test-worktree — run the workerman-bundle test suite in a git worktree
+# inside its own container. Each container has its own network namespace, i.e.
+# its own loopback, so N parallel worktree containers can never clash on ports
+# 8888/9999/9991 — no -p publishing and no code change needed.
+#
+# Volume and container names are derived from the worktree basename, so
+# parallel runs stay isolated: vendor/ is per-worktree (branches may pin
+# different dependencies) and var/ is always the bind-mounted worktree's own
+# directory — never share var/ or PID files across containers.
+#
+# See CONTRIBUTING.md ("Parallel test runs across git worktrees") and #676.
+
+set -euo pipefail
+
+IMAGE="workerman-bundle-test"
+
+usage() {
+  cat <<EOF
+usage: docker-test-worktree [WORKTREE_PATH] [--publish] [--coverage] [--lint]
+
+Run 'composer test' in ${IMAGE} with the given git worktree bind-mounted.
+Each run gets its own container (own network namespace), so parallel
+worktrees never collide on ports 8888/9999/9991.
+
+  WORKTREE_PATH  path to the worktree (default: \$PWD)
+  --publish      also publish ephemeral host ports for manual curl debugging:
+                 -p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991,
+                 with WMB_LISTEN_ADDR=0.0.0.0 so the daemon accepts the
+                 forwarded connections; prints the 'docker port' mappings
+                 after the suite finishes
+  --coverage     run 'composer test:coverage' instead of 'composer test'
+  --lint         run 'composer lint' instead of 'composer test'
+
+vendor/ lives in a per-worktree named volume (wmb-vendor-<basename>) so
+dependencies survive between runs; var/ stays in the worktree itself.
+
+On Linux, build the image once with --build-arg APP_UID=\$(id -u)
+APP_GID=\$(id -g) (see bin/docker-test). macOS/Windows Docker Desktop users
+can keep the defaults.
+
+Exit codes: the container's exit code, or 1 on a docker-test-worktree error.
+EOF
+}
+
+die() {
+  echo "docker-test-worktree: $*" >&2
+  exit 1
+}
+
+die_usage() {
+  echo "docker-test-worktree: $*" >&2
+  usage >&2
+  exit 2
+}
+
+command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
+
+# --- parse arguments ---
+WORKTREE="$PWD"
+PUBLISH=0
+COMMAND="test"
+
+for ((i = 1; i <= $#; i++)); do
+  arg="${!i}"
+  case "$arg" in
+    --publish) PUBLISH=1 ;;
+    --coverage) COMMAND="test:coverage" ;;
+    --lint) COMMAND="lint" ;;
+    -h | --help) usage; exit 0 ;;
+    --*) die_usage "unknown argument: $arg" ;;
+    -*)
+      # A leading dash could be a mistyped flag; only accept it when it names an
+      # existing directory, so typos fail loudly instead of becoming a path.
+      [[ -d "$arg" ]] || die_usage "unknown argument: $arg"
+      WORKTREE="$arg"
+      ;;
+    *) WORKTREE="$arg" ;;
+  esac
+done
+
+WORKTREE="$(cd "$WORKTREE" && pwd)" || die "cannot enter worktree: $WORKTREE"
+[[ -f "$WORKTREE/composer.json" ]] || die "not a composer project: $WORKTREE"
+BASENAME="$(basename "$WORKTREE")"
+VENDOR_VOL="wmb-vendor-${BASENAME}"
+
+RUN_ARGS=(docker run --rm --name "wmb-${BASENAME}" \
+  -e COMPOSER_ROOT_VERSION=1.0.0 \
+  -v "${WORKTREE}":/app \
+  -v "${VENDOR_VOL}":/app/vendor)
+
+if [[ "$PUBLISH" == 1 ]]; then
+  RUN_ARGS+=(
+    -p 127.0.0.1::8888
+    -p 127.0.0.1::9999
+    -p 127.0.0.1::9991
+    -e WMB_LISTEN_ADDR=0.0.0.0
+  )
+fi
+
+echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
+
+set +e
+"${RUN_ARGS[@]}" "$IMAGE" sh -c "composer install --no-scripts --no-interaction && composer ${COMMAND}"
+STATUS=$?
+set -e
+
+if [[ "$PUBLISH" == 1 ]] && [[ "$STATUS" == 0 ]]; then
+  echo "docker-test-worktree: published host ports for wmb-${BASENAME}:" >&2
+  docker port "wmb-${BASENAME}" >&2 || true
+fi
+
+exit "$STATUS"
