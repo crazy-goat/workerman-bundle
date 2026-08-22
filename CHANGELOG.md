@@ -115,6 +115,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alive and a warning is logged — so a live master is never read as dead
   ([#651](https://github.com/crazy-goat/workerman-bundle/issues/651))
 
+- `ConfigLoader` no longer emits its advisory config-cache permission
+  warning via `trigger_error(..., E_USER_WARNING)` when no PSR-3 logger is
+  available; the warning is now written directly via `error_log()`. The
+  change keeps the documented "fail-open with a signal" behaviour from
+  failing *closed*: a throwing error handler (e.g. Symfony's
+  `DebugErrorHandler` in debug mode), which escalates `E_USER_WARNING` to
+  `ErrorException`, can no longer turn the advisory warning into a hard boot
+  failure. Unrelated warnings continue to reach the error handler as before
+  ([#615](https://github.com/crazy-goat/workerman-bundle/issues/615))
+
 ### Performance
 
 - `ResponseConverter::extractHeaders()` no longer re-lowercases the
