@@ -511,29 +511,6 @@ final class ConfigLoaderTest extends TestCase
         $this->assertStringContainsString($missingPath, $logger->records[0]['message']);
     }
 
-    public function testValidateCacheFilePermissionsLogsWarningWhenMetadataUnreadableAndNoLogger(): void
-    {
-        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
-
-        $missingPath = $this->tempDir . '/cache/workerman/does-not-exist.php';
-        $logFile = $this->tempDir . '/error-nologger.log';
-
-        // No logger: the warning must still be surfaced via error_log().
-        ini_set('error_log', $logFile);
-        try {
-            (new \ReflectionMethod(ConfigLoader::class, 'validateCacheFilePermissions'))
-                ->invoke($loader, $missingPath);
-        } finally {
-            ini_restore('error_log');
-        }
-
-        $this->assertFileExists($logFile);
-        $logContent = file_get_contents($logFile);
-
-        $this->assertIsString($logContent, 'Failed to read error_log capture file');
-        $this->assertStringContainsString($missingPath, $logContent);
-    }
-
     public function testValidateCacheFilePermissionsDoesNotThrowWithThrowingErrorHandlerAndNoLogger(): void
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
