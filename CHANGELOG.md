@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   booting process) downgrades the four refusal checks — world-writable cache
   directory, group-writable directory of a foreign group, cache file owned
   by another uid, world-writable cache file — to the advisory warning path
-  (PSR-3 `warning` or `E_USER_WARNING`) and lets loading proceed. Strict
+  (PSR-3 `warning`, or `error_log()` when no PSR-3 logger is available) and
+  lets loading proceed. Strict
   behaviour stays the default: without the variable the guard refuses
   exactly as before, with the same error messages. The downgrade is a
   documented security deviation for deployments that explicitly trust the
@@ -114,6 +115,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit on a still-signalable PID) fail closed — the process is treated as
   alive and a warning is logged — so a live master is never read as dead
   ([#651](https://github.com/crazy-goat/workerman-bundle/issues/651))
+
+- `ConfigLoader` no longer emits its advisory config-cache permission
+  warning via `trigger_error(..., E_USER_WARNING)` when no PSR-3 logger is
+  available; the warning is now written directly via `error_log()`. The
+  change keeps the documented "fail-open with a signal" behaviour from
+  failing *closed*: a throwing error handler (e.g. Symfony's
+  `DebugErrorHandler` in debug mode), which escalates `E_USER_WARNING` to
+  `ErrorException`, can no longer turn the advisory warning into a hard boot
+  failure. Unrelated warnings continue to reach the error handler as before
+  ([#615](https://github.com/crazy-goat/workerman-bundle/issues/615))
 
 ### Performance
 

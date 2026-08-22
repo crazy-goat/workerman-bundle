@@ -511,31 +511,52 @@ final class ConfigLoaderTest extends TestCase
         $this->assertStringContainsString($missingPath, $logger->records[0]['message']);
     }
 
-    public function testValidateCacheFilePermissionsTriggersWarningWhenMetadataUnreadableAndNoLogger(): void
+    public function testValidateCacheFilePermissionsDoesNotThrowWithThrowingErrorHandlerAndNoLogger(): void
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $missingPath = $this->tempDir . '/cache/workerman/does-not-exist.php';
-        $triggered = null;
+        $logFile = $this->tempDir . '/error-throwing.log';
+        $userWarningInvocations = 0;
 
+        // A throwing error handler (Symfony's DebugErrorHandler escalates
+        // E_USER_WARNING to ErrorException in debug mode). The fail-open
+        // warning must not invoke it — only error_log() may fire — so no
+        // exception may escape, the handler must never see an E_USER_WARNING,
+        // and the warning must still reach the log. The handler mirrors
+        // Symfony's: it respects @-suppressed errors (the four
+        // @fileperms()/@filegroup()/@fileowner() metadata reads must not
+        // throw) and throws only on the E_USER_WARNING that trigger_error()
+        // would previously have emitted.
         set_error_handler(
-            static function (int $severity, string $message) use (&$triggered): bool {
-                $triggered = $message;
+            static function (int $severity, string $message) use (&$userWarningInvocations): bool {
+                if ($severity === \E_USER_WARNING) {
+                    ++$userWarningInvocations;
+
+                    throw new \ErrorException($message, 0, $severity);
+                }
 
                 return true;
             },
-            \E_USER_WARNING,
         );
 
+        ini_set('error_log', $logFile);
         try {
             (new \ReflectionMethod(ConfigLoader::class, 'validateCacheFilePermissions'))
                 ->invoke($loader, $missingPath);
         } finally {
             restore_error_handler();
+            ini_restore('error_log');
         }
 
-        $this->assertIsString($triggered);
-        $this->assertStringContainsString($missingPath, $triggered);
+        // The fail-open warning must reach the log via error_log() — without
+        // ever touching the error handler, or fail-open would fail closed.
+        $this->assertSame(0, $userWarningInvocations, 'the fail-open warning must not reach the error handler');
+        $this->assertFileExists($logFile);
+        $logContent = file_get_contents($logFile);
+
+        $this->assertIsString($logContent, 'Failed to read error_log capture file');
+        $this->assertStringContainsString($missingPath, $logContent);
     }
 
     public function testLoadFromCacheFallsThroughToLoadFreshWhenDirectoryIsUnreadable(): void
@@ -893,7 +914,7 @@ final class ConfigLoaderTest extends TestCase
         }
     }
 
-    public function testLoadFromCacheTriggersEUserWarningWhenTrustSetAndNoLogger(): void
+    public function testLoadFromCacheTriggersWarningViaErrorLogWhenTrustSetAndNoLogger(): void
     {
         // Create loader A, set config, warm up to write cache.
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
@@ -911,30 +932,25 @@ final class ConfigLoaderTest extends TestCase
         chmod(dirname($cachePath), 0777);
 
         // No logger: the Runner path (launcher process) has none, so the
-        // downgraded refusal must surface as an E_USER_WARNING, not vanish.
-        $triggered = null;
-
-        set_error_handler(
-            static function (int $severity, string $message) use (&$triggered): bool {
-                $triggered = $message;
-
-                return true;
-            },
-            \E_USER_WARNING,
-        );
+        // downgraded refusal must still surface via error_log().
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
 
         ConfigCacheGuardConfig::set(true);
         try {
             $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
             $this->assertSame($config, $loaderB->getWorkermanConfig());
         } finally {
-            restore_error_handler();
+            ini_restore('error_log');
             ConfigCacheGuardConfig::reset();
         }
 
-        $this->assertIsString($triggered);
-        $this->assertStringContainsString('world-writable', $triggered);
-        $this->assertStringContainsString(ConfigCacheGuardConfig::ENV_VAR, $triggered);
+        $this->assertFileExists($logFile);
+        $logContent = file_get_contents($logFile);
+
+        $this->assertIsString($logContent, 'Failed to read error_log capture file');
+        $this->assertStringContainsString('world-writable', $logContent);
+        $this->assertStringContainsString(ConfigCacheGuardConfig::ENV_VAR, $logContent);
     }
 
     private function findSupplementaryGroup(): ?int
