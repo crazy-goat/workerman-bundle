@@ -436,9 +436,13 @@ containing directory** before loading it:
   itself world-writable is **refused**.
 - **Unreadable metadata**: If the file or directory metadata cannot be
   read, a **warning naming the path is emitted** — logged via the PSR-3
-  logger when one is configured, raised as an `E_USER_WARNING` otherwise —
-  and loading proceeds; the check degrades loudly instead of silently
-  disappearing. This fail-open branch is a defensive guard: `loadFromCache()`
+  logger when one is configured, written to the log via `error_log()`
+  otherwise — and loading proceeds; the check degrades loudly instead of
+  silently disappearing. `error_log()` (not `trigger_error`) is used for the
+  no-logger path so a throwing error handler (e.g. Symfony's
+  `DebugErrorHandler` in debug mode) cannot turn the advisory fail-open
+  warning into a hard boot failure. This fail-open branch is a defensive
+  guard: `loadFromCache()`
   gates on `is_file($cachePath)` first, and on POSIX statting `dir/file`
   requires search (`x`) permission on the containing directory and every
   ancestor — strictly more than statting `dir` itself — so whenever
@@ -595,10 +599,11 @@ directory group-writable by a foreign group, cache file owned by another
 uid, cache file world-writable — no longer refuse loading. Each refusal
 branch degrades to the advisory warning path used for unreadable metadata:
 the message (naming the uid or permission problem) is emitted via the PSR-3
-logger when one is configured and raised as an `E_USER_WARNING` otherwise,
-and loading proceeds. The guard stays on in a degraded sense: every signal
-that would have refused boot is still surfaced at boot, so a previously
-strict deployment that sets the opt-out sees warnings, not silence.
+logger when one is configured and written to the log via `error_log()`
+otherwise, and loading proceeds. The guard stays on in a degraded sense:
+every signal that would have refused boot is still surfaced at boot, so a
+previously strict deployment that sets the opt-out sees warnings, not
+silence.
 
 **Without the opt-out**, behaviour is unchanged: all four checks refuse
 loading exactly as described above, with the same error messages. Strict

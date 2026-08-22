@@ -516,7 +516,7 @@ final class ConfigLoaderTest extends TestCase
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $missingPath = $this->tempDir . '/cache/workerman/does-not-exist.php';
-        $logFile = $this->tempDir . '/error.log';
+        $logFile = $this->tempDir . '/error-nologger.log';
 
         // No logger: the warning must still be surfaced via error_log().
         ini_set('error_log', $logFile);
@@ -539,19 +539,23 @@ final class ConfigLoaderTest extends TestCase
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $missingPath = $this->tempDir . '/cache/workerman/does-not-exist.php';
-        $logFile = $this->tempDir . '/error.log';
+        $logFile = $this->tempDir . '/error-throwing.log';
+        $userWarningInvocations = 0;
 
         // A throwing error handler (Symfony's DebugErrorHandler escalates
         // E_USER_WARNING to ErrorException in debug mode). The fail-open
         // warning must not invoke it — only error_log() may fire — so no
-        // exception may escape and the warning must still reach the log.
-        // The handler mirrors Symfony's: it respects @-suppressed errors
-        // (the four @fileperms()/@filegroup()/@fileowner() metadata reads
-        // must not throw) and throws only on the E_USER_WARNING that
-        // trigger_error() would previously have emitted.
+        // exception may escape, the handler must never see an E_USER_WARNING,
+        // and the warning must still reach the log. The handler mirrors
+        // Symfony's: it respects @-suppressed errors (the four
+        // @fileperms()/@filegroup()/@fileowner() metadata reads must not
+        // throw) and throws only on the E_USER_WARNING that trigger_error()
+        // would previously have emitted.
         set_error_handler(
-            static function (int $severity, string $message): bool {
+            static function (int $severity, string $message) use (&$userWarningInvocations): bool {
                 if ($severity === \E_USER_WARNING) {
+                    ++$userWarningInvocations;
+
                     throw new \ErrorException($message, 0, $severity);
                 }
 
@@ -568,6 +572,9 @@ final class ConfigLoaderTest extends TestCase
             ini_restore('error_log');
         }
 
+        // The fail-open warning must reach the log via error_log() — without
+        // ever touching the error handler, or fail-open would fail closed.
+        $this->assertSame(0, $userWarningInvocations, 'the fail-open warning must not reach the error handler');
         $this->assertFileExists($logFile);
         $logContent = file_get_contents($logFile);
 
