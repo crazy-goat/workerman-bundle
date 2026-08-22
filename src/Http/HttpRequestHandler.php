@@ -203,11 +203,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
     /**
      * Determine if the connection should be closed after the response is sent.
+     *
+     * The rule is shared with
+     * {@see \CrazyGoat\WorkermanBundle\Middleware\SymfonyController::__invoke()}
+     * via {@see ConnectionIntent::shouldClose()} so a future change to the
+     * close intent cannot drift between the two call sites (issue #621).
      */
     private function shouldCloseConnection(Request $request): bool
     {
-        return $request->protocolVersion() === '1.0'
-            || strcasecmp((string) $request->header('Connection', ''), 'close') === 0;
+        return ConnectionIntent::shouldClose($request);
     }
 
     /**

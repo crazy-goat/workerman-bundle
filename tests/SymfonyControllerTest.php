@@ -1115,6 +1115,86 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame('', $response->rawBody());
     }
 
+    /**
+     * Issue #621 / finding F-1: the `$shouldClose` computation in
+     * SymfonyController::__invoke() must drive a StreamedResponse's head to
+     * echo `Connection: close` for an HTTP/1.1 `Connection: close` request.
+     * The StreamedResponseStrategy builds its own head (central stamping in
+     * sendResponse() is skipped), so the controller's close-intent flag is the
+     * sole signal the head gets. testStreamedResponseE2E above uses HTTP/1.1
+     * without `Connection: close`, so the close path is only covered here.
+     */
+    public function testStreamedResponseHttp11ConnectionCloseEchoesConnectionClose(): void
+    {
+        $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->any())
+            ->method('send')
+            ->willReturnCallback(function (mixed $data) use (&$sendCalls): void {
+                $sendCalls[] = is_string($data) ? $data : (string) $data;
+            });
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk';
+        });
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter(true));
+
+        $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        $request = new Request($buffer);
+
+        $response = $controller($request, $this->connection);
+
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
+        $this->assertSame(200, $response->getStatusCode());
+
+        // The first send() call carries the head the strategy built itself.
+        $this->assertNotEmpty($sendCalls, 'StreamedResponse must send its head via the connection');
+        $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0], 'HTTP/1.1 Connection: close request must echo Connection: close in the streamed head');
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
+    }
+
+    /**
+     * Issue #621 / finding F-1: the complementary keep-alive path — an
+     * HTTP/1.1 request without `Connection: close` must NOT emit
+     * `Connection: close` in the streamed head (the default keep-alive is
+     * correct). Guards against a regression that always stamps close.
+     */
+    public function testStreamedResponseHttp11KeepAliveDoesNotEchoConnectionClose(): void
+    {
+        $initialObLevel = ob_get_level();
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->any())
+            ->method('send')
+            ->willReturnCallback(function (mixed $data) use (&$sendCalls): void {
+                $sendCalls[] = is_string($data) ? $data : (string) $data;
+            });
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk';
+        });
+
+        $kernel = new TestNonTerminableKernel($streamedResponse);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter(true));
+
+        $buffer = "GET /streamed HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $request = new Request($buffer);
+
+        $controller($request, $this->connection);
+
+        $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
+        $this->assertNotEmpty($sendCalls);
+        $this->assertStringNotContainsString('Connection:', $sendCalls[0], 'HTTP/1.1 keep-alive request must not emit a Connection header in the streamed head');
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
+    }
+
     public function testStreamedResponseWithStatusCode(): void
     {
         $initialObLevel = ob_get_level();

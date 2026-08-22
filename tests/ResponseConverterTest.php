@@ -121,6 +121,73 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
 
+    /**
+     * Issue #621 / finding F-2: the `bool $shouldClose` parameter on
+     * ResponseConverter::convert() must be threaded through to the
+     * method-aware strategy. A StreamedResponse converted with
+     * `$shouldClose = true` over HTTP/1.1 must carry `Connection: close` in
+     * the head the strategy sends directly — the converter is the only path
+     * from SymfonyController's close-intent computation to the strategy.
+     */
+    public function testConvertThreadsShouldCloseToStreamedStrategy(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->any())
+            ->method('send')
+            ->willReturnCallback(function (mixed $data) use (&$sendCalls): void {
+                $sendCalls[] = is_string($data) ? $data : (string) $data;
+            });
+
+        $strategies = [new StreamedResponseStrategy(), new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'streamed content';
+        });
+
+        $converter->convert($streamedResponse, $this->connection, '1.1', 'GET', true);
+
+        $this->assertNotEmpty($sendCalls, 'StreamedResponse must send its head via the connection');
+        $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0], '$shouldClose=true must reach the strategy and echo Connection: close');
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
+    }
+
+    /**
+     * Issue #621 / finding F-2: the default `$shouldClose = false` must keep
+     * the streamed head free of `Connection: close` over an HTTP/1.1 keep-alive
+     * connection. Guards against a regression that drops the parameter default
+     * or always stamps close.
+     */
+    public function testConvertDefaultShouldCloseKeepsStreamedHeadKeepAlive(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->any())
+            ->method('send')
+            ->willReturnCallback(function (mixed $data) use (&$sendCalls): void {
+                $sendCalls[] = is_string($data) ? $data : (string) $data;
+            });
+
+        $strategies = [new StreamedResponseStrategy(), new DefaultResponseStrategy()];
+        $converter = new ResponseConverter($strategies);
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'streamed content';
+        });
+
+        // 4-arg call — relies on the $shouldClose default of false.
+        $converter->convert($streamedResponse, $this->connection, '1.1', 'GET');
+
+        $this->assertNotEmpty($sendCalls);
+        $this->assertStringNotContainsString('Connection:', $sendCalls[0], 'Default $shouldClose=false must not emit Connection: close');
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
+    }
+
     public function testConvertNormalizesIrregularHeaderNames(): void
     {
         $strategies = [new DefaultResponseStrategy()];
