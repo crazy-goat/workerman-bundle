@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- StaticFilesMiddlewareTest: rename assertion message strings from
+  `follow_symlinks` to `followSymlinks` to match the actual constructor
+  parameter name (`$followSymlinks`), consistent with the #591 docs fix
+  ([#679](https://github.com/crazy-goat/workerman-bundle/issues/679))
+
 - Streamed HTTP/1.1 responses now echo `Connection: close` in the head when
   the request asks for it (`Connection: close` header or an HTTP/1.0 request),
   alongside `Transfer-Encoding: chunked`. The socket was already closed by

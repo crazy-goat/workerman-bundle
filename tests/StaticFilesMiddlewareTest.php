@@ -161,7 +161,7 @@ final class StaticFilesMiddlewareTest extends TestCase
 
             $middleware($request, $next);
 
-            $this->assertFalse($called, 'Next should not be called for symlink inside root when follow_symlinks enabled');
+            $this->assertFalse($called, 'Next should not be called for symlink inside root when followSymlinks enabled');
         } finally {
             if (file_exists($linkPath)) {
                 unlink($linkPath);
@@ -201,7 +201,7 @@ final class StaticFilesMiddlewareTest extends TestCase
 
             $response = $middleware($request, $next);
 
-            $this->assertTrue($called, 'Next should be called for symlink when follow_symlinks is disabled');
+            $this->assertTrue($called, 'Next should be called for symlink when followSymlinks is disabled');
             $this->assertEquals(404, $response->getStatusCode());
         } finally {
             if (file_exists($linkPath)) {
@@ -229,7 +229,7 @@ final class StaticFilesMiddlewareTest extends TestCase
 
         $middleware($request, $next);
 
-        $this->assertFalse($called, 'Next should not be called for regular file with follow_symlinks disabled');
+        $this->assertFalse($called, 'Next should not be called for regular file with followSymlinks disabled');
     }
 
     public function testSymlinkEscapingBlockedWithFollowSymlinksEnabled(): void
@@ -258,7 +258,7 @@ final class StaticFilesMiddlewareTest extends TestCase
 
             $response = $middleware($request, $next);
 
-            $this->assertTrue($called, 'Next should be called for symlink escaping path even with follow_symlinks enabled');
+            $this->assertTrue($called, 'Next should be called for symlink escaping path even with followSymlinks enabled');
             $this->assertEquals(200, $response->getStatusCode());
         } finally {
             if (file_exists($linkPath)) {
