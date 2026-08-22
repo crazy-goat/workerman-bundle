@@ -113,3 +113,7 @@ The `[Unreleased]` entry for the `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` opt-out (
 **Trigger:** a reader of `CHANGELOG.md` (the `[Unreleased]` section, i.e. current behaviour) relying on the documented warning channel for the opt-out path. The same stale claim was fixed in `docs/security.md` (F1) but missed in this CHANGELOG entry. The `testLoadFromCacheTriggersWarningViaErrorLogWhenTrustSetAndNoLogger` test (line 917) confirms the actual channel is `error_log()`.
 
 **Severity:** low — documentation-only, no behaviour impact; the code and the security.md docs are correct. This is the only remaining stale reference to the old no-logger channel as current behaviour.
+
+### F6 | CHANGELOG.md:35 | low | Stale `E_USER_WARNING` reference in the `[Unreleased]` #648 opt-out entry — RESOLVED
+
+**→ FIXED (commit db904b5).** The `[Unreleased]` #648 opt-out CHANGELOG entry now reads "(PSR-3 `warning`, or `error_log()` when no PSR-3 logger is available)" — matching `validateCacheFilePermissions()`:182-188. `bin/check-changelog.php` passes. This was the only remaining stale reference to the old no-logger channel as current behaviour.
