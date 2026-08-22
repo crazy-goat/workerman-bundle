@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SchedulerWorkerTest: replace `willReturn(new DateTimeImmutable('+1 second'))`
+  with `willReturnCallback(fn(\DateTimeImmutable $now): \DateTimeImmutable =>
+  $now->modify('+1 second'))` in two test methods, fixing the evaluates-once
+  trap documented in FAQ-022. Also replace the shared `test_service` key with
+  unique per-test keys (`args_test_service`, `callable_test_service`) to
+  prevent `static $tickCallbacks` cross-test deduplication
+  ([#668](https://github.com/crazy-goat/workerman-bundle/issues/668))
+
 - `SfxDownloader::extractToDirectory()` now removes entries extracted before
   a mid-extraction failure (validation, containment, or `extractTo()` error),
   and `extractZip()` removes all extracted entries when `locateSfxEntry()`

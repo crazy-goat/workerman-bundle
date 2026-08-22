@@ -697,9 +697,9 @@ final class SchedulerWorkerTest extends TestCase
 
         $trigger = $this->createMock(TriggerInterface::class);
         $trigger->method('getNextRunDate')
-            ->willReturn(new \DateTimeImmutable('+1 second'));
+            ->willReturnCallback(fn(\DateTimeImmutable $now): \DateTimeImmutable => $now->modify('+1 second'));
 
-        $service = new ServiceMethod('test_service', '__invoke');
+        $service = new ServiceMethod('args_test_service', '__invoke');
         $handler = new TaskHandler(
             $this->createMock(\Psr\Container\ContainerInterface::class),
             $this->createMock(EventDispatcherInterface::class),
@@ -736,9 +736,9 @@ final class SchedulerWorkerTest extends TestCase
 
         $trigger = $this->createMock(TriggerInterface::class);
         $trigger->method('getNextRunDate')
-            ->willReturn(new \DateTimeImmutable('+1 second'));
+            ->willReturnCallback(fn(\DateTimeImmutable $now): \DateTimeImmutable => $now->modify('+1 second'));
 
-        $service = new ServiceMethod('test_service', '__invoke');
+        $service = new ServiceMethod('callable_test_service', '__invoke');
         $handler = new TaskHandler(
             $this->createMock(\Psr\Container\ContainerInterface::class),
             $this->createMock(EventDispatcherInterface::class),
