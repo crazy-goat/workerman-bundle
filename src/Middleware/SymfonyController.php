@@ -121,7 +121,16 @@ final class SymfonyController
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
-            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion(), $this->symfonyRequest->getMethod());
+            // Compute the request's connection intent here so strategies that
+            // send the response directly (StreamedResponseStrategy) can echo
+            // Connection: close in the head they build themselves — the central
+            // stamping in HttpRequestHandler::sendResponse() is skipped for
+            // directly-sent responses (issue #621). Mirrors
+            // HttpRequestHandler::shouldCloseConnection().
+            $shouldClose = $request->protocolVersion() === '1.0'
+                || strcasecmp((string) $request->header('Connection', ''), 'close') === 0;
+
+            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion(), $this->symfonyRequest->getMethod(), $shouldClose);
         } catch (\Throwable $e) {
             $this->resetServices();
             $this->symfonyRequest = null;

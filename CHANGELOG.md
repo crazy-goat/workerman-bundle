@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Streamed HTTP/1.1 responses now echo `Connection: close` in the head when
+  the request asks for it (`Connection: close` header or an HTTP/1.0 request),
+  alongside `Transfer-Encoding: chunked`. The socket was already closed by
+  `HttpRequestHandler::shouldCloseConnection()`; this closes a
+  protocol-politeness gap so a close-delimited client gets an explicit signal
+  beyond EOF. The connection intent is threaded from `SymfonyController`
+  through `ResponseConverter` into `RequestMethodAwareResponseConverterStrategyInterface::convert()`
+  as a new trailing `bool $shouldClose` parameter (default `false`, backward
+  compatible). Additionally, an app-set `Connection` header is now suppressed
+  on streamed HTTP/1.1 heads (it was already suppressed for HTTP/1.0), so an
+  app cannot emit `Connection: keep-alive` while the handler closes the
+  socket ([#621](https://github.com/crazy-goat/workerman-bundle/issues/621))
+
 - Add an explicit opt-out for the config-cache permission guard:
   `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1` (read from the environment of the
   booting process) downgrades the four refusal checks — world-writable cache

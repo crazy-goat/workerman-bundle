@@ -351,4 +351,140 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertInstanceOf(\stdClass::class, $this->connection->context);
         $this->assertTrue($this->connection->context->responseSentDirectly);
     }
+
+    /**
+     * Issue #621: an HTTP/1.1 streamed response to a client that sent
+     * `Connection: close` must echo `Connection: close` in the head (alongside
+     * `Transfer-Encoding: chunked`). The socket is closed anyway by
+     * HttpRequestHandler::shouldCloseConnection(); this is protocol-politeness
+     * so a close-delimited client gets an explicit signal beyond EOF.
+     */
+    public function testConvertHttp11WithShouldCloseEchoesConnectionClose(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(3))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk';
+        });
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.1', 'GET', true);
+
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+
+        $this->assertCount(3, $sendCalls);
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
+        $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data'], 'HTTP/1.1 close reply must echo Connection: close');
+        $this->assertTrue($sendCalls[0]['raw']);
+    }
+
+    /**
+     * Issue #621: an HTTP/1.1 streamed response over a keep-alive connection
+     * must NOT emit Connection: close — the default (no Connection header on
+     * HTTP/1.1 implies keep-alive) is correct and must be preserved.
+     */
+    public function testConvertHttp11KeepAliveDoesNotEmitConnectionClose(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(3))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk';
+        });
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.1', 'GET', false);
+
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(200, $workermanResponse->getStatusCode());
+
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
+        $this->assertStringNotContainsString('Connection:', $sendCalls[0]['data'], 'Keep-alive HTTP/1.1 must not emit a Connection header');
+    }
+
+    /**
+     * Issue #621: an app-set `Connection: keep-alive` on an HTTP/1.1 streamed
+     * response must be suppressed — the strategy owns the Connection header.
+     * Otherwise the app could emit `Connection: keep-alive` while the handler
+     * closes the socket (a cosmetic contradiction). The suppression guard was
+     * previously 1.0-only.
+     */
+    public function testConvertHttp11SuppressesAppConnectionKeepAliveHeader(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(3))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'chunk';
+        });
+
+        $strategy->convert($streamedResponse, ['Connection' => 'keep-alive'], $this->connection, '1.1', 'GET', true);
+
+        $this->assertStringNotContainsString('Connection: keep-alive', $sendCalls[0]['data'], 'App-provided Connection must not duplicate the strategy-owned close header');
+        $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data']);
+        // Exactly one Connection header line (the strategy-owned close).
+        $this->assertSame(1, substr_count($sendCalls[0]['data'], 'Connection:'));
+    }
+
+    /**
+     * Issue #621: HEAD variant — an HTTP/1.1 HEAD streamed response to a
+     * Connection: close client echoes Connection: close alongside
+     * Transfer-Encoding: chunked (the same framing the GET would carry).
+     */
+    public function testHeadRequestHttp11WithShouldCloseEchoesConnectionClose(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(1))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $callbackRan = false;
+        $streamedResponse = new StreamedResponse(function () use (&$callbackRan): void {
+            $callbackRan = true;
+        });
+
+        $strategy = new StreamedResponseStrategy();
+
+        $strategy->convert($streamedResponse, [], $this->connection, '1.1', 'HEAD', true);
+
+        $this->assertFalse($callbackRan, 'HEAD must not execute the stream callback');
+        $this->assertCount(1, $sendCalls);
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
+        $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
+        $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data'], 'HTTP/1.1 HEAD close reply must echo Connection: close');
+    }
 }
