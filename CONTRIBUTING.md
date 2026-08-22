@@ -140,6 +140,66 @@ rm .git/hooks/pre-push
    - Include issue number (e.g., `(#65)`)
    - Use appropriate section: `Added`, `Changed`, `Fixed`, `Removed`, or `Deprecated`
 
+### Running tests in Docker (no local PHP needed)
+
+If installing PHP 8.2 with `pcntl`, `posix`, `inotify` and a coverage driver
+locally is impractical (notably on macOS, where `pcntl`/`posix` are disabled
+by default), run the full suite in the bundled Docker image instead. The
+image is built on `php:8.2-cli-bookworm` and mirrors the most restrictive CI
+leg (PHP 8.2 + Symfony 6.4, PCOV coverage), so a green local Docker run
+reproduces the CI gate that blocks a merge.
+
+**Build the image:**
+
+```bash
+docker build -t workerman-bundle-test .
+```
+
+On **Linux**, pass your UID/GID so bind-mounted `var/` and `.git` stay
+writable by your host user:
+
+```bash
+docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g) \
+  -t workerman-bundle-test .
+```
+
+macOS and Windows Docker Desktop users can keep the default `1000/1000` —
+Docker Desktop's bind mounts do not honour UIDs, so the caveat does not apply.
+
+**Run the suite** (bind-mount the working tree; persist deps and artifacts in
+named volumes so they survive between runs):
+
+```bash
+docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
+  workerman-bundle-test composer test
+```
+
+Coverage check and lint run the same way:
+
+```bash
+docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
+  workerman-bundle-test composer test:coverage
+docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
+  workerman-bundle-test composer coverage:check
+docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
+  workerman-bundle-test composer lint
+```
+
+A `bin/docker-test` helper wraps the bind-mount run, building the image on
+first use:
+
+```bash
+bin/docker-test                    # composer test
+bin/docker-test test:coverage      # composer test:coverage
+bin/docker-test coverage:check     # composer coverage:check
+bin/docker-test lint               # composer lint
+```
+
+The test daemon binds ports **8888**, **9999** and **9991** inside the
+container on `127.0.0.1` — no `-p` port forwarding is needed. The `@requires
+extension inotify` tests use the container's own `/tmp`, not the bind mount,
+so they work as on CI.
+
 ### CI Configuration
 
 The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request, on every push to `master`, on a weekly schedule (Monday 05:23 UTC), and on demand via `workflow_dispatch`:

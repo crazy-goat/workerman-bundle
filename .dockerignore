@@ -1,0 +1,24 @@
+# Exclude host artifacts from the build context so the image is built from a
+# clean source tree and `docker build` does not copy stale vendor/var state.
+# Mirrors .gitignore where the paths are git-ignored; the extra caches here
+# are not version-controlled but can exist on a contributor's checkout.
+
+# Dependencies (installed inside the image via composer install)
+vendor/
+e2e/vendor/
+
+# Test/build artifacts and runtime state (regenerated in-container)
+var/
+e2e/build/
+
+# Composer locks are platform-specific; let the image resolve its own
+composer.lock
+e2e/composer.lock
+
+# Version control and subagent harness — not needed inside the image
+.git/
+.pi-subagents/
+
+# Tool caches
+.php-cs-fixer.cache
+var/.php-cs-fixer.cache

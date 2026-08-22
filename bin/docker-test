@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# docker-test — run the workerman-bundle test suite (and coverage/lint) in the
+# PHP 8.2 Docker image, bind-mounting the working tree so edits are picked up
+# without a rebuild. Named volumes persist vendor/ and var/ across runs.
+#
+# Mirrors the most restrictive CI leg (PHP 8.2 + Symfony 6.4, PCOV coverage),
+# so a green run here reproduces the CI gate. See CONTRIBUTING.md
+# ("Running tests in Docker") and issue #674.
+
+set -euo pipefail
+
+IMAGE="workerman-bundle-test"
+VENDOR_VOL="wmb-vendor"
+VAR_VOL="wmb-var"
+
+usage() {
+  cat <<EOF
+usage: docker-test [COMMAND] [--build] [--build-arg KEY=VALUE ...]
+
+Run a command in the ${IMAGE} image with the working tree bind-mounted.
+
+  COMMAND     composer script to run (default: test)
+              e.g. test, test:coverage, coverage:check, lint, install, bench
+  --build     build (or rebuild) the image first, then run
+  --build-arg KEY=VALUE
+              forwarded to 'docker build' (e.g. APP_UID=\$(id -u) APP_GID=\$(id -g))
+
+The working tree is bind-mounted at /app; vendor/ and var/ are persisted in
+the ${VENDOR_VOL} and ${VAR_VOL} named volumes so dependencies and artifacts
+survive between runs. Ports 8888/9999 are in-container (127.0.0.1), so no -p
+is needed.
+
+On Linux, build with --build-arg APP_UID=\$(id -u) --build-arg APP_GID=\$(id -g)
+so bind-mounted files are owned by your host user. macOS/Windows Docker Desktop
+ignores UIDs in bind mounts, so the 1000/1000 defaults are fine.
+
+Exit codes: the container's exit code, or 1 on a docker-test error.
+EOF
+}
+
+die() {
+  echo "docker-test: $*" >&2
+  exit 1
+}
+
+die_usage() {
+  echo "docker-test: $*" >&2
+  usage >&2
+  exit 2
+}
+
+# --- parse arguments ---
+COMMAND="test"
+BUILD=0
+BUILD_ARGS=()
+
+for arg in "$@"; do
+  if [[ "$arg" == "--build" ]]; then
+    BUILD=1
+  elif [[ "$arg" == --build-arg ]]; then
+    die_usage "--build-arg needs a KEY=VALUE argument"
+  elif [[ "$arg" == --build-arg=* ]]; then
+    BUILD_ARGS+=("${arg#--build-arg=}")
+  elif [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+    usage
+    exit 0
+  elif [[ "$arg" == --* ]]; then
+    die_usage "unknown argument: $arg"
+  else
+    COMMAND="$arg"
+  fi
+done
+
+command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
+
+# --- build if requested or if the image is missing ---
+if [[ "$BUILD" == 1 ]] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "docker-test: building image $IMAGE" >&2
+  build_cmd=(docker build -t "$IMAGE" .)
+  for ba in "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}"; do
+    build_cmd+=(--build-arg "$ba")
+  done
+  "${build_cmd[@]}" >&2 || die "docker build failed"
+fi
+
+# --- run with the working tree bind-mounted and deps/artifacts in volumes ---
+echo "docker-test: running 'composer ${COMMAND}' in ${IMAGE}" >&2
+exec docker run --rm \
+  -v "$PWD":/app \
+  -v "$VENDOR_VOL":/app/vendor \
+  -v "$VAR_VOL":/app/var \
+  "$IMAGE" composer "$COMMAND"
