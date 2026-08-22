@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Added
+
+- Parallel Docker test runs across git worktrees without port conflicts:
+  new `bin/docker-test-worktree` helper runs `composer test` (or
+  `test:coverage`/`lint`) for any worktree in its own container of the
+  `workerman-bundle-test` image — each container has its own network
+  namespace, so N parallel suites cannot collide on ports 8888/9999/9991.
+  Container name (`wmb-<worktree-basename>`) and vendor volume
+  (`wmb-vendor-<worktree-basename>`) are unique per checkout; `var/` always
+  stays in the worktree's own bind mount. The new `--publish` flag starts
+  only the Workerman daemon with ephemeral host mappings
+  (`-p 127.0.0.1::8888|9999|9991`) for manual curl debugging from the host.
+  Documented in CONTRIBUTING.md ("Parallel test runs across git worktrees")
+  ([#676](https://github.com/crazy-goat/workerman-bundle/issues/676))
+
+- `tests/App/Kernel.php`: the three Workerman listen addresses now honour a
+  `WMB_LISTEN_ADDR` environment variable (default `127.0.0.1`, so existing
+  local runs are byte-identical); needed only by the Docker `--publish`
+  debug flow above, where forwarded host connections must reach the
+  container's bridge interface ([#676](https://github.com/crazy-goat/workerman-bundle/issues/676))
 
 - StaticFilesMiddlewareTest: rename assertion message strings from
   `follow_symlinks` to `followSymlinks` to match the actual constructor
@@ -208,8 +227,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comments explaining they are not condition waits. Total suite wall time
   on an unloaded machine drops by ~6s of guaranteed sleeping per matrix leg
   ([#592](https://github.com/crazy-goat/workerman-bundle/issues/592))
-
-### Added
 
 - CI now verifies `master`: the tests workflow triggers on push to
   `master`, on a weekly schedule, and via manual `workflow_dispatch` —

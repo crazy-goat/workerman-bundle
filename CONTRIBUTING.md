@@ -235,14 +235,17 @@ worktree, so concurrent runs never fight over a name.
 
 To `curl` a worktree's test server from the host for manual debugging, use
 the ephemeral publish flow: `bin/docker-test-worktree <path> --publish`
-passes `-p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991`, so Docker
-assigns each container a random free host port — guaranteed unique even with
-several published containers running at once. This requires the daemon to
-accept connections on the bridge interface, so the helper also sets
-`WMB_LISTEN_ADDR=0.0.0.0`; `tests/App/Kernel.php` reads it and falls back to
-`127.0.0.1` when unset, which keeps plain local runs and non-publish Docker
-runs byte-identical to before. Port **numbers** stay fixed — container network
-isolation removes any need to change them.
+starts **only the daemon** in a detached container with
+`-p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991`, so Docker assigns
+each container a random free host port — guaranteed unique even with several
+published containers running at once — prints the `docker port` mappings and
+blocks until you press Ctrl-C (which stops the daemon). Point curl at the
+printed host ports while it runs; the test suite is not executed in this mode.
+This requires the daemon to accept connections on the bridge interface, so the
+helper also sets `WMB_LISTEN_ADDR=0.0.0.0`; `tests/App/Kernel.php` reads it
+and falls back to `127.0.0.1` when unset, which keeps plain local runs and
+non-publish Docker runs byte-identical to before. Port **numbers** stay fixed
+— container network isolation removes any need to change them.
 
 Running many containers at once multiplies CPU/memory use; on constrained
 hosts cap it per container with e.g. `--cpus`/`--memory` via a plain

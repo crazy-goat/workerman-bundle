@@ -25,11 +25,11 @@ Each run gets its own container (own network namespace), so parallel
 worktrees never collide on ports 8888/9999/9991.
 
   WORKTREE_PATH  path to the worktree (default: \$PWD)
-  --publish      also publish ephemeral host ports for manual curl debugging:
-                 -p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991,
-                 with WMB_LISTEN_ADDR=0.0.0.0 so the daemon accepts the
-                 forwarded connections; prints the 'docker port' mappings
-                 after the suite finishes
+  --publish      start ONLY the Workerman daemon in a detached container with
+                 ephemeral host mappings (-p 127.0.0.1::8888/9999/9991) and
+                 WMB_LISTEN_ADDR=0.0.0.0, print the 'docker port' mappings,
+                 then wait for Ctrl-C and stop the daemon. For manual curl
+                 debugging from the host; no test suite is executed.
   --coverage     run 'composer test:coverage' instead of 'composer test'
   --lint         run 'composer lint' instead of 'composer test'
 
@@ -56,6 +56,13 @@ die_usage() {
 }
 
 command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
+
+# Build the image when missing, like bin/docker-test does: without this a
+# fresh clone would trigger a doomed Docker Hub pull for a local-only image.
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "docker-test-worktree: image $IMAGE not found, building it" >&2
+  docker build -t "$IMAGE" . >&2 || die "docker build failed"
+fi
 
 # --- parse arguments ---
 WORKTREE="$PWD"
@@ -86,7 +93,6 @@ BASENAME="$(basename "$WORKTREE")"
 VENDOR_VOL="wmb-vendor-${BASENAME}"
 
 RUN_ARGS=(docker run --rm --name "wmb-${BASENAME}" \
-  -e COMPOSER_ROOT_VERSION=1.0.0 \
   -v "${WORKTREE}":/app \
   -v "${VENDOR_VOL}":/app/vendor)
 
@@ -96,19 +102,40 @@ if [[ "$PUBLISH" == 1 ]]; then
     -p 127.0.0.1::9999
     -p 127.0.0.1::9991
     -e WMB_LISTEN_ADDR=0.0.0.0
+    -d
+    "$IMAGE" sh -c 'APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
   )
-fi
+  echo "docker-test-worktree: starting daemon in wmb-${BASENAME}" >&2
+  if ! "${RUN_ARGS[@]}"; then
+    die "failed to start container wmb-${BASENAME} (if another worktree with the same basename '${BASENAME}' is running or a stale container exists, remove it with: docker rm -f wmb-${BASENAME}; worktrees sharing a basename also share the ${VENDOR_VOL} volume)"
+  fi
 
-echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
+  # Wait until the daemon actually listens on 8888 inside the container,
+  # so the mappings we print are immediately usable.
+  for _ in $(seq 1 30); do
+    if docker exec "wmb-${BASENAME}" php -r 'exit((int) !@fsockopen("127.0.0.1", 8888, $errno, $errstr, 1));' >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
 
-set +e
-"${RUN_ARGS[@]}" "$IMAGE" sh -c "composer install --no-scripts --no-interaction && composer ${COMMAND}"
-STATUS=$?
-set -e
-
-if [[ "$PUBLISH" == 1 ]] && [[ "$STATUS" == 0 ]]; then
   echo "docker-test-worktree: published host ports for wmb-${BASENAME}:" >&2
-  docker port "wmb-${BASENAME}" >&2 || true
-fi
+  docker port "wmb-${BASENAME}" >&2
 
-exit "$STATUS"
+  # Block until Ctrl-C; the trap stops the daemon, --rm removes the container.
+  trap 'echo "docker-test-worktree: stopping wmb-${BASENAME}" >&2; docker stop "wmb-${BASENAME}" >/dev/null' INT TERM
+  echo "docker-test-worktree: daemon running; curl the ports above, press Ctrl-C to stop" >&2
+  tail -f /dev/null
+else
+  echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
+
+  set +e
+  "${RUN_ARGS[@]}" "$IMAGE" sh -c "composer install --no-scripts --no-interaction && composer ${COMMAND}"
+  STATUS=$?
+  set -e
+  if [[ $STATUS -eq 125 ]]; then
+    echo "docker-test-worktree: docker failed to run the container (exit 125). A common cause is a name clash: another worktree with basename '${BASENAME}' has a container or stale state named wmb-${BASENAME} — inspect with: docker ps -a --filter name=wmb-${BASENAME}" >&2
+  fi
+
+  exit "$STATUS"
+fi
