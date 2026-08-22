@@ -175,3 +175,28 @@ The resolved root is always printed (`kb-lint: root <absolute path>`, and
 linted. `KB_LINT_ROOT` points the script at another repository root and is
 itself reported as a warning; the `--root=` option wins over it and is not
 warned about. Neither is needed in normal use.
+
+### `docker-test`
+
+Runs a composer script (`test` by default) inside the `workerman-bundle-test`
+Docker image, bind-mounting the working tree so source edits are picked up
+without a rebuild. Named volumes (`wmb-vendor`, `wmb-var`) persist dependencies
+and artifacts across runs. Builds the image automatically on first use or when
+`--build` is passed. See `CONTRIBUTING.md` ("Running tests in Docker") for the
+full workflow and the PHP 8.2 / Symfony 6.4 CI-parity rationale.
+
+**Usage:**
+```bash
+bin/docker-test                    # composer test (default)
+bin/docker-test test:coverage      # composer test:coverage
+bin/docker-test coverage:check     # composer coverage:check
+bin/docker-test lint               # composer lint
+bin/docker-test install            # composer install
+bin/docker-test --build            # rebuild the image, then run
+bin/docker-test --build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
+```
+
+On Linux, build with `--build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)`
+once so bind-mounted files are owned by your host user; macOS/Windows Docker
+Desktop users can ignore that. Requires Docker. Exit codes: the container's
+exit code, or 1/2 on a `docker-test` error.
