@@ -1589,7 +1589,7 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame(200, $controller($this->requestWithHost('h2.test.local'), $this->connection)->getStatusCode());
         $this->assertSame(200, $controller($this->requestWithHost('h1.test.local'), $this->connection)->getStatusCode());
 
-        $this->assertSame(2, $this->trustedHostsCacheCount(), 'reset must be skipped on a cache hit');
+        $this->assertSame(2, $this->validatedHostsCacheCount($controller), 'reset must be skipped on a cache hit');
     }
 
     public function testValidatedHostListStaysBoundedForManyDistinctHosts(): void
@@ -1612,7 +1612,7 @@ final class SymfonyControllerTest extends TestCase
         for ($i = 1; $i <= 10000; ++$i) {
             $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
         }
-        $cacheCount = $this->trustedHostsCacheCount();
+        $cacheCount = $this->validatedHostsCacheCount($controller);
         $memoryAfter = \memory_get_usage();
 
         $this->assertLessThan(
@@ -1652,7 +1652,7 @@ final class SymfonyControllerTest extends TestCase
         }
 
         // The validated-host list is bounded, so a repeat request is O(bound).
-        $this->assertLessThan(128, $this->trustedHostsCacheCount());
+        $this->assertLessThan(128, $this->validatedHostsCacheCount($controller));
 
         $start = \hrtime(true);
         for ($i = 0; $i < 1000; ++$i) {
@@ -1713,7 +1713,7 @@ final class SymfonyControllerTest extends TestCase
         }
 
         $this->assertSame([], SymfonyRequest::getTrustedHosts(), 'no patterns must be set');
-        $this->assertSame(0, $this->trustedHostsCacheCount(), 'validated-host cache must stay empty');
+        $this->assertSame(0, $this->validatedHostsCacheCount($controller), 'validated-host cache must stay empty');
     }
 
     public function testTrustedHostsAcceptThenRejectThenAcceptAcrossRequests(): void
@@ -1775,11 +1775,10 @@ final class SymfonyControllerTest extends TestCase
         }
 
         $this->assertSame(
-            1,
-            $this->trustedHostsCacheCount(),
-            'trusted-proxy path must reset the validated-host list on every request',
+            [],
+            $this->validatedHostsCache($controller),
+            'trusted-proxy path must skip the validated-host cache (reset on every request)',
         );
-        $this->assertSame([], $this->validatedHostsCache($controller), 'bundle cache must stay empty behind a trusted proxy');
     }
 
     private function requestWithHost(string $host, ?string $forwardedHost = null): Request
@@ -1793,19 +1792,18 @@ final class SymfonyControllerTest extends TestCase
     }
 
     /**
-     * Read the size of Symfony's internal validated-host cache (Request::$trustedHosts).
+     * Read the size of the bundle's validated-host cache (validatedHosts).
      *
-     * This protected static list is the one that grows without bound with the
-     * naive fix; getTrustedHosts() returns the patterns, not this cache, so
-     * reflection is the only way to observe it.
+     * Symfony's internal Request::$trustedHosts was used as a proxy in
+     * earlier versions, but Symfony 6.4.44+ (and 7.x/8.x) replaced the
+     * per-host append in getHost() with a single trustedHostsRegexp
+     * preg_match, so $trustedHosts is never populated. The bundle's own
+     * validatedHosts cache is the authoritative bounded structure and
+     * exists on all supported Symfony versions.
      */
-    private function trustedHostsCacheCount(): int
+    private function validatedHostsCacheCount(SymfonyController $controller): int
     {
-        $property = (new \ReflectionClass(SymfonyRequest::class))->getProperty('trustedHosts');
-        $value = $property->getValue();
-        \assert(\is_array($value));
-
-        return \count($value);
+        return \count($this->validatedHostsCache($controller));
     }
 
     /**
