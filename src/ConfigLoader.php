@@ -126,8 +126,15 @@ final class ConfigLoader implements CacheWarmerInterface
      * so misconfiguration stays visible at boot.
      *
      * If the metadata cannot be read, a warning naming the path is emitted
-     * (logged via the PSR-3 logger when one is available, otherwise raised as
-     * an \E_USER_WARNING) and loading proceeds (fail-open with a signal). The
+     * (logged via the PSR-3 logger when one is available, otherwise written
+     * directly to the configured log via `error_log()`) and loading proceeds
+     * (fail-open with a signal). `error_log()` is a deliberate choice over
+     * `trigger_error(..., \E_USER_WARNING)` for the no-logger path: it does
+     * not invoke the PHP error handler, so a throwing error handler (e.g.
+     * Symfony's `DebugErrorHandler` in debug mode, which escalates
+     * `E_USER_WARNING` to `ErrorException`) cannot turn this advisory
+     * fail-open warning into a hard boot failure — fail-open stays fail-open
+     * while unrelated warnings are still handled as before. The
      * fail-open warning is a defensive guard: `loadFromCache()` gates on
      * `is_file($cachePath)` first, and on POSIX statting `dir/file` requires
      * search (`x`) permission on the containing directory and every ancestor
@@ -176,7 +183,7 @@ final class ConfigLoader implements CacheWarmerInterface
             if ($this->logger instanceof \Psr\Log\LoggerInterface) {
                 $this->logger->warning($verdict['warn'], ['path' => $cachePath]);
             } else {
-                trigger_error($verdict['warn'], \E_USER_WARNING);
+                error_log($verdict['warn']);
             }
         }
     }
