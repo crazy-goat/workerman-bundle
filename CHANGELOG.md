@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated to reflect the new wording
   ([#657](https://github.com/crazy-goat/workerman-bundle/issues/657))
 
+- The `Tests` workflow now skips the nine-leg `tests` matrix and the
+  `benchmark` job for pull requests that touch only documentation
+  (`docs/**`, `*.md`, `*.mdx`). A new `detect-changes` job classifies the
+  diff and exposes a `docs-only` output the heavy jobs consume; `lint`
+  still runs on every change (it is the only job that catches a broken
+  workflow YAML under `.github/`), and the `ci` aggregator reports green
+  for a docs-only PR instead of being skipped — so a required `ci` branch
+  protection check never stays pending. Non-pull-request triggers (push to
+  master, the weekly schedule, manual dispatch) keep running the full
+  matrix ([#619](https://github.com/crazy-goat/workerman-bundle/issues/619))
+
 ### Fixed
 
 - `SfxDownloader::extractToDirectory()` now removes entries extracted before
