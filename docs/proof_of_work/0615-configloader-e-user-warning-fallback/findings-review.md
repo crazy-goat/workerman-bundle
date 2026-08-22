@@ -117,3 +117,31 @@ The `[Unreleased]` entry for the `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` opt-out (
 ### F6 | CHANGELOG.md:35 | low | Stale `E_USER_WARNING` reference in the `[Unreleased]` #648 opt-out entry — RESOLVED
 
 **→ FIXED (commit db904b5).** The `[Unreleased]` #648 opt-out CHANGELOG entry now reads "(PSR-3 `warning`, or `error_log()` when no PSR-3 logger is available)" — matching `validateCacheFilePermissions()`:182-188. `bin/check-changelog.php` passes. This was the only remaining stale reference to the old no-logger channel as current behaviour.
+
+---
+
+# Findings review — issue #615 (round 4)
+
+Round 4 reviewed the F6 fix only: `git show db904b5` (CHANGELOG.md change) and the F6 resolution note appended in `245803d`. Convergence check: F6 status verified; no new findings.
+
+## Round-3 status update
+
+### F6 | CHANGELOG.md:35 | low | Stale `E_USER_WARNING` reference in the `[Unreleased]` #648 opt-out entry
+
+**→ FIXED (verified round 4).** The `[Unreleased]` #648 opt-out entry now reads "(PSR-3 `warning`, or `error_log()` when no PSR-3 logger is available)" — matching `validateCacheFilePermissions()`:182-188 (`error_log($verdict['warn'])` in the no-logger branch). Grep of the `[Unreleased]` section (lines 8-270) finds no `E_USER_WARNING`/`trigger_error` reference describing current behaviour: the only two matches are the #615 entry itself (lines 119-124), which is the historical record of the change from `trigger_error` to `error_log()` and is correct. The F6 resolution note in `245803d` is accurate.
+
+## New findings
+
+None. The F6 fix is documentation-only and correct; no behaviour change, no new edge cases, no resource or contract issues.
+
+## What I ran (round 4)
+
+- `php bin/check-changelog.php` — **OK**, CHANGELOG.md structurally valid (exit 0).
+- `vendor/bin/phpunit --no-coverage --filter ConfigLoaderTest tests/ConfigLoaderTest.php` — **40 tests, 96 assertions, OK** (3 skipped).
+- Grep for `E_USER_WARNING` / `trigger_error` across `src/`, `docs/`, `README.md`, `CHANGELOG.md`, `docs/helpers/` — remaining references are all historical release notes, the #615 change record, the ConfigLoader phpdoc explaining the rejected alternative, and the `Request.php` `E_USER_DEPRECATED` (all correct / out of scope).
+- Read `docs/helpers/` tag index and matching entries (DEC-006, DEC-016, FAQ-005, FAQ-036, FAQ-008) — no conflict with the F6 fix (documentation-only).
+- Did **not** run the E2E suite (binds ports 8888/9999).
+
+## Verdict
+
+**CLEAN — final convergence.** F1-F6 are all closed. No open findings remain.
