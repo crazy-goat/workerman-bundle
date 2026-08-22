@@ -34,7 +34,7 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         return $response instanceof BinaryFileResponse;
     }
 
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, string $requestMethod = 'GET'): WorkermanResponse
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, string $requestMethod = 'GET', bool $shouldClose = false): WorkermanResponse
     {
         /** @var BinaryFileResponse $response */
         // A HEAD request must not stream the file body (RFC 9110 §9.3.2).
@@ -47,10 +47,12 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
             return $this->convertHead($response, $headers);
         }
 
-        // $protocolVersion is intentionally unused: this strategy returns a
-        // regular WorkermanResponse (with or without withFile()); the status
-        // line and Connection header are handled by Workerman and by
-        // HttpRequestHandler::sendResponse().
+        // $protocolVersion and $shouldClose are intentionally unused: this
+        // strategy returns a regular WorkermanResponse (with or without
+        // withFile()); the status line and Connection header are handled by
+        // Workerman and by HttpRequestHandler::sendResponse(), which stamps
+        // Connection: close centrally for non-directly-sent responses
+        // (issue #621).
         //
         // ResponseConverter preserves the application-provided Content-Length
         // for HEAD requests (issue #643), but the file path must never carry

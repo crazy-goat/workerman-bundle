@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Middleware;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
+use CrazyGoat\WorkermanBundle\Http\ConnectionIntent;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use Psr\Log\LoggerInterface;
@@ -121,7 +122,16 @@ final class SymfonyController
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
             $this->symfonyResponse->prepare($this->symfonyRequest);
 
-            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion(), $this->symfonyRequest->getMethod());
+            // Compute the request's connection intent here so strategies that
+            // send the response directly (StreamedResponseStrategy) can echo
+            // Connection: close in the head they build themselves — the central
+            // stamping in HttpRequestHandler::sendResponse() is skipped for
+            // directly-sent responses (issue #621). The rule lives in
+            // ConnectionIntent so it cannot drift from
+            // HttpRequestHandler::shouldCloseConnection().
+            $shouldClose = ConnectionIntent::shouldClose($request);
+
+            return $this->responseConverter->convert($this->symfonyResponse, $connection, $request->protocolVersion(), $this->symfonyRequest->getMethod(), $shouldClose);
         } catch (\Throwable $e) {
             $this->resetServices();
             $this->symfonyRequest = null;

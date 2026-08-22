@@ -29,13 +29,22 @@ interface RequestMethodAwareResponseConverterStrategyInterface extends ResponseC
      *
      * Same contract as {@see ResponseConverterStrategyInterface::convert()},
      * plus the request method so the strategy can apply method-specific
-     * framing rules (e.g. omitting the body for HEAD, RFC 9110 §9.3.2).
+     * framing rules (e.g. omitting the body for HEAD, RFC 9110 §9.3.2), and
+     * a connection-intent flag so strategies that build their own head
+     * (StreamedResponseStrategy) can echo `Connection: close` when the
+     * request asks for it (issue #621).
      *
      * @param array<string, string|list<string|null>> $headers Pre-extracted headers
      *        (see the base interface); for HEAD requests the application-
      *        provided Content-Length is preserved (issue #643)
      * @param string $protocolVersion The request's HTTP protocol version
      * @param string $requestMethod The HTTP request method (e.g. 'GET', 'HEAD')
+     * @param bool $shouldClose Whether the connection will be closed after
+     *        this response (HTTP/1.0 or a Connection: close request header).
+     *        Strategies that own the response head use this to emit
+     *        `Connection: close` instead of relying on the central stamping
+     *        in HttpRequestHandler::sendResponse(), which is skipped for
+     *        directly-sent (streamed) responses (issue #621).
      */
-    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, string $requestMethod = 'GET'): WorkermanResponse;
+    public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, string $requestMethod = 'GET', bool $shouldClose = false): WorkermanResponse;
 }
