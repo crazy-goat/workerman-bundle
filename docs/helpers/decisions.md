@@ -23,15 +23,16 @@ whole file.
 - `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
+- `logging` — DEC-017
 - `long-running` — DEC-003, DEC-014
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005, DEC-014
 - `performance` — DEC-013
-- `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016
+- `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016, DEC-017
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
-- `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015, DEC-016
+- `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015, DEC-016, DEC-017
 - `static-files` — DEC-004
 - `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
@@ -129,6 +130,25 @@ fails closed: only unambiguous truthy values (`1`/`true`/`on`/`yes`) enable
 the downgrade; a typo must never silently unlock a guard. The strict default
 stays, and every degraded check keeps emitting its warning so the downgrade
 is never silent. (Implemented in #648/#758; `ConfigCacheGuardConfig`.)
+
+### No-logger warning channels use `error_log()`, not `trigger_error(E_USER_WARNING)`
+<!-- kb: id=DEC-017 date=2026-08-22 tags=logging,security,policy trigger="adding or touching a no-logger warning/fallback path, or a trigger_error call" hits=0 status=active -->
+
+When a PSR-3 logger is not in scope and a code path must surface an advisory
+warning without aborting control flow, use `error_log()` rather than
+`trigger_error(\E_USER_WARNING)`. `error_log()` writes directly to the
+configured log and does not invoke the PHP error handler, so it cannot be
+escalated to an `ErrorException` by a strict handler (Symfony's
+`DebugErrorHandler` in debug mode) — an advisory warning stays advisory and
+fail-open never becomes fail-closed. `trigger_error` remains correct only for
+emitted *deprecations* (`E_USER_DEPRECATED`), where reaching the handler is
+the point. Precedent: #670 (SFX downloader) and #615 (ConfigLoader cache
+permission warning) independently chose the same rule; `ServerWorker`,
+`HttpRequestHandler`, `RequestConverter`, `SfxDownloader` already follow it.
+A test that must pin `error_log()` over the default handler should install a
+throwing `E_USER_WARNING` handler (PHP's default handler also writes
+`trigger_error` output to the configured `error_log`, so log-capture alone
+does not distinguish the two).
 
 ## Process / repository policy
 
