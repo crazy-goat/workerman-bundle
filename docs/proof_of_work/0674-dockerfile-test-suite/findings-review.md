@@ -35,3 +35,8 @@
 - **What is wrong:** The official `php:*-cli` images ship `memory_limit=128M`. The test suite needs ~150MB (host run reported `Memory: 150.00 MB`) and fatigues inside the container around test 1500/2384 with `Fatal error: Allowed memory size of 134217728 bytes exhausted`. CI's `shivammathur/setup-php` runner inherits a larger limit (host showed 1G), so the image does not actually reproduce a green CI run without raising the limit. The ini drop-in at Dockerfile:41 sets `phar.readonly=0` and `pcov.directory=/app/src` but omits `memory_limit`.
 - **Trigger:** `docker run ... composer test` (or `test:coverage`) in the image, once F-2 is worked around (e.g. as root). Breaks acceptance criterion #4/#5.
 - **Fix:** added `memory_limit=512M` to the ini drop-in (`/usr/local/etc/php/conf.d/workerman-test.ini`) alongside the existing `phar.readonly=0` and `pcov.directory=/app/src`. 512M gives comfortable headroom over the ~150MB the suite needs.
+
+## Round 2 — no new findings
+
+All F-1..F-4 verified as fixed (see review-2.md). No new issues found.
+Implementation is ready for PR.
