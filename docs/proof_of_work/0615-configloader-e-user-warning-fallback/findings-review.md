@@ -75,3 +75,41 @@ Consequence: if `src/ConfigLoader.php:186` regressed from `error_log($verdict['w
 **Trigger:** any future edit that reverts the no-logger channel to `trigger_error` while the throwing-handler test (F3) is the only guard. The real defect is still pinned by the throwing-handler test, so this is a test-quality gap, not a live code defect — but the stated reason for leaving F2 unfixed is wrong and should be corrected (either fix the test to install a throwing handler, or correct the justification).
 
 **→ RESOLVED (round 2 fix).** The redundant `testValidateCacheFilePermissionsLogsWarningWhenMetadataUnreadableAndNoLogger` test — which, as F5 showed, provided false confidence by passing even on a `trigger_error` regression — was **removed**. The throwing-handler test (`testValidateCacheFilePermissionsDoesNotThrowWithThrowingErrorHandlerAndNoLogger`) is a strict superset: it proves (a) no exception escapes with a throwing handler installed, (b) the handler is never invoked for `E_USER_WARNING` (`$userWarningInvocations === 0`), and (c) the warning still reaches the log via `error_log()`. It genuinely pins the `error_log()` channel. ConfigLoaderTest now has 40 tests (was 41), all green. F2's incorrect justification and F5 are both closed by this removal.
+
+---
+
+# Findings review — issue #615 (round 3)
+
+Round 3 reviewed `git log master..HEAD` (last two commits `c507186`, `e052b3d`). Convergence check: F1-F5 status verified; one new finding (F6).
+
+## Round-1/2 status updates
+
+### F1 | docs/security.md:439, :598 | medium | Outdated documentation
+
+**→ FIXED (verified round 3).** Both paragraphs (unreadable-metadata, lines 437-444; opt-out downgrade, lines 597-606) now say the no-logger channel is `error_log()` and explain why. Grep confirms no stale `E_USER_WARNING`-as-current-convention text remains in `docs/security.md`.
+
+### F2 | tests/ConfigLoaderTest.php:514-535 | low | Redundancy gap in the reworked no-logger test
+
+**→ RESOLVED (verified round 3).** The redundant `testValidateCacheFilePermissionsLogsWarningWhenMetadataUnreadableAndNoLogger` test was removed (commit `e052b3d`). The throwing-handler test is a strict superset. ConfigLoaderTest now has 40 tests, all green.
+
+### F3 | tests/ConfigLoaderTest.php:537-576 | nit | Throwing-handler test does not assert the handler was never invoked
+
+**→ FIXED (verified round 3).** `$userWarningInvocations` counter (line 520, captured by reference line 532) + `assertSame(0, ...)` (line 554) directly asserts the handler was never invoked. Correct.
+
+### F4 | tests/ConfigLoaderTest.php:514-535 | nit | `error.log` capture file not cleared between tests
+
+**→ FIXED (verified round 3).** Distinct capture files: `error-throwing.log` (line 519), `error.log` (line 936). No test reads another's output. Correct.
+
+### F5 | tests/ConfigLoaderTest.php:514-535 | low | F2's "deliberately not fixed" justification is factually wrong
+
+**→ RESOLVED (verified round 3).** The false-confidence test was removed; the throwing-handler test genuinely pins the `error_log()` channel. F2's incorrect justification and F5 are both closed.
+
+## New findings
+
+### F6 | CHANGELOG.md:35 | low | Stale `E_USER_WARNING` reference in the `[Unreleased]` #648 opt-out entry
+
+The `[Unreleased]` entry for the `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` opt-out (#648) still says the downgraded refusal warnings are emitted as "PSR-3 `warning` or `E_USER_WARNING`". But the #648 downgrade warnings route through the **same** `$verdict['warn']` branch as the unreadable-metadata warning — `validateCacheFilePermissions()` lines 182-188 — which now uses `error_log()` in the no-logger case (line 186). So the documented channel is stale: with no PSR-3 logger, the downgraded refusal is written via `error_log()`, not `trigger_error(E_USER_WARNING)`.
+
+**Trigger:** a reader of `CHANGELOG.md` (the `[Unreleased]` section, i.e. current behaviour) relying on the documented warning channel for the opt-out path. The same stale claim was fixed in `docs/security.md` (F1) but missed in this CHANGELOG entry. The `testLoadFromCacheTriggersWarningViaErrorLogWhenTrustSetAndNoLogger` test (line 917) confirms the actual channel is `error_log()`.
+
+**Severity:** low — documentation-only, no behaviour impact; the code and the security.md docs are correct. This is the only remaining stale reference to the old no-logger channel as current behaviour.

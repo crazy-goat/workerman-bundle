@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   booting process) downgrades the four refusal checks — world-writable cache
   directory, group-writable directory of a foreign group, cache file owned
   by another uid, world-writable cache file — to the advisory warning path
-  (PSR-3 `warning` or `E_USER_WARNING`) and lets loading proceed. Strict
+  (PSR-3 `warning`, or `error_log()` when no PSR-3 logger is available) and
+  lets loading proceed. Strict
   behaviour stays the default: without the variable the guard refuses
   exactly as before, with the same error messages. The downgrade is a
   documented security deviation for deployments that explicitly trust the
