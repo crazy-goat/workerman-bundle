@@ -76,3 +76,8 @@ Verdict: all five round-2 findings plus the mid-round cache-purge item are fixed
 - bin/docker-test-worktree:140 | CRLF lines from docker logs kept CR through sed indent, garbling terminal output of the fail-loud excerpt | nit | **fixed** (`tr -d '\r'` before sed)
 
 Verdict: converged. Remaining open items are process notes only (AC3 three-worktree concurrent demo, AC6 two-publish distinct-port demo — AC6 observed informally across this cycle's runs).
+
+## Round 3+ — orchestrator finding discovered during final verification
+
+- var/cache/dev/workerman/config.cache.php | the Workerman config cache stores ABSOLUTE paths; a cache written inside the container (/app/...) poisons subsequent HOST runs — Runner tries mkdir("/app/var/run") and dies with "mkdir(): Read-only file system"; a host-written cache conversely trips the container-side ownership guard (#586) | high (cross-environment footgun, hit for real in this cycle) | **fixed** in 671949d-followup: bin/docker-test-worktree purges config.cache.php* unconditionally at startup (before branching), with a comment explaining both poisoning directions; verified: purged cache → composer test green on host (2416 tests), publish mode green end-to-end
+- NOTE for future work: same poisoning can occur between two host checkouts sharing nothing — not possible (paths differ per project dir); only container↔host pairs share a cache file via bind mounts. A longer-term fix could hash the runtime prefix into the cache filename or store relative paths — out of scope here.

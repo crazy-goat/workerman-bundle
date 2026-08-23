@@ -90,6 +90,13 @@ for ((i = 1; i <= $#; i++)); do
   esac
 done
 
+# The workerman config cache (var/cache/dev/workerman/config.cache.php) stores
+# ABSOLUTE paths. A cache written inside the container holds /app/... paths and
+# poisons host runs ("mkdir(): Read-only file system" on /app/var/run), and
+# vice versa a host-written cache trips the container's ownership guard. The
+# file is a plain Symfony cache: always safe to delete, rebuilt on next start.
+rm -f "$WORKTREE"/var/cache/dev/workerman/config.cache.php* 2>/dev/null || true
+
 WORKTREE="$(cd "$WORKTREE" && pwd)" || die "cannot enter worktree: $WORKTREE"
 [[ -f "$WORKTREE/composer.json" ]] || die "not a composer project: $WORKTREE"
 BASENAME="$(basename "$WORKTREE")"
