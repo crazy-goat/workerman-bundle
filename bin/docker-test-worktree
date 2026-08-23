@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+#
+# docker-test-worktree — run the workerman-bundle test suite in a git worktree
+# inside its own container. Each container has its own network namespace, i.e.
+# its own loopback, so N parallel worktree containers can never clash on ports
+# 8888/9999/9991 — no -p publishing and no code change needed.
+#
+# Volume and container names are derived from the worktree basename, so
+# parallel runs stay isolated: vendor/ is per-worktree (branches may pin
+# different dependencies) and var/ is always the bind-mounted worktree's own
+# directory — never share var/ or PID files across containers.
+#
+# See CONTRIBUTING.md ("Parallel test runs across git worktrees") and #676.
+
+set -euo pipefail
+
+IMAGE="workerman-bundle-test"
+
+usage() {
+  cat <<EOF
+usage: docker-test-worktree [WORKTREE_PATH] [--publish] [--coverage] [--lint]
+
+Run 'composer test' in ${IMAGE} with the given git worktree bind-mounted.
+Each run gets its own container (own network namespace), so parallel
+worktrees never collide on ports 8888/9999/9991.
+
+  WORKTREE_PATH  path to the worktree (default: \$PWD)
+  --publish      start ONLY the Workerman daemon in a detached container with
+                 ephemeral host mappings (-p 127.0.0.1::8888/9999/9991) and
+                 WMB_LISTEN_ADDR=0.0.0.0, print the 'docker port' mappings,
+                 then wait for Ctrl-C and stop the daemon. For manual curl
+                 debugging from the host; no test suite is executed.
+  --coverage     run 'composer test:coverage' instead of 'composer test'
+  --lint         run 'composer lint' instead of 'composer test'
+
+vendor/ lives in a per-worktree named volume (wmb-vendor-<basename>) so
+dependencies survive between runs; var/ stays in the worktree itself.
+
+On Linux, build the image once with --build-arg APP_UID=\$(id -u)
+APP_GID=\$(id -g) (see bin/docker-test). macOS/Windows Docker Desktop users
+can keep the defaults.
+
+Exit codes: the container's exit code, or 1 on a docker-test-worktree error.
+EOF
+}
+
+die() {
+  echo "docker-test-worktree: $*" >&2
+  exit 1
+}
+
+die_usage() {
+  echo "docker-test-worktree: $*" >&2
+  usage >&2
+  exit 2
+}
+
+command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
+
+# Build the image when missing, like bin/docker-test does: without this a
+# fresh clone would trigger a doomed Docker Hub pull for a local-only image.
+# Pass the current UID/GID so Linux bind mounts stay writable (Docker Desktop
+# ignores them, which is harmless); see the usage() note below.
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "docker-test-worktree: image $IMAGE not found, building it" >&2
+  docker build -t "$IMAGE" --build-arg "APP_UID=$(id -u)" --build-arg "APP_GID=$(id -g)" . >&2 ||
+    die "docker build failed"
+fi
+
+# --- parse arguments ---
+WORKTREE="$PWD"
+PUBLISH=0
+COMMAND="test"
+
+for ((i = 1; i <= $#; i++)); do
+  arg="${!i}"
+  case "$arg" in
+    --publish) PUBLISH=1 ;;
+    --coverage) COMMAND="test:coverage" ;;
+    --lint) COMMAND="lint" ;;
+    -h | --help) usage; exit 0 ;;
+    --*) die_usage "unknown argument: $arg" ;;
+    -*)
+      # A leading dash could be a mistyped flag; only accept it when it names an
+      # existing directory, so typos fail loudly instead of becoming a path.
+      [[ -d "$arg" ]] || die_usage "unknown argument: $arg"
+      WORKTREE="$arg"
+      ;;
+    *) WORKTREE="$arg" ;;
+  esac
+done
+
+# The workerman config cache (var/cache/dev/workerman/config.cache.php) stores
+# ABSOLUTE paths. A cache written inside the container holds /app/... paths and
+# poisons host runs ("mkdir(): Read-only file system" on /app/var/run), and
+# vice versa a host-written cache trips the container's ownership guard. The
+# file is a plain Symfony cache: always safe to delete, rebuilt on next start.
+rm -f "$WORKTREE"/var/cache/dev/workerman/config.cache.php* 2>/dev/null || true
+
+WORKTREE="$(cd "$WORKTREE" && pwd)" || die "cannot enter worktree: $WORKTREE"
+[[ -f "$WORKTREE/composer.json" ]] || die "not a composer project: $WORKTREE"
+BASENAME="$(basename "$WORKTREE")"
+VENDOR_VOL="wmb-vendor-${BASENAME}"
+
+RUN_ARGS=(docker run --rm --name "wmb-${BASENAME}" \
+  -v "${WORKTREE}":/app \
+  -v "${VENDOR_VOL}":/app/vendor)
+
+if [[ "$PUBLISH" == 1 ]]; then
+  RUN_ARGS+=(
+    -p 127.0.0.1::8888
+    -p 127.0.0.1::9999
+    -p 127.0.0.1::9991
+    -e WMB_LISTEN_ADDR=0.0.0.0
+    -d
+    "$IMAGE" sh -c 'rm -f /app/var/cache/dev/workerman/config.cache.php*; composer install --no-scripts --no-interaction && APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
+  )
+  # Install the stop-trap BEFORE the container exists: any early exit or
+  # signal must remove the detached container, otherwise the name wmb-<base>
+  # is blocked for the next run and the published ports leak.
+  cleanup() {
+    docker rm -f "wmb-${BASENAME}" >/dev/null 2>&1 || true
+  }
+  trap 'echo "docker-test-worktree: stopping wmb-${BASENAME}" >&2; cleanup' INT TERM EXIT
+
+  echo "docker-test-worktree: starting daemon in wmb-${BASENAME}" >&2
+  if ! "${RUN_ARGS[@]}"; then
+    die "failed to start container wmb-${BASENAME} (if another worktree with the same basename '${BASENAME}' is running or a stale container exists, remove it with: docker rm -f wmb-${BASENAME}; worktrees sharing a basename also share the ${VENDOR_VOL} volume)"
+  fi
+
+  # Wait until the daemon listens on ALL THREE ports inside the container,
+  # so the mappings we print are immediately usable. Bail out with a clear
+  # error instead of printing dead mappings when it never comes up.
+  ready=0
+  for _ in $(seq 1 30); do
+    if docker exec "wmb-${BASENAME}" php -r '
+exit((int) (!@fsockopen("127.0.0.1", 8888, $e, $s, 1)
+  || !@fsockopen("127.0.0.1", 9999, $e, $s, 1)
+  || !@fsockopen("127.0.0.1", 9991, $e, $s, 1)));' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != 1 ]]; then
+    echo "docker-test-worktree: daemon did not become ready within 30s; recent logs:" >&2
+    docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | tr -d '\r' | sed 's/^/  /' >&2 || true
+    die "daemon failed to start in wmb-${BASENAME}; container removed (check vendor/ state of this worktree)"
+  fi
+
+  echo "docker-test-worktree: published host ports for wmb-${BASENAME}:" >&2
+  docker port "wmb-${BASENAME}" >&2
+
+  # Block until Ctrl-C; the trap stops and removes the daemon container.
+  # Run the blocker in the background so a plain `kill <pid>` (TERM or INT)
+  # also reaches the trap — a foreground child would delay trap execution
+  # forever. `|| true` keeps INT-resumed wait from being treated as an error.
+  echo "docker-test-worktree: daemon running; curl the ports above, press Ctrl-C to stop" >&2
+  tail -f /dev/null &
+  wait $! || true
+else
+  echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
+
+  set +e
+  "${RUN_ARGS[@]}" "$IMAGE" sh -c "composer install --no-scripts --no-interaction && composer ${COMMAND}"
+  STATUS=$?
+  set -e
+  if [[ $STATUS -ne 0 ]]; then
+    echo "docker-test-worktree: 'composer ${COMMAND}' exited with status ${STATUS}." >&2
+    if [[ $STATUS -eq 125 ]]; then
+      echo "docker-test-worktree: exit 125 means docker itself failed, commonly a name clash: another worktree with basename '${BASENAME}' has a container or stale state named wmb-${BASENAME} — inspect with: docker ps -a --filter name=wmb-${BASENAME}; worktrees sharing a basename also share the ${VENDOR_VOL} vendor volume" >&2
+    fi
+  fi
+
+  exit "$STATUS"
+fi

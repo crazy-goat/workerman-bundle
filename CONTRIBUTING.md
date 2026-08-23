@@ -63,9 +63,12 @@ rm .git/hooks/pre-push
    composer test
    ```
 
-   Note: `composer test` boots a real Workerman daemon binding ports **8888** and
-   **9999** for end-to-end HTTP tests. The ports are hardcoded in
+   Note: `composer test` boots a real Workerman daemon binding ports **8888**, **9999**
+   and **9991** for end-to-end HTTP tests. The port numbers are hardcoded in
    `tests/App/Kernel.php` and cannot be overridden via environment variables.
+   The listen **address** can be overridden with `WMB_LISTEN_ADDR`
+   (default `127.0.0.1`) — see ["Parallel test runs across git
+   worktrees"](#parallel-test-runs-across-git-worktrees).
 
    To run the suite with code coverage locally, you need a coverage driver such
    as PCOV or Xdebug installed and enabled:
@@ -199,6 +202,54 @@ The test daemon binds ports **8888**, **9999** and **9991** inside the
 container on `127.0.0.1` — no `-p` port forwarding is needed. The `@requires
 extension inotify` tests use the container's own `/tmp`, not the bind mount,
 so they work as on CI.
+
+#### Parallel test runs across git worktrees
+
+Because the daemon and phpunit run **inside the same container**, each
+container gets its own network namespace — its own loopback. `127.0.0.1:8888`
+in container A is a different stack from `127.0.0.1:8888` in container B, so
+N parallel worktree containers are collision-free by construction: no `-p`
+publishing, no code change. Build the image once (it is source-agnostic;
+source is bind-mounted) and run one container per worktree:
+
+```bash
+bin/docker-test-worktree ../wmb-feature
+bin/docker-test-worktree ../wmb-bugfix      # run these concurrently,
+bin/docker-test-worktree ../wmb-refactor    # no port clashes possible
+```
+
+Two rules keep parallel runs safe:
+
+- **Never share `var/` across containers** — including the `wmb-var` named
+  volume from the single-checkout workflow above. `var/run/workerman.pid`,
+  `var/dispatch_count` and the process markers would collide or corrupt.
+  Each worktree's `var/` lives inside its own bind mount; do not add a shared
+  var volume to a parallel run.
+- **One `vendor/` volume per worktree.** The helper derives
+  `wmb-vendor-<worktree-basename>` per checkout, so a branch that bumps
+  Symfony cannot corrupt another worktree's dependencies. Remove stale ones
+  with `docker volume rm wmb-vendor-<name>`.
+
+Container names (`--name wmb-<worktree-basename>`) are likewise unique per
+worktree, so concurrent runs never fight over a name.
+
+To `curl` a worktree's test server from the host for manual debugging, use
+the ephemeral publish flow: `bin/docker-test-worktree <path> --publish`
+starts **only the daemon** in a detached container with
+`-p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991`, so Docker assigns
+each container a random free host port — guaranteed unique even with several
+published containers running at once — prints the `docker port` mappings and
+blocks until you press Ctrl-C (which stops the daemon). Point curl at the
+printed host ports while it runs; the test suite is not executed in this mode.
+This requires the daemon to accept connections on the bridge interface, so the
+helper also sets `WMB_LISTEN_ADDR=0.0.0.0`; `tests/App/Kernel.php` reads it
+and falls back to `127.0.0.1` when unset, which keeps plain local runs and
+non-publish Docker runs byte-identical to before. Port **numbers** stay fixed
+— container network isolation removes any need to change them.
+
+Running many containers at once multiplies CPU/memory use; on constrained
+hosts cap it per container with e.g. `--cpus`/`--memory` via a plain
+`docker run` invocation of your own.
 
 ### CI Configuration
 
