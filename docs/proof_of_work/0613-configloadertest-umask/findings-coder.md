@@ -4,15 +4,23 @@ Work done in a fresh worktree on branch `test/issue-613-configloadertest-setup-c
 
 ## Confirmation of both umask runs
 
-- `umask 0077 && vendor/bin/phpunit --filter ConfigLoaderTest`
-- `umask 0000 && vendor/bin/phpunit --filter ConfigLoaderTest`
+- `umask 0077 && vendor/bin/phpunit tests/ConfigLoaderTest.php`
+- `umask 0000 && vendor/bin/phpunit tests/ConfigLoaderTest.php`
 
-Both: **Tests: 48, Assertions: 112, Skipped: 3**, OK (PHPUnit 10.5.63,
-PHP 8.5.9). The 3 skips are byte-identical in both runs and are all
+Both (class-scoped): **Tests: 40, Assertions: 96, Skipped: 3**, OK (PHPUnit
+10.5.63, PHP 8.5.9). The 3 skips are byte-identical in both runs and are all
 pre-existing root-privilege skips (a foreign-group `chgrp`, a foreign-user
 `chown` ×2) — none introduced by this change. The "1 PHPUnit test runner
 warning / No code coverage driver" is an environment warning, present in
 both runs, unrelated to the change.
+
+> Note on counts: use the **class-scoped** invocation (`phpunit
+> tests/ConfigLoaderTest.php`), not `--filter ConfigLoaderTest`. The filter is
+> a substring regex that also pulls in cross-class tests whose data providers
+> reference the file (e.g. `MarkdownLinkTest` scans every tracked
+> `docs/proof_of_work/<N>/*.md`, so the count changes as proof-of-work files
+> accumulate). Recorded 44/48 counts in review round 1 drifted for this
+> reason; the stable class-scoped number is 40/96/3.
 
 ## Obstacles / surprises
 
