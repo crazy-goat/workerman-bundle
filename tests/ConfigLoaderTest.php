@@ -19,8 +19,19 @@ final class ConfigLoaderTest extends TestCase
     protected function setUp(): void
     {
         $this->tempDir = sys_get_temp_dir() . '/config-loader-test-' . uniqid();
-        mkdir($this->tempDir . '/config/packages', 0777, true);
-        mkdir($this->tempDir . '/cache', 0777, true);
+
+        // Pin the umask around fixture creation so the effective modes of the
+        // temp dirs do not depend on the process umask (e.g. a container
+        // umask 0000 would leave these 0777 world-writable — sloppy hygiene
+        // for a class whose subject is permission validation). Same
+        // save/restore pattern ConfigLoader::warmUp() uses.
+        $previousUmask = umask(0077);
+        try {
+            mkdir($this->tempDir . '/config/packages', 0777, true);
+            mkdir($this->tempDir . '/cache', 0777, true);
+        } finally {
+            umask($previousUmask);
+        }
 
         // Hermeticity: an exported WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE must
         // not leak into strict-mode tests from the developer's shell — it can
