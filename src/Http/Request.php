@@ -117,7 +117,7 @@ class Request extends \Workerman\Protocols\Http\Request
     {
         trigger_error(
             \sprintf(
-                'Since crazy-goat/workerman-bundle 0.23.0: %s::withHeader() is deprecated, use setHeader() instead.',
+                'Since crazy-goat/workerman-bundle 0.23.0: %s::withHeader() is deprecated, use setHeader() instead. Will be removed in 1.0.',
                 self::class,
             ),
             \E_USER_DEPRECATED,

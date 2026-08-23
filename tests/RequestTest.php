@@ -87,6 +87,7 @@ final class RequestTest extends TestCase
 
         $this->assertNotNull($deprecationMessage, 'Expected E_USER_DEPRECATED to be triggered');
         $this->assertStringContainsString('withHeader() is deprecated', $deprecationMessage);
+        $this->assertStringContainsString('Will be removed in 1.0', $deprecationMessage);
     }
 
     public function testSetHeaderAddsHeader(): void
