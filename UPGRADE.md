@@ -170,11 +170,13 @@ $request->setHeader('X-Custom', 'value');
 
 ### `StaticFilesMiddleware::$followSymlinks` now defaults to `false`
 
-Following symlinks under the static root is now opt-in (`follow_symlinks:
-false` by default, #292). Deployments that serve files through symlinks
-(e.g. `public/assets → shared/assets`) now get **404** for those paths.
+Following symlinks under the static root is now opt-in (service
+argument `$followSymlinks: false` by default, #292). Deployments that
+serve files through symlinks (e.g. `public/assets → shared/assets`) now
+get **404** for those paths.
 
-**Migration:** set the option explicitly if you rely on symlinks:
+**Migration:** set the service argument explicitly if you rely on
+symlinks:
 
 ```yaml
 services:
@@ -183,15 +185,10 @@ services:
             $followSymlinks: true
 ```
 
-Or via the deprecated YAML path (also deprecated since 0.9.3):
-
-```yaml
-workerman:
-    servers:
-        my_server:
-            static_files:
-                follow_symlinks: true
-```
+There is no YAML equivalent: the deprecated
+`workerman.servers[].static_files` node only exposes
+`allowed_extensions`; `follow_symlinks` is a `StaticFilesMiddleware`
+constructor argument.
 
 `ServerWorker` also validates that `local_cert`/`local_pk` are regular
 files, not symlinks (#286), and `connection_timeout`/`keepalive_timeout`/
