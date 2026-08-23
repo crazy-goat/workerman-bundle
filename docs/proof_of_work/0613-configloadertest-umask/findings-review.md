@@ -1,0 +1,7 @@
+# Findings review registry — issue #613 (round 1)
+
+One entry per finding. Format: `file:line | what is wrong | severity | status`.
+
+- `docs/proof_of_work/0613-configloadertest-umask/code-decision-1.md` and `docs/proof_of_work/0613-configloadertest-umask/findings-coder.md` (both) | Recorded "44 tests / 100 assertions / 3 skips"; the actual run is **48 tests / 112 assertions / 3 skips** (40 `test*` methods). The identical-results claim still holds at the real counts. | low | FIXED — `findings-coder.md` updated to 48/112/3
+- `tests/ConfigLoaderTest.php:23-27` (comment) and `CHANGELOG.md:~284` | Rationale overstates that the setUp-created `cache` fixture dir "tripped" the #586 guard. The guard validates `dirname($cachePath)` = `cache/workerman`, created by `warmUp()` under its own `umask(0077)` pin, so it was 0700 regardless of process umask. The world-writable fixture is a hygiene/umask-independence issue, not a guard-trip. Fix still correct. | low | FIXED — comment (`tests/ConfigLoaderTest.php:23-27`) and CHANGELOG reframed as hygiene/umask-independence, no longer claim guard-tripping
+- `docs/proof_of_work/0613-configloadertest-umask/code-decision-1.md` | Claims three `mkdir` calls in `setUp()`; there are exactly two (the parent `$this->tempDir` is created implicitly by the first `mkdir(..., true)`). | nit | FIXED — code-decision-1.md now states two calls and explains the implicit parent

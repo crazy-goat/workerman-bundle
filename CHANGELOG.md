@@ -305,9 +305,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   save/restore pattern `ConfigLoader::warmUp()` uses. The effective modes of
   the `config/packages` and `cache` fixture dirs are no longer masked by the
   process umask, so the suite produces identical results under permissive
-  umasks (e.g. a container `umask 0000`) and default ones, and the `#586`
-  config-cache directory-permission guard no longer trips on setups these
-  tests do not intend to exercise
+  umasks (e.g. a container `umask 0000`) and default ones, instead of leaving
+  world-writable temp fixtures in a class whose subject is permission
+  validation
   ([#613](https://github.com/crazy-goat/workerman-bundle/issues/613))
 
 ## [0.26.0] - 2026-08-15

@@ -9,13 +9,14 @@ Issue #613. Scope: `tests/ConfigLoaderTest.php`, `CHANGELOG.md`.
 so the effective modes depended on how PHPUnit was launched. Under a
 permissive umask (e.g. a container `umask 0000`, flagged in
 `docs/security.md`) the `config/packages` and `cache` dirs came out `0777`
-world-writable; since #586 `ConfigLoader` validates directory permissions,
-so the guard tripped on setups the tests never intended to exercise — and a
-world-writable temp fixture is sloppy hygiene for a class whose whole
-subject is permission validation.
+world-writable — sloppy hygiene for a class whose whole subject is permission
+validation, and inconsistent with the restrictive posture the tests otherwise
+enforce.
 
-Three `mkdir` calls are inside `setUp()` (`$this->tempDir` + `config/packages`,
-`$this->tempDir/cache`, both recursive). All three were umask-dependent.
+Two `mkdir` calls are inside `setUp()` (`config/packages` and `cache`, both
+recursive). The parent `$this->tempDir` is created implicitly as the top of the
+first recursive `mkdir(..., true)`, not by its own call. Both were
+umask-dependent.
 
 ## Approach taken
 

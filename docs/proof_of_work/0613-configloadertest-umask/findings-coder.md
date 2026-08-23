@@ -7,7 +7,7 @@ Work done in a fresh worktree on branch `test/issue-613-configloadertest-setup-c
 - `umask 0077 && vendor/bin/phpunit --filter ConfigLoaderTest`
 - `umask 0000 && vendor/bin/phpunit --filter ConfigLoaderTest`
 
-Both: **Tests: 44, Assertions: 100, Skipped: 3**, OK (PHPUnit 10.5.63,
+Both: **Tests: 48, Assertions: 112, Skipped: 3**, OK (PHPUnit 10.5.63,
 PHP 8.5.9). The 3 skips are byte-identical in both runs and are all
 pre-existing root-privilege skips (a foreign-group `chgrp`, a foreign-user
 `chown` ×2) — none introduced by this change. The "1 PHPUnit test runner

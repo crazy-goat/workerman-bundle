@@ -21,10 +21,10 @@ final class ConfigLoaderTest extends TestCase
         $this->tempDir = sys_get_temp_dir() . '/config-loader-test-' . uniqid();
 
         // Pin the umask around fixture creation so the effective modes of the
-        // temp dirs do not depend on the process umask (e.g. umask 0000 in
-        // containers would make these 0777 world-writable, tripping the
-        // #586 directory-permission guard on setups these tests do not mean
-        // to exercise). Same save/restore pattern ConfigLoader::warmUp() uses.
+        // temp dirs do not depend on the process umask (e.g. a container
+        // umask 0000 would leave these 0777 world-writable — sloppy hygiene
+        // for a class whose subject is permission validation). Same
+        // save/restore pattern ConfigLoader::warmUp() uses.
         $previousUmask = umask(0077);
         try {
             mkdir($this->tempDir . '/config/packages', 0777, true);
