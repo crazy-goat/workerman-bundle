@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Documented deprecation-removal plan: all three carried deprecations —
+  `serve_files`/`root_dir`/`static_files` (since 0.9.3), `Utils::reboot()`
+  (since 0.17.0) and `Request::withHeader()` (since 0.23.0) — now state the
+  concrete removal version **1.0** in their deprecation messages, are listed
+  in a new "Deprecations" table in `UPGRADE.md`, and are bound by a new
+  deprecation policy in `CONTRIBUTING.md` (a fixed removal version is
+  mandatory; nothing may accumulate past six minors without removal or a
+  written re-justification)
+  ([#595](https://github.com/crazy-goat/workerman-bundle/issues/595))
+
 - Parallel Docker test runs across git worktrees without port conflicts:
   new `bin/docker-test-worktree` helper runs `composer test` (or
   `test:coverage`/`lint`) for any worktree in its own container of the
