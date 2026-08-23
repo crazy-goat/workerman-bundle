@@ -300,6 +300,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needed) and the macOS/Linux UID caveat
   ([#674](https://github.com/crazy-goat/workerman-bundle/issues/674))
 
+- `ConfigLoaderTest::setUp()` now pins the umask (`0077`) around fixture
+  directory creation, restoring the previous value afterwards — the same
+  save/restore pattern `ConfigLoader::warmUp()` uses. The effective modes of
+  the `config/packages` and `cache` fixture dirs are no longer masked by the
+  process umask, so the suite produces identical results under permissive
+  umasks (e.g. a container `umask 0000`) and default ones, and the `#586`
+  config-cache directory-permission guard no longer trips on setups these
+  tests do not intend to exercise
+  ([#613](https://github.com/crazy-goat/workerman-bundle/issues/613))
+
 ## [0.26.0] - 2026-08-15
 
 ### Added
