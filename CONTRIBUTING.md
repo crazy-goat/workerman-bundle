@@ -267,6 +267,18 @@ The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request, on 
 - Static analysis with PHPStan level 8
 - Automated refactoring with Rector
 
+## Deprecation Policy
+
+- Every new deprecation must state a concrete removal version — never an
+  open-ended "next major release", which is ambiguous while the bundle is at
+  0.x (SemVer gives no compatibility guarantee there). The project's removal
+  target for the deprecations currently carried is **1.0** (see
+  [UPGRADE.md#deprecations](UPGRADE.md#deprecations)).
+- A deprecation older than **six minors** must either be removed or be
+  re-justified in writing (records the `since` version and why it still
+  stands) before the list grows further. This keeps the deprecation table
+  from accumulating indefinitely.
+
 ## Reporting Issues
 
 Please use GitHub Issues to report bugs or request features. Include:

@@ -109,7 +109,7 @@ class Request extends \Workerman\Protocols\Http\Request
      * See `docs/security.md` for the full trust model.
      *
      * @deprecated since 0.23.0 Use {@see setHeader()} instead.
-     *             This method will be removed in the next major version.
+     *             This method will be removed in 1.0.
      *             The PSR-7 naming is misleading because the mutation semantics
      *             differ from PSR-7's immutable pattern.
      */

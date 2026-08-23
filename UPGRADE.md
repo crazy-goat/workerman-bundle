@@ -4,6 +4,26 @@ This document lists breaking changes between releases and describes how to migra
 
 ---
 
+## Deprecations
+
+The table below lists the deprecations currently carried by the bundle and
+the version in which each is scheduled for removal. The removal target is
+**1.0** — the next major (SemVer) version — for every entry. This is the
+forward-looking view; past migrations live in the sections below.
+
+| Deprecated since | Feature | Replacement | Removed in |
+| --- | --- | --- | --- |
+| 0.9.3 | `serve_files` / `root_dir` server options and the `static_files` node | `StaticFilesMiddleware`, registered as a service and listed under `middlewares` (see [docs/security.md#static-files-protection](docs/security.md#static-files-protection)) | 1.0 |
+| 0.17.0 | `Utils::reboot()` | `Utils::reload()` | 1.0 |
+| 0.23.0 | `Request::withHeader()` | `Request::setHeader()` | 1.0 |
+
+> When migrating `serve_files`/`root_dir` to `StaticFilesMiddleware`, note
+> that the `static_files.allowed_extensions` allowlist no longer applies —
+> the middleware reads its allowlist from the `$allowedExtensions` constructor
+> argument instead.
+
+---
+
 ## Upgrading to 0.25
 
 ### Master identification now fails closed — stop before upgrading

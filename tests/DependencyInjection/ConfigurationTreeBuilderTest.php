@@ -234,6 +234,64 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(60, $config['reload_strategy']['memory']['gc_cooldown']);
     }
 
+    /**
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function provideDeprecatedNodes(): iterable
+    {
+        yield 'serve_files' => [['serve_files' => true]];
+        yield 'root_dir' => [['root_dir' => '/tmp']];
+        yield 'static_files' => [['static_files' => ['allowed_extensions' => ['png']]]];
+    }
+
+    /**
+     * The deprecated serve_files/root_dir/static_files nodes must still emit a
+     * Symfony Config deprecation, and the message must state the removal
+     * version (1.0) so users can plan the upgrade (issue #595).
+     *
+     * @dataProvider provideDeprecatedNodes
+     *
+     * @param array<string, mixed> $override
+     */
+    public function testConfiguredTreeDeprecatesLegacyStaticFileNodes(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $deprecationMessage = null;
+        set_error_handler(static function (int $errno, string $errstr) use (&$deprecationMessage): bool {
+            if ($errno === \E_USER_DEPRECATED) {
+                $deprecationMessage = $errstr;
+
+                return true;
+            }
+
+            return false;
+        });
+
+        try {
+            $processor->process($node, [[
+                'servers' => [
+                    [
+                        'name' => 'web',
+                        'listen' => 'http://0.0.0.0:80',
+                    ] + $override,
+                ],
+            ]]);
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertNotNull($deprecationMessage, 'Expected a config deprecation for the deprecated node');
+        self::assertStringContainsString('Will be removed in 1.0', $deprecationMessage);
+    }
+
     private function createDefinitionConfigurator(): DefinitionConfigurator
     {
         $treeBuilder = new TreeBuilder('workerman');
