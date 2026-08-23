@@ -59,9 +59,12 @@ command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or 
 
 # Build the image when missing, like bin/docker-test does: without this a
 # fresh clone would trigger a doomed Docker Hub pull for a local-only image.
+# Pass the current UID/GID so Linux bind mounts stay writable (Docker Desktop
+# ignores them, which is harmless); see the usage() note below.
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "docker-test-worktree: image $IMAGE not found, building it" >&2
-  docker build -t "$IMAGE" . >&2 || die "docker build failed"
+  docker build -t "$IMAGE" --build-arg "APP_UID=$(id -u)" --build-arg "APP_GID=$(id -g)" . >&2 ||
+    die "docker build failed"
 fi
 
 # --- parse arguments ---
@@ -103,29 +106,50 @@ if [[ "$PUBLISH" == 1 ]]; then
     -p 127.0.0.1::9991
     -e WMB_LISTEN_ADDR=0.0.0.0
     -d
-    "$IMAGE" sh -c 'APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
+    "$IMAGE" sh -c 'rm -f /app/var/cache/dev/workerman/config.cache.php*; composer install --no-scripts --no-interaction && APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
   )
+  # Install the stop-trap BEFORE the container exists: any early exit or
+  # signal must remove the detached container, otherwise the name wmb-<base>
+  # is blocked for the next run and the published ports leak.
+  cleanup() {
+    docker rm -f "wmb-${BASENAME}" >/dev/null 2>&1 || true
+  }
+  trap 'echo "docker-test-worktree: stopping wmb-${BASENAME}" >&2; cleanup' INT TERM EXIT
+
   echo "docker-test-worktree: starting daemon in wmb-${BASENAME}" >&2
   if ! "${RUN_ARGS[@]}"; then
     die "failed to start container wmb-${BASENAME} (if another worktree with the same basename '${BASENAME}' is running or a stale container exists, remove it with: docker rm -f wmb-${BASENAME}; worktrees sharing a basename also share the ${VENDOR_VOL} volume)"
   fi
 
-  # Wait until the daemon actually listens on 8888 inside the container,
-  # so the mappings we print are immediately usable.
+  # Wait until the daemon listens on ALL THREE ports inside the container,
+  # so the mappings we print are immediately usable. Bail out with a clear
+  # error instead of printing dead mappings when it never comes up.
+  ready=0
   for _ in $(seq 1 30); do
-    if docker exec "wmb-${BASENAME}" php -r 'exit((int) !@fsockopen("127.0.0.1", 8888, $errno, $errstr, 1));' >/dev/null 2>&1; then
+    if docker exec "wmb-${BASENAME}" php -r '
+exit((int) (!@fsockopen("127.0.0.1", 8888, $e, $s, 1)
+  || !@fsockopen("127.0.0.1", 9999, $e, $s, 1)
+  || !@fsockopen("127.0.0.1", 9991, $e, $s, 1)));' >/dev/null 2>&1; then
+      ready=1
       break
     fi
     sleep 1
   done
+  if [[ "$ready" != 1 ]]; then
+    echo "docker-test-worktree: daemon did not become ready within 30s; recent logs:" >&2
+    docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | sed 's/^/  /' >&2 || true
+    die "daemon failed to start in wmb-${BASENAME}; container removed (check vendor/ state of this worktree)"
+  fi
 
   echo "docker-test-worktree: published host ports for wmb-${BASENAME}:" >&2
   docker port "wmb-${BASENAME}" >&2
 
-  # Block until Ctrl-C; the trap stops the daemon, --rm removes the container.
-  trap 'echo "docker-test-worktree: stopping wmb-${BASENAME}" >&2; docker stop "wmb-${BASENAME}" >/dev/null' INT TERM
+  # Block until Ctrl-C; the trap stops and removes the daemon container.
+  # Run the blocker in the background so a plain `kill <pid>` (TERM) also
+  # reaches the trap — a foreground child would delay trap execution forever.
   echo "docker-test-worktree: daemon running; curl the ports above, press Ctrl-C to stop" >&2
-  tail -f /dev/null
+  tail -f /dev/null &
+  wait $!
 else
   echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
 
@@ -133,8 +157,11 @@ else
   "${RUN_ARGS[@]}" "$IMAGE" sh -c "composer install --no-scripts --no-interaction && composer ${COMMAND}"
   STATUS=$?
   set -e
-  if [[ $STATUS -eq 125 ]]; then
-    echo "docker-test-worktree: docker failed to run the container (exit 125). A common cause is a name clash: another worktree with basename '${BASENAME}' has a container or stale state named wmb-${BASENAME} — inspect with: docker ps -a --filter name=wmb-${BASENAME}" >&2
+  if [[ $STATUS -ne 0 ]]; then
+    echo "docker-test-worktree: 'composer ${COMMAND}' exited with status ${STATUS}." >&2
+    if [[ $STATUS -eq 125 ]]; then
+      echo "docker-test-worktree: exit 125 means docker itself failed, commonly a name clash: another worktree with basename '${BASENAME}' has a container or stale state named wmb-${BASENAME} — inspect with: docker ps -a --filter name=wmb-${BASENAME}; worktrees sharing a basename also share the ${VENDOR_VOL} vendor volume" >&2
+    fi
   fi
 
   exit "$STATUS"
