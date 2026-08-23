@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-23
+
 ### Docs
 
 - Backfill `UPGRADE.md` with upgrade sections for 0.18–0.24 (between the existing 0.25 and 0.17 sections), in descending order. The three BC-relevant changes highlighted in the issue are covered with migration steps: `follow_symlinks` default `false` in 0.22.0 (#292), config-cache permission check and `umask(0077)` in 0.23.0 (#323), and `MalformedRequestException` replacing `\InvalidArgumentException` in 0.24.1 (#577); 0.18–0.21 are marked as no mandatory migration with short notable-change notes
   ([#656](https://github.com/crazy-goat/workerman-bundle/issues/656))
+
+- `docs/security.md`: the "Use the allowlist" bullet was a verbatim subset
+  of the preceding "Prefer the allowlist over the denylist" bullet, so it
+  added zero information — the two are merged into one with the deduplicated
+  wording kept
+  ([#681](https://github.com/crazy-goat/workerman-bundle/issues/681))
 
 ### Added
 
