@@ -90,6 +90,180 @@ different user is refused at boot). See
 
 ---
 
+## Upgrading to 0.24
+
+No mandatory configuration change for **0.24.0**. Notable hardening in that
+release (fingerprint sidecar for master-process identification — #327,
+ReDoS guard on `exclude_patterns` — #334, middleware header-re-injection
+note — #344) requires no migration.
+
+### `RequestConverter` now throws `MalformedRequestException` (0.24.1)
+
+`RequestConverter` throws `MalformedRequestException` (extends
+`\InvalidArgumentException`, implements `ClientInputExceptionInterface`)
+instead of bare `\InvalidArgumentException` for malformed client input
+(control bytes in headers, invalid URI/method). A top-level
+`\InvalidArgumentException` catch still catches it, but a catch that
+distinguishes client errors from server faults should be narrowed:
+
+**Before:**
+
+```php
+try {
+    $request = $converter->toSymfonyRequest($workermanRequest);
+} catch (\InvalidArgumentException $e) {
+    // treated every InvalidArgumentException as a client error (400)
+}
+```
+
+**After:**
+
+```php
+use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
+
+try {
+    $request = $converter->toSymfonyRequest($workermanRequest);
+} catch (MalformedRequestException $e) {
+    // client error — return 400
+} catch (\InvalidArgumentException $e) {
+    // server-side misuse — return 500
+}
+```
+
+`HttpRequestHandler` now maps `MalformedRequestException` (and
+`FileUploadValidationException`) to **400** and wraps the whole lifecycle
+in a try/catch that converts any other `Throwable` to **500** instead of
+killing the worker — see #577.
+
+---
+
+## Upgrading to 0.23
+
+### Config cache now refuses world-writable locations and is created with `0600`
+
+`ConfigLoader::loadFromCache()` refuses a cache file whose containing
+directory or file is world-writable, and `warmUp()` creates the file
+under `umask(0077)` so it is always `0600` regardless of the surrounding
+umask (#323). Deployments that warm the cache under a permissive umask
+(e.g. `0000`) or on a world-writable directory now fail at boot.
+
+**Migration:** ensure the cache directory is not world-writable and
+warm the cache with a restrictive umask. Documented in
+[docs/security.md#config-cache-file-protection](docs/security.md#config-cache-file-protection).
+
+### `Request::withHeader()` deprecated
+
+`Request::withHeader()` is deprecated in favour of `Request::setHeader()`.
+`withHeader()` now emits a runtime deprecation, mutates in place (despite
+the PSR-7-like name), and will be removed in 1.0 (#364).
+
+```php
+// Before
+$request->withHeader('X-Custom', 'value');
+// After
+$request->setHeader('X-Custom', 'value');
+```
+
+---
+
+## Upgrading to 0.22
+
+### `StaticFilesMiddleware::$followSymlinks` now defaults to `false`
+
+Following symlinks under the static root is now opt-in (`follow_symlinks:
+false` by default, #292). Deployments that serve files through symlinks
+(e.g. `public/assets → shared/assets`) now get **404** for those paths.
+
+**Migration:** set the option explicitly if you rely on symlinks:
+
+```yaml
+services:
+    CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware:
+        arguments:
+            $followSymlinks: true
+```
+
+Or via the deprecated YAML path (also deprecated since 0.9.3):
+
+```yaml
+workerman:
+    servers:
+        my_server:
+            static_files:
+                follow_symlinks: true
+```
+
+`ServerWorker` also validates that `local_cert`/`local_pk` are regular
+files, not symlinks (#286), and `connection_timeout`/`keepalive_timeout`/
+`body_size_cap` were added for slowloris protection (#279) — no migration
+required for those.
+
+---
+
+## Upgrading to 0.21
+
+### Runtime directory now created with `0700`
+
+Runtime subdirectories (`var/run/`, status files) are created with
+`0700` instead of inheriting the process umask (#270, #274). On
+multi-user hosts other users can no longer read PID/status files — if
+you relied on group-readable runtime files, adjust your deployment to
+read them as the runtime user.
+
+No other mandatory migration. PHAR stub validation now rejects invalid
+`kernel_class` and alias characters that could alter generated code
+(#259, #263).
+
+---
+
+## Upgrading to 0.20
+
+No mandatory migration.
+
+Notable changes that require no config update:
+
+- `StaticFilesMiddleware` gains extension denylist/allowlist filtering
+  (#235), `If-Modified-Since`/`If-None-Match` and LRU cache (#254).
+- `SfxDownloader` gains zip-slip and cross-scheme redirect guards
+  (#252, #433); `build.sfx.sha256` / `allow_insecure` options documented
+  (#267).
+- `SchedulerWorker` PID handling now uses exclusive `flock` with strict
+  permissions (#240).
+
+---
+
+## Upgrading to 0.19
+
+No mandatory migration.
+
+Notable changes:
+
+- `RequestConverter` now validates URI and HTTP method before propagation
+  to Symfony and uses strict cookie parsing to prevent smuggling
+  (#217, #220). Crafted requests previously forwarded now get **400**.
+- `trusted_hosts` configuration added for Host-header enforcement
+  (non-matching hosts return 400 before kernel boot, #213) — opt-in, no
+  default behaviour change.
+- Path handling in `StaticFilesMiddleware` hardened against traversal
+  (#226).
+
+---
+
+## Upgrading to 0.18
+
+No mandatory migration.
+
+New in this release:
+
+- PHAR and standalone binary packaging (`workerman:build:phar`,
+  `workerman:build:bin`) with dynamic stub, `build` configuration
+  section, `--kernel-class` CLI option and `resources/phar-stub.tpl`
+  template (#191). File monitor is automatically disabled in PHAR mode.
+- `Runner` source path is now configurable instead of hardcoded to
+  `tests/App` (#130).
+
+---
+
 ## Upgrading to 0.17
 
 ### `Utils::reboot()` deprecated in favour of `Utils::reload()`
