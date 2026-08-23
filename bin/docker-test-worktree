@@ -137,7 +137,7 @@ exit((int) (!@fsockopen("127.0.0.1", 8888, $e, $s, 1)
   done
   if [[ "$ready" != 1 ]]; then
     echo "docker-test-worktree: daemon did not become ready within 30s; recent logs:" >&2
-    docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | sed 's/^/  /' >&2 || true
+    docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | tr -d '\r' | sed 's/^/  /' >&2 || true
     die "daemon failed to start in wmb-${BASENAME}; container removed (check vendor/ state of this worktree)"
   fi
 
@@ -145,11 +145,12 @@ exit((int) (!@fsockopen("127.0.0.1", 8888, $e, $s, 1)
   docker port "wmb-${BASENAME}" >&2
 
   # Block until Ctrl-C; the trap stops and removes the daemon container.
-  # Run the blocker in the background so a plain `kill <pid>` (TERM) also
-  # reaches the trap — a foreground child would delay trap execution forever.
+  # Run the blocker in the background so a plain `kill <pid>` (TERM or INT)
+  # also reaches the trap — a foreground child would delay trap execution
+  # forever. `|| true` keeps INT-resumed wait from being treated as an error.
   echo "docker-test-worktree: daemon running; curl the ports above, press Ctrl-C to stop" >&2
   tail -f /dev/null &
-  wait $!
+  wait $! || true
 else
   echo "docker-test-worktree: running 'composer ${COMMAND}' in wmb-${BASENAME}" >&2
 
