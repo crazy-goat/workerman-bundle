@@ -39,7 +39,7 @@ oldest carried deprecation is fifteen minors old. No contradiction. No finding.
 
 ### CHANGELOG.md
 Entry under [Unreleased] → Added, follows the repo's Keep-a-Changelog convention, includes the
-issue link `[#595](...)`. No finding.
+issue link to #595 (abbreviated with a placeholder in this record). No finding.
 
 ### tests/DependencyInjection/ConfigurationTreeBuilderTest.php
 `testConfiguredTreeDeprecatesLegacyStaticFileNodes` + `provideDeprecatedNodes`:
