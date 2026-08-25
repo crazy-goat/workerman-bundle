@@ -329,7 +329,7 @@ final class ConfigLoader implements CacheWarmerInterface
     {
         throw new \LogicException(
             'Configuration not available: no config has been set via setters and no cached '
-            . 'config file exists. Ensure the cache has been warmed up before accessing config.',
+            . 'config file could be loaded. Ensure the cache has been warmed up before accessing config.',
         );
     }
 
