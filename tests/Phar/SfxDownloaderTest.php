@@ -1070,6 +1070,59 @@ final class SfxDownloaderTest extends TestCase
         self::assertFileDoesNotExist($this->tempDir . '/big');
     }
 
+    /**
+     * When the partial-download artifact cannot be unlinked on transfer abort
+     * (read-only mount, foreign ownership, SELinux denial), the failure must
+     * be surfaced via error_log(): otherwise a truncated file stays on disk
+     * and the next fetch() trusts it as a complete download — silent data
+     * corruption that never self-heals.
+     *
+     * A custom stream wrapper forces unlink() to fail deterministically. The
+     * read-only-directory trick used by the zip-extraction test cannot be
+     * reused here: writeStream() opens the destination with fopen('wb') *before*
+     * the try, so a read-only directory makes that fopen() throw and the
+     * finally-block cleanup (where the unlink lives) is never reached.
+     */
+    public function testWriteStreamLogsWarningWhenPartialArtifactCannotBeRemoved(): void
+    {
+        // The wrapper maps "failunlink:///..." to a real path under the temp
+        // dir; a "wrap" subdir is created so fetch()'s is_dir() check passes
+        // and the download writes a genuine partial file there.
+        $wrapDir = $this->tempDir . '/wrap';
+        mkdir($wrapDir, 0755, true);
+        FailingUnlinkStreamWrapper::register($this->tempDir);
+
+        $url = sprintf('http://127.0.0.1:%d/big', self::$serverPort);
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
+
+        try {
+            try {
+                // maxDownloadBytes small enough that the /big (65536-byte) body
+                // aborts mid-stream, leaving a partial artifact behind.
+                (new SfxDownloader(1024))->fetch($url, 'failunlink:///wrap');
+                self::fail('Expected a RuntimeException for the oversized download.');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('maximum allowed size of 1024 bytes', $e->getMessage());
+            }
+        } finally {
+            ini_restore('error_log');
+        }
+
+        // The failed removal must be signalled: the operator has to know the
+        // truncated artifact is still on disk.
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertStringContainsString(
+            'Unable to remove partial SFX download',
+            $logContent,
+            'The error_log should contain the removal-failure warning.',
+        );
+
+        // The unlink failed, so the partial artifact must still be there.
+        self::assertFileExists($wrapDir . '/big');
+    }
+
     public function testChecksumIsVerifiedBeforeZipExtraction(): void
     {
         // A corrupt archive that would fail ZipArchive::open(): the SHA-256
@@ -1184,5 +1237,139 @@ PHP_WRAP);
         $method = new \ReflectionMethod(SfxDownloader::class, $methodName);
 
         return $method->invoke(new SfxDownloader(), ...$args);
+    }
+}
+
+/**
+ * Stream wrapper that proxies every filesystem operation to a real base
+ * directory except unlink(), which always fails — used to exercise the
+ * writeStream() finally-block cleanup when partial-artifact removal fails.
+ *
+ * Registered for the "failunlink://" protocol. A destination directory of
+ * "failunlink://" maps to a real directory under the registered base, so the
+ * download writes a genuine partial file while its eventual unlink() is
+ * forced to fail deterministically (no dependence on filesystem permissions
+ * or running as root).
+ */
+final class FailingUnlinkStreamWrapper
+{
+    private const PROTOCOL = 'failunlink';
+
+    private static bool $registered = false;
+
+    private static string $baseDir = '';
+
+    /** @var resource|null */
+    private $handle;
+
+    /**
+     * Register the wrapper once for the whole PHPUnit process (single
+     * consumer — only testWriteStreamLogsWarningWhenPartialArtifactCannotBeRemoved
+     * uses the `failunlink://` protocol; never unregistered on purpose).
+     */
+    public static function register(string $baseDir): void
+    {
+        self::$baseDir = rtrim($baseDir, '/');
+        if (!self::$registered) {
+            if (!@stream_wrapper_register(self::PROTOCOL, self::class)) {
+                throw new \RuntimeException('Unable to register the failing-unlink stream wrapper.');
+            }
+            self::$registered = true;
+        }
+    }
+
+    private function realPath(string $path): string
+    {
+        // "failunlink:///wrap/big" -> "/realBase/wrap/big". Strip the scheme
+        // prefix literally (parse_url would split it into path "/wrap/big"
+        // plus a trailing-slash quirk), then re-root under the real base.
+        $inner = preg_replace('#^' . self::PROTOCOL . '://#', '', $path);
+
+        return self::$baseDir . '/' . ltrim((string) $inner, '/');
+    }
+
+    /**
+     * @return array<int, mixed>|false
+     */
+    public function url_stat(string $path): array|false
+    {
+        $real = $this->realPath($path);
+        if (!is_file($real) && !is_dir($real)) {
+            return false;
+        }
+
+        /** @var array<int, mixed>|false $stat */
+        $stat = stat($real);
+
+        return $stat;
+    }
+
+    public function unlink(): bool
+    {
+        // Intentionally fail so the caller's cleanup path is exercised.
+        return false;
+    }
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        $real = $this->realPath($path);
+        $handle = fopen($real, $mode);
+        if (!is_resource($handle)) {
+            return false;
+        }
+        $this->handle = $handle;
+        if (($options & STREAM_USE_PATH) === STREAM_USE_PATH) {
+            $openedPath = $real;
+        }
+
+        return true;
+    }
+
+    public function stream_read(int $count): string|false
+    {
+        return is_resource($this->handle) ? fread($this->handle, max(1, $count)) : false;
+    }
+
+    public function stream_write(string $data): int|false
+    {
+        return is_resource($this->handle) ? fwrite($this->handle, $data) : false;
+    }
+
+    public function stream_tell(): int|false
+    {
+        return is_resource($this->handle) ? ftell($this->handle) : false;
+    }
+
+    public function stream_eof(): bool
+    {
+        return !is_resource($this->handle) || feof($this->handle);
+    }
+
+    /**
+     * @return array<int, mixed>|false
+     */
+    public function stream_stat(): array|false
+    {
+        if (!is_resource($this->handle)) {
+            return false;
+        }
+
+        /** @var array<int, mixed>|false $stat */
+        $stat = fstat($this->handle);
+
+        return $stat;
+    }
+
+    public function stream_seek(int $offset, int $whence = SEEK_SET): bool
+    {
+        return is_resource($this->handle) && fseek($this->handle, $offset, $whence) === 0;
+    }
+
+    public function stream_close(): void
+    {
+        if (is_resource($this->handle)) {
+            fclose($this->handle);
+            $this->handle = null;
+        }
     }
 }
