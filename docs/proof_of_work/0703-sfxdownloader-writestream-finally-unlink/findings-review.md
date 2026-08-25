@@ -24,7 +24,7 @@ One entry per finding. `file:line` is the current (post-change) location.
 - **File:** `tests/Phar/SfxDownloaderTest.php:1263-1273` (`register()`)
 - **Severity:** low (latent)
 - **Detail:** `register()` guards with `self::$registered` so repeated calls are no-ops — good, no double-register fatal. But the wrapper stays registered for the entire PHPUnit process (no `stream_wrapper_unregister`). Any *later* test that uses a `failunlink://` path would hit the failing unlink. Currently no other test does, so dormant. The `uniqid()` temp dir plus the wrapper keying everything off `self::$baseDir` (set by the last `register()` caller) means if a second test registered the wrapper with a *different* `$baseDir`, `realPath()` would re-root under the wrong base. Only one test uses it today, harmless. Worth a one-line comment that the wrapper is single-consumer / process-global. PHPStan/php-cs-fixer clean.
-- **Status:** still present (latent, low risk).
+- **Status:** ADDRESSED (post-round-1). Documented that the wrapper is single-consumer / process-global via a method docblock on `register()`. No behavioral change; remains dormant given only one test uses `failunlink://`.
 
 ## F-5 — Success path correctly does NOT log/remove (verified, no defect)
 - **File:** `src/Phar/SfxDownloader.php:327`

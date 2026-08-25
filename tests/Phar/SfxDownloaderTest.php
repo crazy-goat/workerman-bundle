@@ -1262,6 +1262,11 @@ final class FailingUnlinkStreamWrapper
     /** @var resource|null */
     private $handle;
 
+    /**
+     * Register the wrapper once for the whole PHPUnit process (single
+     * consumer — only testWriteStreamLogsWarningWhenPartialArtifactCannotBeRemoved
+     * uses the `failunlink://` protocol; never unregistered on purpose).
+     */
     public static function register(string $baseDir): void
     {
         self::$baseDir = rtrim($baseDir, '/');
