@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ConfigLoader::loadFresh()` no longer misdiagnoses a directory-EACCES
+  (cache directory not searchable) case as a missing cache file. The
+  `LogicException` message was reworded from "no cached config file exists"
+  to "no cached config file could be loaded", so the operator is pointed at a
+  permission/searchability problem on the cache directory rather than a
+  missing warmup
+  ([#713](https://github.com/crazy-goat/workerman-bundle/issues/713))
+
 - `SfxDownloader::writeStream()` no longer silently leaves a partial download
   on disk when the temporary artifact cannot be removed. The `finally` block
   used a bare `unlink()`; if it failed (read-only mount, foreign ownership,
