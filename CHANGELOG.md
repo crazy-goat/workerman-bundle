@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `SfxDownloader::writeStream()` no longer silently leaves a partial download
+  on disk when the temporary artifact cannot be removed. The `finally` block
+  used a bare `unlink()`; if it failed (read-only mount, foreign ownership,
+  SELinux denial) a truncated file stayed behind and every later `fetch()`
+  trusted it as a complete download — silent data corruption. The unlink is
+  now hardened to match the existing checksum/zip cleanup paths: `@unlink()`
+  plus a return-value check that emits an `error_log()` warning so the
+  operator knows the truncated file must be removed by hand
+  ([#703](https://github.com/crazy-goat/workerman-bundle/issues/703))
+
 ## [0.27.0] - 2026-08-23
 
 ### Docs
