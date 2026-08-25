@@ -40,8 +40,8 @@ identically:
   rethrow changes were needed.
 
 I deliberately did **not** touch the checksum catch
-(`src/Phar/SfxDownloader.php:101-116`) or the zip-extraction catch
-(`src/Phar/SfxDownloader.php:135-149`) — they already implement the same
+(`src/Phar/SfxDownloader.php:64-83`) or the zip-extraction catch
+(`src/Phar/SfxDownloader.php:86-104`) — they already implement the same
 `@unlink()` + return-check + `error_log()` pattern and the issue scoped
 this change to the `writeStream()` path only.
 
