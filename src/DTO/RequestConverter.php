@@ -223,6 +223,14 @@ final class RequestConverter
                 continue;
             }
 
+            // RFC 7230 §3.2.4: obs-fold continuation lines (a leading space)
+            // and other whitespace-padded names must not be forwarded under a
+            // $_SERVER key containing a literal space. Names that differ from
+            // their trim() are malformed and silently dropped.
+            if ($name !== \trim($name)) {
+                continue;
+            }
+
             $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
 
             // Check if this header had duplicate values in the raw request

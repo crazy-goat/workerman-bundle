@@ -1332,6 +1332,50 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('a, b', $symfonyRequest->server->get('HTTP_X_FOLD'));
     }
 
+    /**
+     * #718: an obs-fold continuation (leading-space header name) must not be
+     * forwarded under a $_SERVER key containing a literal space (e.g.
+     * "HTTP_ X_FOLD"). The well-formed name is still joined on the slow path;
+     * the malformed leading-space key is dropped.
+     */
+    public function testObsFoldWhitespacePrefixedHeaderNameIsNotForwardedUnderSpaceKey(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Fold: a\r\n";
+        $buffer .= " X-Fold: b\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+        $server = $symfonyRequest->server->all();
+
+        // The malformed space-prefixed key must NOT exist.
+        $this->assertArrayNotHasKey('HTTP_ X_FOLD', $server);
+
+        // The well-formed key is still present and joined.
+        $this->assertSame('a, b', $symfonyRequest->server->get('HTTP_X_FOLD'));
+    }
+
+    /**
+     * #718: a trailing-whitespace header name must be dropped so it is never
+     * forwarded under a $_SERVER key containing a literal space.
+     */
+    public function testTrailingWhitespaceHeaderNameIsDropped(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Trail : v\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+        $server = $symfonyRequest->server->all();
+
+        // The malformed trailing-space key must NOT exist.
+        $this->assertArrayNotHasKey('HTTP_X_TRAIL ', $server);
+        // The trimmed key must also not be silently created.
+        $this->assertArrayNotHasKey('HTTP_X_TRAIL', $server);
+    }
+
     public function testColonlessGarbageLineKeepsHeaderConversion(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
