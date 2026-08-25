@@ -194,6 +194,9 @@ final class RequestConverter
      * - Header values containing control characters are rejected
      * - Header names containing underscores are discarded because PHP's server
      *   variable convention maps both dashes and underscores to underscores
+     * - Header names containing whitespace (obs-fold / space-padded) are
+     *   discarded so no `$_SERVER` key with a literal space is forwarded
+     *   (RFC 7230 §3.2.4)
      *
      * @param array<string, float|int|string> $server
      *
@@ -220,6 +223,16 @@ final class RequestConverter
 
             if (\str_contains($name, '_')) {
                 self::logDroppedUnderscoreHeader($name);
+                continue;
+            }
+
+            // RFC 7230 §3.2.4: obs-fold continuation lines (a leading space)
+            // and other whitespace-padded names must not be forwarded under a
+            // $_SERVER key containing a literal space. A header field-name is a
+            // token and may never contain whitespace, so drop any name carrying a
+            // space or tab (leading, trailing or internal) — e.g. a Workerman
+            // " x-fold" key would otherwise become the literal "HTTP_ X_FOLD".
+            if (\strpbrk($name, " \t") !== false) {
                 continue;
             }
 

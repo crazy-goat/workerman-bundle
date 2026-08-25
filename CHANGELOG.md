@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `RequestConverter` no longer forwards a header whose name contains
+  whitespace (leading, trailing or internal) under a `$_SERVER` key with a
+  literal space — e.g. an obs-fold continuation (` X-Fold: b`) previously
+  leaked as `HTTP_ X_FOLD`, and an internal-space name (`X-Fold Bar`) as
+  `HTTP_X_FOLD BAR` (RFC 7230 §3.2.4 violation, smuggling-adjacent). Names
+  carrying a space or tab are now dropped before the server-key is built;
+  well-formed headers still join normally on the duplicate-reparse path
+  ([#718](https://github.com/crazy-goat/workerman-bundle/issues/718))
+
 - `ConfigLoader::loadFresh()` no longer misdiagnoses a directory-EACCES
   (cache directory not searchable) case as a missing cache file. The
   `LogicException` message was reworded from "no cached config file exists"
