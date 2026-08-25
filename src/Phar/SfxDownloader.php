@@ -317,9 +317,21 @@ final readonly class SfxDownloader
             fclose($out);
 
             // Never leave a partial artifact behind: fetch() treats an
-            // existing destination file as a complete download.
+            // existing destination file as a complete download. If the
+            // removal itself fails (read-only mount, foreign ownership,
+            // SELinux denial), a truncated file stays on disk and the next
+            // fetch() trusts it as a complete download — error_log() the
+            // failure so the operator knows to remove it by hand. The
+            // exception is already propagating from the catch, so the
+            // warning must not be able to throw; error_log() cannot.
             if ($failed && is_file($destination)) {
-                unlink($destination);
+                $removed = @unlink($destination);
+                if (!$removed) {
+                    error_log(sprintf(
+                        'Unable to remove partial SFX download "%s"; the truncated file stays on disk and the next fetch() will trust it as a complete download. Remove it manually.',
+                        $destination,
+                    ));
+                }
             }
         }
     }
