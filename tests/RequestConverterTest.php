@@ -1376,6 +1376,27 @@ final class RequestConverterTest extends TestCase
         $this->assertArrayNotHasKey('HTTP_X_TRAIL', $server);
     }
 
+    /**
+     * #718 (review round 1, F-1): an internal-space header name (e.g.
+     * "X-Fold Bar") is a malformed token and must also be dropped, not
+     * forwarded under the literal-space key "HTTP_X_FOLD BAR".
+     */
+    public function testInternalSpaceHeaderNameIsDropped(): void
+    {
+        $buffer = "GET /test HTTP/1.1\r\n";
+        $buffer .= "Host: example.com\r\n";
+        $buffer .= "X-Fold Bar: v\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
+        $server = $symfonyRequest->server->all();
+
+        // The malformed internal-space key must NOT exist.
+        $this->assertArrayNotHasKey('HTTP_X_FOLD BAR', $server);
+        // No silently-trimmed variant may be created either.
+        $this->assertArrayNotHasKey('HTTP_X_FOLD_BAR', $server);
+    }
+
     public function testColonlessGarbageLineKeepsHeaderConversion(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
