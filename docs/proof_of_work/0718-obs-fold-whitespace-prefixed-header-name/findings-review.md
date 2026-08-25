@@ -34,3 +34,32 @@ All four round-1 findings answered. Three fixed, one deliberate non-fix.
 - F-4 (`testWhitespacePrefixedDuplicateHeaderIsStillJoined` only asserts joined value) — **deliberately NOT fixed**. Non-blocking; the new `testObsFoldWhitespacePrefixedHeaderNameIsNotForwardedUnderSpaceKey` already covers the combined absence+value case for the obs-fold path. Left as-is to keep the round scoped; could be back-filled later as a pure test-strengthening nit.
 
 No new findings introduced by the round-2 change (verified by re-running PHPStan + the RequestConverter suite).
+
+---
+
+## Review Round 2 — independent verification (reviewer, 2026-08-25)
+
+Commit under review: `da85f76` (`fix(dto): drop any whitespace-containing header name, not just OWS-padded`).
+
+### Round-1 findings restated with evidence
+
+| ID | Location | Status | Evidence |
+|----|----------|--------|----------|
+| F-1 | `src/DTO/RequestConverter.php` guard (was `:227`) | FIXED | Guard widened to `if (\strpbrk($name, " \t") !== false) { continue; }`. Workerman keeps `x-fold bar` as a real key for `"X-Fold Bar: v"` (verified), so the guard genuinely drops it. `testInternalSpaceHeaderNameIsDropped` asserts `HTTP_X_FOLD BAR` and `HTTP_X_FOLD_BAR` both absent → passes. |
+| F-2 | `findings-coder.md` false claim | FIXED | `findings-coder.md` carries an explicit 2026-08-25 correction: the "rejected by Workerman tokenisation" claim was wrong, leak is real, closed in round 2. |
+| F-3 | `buildServerHeaders` docblock | FIXED | Docblock now lists the whitespace-name drop bullet (RFC 7230 §3.2.4), symmetric with the underscore bullet. |
+| F-4 | `testWhitespacePrefixedDuplicateHeaderIsStillJoined` only asserts joined value | NOT A DEFECT (non-blocking, deliberate) | Combined absence+value case covered by `testObsFoldWhitespacePrefixedHeaderNameIsNotForwardedUnderSpaceKey`. Reviewer agrees non-blocking. |
+
+### NEW findings
+
+**No new findings.**
+
+Round-2 change verified safe:
+- `\strpbrk($name, " \t")` mask is literal space+tab (RFC 7230 OWS); `strpbrk` takes a byte set, no `..`-range trap (cf. FAQ-027).
+- No legitimate header field-name (a `token` per RFC 7230 §3.2.6) may contain SP/HTAB, so no false-positive drop of valid names.
+- `testInternalSpaceHeaderNameIsDropped` exercises the drop (Workerman emits `x-fold bar`, reaches the guard); would fail if the guard were absent.
+- PHPStan level 8 on `src/DTO/RequestConverter.php`: `[OK] No errors`.
+- PSR-12 / comment accuracy: clean.
+- Legitimate duplicate-join slow path preserved: `X-Fold: a` + ` X-Fold: b` → `HTTP_X_FOLD => 'a, b'`, malformed `HTTP_ X_FOLD` dropped (test passes). Full `RequestConverterTest`: 95 tests / 550 assertions, green.
+
+**Verdict: CLEAN** — all fixable round-1 findings fixed, no new defects.
