@@ -238,21 +238,49 @@ final readonly class ProcessInspector
             return;
         }
 
-        // If a fingerprint is available, verify the parent PID matches
-        // the recorded master fingerprint before signaling. This prevents
-        // killing an unrelated co-located process whose command line
-        // happens to contain "WorkerMan".
+        // If a fingerprint is available, verify the parent PID before
+        // signaling. The direct identity check (`matchesFingerprint`) covers
+        // the case where the parent PID IS the master (unit tests and the
+        // non-daemon path where the caller passes the master PID itself).
+        // In daemon mode the fingerprint names the **master**, while
+        // `$parentPid` is the daemonize intermediate (the master's parent),
+        // so the identity check always refuses — the fingerprint branch was
+        // dead in the production daemon flow (issue #721). The ancestry
+        // check below verifies that `$parentPid` is the recorded parent of
+        // the fingerprinted master and that it looks like a Workerman master
+        // process (title check), which prevents killing the user's shell in
+        // non-daemon mode while allowing the hung intermediate to be cleaned
+        // up.
         if ($fingerprint instanceof \CrazyGoat\WorkermanBundle\MasterFingerprint) {
-            if (!$this->matchesFingerprint($parentPid, $fingerprint)) {
-                $this->logger->warning('Refusing to kill orphaned intermediate fork: PID does not match master fingerprint', [
-                    'pid' => $parentPid,
-                    'fingerprint_pid' => $fingerprint->pid,
-                ]);
+            if ($this->matchesFingerprint($parentPid, $fingerprint)) {
+                posix_kill($parentPid, \SIGKILL);
 
                 return;
             }
 
-            posix_kill($parentPid, \SIGKILL);
+            $masterPid = $fingerprint->pid;
+            if ($masterPid > 0) {
+                $actualParent = $this->getParentPid($masterPid);
+                if ($actualParent === $parentPid) {
+                    if ($this->isWorkermanMasterTitle($parentPid)) {
+                        posix_kill($parentPid, \SIGKILL);
+
+                        return;
+                    }
+
+                    $this->logger->warning('Refusing to kill orphaned intermediate fork: parent does not carry the Workerman master process title', [
+                        'pid' => $parentPid,
+                        'master_pid' => $masterPid,
+                    ]);
+
+                    return;
+                }
+            }
+
+            $this->logger->warning('Refusing to kill orphaned intermediate fork: PID does not match master fingerprint nor is it parent of fingerprinted master', [
+                'pid' => $parentPid,
+                'fingerprint_pid' => $fingerprint->pid,
+            ]);
 
             return;
         }
@@ -261,15 +289,31 @@ final readonly class ProcessInspector
         // Workerman master sets. The old check accepted any cmdline
         // containing "WorkerMan"; it is tightened to the actual master
         // title so an unrelated "WorkerMan" mention cannot match (issue #584).
-        $cmdline = "/proc/{$parentPid}/cmdline";
+        if ($this->isWorkermanMasterTitle($parentPid)) {
+            posix_kill($parentPid, \SIGKILL);
+        }
+    }
+
+    /**
+     * Whether the given PID carries the Workerman master process title.
+     *
+     * The title is set by Workerman before forking, so it survives daemon
+     * mode and matches only genuine Workerman masters — not a user's shell
+     * (non-daemon parent) and not an unrelated "WorkerMan" mention.
+     */
+    private function isWorkermanMasterTitle(int $pid): bool
+    {
+        $cmdline = "/proc/{$pid}/cmdline";
         if (!is_readable($cmdline)) {
-            return;
+            return false;
         }
 
         $content = file_get_contents($cmdline);
-        if (\is_string($content) && str_contains($content, 'WorkerMan: master process')) {
-            posix_kill($parentPid, \SIGKILL);
+        if (!\is_string($content)) {
+            return false;
         }
+
+        return str_contains($content, 'WorkerMan: master process');
     }
 
     public function waitForProcessToStop(int $pid, int $stopTimeout, bool $graceful): bool
