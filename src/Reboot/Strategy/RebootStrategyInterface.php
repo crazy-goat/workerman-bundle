@@ -41,20 +41,4 @@ interface RebootStrategyInterface
      * @return bool true if the worker should be gracefully restarted.
      */
     public function shouldReboot(): bool;
-
-    /**
-     * Whether this strategy depends on memory_get_peak_usage() being reset.
-     *
-     * Called once at HttpRequestHandler construction time. When every strategy
-     * returns false, HttpRequestHandler skips the memory_reset_peak_usage()
-     * call entirely, saving a syscall on the hot path for every request.
-     *
-     * Strategies that read memory_get_peak_usage() in shouldReboot() (e.g.,
-     * a strategy tracking peak usage over the request lifecycle) should
-     * return true here. All other strategies should return false.
-     *
-     * @return bool true if memory_reset_peak_usage() must be called before
-     *              every request for this strategy to work correctly.
-     */
-    public function needsPeakMemory(): bool;
 }

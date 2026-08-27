@@ -23,15 +23,4 @@ final readonly class StackRebootStrategy implements RebootStrategyInterface
 
         return false;
     }
-
-    public function needsPeakMemory(): bool
-    {
-        foreach ($this->strategies as $strategy) {
-            if ($strategy->needsPeakMemory()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

@@ -165,34 +165,10 @@ final class HttpHandlerTestKernel implements KernelInterface, TerminableInterfac
 final class TestRebootStrategy implements RebootStrategyInterface
 {
     public bool $shouldReboot = false;
-    public bool $needsPeakMemory = false;
 
     public function shouldReboot(): bool
     {
         return $this->shouldReboot;
-    }
-
-    public function needsPeakMemory(): bool
-    {
-        return $this->needsPeakMemory;
-    }
-}
-
-/**
- * Test reboot strategy that always needs peak memory.
- */
-final class TestPeakMemoryRebootStrategy implements RebootStrategyInterface
-{
-    public bool $shouldReboot = false;
-
-    public function shouldReboot(): bool
-    {
-        return $this->shouldReboot;
-    }
-
-    public function needsPeakMemory(): bool
-    {
-        return true;
     }
 }
 
@@ -671,50 +647,6 @@ final class HttpRequestHandlerTest extends TestCase
             $this->kernel->terminateCalled,
             'Kernel terminate should be called on every request (no more timer deferral)',
         );
-    }
-
-    // ──────────────────────────────────────────────
-    // memory_reset_peak_usage gating
-    // ──────────────────────────────────────────────
-
-    public function testMemoryResetPeakUsageIsSkippedWhenNoStrategyNeedsIt(): void
-    {
-        $this->rebootStrategy->needsPeakMemory = false;
-
-        $reflection = new \ReflectionClass($this->handler);
-        $property = $reflection->getProperty('resetPeakUsage');
-
-        $this->assertFalse(
-            $property->getValue($this->handler),
-            'resetPeakUsage should be false when no strategy needs peak memory',
-        );
-    }
-
-    public function testMemoryResetPeakUsageIsCalledWhenStrategyNeedsIt(): void
-    {
-        $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $peakStrategy = new TestPeakMemoryRebootStrategy();
-        $handler = new HttpRequestHandler($controller, $peakStrategy);
-
-        $reflection = new \ReflectionClass($handler);
-        $property = $reflection->getProperty('resetPeakUsage');
-
-        $this->assertTrue(
-            $property->getValue($handler),
-            'resetPeakUsage should be true when a strategy needs peak memory',
-        );
-    }
-
-    public function testMemoryResetPeakUsageGatingDoesNotAffectRequestHandling(): void
-    {
-        // With needsPeakMemory = false, the handler should still process requests normally
-        $connection = new MockTcpConnection();
-        $request = new Request(self::HTTP11);
-
-        ($this->handler)($connection, $request);
-
-        $this->assertCount(1, $connection->sentData, 'Response should be sent regardless of peak memory gating');
-        $this->assertStringContainsString('Test response', $connection->sentData[0]);
     }
 
     // ──────────────────────────────────────────────
@@ -1360,7 +1292,6 @@ final class HttpRequestHandlerTest extends TestCase
         // strategy was consulted AND a 500 was sent.
         $strategy = $this->createMock(RebootStrategyInterface::class);
         $strategy->expects($this->once())->method('shouldReboot')->willReturn(false);
-        $strategy->method('needsPeakMemory')->willReturn(false);
 
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
         $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
@@ -1384,7 +1315,6 @@ final class HttpRequestHandlerTest extends TestCase
         // proves the handler reached the reboot check after doTerminate().
         $strategy = $this->createMock(RebootStrategyInterface::class);
         $strategy->expects($this->once())->method('shouldReboot')->willReturn(true);
-        $strategy->method('needsPeakMemory')->willReturn(false);
 
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
         $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
