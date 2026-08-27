@@ -328,15 +328,15 @@ final class ProcessInspectorTest extends TestCase
     }
 
     /**
-     * Regression test for issue #530: `getParentPid()` must not crash on
-     * non-Linux platforms where `/proc` is unavailable. It returns 0 as
-     * a safe fallback (the caller treats 0 as "no parent").
+     * Regression test for issue #722: `getParentPid()` must return the
+     * parent PID on non-Linux platforms via `ps -o ppid=` instead of the
+     * old Linux-only `return 0` fallback (issues #530/#722).
      *
      * @requires OS Darwin
      * @requires extension pcntl
      * @requires extension posix
      */
-    public function testGetParentPidReturnsZeroOnNonLinux(): void
+    public function testGetParentPidReturnsParentOnNonLinux(): void
     {
         $pid = pcntl_fork();
         if ($pid === -1) {
@@ -351,10 +351,13 @@ final class ProcessInspectorTest extends TestCase
 
         try {
             $this->assertSame(
-                0,
+                \getmypid(),
                 $this->inspector->getParentPid($pid),
-                'getParentPid() must return 0 on non-Linux platforms',
+                'getParentPid() must return the parent PID on non-Linux via ps',
             );
+            $this->assertSame(0, $this->inspector->getParentPid(0));
+            $this->assertSame(0, $this->inspector->getParentPid(-1));
+            $this->assertSame(0, $this->inspector->getParentPid(999_999_999));
         } finally {
             posix_kill($pid, SIGKILL);
             pcntl_waitpid($pid, $status);
@@ -949,6 +952,127 @@ PHP;
     }
 
     /**
+     * Regression test for issue #722: `killOrphanedIntermediateFork()`
+     * with a fingerprint must kill the daemonize intermediate via
+     * ancestry verification on Darwin (ps-based getParentPid + ps-based
+     * Workerman title).
+     *
+     * Mirrors the Linux test `testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDaemon`
+     * but exercises the non-Linux `ps -o ppid=` and `ps -ww -o args=` paths.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDarwin(): void
+    {
+        $pair = $this->forkAncestryPair(true);
+        $intermediatePid = $pair['parent'];
+        $masterPid = $pair['child'];
+
+        try {
+            $fingerprint = $this->captureFingerprintForPid($masterPid);
+
+            $this->assertSame(
+                $intermediatePid,
+                $this->inspector->getParentPid($masterPid),
+                'Master must be child of the intermediate for this test to be meaningful',
+            );
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($intermediatePid),
+                'Intermediate must be alive before kill',
+            );
+
+            $this->inspector->killOrphanedIntermediateFork($intermediatePid, $fingerprint);
+
+            $this->waitForProcessDeath($intermediatePid);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($intermediatePid),
+                'killOrphanedIntermediateFork() must kill the intermediate via ancestry on Darwin',
+            );
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($masterPid),
+                'Master must stay alive after its intermediate parent is killed',
+            );
+        } finally {
+            if ($this->inspector->isProcessAlive($masterPid)) {
+                posix_kill($masterPid, SIGKILL);
+            }
+            if ($this->inspector->isProcessAlive($intermediatePid)) {
+                posix_kill($intermediatePid, SIGKILL);
+            }
+            @pcntl_waitpid($intermediatePid, $status);
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($masterPid), 1);
+            @\unlink($pair['script']);
+            @\unlink($pair['masterMarker']);
+            @\unlink($pair['parentMarker']);
+        }
+    }
+
+    /**
+     * Regression test for issue #722: ancestry verification must NOT kill
+     * the parent when the parent is not a Workerman master process on
+     * Darwin (shell safety).
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillNonWorkermanParentViaAncestryOnDarwin(): void
+    {
+        $pair = $this->forkAncestryPair(false);
+        $parentPid = $pair['parent'];
+        $masterPid = $pair['child'];
+
+        try {
+            $fingerprint = $this->captureFingerprintForPid($masterPid);
+
+            $this->assertSame(
+                $parentPid,
+                $this->inspector->getParentPid($masterPid),
+                'Master must be child of the parent for this test to be meaningful',
+            );
+
+            $this->inspector->killOrphanedIntermediateFork($parentPid, $fingerprint);
+
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($parentPid), 1);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($parentPid),
+                'killOrphanedIntermediateFork() must NOT kill a non-Workerman parent even when ancestry matches on Darwin',
+            );
+        } finally {
+            if ($this->inspector->isProcessAlive($masterPid)) {
+                posix_kill($masterPid, SIGKILL);
+            }
+            if ($this->inspector->isProcessAlive($parentPid)) {
+                posix_kill($parentPid, SIGKILL);
+            }
+            @pcntl_waitpid($parentPid, $status);
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($masterPid), 1);
+            @\unlink($pair['script']);
+            @\unlink($pair['masterMarker']);
+            @\unlink($pair['parentMarker']);
+        }
+    }
+
+    /**
+     * Regression test for issue #722: `getParentPid()` on Darwin must
+     * handle non-existent PIDs gracefully (return 0) and not crash.
+     *
+     * @requires OS Darwin
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testGetParentPidReturnsZeroForNonExistentPidOnDarwin(): void
+    {
+        $this->assertSame(0, $this->inspector->getParentPid(999_999_999));
+        $this->assertSame(0, $this->inspector->getParentPid(0));
+        $this->assertSame(0, $this->inspector->getParentPid(-1));
+    }
+
+    /**
      * Fork a parent/child pair where the parent optionally carries the
      * Workerman master process title.
      *
@@ -958,8 +1082,6 @@ PHP;
      * forever until SIGKILLed.
      *
      * @return array{parent: int, child: int, script: string, masterMarker: string, parentMarker: string}
-     *
-     * @requires OS Linux
      */
     private function forkAncestryPair(bool $parentHasTitle): array
     {
@@ -1053,8 +1175,8 @@ PHP;
      * /proc/$pid/stat and /proc/$pid/status.
      *
      * Used by tests that need a fingerprint matching a forked child.
-     *
-     * @requires OS Linux
+     * Falls back to 0/startTime and current UID on non-Linux where
+     * /proc is unavailable.
      */
     private function captureFingerprintForPid(int $pid): \CrazyGoat\WorkermanBundle\MasterFingerprint
     {

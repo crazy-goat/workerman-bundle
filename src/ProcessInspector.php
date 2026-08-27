@@ -54,21 +54,25 @@ final readonly class ProcessInspector
 
     public function getParentPid(int $pid): int
     {
-        if (!self::isLinux() || $pid <= 0) {
+        if ($pid <= 0) {
             return 0;
         }
 
-        $statusFile = "/proc/{$pid}/status";
-        if (!is_readable($statusFile)) {
+        if (self::isLinux()) {
+            $statusFile = "/proc/{$pid}/status";
+            if (!is_readable($statusFile)) {
+                return 0;
+            }
+
+            $status = file_get_contents($statusFile);
+            if (\is_string($status) && preg_match('/^PPid:\s+(\d+)/m', $status, $matches)) {
+                return (int) $matches[1];
+            }
+
             return 0;
         }
 
-        $status = file_get_contents($statusFile);
-        if (\is_string($status) && preg_match('/^PPid:\s+(\d+)/m', $status, $matches)) {
-            return (int) $matches[1];
-        }
-
-        return 0;
+        return $this->readParentPidViaPs($pid);
     }
 
     /**
@@ -234,10 +238,6 @@ final readonly class ProcessInspector
             return;
         }
 
-        if (!self::isLinux()) {
-            return;
-        }
-
         // If a fingerprint is available, verify the parent PID before
         // signaling. The direct identity check (`matchesFingerprint`) covers
         // the case where the parent PID IS the master (unit tests and the
@@ -300,20 +300,136 @@ final readonly class ProcessInspector
      * The title is set by Workerman before forking, so it survives daemon
      * mode and matches only genuine Workerman masters — not a user's shell
      * (non-daemon parent) and not an unrelated "WorkerMan" mention.
+     *
+     * Platform behavior:
+     * - Linux: reads `/proc/$pid/cmdline` (kernel argv).
+     * - Non-Linux POSIX: queries `ps -ww -o args=` (process args).
      */
     private function isWorkermanMasterTitle(int $pid): bool
     {
-        $cmdline = "/proc/{$pid}/cmdline";
-        if (!is_readable($cmdline)) {
+        if (self::isLinux()) {
+            $cmdline = "/proc/{$pid}/cmdline";
+            if (!is_readable($cmdline)) {
+                return false;
+            }
+
+            $content = file_get_contents($cmdline);
+            if (!\is_string($content)) {
+                return false;
+            }
+
+            return str_contains($content, 'WorkerMan: master process');
+        }
+
+        $command = $this->readProcessCommandViaPs($pid);
+        if ($command === null || $command === '') {
             return false;
         }
 
-        $content = file_get_contents($cmdline);
-        if (!\is_string($content)) {
-            return false;
+        return str_contains($command, 'WorkerMan: master process');
+    }
+
+    /**
+     * Read the parent PID via `ps -o ppid= -p <pid>` on non-Linux POSIX.
+     *
+     * Returns 0 when the PPID cannot be determined (process gone,
+     * unreadable, or `ps` unavailable) — the caller treats 0 as "no parent"
+     * and fails closed.
+     *
+     * @phpstan-impure
+     */
+    private function readParentPidViaPs(int $pid): int
+    {
+        if (!\function_exists('exec')) {
+            $this->logger->warning('Cannot read parent PID: exec() is disabled; treating as no parent', [
+                'pid' => $pid,
+            ]);
+
+            return 0;
         }
 
-        return str_contains($content, 'WorkerMan: master process');
+        $output = [];
+        $exitCode = 0;
+        @exec('ps -o ppid= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+
+        if ($exitCode === 126 || $exitCode === 127) {
+            $this->logger->warning('Cannot read parent PID: ps command not available', [
+                'pid' => $pid,
+                'exit_code' => $exitCode,
+            ]);
+
+            return 0;
+        }
+
+        if ($exitCode !== 0) {
+            if (posix_kill($pid, 0)) {
+                $this->logger->warning('Cannot read parent PID: ps exited non-zero on a signalable PID', [
+                    'pid' => $pid,
+                    'exit_code' => $exitCode,
+                ]);
+            }
+
+            return 0;
+        }
+
+        if ($output === []) {
+            return 0;
+        }
+
+        return (int) trim($output[0]);
+    }
+
+    /**
+     * Read the process command/args via `ps -ww -o args= -p <pid>` on
+     * non-Linux POSIX.
+     *
+     * Returns the trimmed command string, an empty string when the process
+     * no longer exists, or null when `ps` itself could not be executed
+     * (the caller must then fail closed).
+     *
+     * @phpstan-impure
+     */
+    private function readProcessCommandViaPs(int $pid): ?string
+    {
+        if (!\function_exists('exec')) {
+            $this->logger->warning('Cannot inspect process command: exec() is disabled', [
+                'pid' => $pid,
+            ]);
+
+            return null;
+        }
+
+        $output = [];
+        $exitCode = 0;
+        @exec('ps -ww -o args= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+
+        if ($exitCode === 126 || $exitCode === 127) {
+            $this->logger->warning('Cannot inspect process command: ps command not available', [
+                'pid' => $pid,
+                'exit_code' => $exitCode,
+            ]);
+
+            return null;
+        }
+
+        if ($exitCode !== 0) {
+            if (posix_kill($pid, 0)) {
+                $this->logger->warning('Cannot inspect process command: ps exited non-zero on a signalable PID', [
+                    'pid' => $pid,
+                    'exit_code' => $exitCode,
+                ]);
+
+                return null;
+            }
+
+            return '';
+        }
+
+        if ($output === []) {
+            return '';
+        }
+
+        return trim($output[0]);
     }
 
     public function waitForProcessToStop(int $pid, int $stopTimeout, bool $graceful): bool
