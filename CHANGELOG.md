@@ -65,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operator knows the truncated file must be removed by hand
   ([#703](https://github.com/crazy-goat/workerman-bundle/issues/703))
 
+### Performance
+
+- `Runner::warmUpCache()` now polls the warmup child with `Util\Wait::until()`
+  (exponential backoff from 10 ms, capped at 250 ms) instead of a fixed
+  100 ms `usleep` loop, so a fast-exiting child is observed in ~10 ms rather
+  than up to ~100 ms and the `WORKERMAN_CACHE_WARMUP_TIMEOUT` deadline is
+  honoured with sub-second accuracy via `microtime(true)`. The three loop
+  outcomes — child reaped, `pcntl_waitpid()` failure (`-1`), and timeout
+  (SIGKILL + blocking reap) — are preserved
+  ([#564](https://github.com/crazy-goat/workerman-bundle/issues/564))
+
 ## [0.27.0] - 2026-08-23
 
 ### Docs

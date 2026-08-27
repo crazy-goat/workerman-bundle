@@ -165,6 +165,54 @@ final class RunnerTest extends TestCase
     }
 
     /**
+     * Issue #564: fast-exiting warmup child is observed in ~10 ms rather than up to 100 ms.
+     * Verifies Runner::warmUpCache() uses Wait::until() backoff (10 ms initial) instead of
+     * the old fixed 100 ms sleep. A child that SIGKILLs immediately should be reaped well
+     * under the old 100 ms worst-case.
+     */
+    public function testWarmupFastChildObservedQuickly(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/workerman_warmup_fast_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $configLoader = new ConfigLoader(
+                projectDir: $tmpDir,
+                cacheDir: $tmpDir . '/var/cache/test',
+                isDebug: false,
+            );
+
+            if ($configLoader->isFresh()) {
+                $this->fail('ConfigLoader must not be fresh (cache file should not exist)');
+            }
+
+            $kernelFactory = new KernelFactory(
+                static fn(): KernelInterface => throw new \RuntimeException('not used'),
+                [],
+            );
+
+            $runner = new FastChildRunner($kernelFactory, 5);
+
+            $start = microtime(true);
+            $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+            $elapsed = microtime(true) - $start;
+
+            // Old fixed 100 ms sleep had expected overshoot ~50 ms and worst 100 ms.
+            // Wait::until() starts at 10 ms, so fast child should be observed in ~10-20 ms.
+            // Allow generous slack for loaded CI, but still well below 100 ms.
+            $this->assertLessThan(
+                0.1,
+                $elapsed,
+                sprintf('Fast child should be observed quickly, expected <100 ms, got %.1f ms', $elapsed * 1000),
+            );
+        } finally {
+            if (is_dir($tmpDir)) {
+                $this->removeDir($tmpDir);
+            }
+        }
+    }
+
+    /**
      * @return array{workers: array<string, Worker>, pidMap: array<string, array<int, int>>, globalEvent: mixed, outputStream: mixed, logFile: mixed, defaultMaxPackageSize: int}
      */
     private function saveWorkerState(): array
@@ -1049,5 +1097,19 @@ final readonly class ForkFailureRunner extends Runner
     protected function fork(): int
     {
         return -1;
+    }
+}
+
+final readonly class FastChildRunner extends Runner
+{
+    protected function fork(): int
+    {
+        $pid = \pcntl_fork();
+        if ($pid === 0) {
+            \posix_kill((int) \getmypid(), \SIGKILL);
+            exit(0);
+        }
+
+        return $pid;
     }
 }

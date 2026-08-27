@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
@@ -96,27 +97,37 @@ readonly class Runner implements RunnerInterface
         }
 
         $timeout = $this->getCacheWarmupTimeout();
-        $deadline = \time() + $timeout;
         $status = 0;
+        $waitFailed = false;
 
-        while (true) {
-            $result = \pcntl_waitpid($pid, $status, WNOHANG);
+        $completed = Wait::until(
+            function () use ($pid, &$status, &$waitFailed): bool {
+                $result = \pcntl_waitpid($pid, $status, \WNOHANG);
 
-            if ($result === $pid) {
-                break;
-            }
+                if ($result === $pid) {
+                    return true;
+                }
 
-            if ($result === -1) {
-                throw new \RuntimeException('Failed to wait for cache warmup process');
-            }
+                if ($result === -1) {
+                    $waitFailed = true;
 
-            if (\time() >= $deadline) {
-                \posix_kill($pid, \SIGKILL);
-                \pcntl_waitpid($pid, $status, 0);
-                throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
-            }
+                    return true;
+                }
 
-            \usleep(100_000);
+                return false;
+            },
+            $timeout,
+        );
+
+        if ($waitFailed) {
+            throw new \RuntimeException('Failed to wait for cache warmup process');
+        }
+
+        if (!$completed) {
+            \posix_kill($pid, \SIGKILL);
+            \pcntl_waitpid($pid, $status, 0);
+
+            throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
         }
 
         if (!\pcntl_wifexited($status)) {
