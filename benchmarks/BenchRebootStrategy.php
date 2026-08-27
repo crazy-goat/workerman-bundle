@@ -15,9 +15,4 @@ final class BenchRebootStrategy implements RebootStrategyInterface
     {
         return false;
     }
-
-    public function needsPeakMemory(): bool
-    {
-        return false;
-    }
 }

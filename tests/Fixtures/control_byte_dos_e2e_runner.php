@@ -186,11 +186,6 @@ $rebootStrategy = new class implements RebootStrategyInterface {
     {
         return false;
     }
-
-    public function needsPeakMemory(): bool
-    {
-        return false;
-    }
 };
 
 $responseConverter = new ResponseConverter([new DefaultResponseStrategy()]);

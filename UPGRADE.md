@@ -24,6 +24,42 @@ forward-looking view; past migrations live in the sections below.
 
 ---
 
+## Upgrading to 0.28
+
+### `RebootStrategyInterface::needsPeakMemory()` removed
+
+`RebootStrategyInterface::needsPeakMemory()` and the `memory_reset_peak_usage()` gating in `HttpRequestHandler` have been removed ([#562](https://github.com/crazy-goat/workerman-bundle/issues/562)). No shipped strategy ever returned `true` — the mechanism was dead code since its introduction in 0.17.0 ([#317](https://github.com/crazy-goat/workerman-bundle/issues/317)) — and `MemoryRebootStrategy` correctly stays on `memory_get_usage()` (emalloc), whose post-`gc_collect_cycles()` reading benefits from the GC optimization. Peak-based reloads would not benefit from that GC path (peak does not drop after collection).
+
+**Migration:** if you implement `RebootStrategyInterface` in your own code, remove the `needsPeakMemory(): bool` method:
+
+```php
+// Before
+final class MyStrategy implements RebootStrategyInterface
+{
+    public function shouldReboot(): bool { return false; }
+    public function needsPeakMemory(): bool { return false; }
+}
+
+// After
+final class MyStrategy implements RebootStrategyInterface
+{
+    public function shouldReboot(): bool { return false; }
+}
+```
+
+If your custom strategy tracked `memory_get_peak_usage()` and relied on `HttpRequestHandler` to call `memory_reset_peak_usage()` before each request, call it yourself at the start of `shouldReboot()` (or in a middleware that runs before the reboot check):
+
+```php
+public function shouldReboot(): bool
+{
+    $peak = memory_get_peak_usage();
+    memory_reset_peak_usage();
+    return $peak > $this->limit;
+}
+```
+
+---
+
 ## Upgrading to 0.25
 
 ### Master identification now fails closed — stop before upgrading

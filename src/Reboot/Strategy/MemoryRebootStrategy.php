@@ -30,11 +30,6 @@ final class MemoryRebootStrategy implements RebootStrategyInterface
     ) {
     }
 
-    public function needsPeakMemory(): bool
-    {
-        return false;
-    }
-
     public function shouldReboot(): bool
     {
         $memoryUsage = memory_get_usage();
