@@ -830,6 +830,225 @@ PHP;
     }
 
     /**
+     * Regression test for issue #721: `killOrphanedIntermediateFork()`
+     * with a fingerprint must kill the daemonize intermediate via
+     * ancestry verification when the fingerprint names the master and
+     * `$parentPid` is the master's parent carrying the Workerman master
+     * title.
+     *
+     * In daemon mode the fingerprint is written by the master itself
+     * (`MasterWorker::saveMasterPid()`), so the fingerprint PID is the
+     * master PID — never the intermediate's. The old code required
+     * `$parentPid === $fingerprint->pid` and always refused; the ancestry
+     * path (`getParentPid($fingerprint->pid) === $parentPid` + title check)
+     * must now kill the intermediate.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDaemon(): void
+    {
+        $pair = $this->forkAncestryPair(true);
+        $intermediatePid = $pair['parent'];
+        $masterPid = $pair['child'];
+
+        try {
+            $fingerprint = $this->captureFingerprintForPid($masterPid);
+
+            $this->assertSame(
+                $intermediatePid,
+                $this->inspector->getParentPid($masterPid),
+                'Master must be child of the intermediate for this test to be meaningful',
+            );
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($intermediatePid),
+                'Intermediate must be alive before kill',
+            );
+
+            $this->inspector->killOrphanedIntermediateFork($intermediatePid, $fingerprint);
+
+            $this->waitForProcessDeath($intermediatePid);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($intermediatePid),
+                'killOrphanedIntermediateFork() must kill the intermediate via ancestry when fingerprint names its child master',
+            );
+            // Master should still be alive (reparented to init after parent death).
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($masterPid),
+                'Master must stay alive after its intermediate parent is killed',
+            );
+        } finally {
+            // Master is reparented to init after intermediate death; kill it explicitly.
+            if ($this->inspector->isProcessAlive($masterPid)) {
+                posix_kill($masterPid, SIGKILL);
+            }
+            if ($this->inspector->isProcessAlive($intermediatePid)) {
+                posix_kill($intermediatePid, SIGKILL);
+            }
+            // Reap intermediate if it is still a direct child (it is); master is no longer a direct child after reparent.
+            @pcntl_waitpid($intermediatePid, $status);
+            // Give init a moment to reap the reparented master; if still signalable, wait briefly.
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($masterPid), 1);
+            @\unlink($pair['script']);
+            @\unlink($pair['masterMarker']);
+            @\unlink($pair['parentMarker']);
+        }
+    }
+
+    /**
+     * Regression test for issue #721: ancestry verification must NOT kill
+     * the parent when the parent is not a Workerman master process.
+     *
+     * In non-daemon mode the parent of the master is the user's shell.
+     * Ancestry (`getParentPid($master) === $parentPid`) is true, but the
+     * title check must refuse — the shell must not be killed.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillNonWorkermanParentViaAncestry(): void
+    {
+        $pair = $this->forkAncestryPair(false);
+        $parentPid = $pair['parent'];
+        $masterPid = $pair['child'];
+
+        try {
+            $fingerprint = $this->captureFingerprintForPid($masterPid);
+
+            $this->assertSame(
+                $parentPid,
+                $this->inspector->getParentPid($masterPid),
+                'Master must be child of the parent for this test to be meaningful',
+            );
+
+            $this->inspector->killOrphanedIntermediateFork($parentPid, $fingerprint);
+
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($parentPid), 1);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($parentPid),
+                'killOrphanedIntermediateFork() must NOT kill a non-Workerman parent even when ancestry matches (shell safety)',
+            );
+        } finally {
+            if ($this->inspector->isProcessAlive($masterPid)) {
+                posix_kill($masterPid, SIGKILL);
+            }
+            if ($this->inspector->isProcessAlive($parentPid)) {
+                posix_kill($parentPid, SIGKILL);
+            }
+            @pcntl_waitpid($parentPid, $status);
+            // Master may already be reparented if parent died; wait a moment.
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($masterPid), 1);
+            @\unlink($pair['script']);
+            @\unlink($pair['masterMarker']);
+            @\unlink($pair['parentMarker']);
+        }
+    }
+
+    /**
+     * Fork a parent/child pair where the parent optionally carries the
+     * Workerman master process title.
+     *
+     * The parent is created with a marker file so the caller can wait for
+     * readiness; the child is forked inside the parent script so the
+     * kernel parent relationship is parent -> child. Both processes loop
+     * forever until SIGKILLed.
+     *
+     * @return array{parent: int, child: int, script: string, masterMarker: string, parentMarker: string}
+     *
+     * @requires OS Linux
+     */
+    private function forkAncestryPair(bool $parentHasTitle): array
+    {
+        $tmpDir = sys_get_temp_dir();
+        $suffix = bin2hex(random_bytes(4));
+        $script = $tmpDir . '/workerman_ancestry_' . $suffix . '.php';
+        $parentMarker = $tmpDir . '/workerman_ancestry_parent_' . $suffix;
+        $masterMarker = $tmpDir . '/workerman_ancestry_master_' . $suffix;
+
+        $scriptContent = <<<'PHP'
+<?php
+$masterMarker = $argv[1];
+$parentMarker = $argv[2];
+pcntl_async_signals(true);
+pcntl_signal(SIGINT, static function (): void { exit(0); });
+pcntl_signal(SIGTERM, static function (): void { exit(0); });
+pcntl_signal(SIGQUIT, static function (): void { exit(0); });
+$child = pcntl_fork();
+if ($child === -1) {
+    exit(1);
+}
+if ($child > 0) {
+    // Parent (intermediate / shell parent)
+    file_put_contents($parentMarker, (string) getmypid());
+    while (true) {
+        sleep(1);
+    }
+}
+// Child (master)
+file_put_contents($masterMarker, (string) getmypid());
+while (true) {
+    sleep(1);
+}
+PHP;
+        file_put_contents($script, $scriptContent);
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            if ($parentHasTitle) {
+                $title = 'WorkerMan: master process  start_file=' . __FILE__;
+                $command = 'exec -a ' . escapeshellarg($title)
+                    . ' ' . escapeshellarg(PHP_BINARY)
+                    . ' ' . escapeshellarg($script)
+                    . ' ' . escapeshellarg($masterMarker)
+                    . ' ' . escapeshellarg($parentMarker)
+                    . ' < /dev/null > /dev/null 2>&1';
+                pcntl_exec('/bin/bash', ['-c', $command]);
+                fwrite(STDERR, 'Unable to exec ancestry parent' . PHP_EOL);
+                exit(1);
+            }
+
+            // Plain parent without Workerman title.
+            pcntl_exec(PHP_BINARY, [$script, $masterMarker, $parentMarker]);
+            fwrite(STDERR, 'Unable to exec ancestry parent' . PHP_EOL);
+            exit(1);
+        }
+
+        // Parent test process: wait for both markers.
+        $this->waitForFile($parentMarker, 3);
+        $this->waitForFile($masterMarker, 3);
+        $parentPid = (int) @file_get_contents($parentMarker);
+        $childPid = (int) @file_get_contents($masterMarker);
+
+        if ($parentPid <= 0 || $childPid <= 0) {
+            // Cleanup on failure to avoid leaking.
+            posix_kill($pid, SIGKILL);
+            @pcntl_waitpid($pid, $status);
+            @unlink($script);
+            @unlink($parentMarker);
+            @unlink($masterMarker);
+            $this->fail('Ancestry pair markers must contain valid PIDs');
+        }
+
+        // $pid is the intermediate fork's PID, which is the same as $parentPid after exec.
+        // Return the actual parent PID as read from the marker (more reliable).
+        return [
+            'parent' => $parentPid,
+            'child' => $childPid,
+            'script' => $script,
+            'masterMarker' => $masterMarker,
+            'parentMarker' => $parentMarker,
+        ];
+    }
+
+    /**
      * Capture a fingerprint for an arbitrary PID by reading
      * /proc/$pid/stat and /proc/$pid/status.
      *

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ProcessInspector::killOrphanedIntermediateFork()` can now kill the hung
+  daemonize intermediate in daemon mode via ancestry verification. The old
+  fingerprint branch demanded `$parentPid === $fingerprint->pid`, but the
+  daemon-mode fingerprint is written by the master itself, so it names the
+  master PID — never the intermediate's — and the branch never fired; the
+  orphaned intermediate was only ever killed via the legacy `/proc` cmdline
+  path (unreachable when a fingerprint exists, so daemon intermediates
+  leaked). The new path keeps the direct identity check for the
+  non-daemon/matching-PID case and adds an ancestry check:
+  `getParentPid($fingerprint->pid) === $parentPid` plus a Workerman master
+  process title check on the parent, so the intermediate is killed only
+  when it really is the parent of the fingerprinted master and looks like a
+  Workerman master — the shell in non-daemon mode is not killed
+  ([#721](https://github.com/crazy-goat/workerman-bundle/issues/721))
+
 - `RequestConverter` no longer forwards a header whose name contains
   whitespace (leading, trailing or internal) under a `$_SERVER` key with a
   literal space — e.g. an obs-fold continuation (` X-Fold: b`) previously
