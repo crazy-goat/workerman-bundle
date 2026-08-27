@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Workerman master — the shell in non-daemon mode is not killed
   ([#721](https://github.com/crazy-goat/workerman-bundle/issues/721))
 
+- `ProcessInspector::killOrphanedIntermediateFork()` is no longer Linux-only
+  — the early return on non-Linux and the `getParentPid()` Linux-only
+  branch leaked one daemonize intermediate per `stop` on macOS/BSD + grpc
+  hosts even after #721. `getParentPid()` now queries
+  `ps -o ppid= -p <pid>` on non-Linux, and the Workerman master title check
+  now queries `ps -ww -o args= -p <pid>` on non-Linux, so ancestry
+  verification and the legacy fallback both work cross-platform and the
+  intermediate is cleaned up on Darwin
+  ([#722](https://github.com/crazy-goat/workerman-bundle/issues/722))
+
 - `RequestConverter` no longer forwards a header whose name contains
   whitespace (leading, trailing or internal) under a `$_SERVER` key with a
   literal space — e.g. an obs-fold continuation (` X-Fold: b`) previously
