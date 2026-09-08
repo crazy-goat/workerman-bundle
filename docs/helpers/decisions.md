@@ -20,7 +20,7 @@ whole file.
 - `env` — DEC-016
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018, DEC-019
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
 - `logging` — DEC-017
@@ -28,7 +28,7 @@ whole file.
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005, DEC-014, DEC-018
 - `middleware` — DEC-018
-- `performance` — DEC-013, DEC-018
+- `performance` — DEC-013, DEC-018, DEC-019
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016, DEC-017
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
@@ -37,6 +37,8 @@ whole file.
 - `static-files` — DEC-004
 - `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
+- `uploads` — DEC-019
+- `validation` — DEC-019
 <!-- kb-index:end -->
 
 ## Architecture / behavior
@@ -304,3 +306,28 @@ outermost first, double-`$next` re-entrancy, fresh-instance isolation) and
 the handler's docblock documents the allocation model. `tests/MiddlewarePipelineTest.php`
 intentionally re-implements the old nested composition — it is a
 contract-only test kept independent of the shipped implementation.
+
+### Upload structure is traversed once — validate-while-converting; do not reintroduce a separate validate() pass (#566)
+<!-- kb: id=DEC-019 date=2026-09-08 tags=http,performance,uploads,validation trigger="touching RequestConverter::processFileNode()/processFileEntry(), FileUploadValidator shape predicates, or thinking about adding a validate() call before conversion" hits=0 status=active -->
+
+`RequestConverter` converts the multipart upload structure in a **single**
+traversal: `processFileNode()`/`processFileEntry()` do shape recognition
+(via `FileUploadValidator::isFileList()`/`isSingleFileEntry()` — the only
+home of shape predicates), required-field checks (`assertRequiredFields()`)
+and `UploadedFile` construction in one pass (#566, PR #797). The old two-pass
+shape (`FileUploadValidator::validate()` followed by `processFiles()`) is
+deliberately gone. Do not reintroduce a standalone `validate()` call before
+conversion: it walks the structure twice and re-opens the drift that let the
+two implementations disagree about what a valid upload looks like. Two
+non-obvious properties to preserve: (1) the converter must mirror the
+validator's three-way dispatch exactly — a scalar-first list such as
+`['not an array']` is classified by `isFileList()` as a *nested associative
+container* (not a file list), so the error is "expected array"/"unrecognized
+structure", never an `UploadedFile` TypeError — assert the guard branches by
+coverage, not by exception assertion, since the same message is reachable
+from three branches; (2) nesting is one level of associative containers, by
+design (matches the validator's pre-existing boundary). Accepted deviation:
+for doubly-corrupt input (dangling `tmp_name` with `UPLOAD_ERR_OK` plus a
+later malformed field) the interleaved order can throw Symfony
+`FileNotFoundException` before `FileUploadValidationException`; unreachable
+via real Workerman, documented in PR #797.
