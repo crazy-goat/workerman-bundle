@@ -20,14 +20,15 @@ whole file.
 - `env` — DEC-016
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008
 - `logging` — DEC-017
 - `long-running` — DEC-003, DEC-014
 - `markdown` — DEC-012
-- `memory` — DEC-004, DEC-005, DEC-014
-- `performance` — DEC-013
+- `memory` — DEC-004, DEC-005, DEC-014, DEC-018
+- `middleware` — DEC-018
+- `performance` — DEC-013, DEC-018
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016, DEC-017
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
@@ -286,3 +287,20 @@ pairs → all parsed; first/middle/last asserted). Do not "fix" this by adding
 a cap: capping silently drops data and needs its own decision — the test
 fails first and forces docs/security.md to change with any behavior change.
 (#628 cycle; resolved docs-only per the issue's minimum fix.)
+
+### Middleware dispatch is index-based; do not revert to nested closures
+<!-- kb: id=DEC-018 date=2026-09-08 tags=http,performance,middleware,memory trigger="touching HttpRequestHandler::getPipeline() or the middleware dispatch mechanism" hits=0 status=active -->
+
+`HttpRequestHandler` composes its middleware pipeline through
+`MiddlewareDispatcher` (#563, PR #795) — a re-entrant, index-based walk
+(`$next = $this` inside `__invoke()`, index restored in `try/finally` so a
+double-`$next` call replays the remaining chain) — not through a nested
+closure chain. The nested shape allocated one closure per middleware layer
+per request (~0.12 us each, linear in middleware count); the dispatcher is
+one allocation per request regardless of count, with a +0.09 us fixed cost
+(crossover ~2 middlewares). Do not revert to nested closures: the shape is
+pinned by `tests/MiddlewareDispatcherTest.php` (registration order =
+outermost first, double-`$next` re-entrancy, fresh-instance isolation) and
+the handler's docblock documents the allocation model. `tests/MiddlewarePipelineTest.php`
+intentionally re-implements the old nested composition — it is a
+contract-only test kept independent of the shipped implementation.

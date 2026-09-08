@@ -15,7 +15,7 @@ your diff, read only those `###` entries — never the whole file.
 - `binary-file` — FAQ-002
 - `by-ref` — FAQ-029
 - `checksum` — FAQ-003
-- `ci` — FAQ-011, FAQ-032, FAQ-033, FAQ-034
+- `ci` — FAQ-011, FAQ-032, FAQ-033, FAQ-034, FAQ-037
 - `closures` — FAQ-023
 - `config` — FAQ-024, FAQ-035
 - `config-cache` — FAQ-005, FAQ-036
@@ -39,7 +39,7 @@ your diff, read only those `###` entries — never the whole file.
 - `http` — FAQ-001, FAQ-002, FAQ-012, FAQ-025, FAQ-027
 - `inotify` — FAQ-006
 - `jitter` — FAQ-020
-- `lint` — FAQ-015, FAQ-031
+- `lint` — FAQ-015, FAQ-031, FAQ-037
 - `listen-scheme` — FAQ-019
 - `logging` — FAQ-008
 - `long-running` — FAQ-018
@@ -50,6 +50,7 @@ your diff, read only those `###` entries — never the whole file.
 - `mocks` — FAQ-022
 - `permissions` — FAQ-005, FAQ-036
 - `php-strings` — FAQ-027
+- `php82` — FAQ-037
 - `php84` — FAQ-029
 - `phpbench` — FAQ-028
 - `phpstan` — FAQ-014, FAQ-029
@@ -64,7 +65,7 @@ your diff, read only those `###` entries — never the whole file.
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
 - `symfony-config` — FAQ-035
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -378,7 +379,13 @@ capture one small shared state object **by value** (same handle is not
 a cycle) and self-removal uses a flag on the state, not identity against
 the closure. Corollary: never store a closure *inside* an object that
 closure captures (store data, not handlers). Reference:
-`scheduleFileCleanup()` + `FileCleanupState` (issue #573).
+`scheduleFileCleanup()` + `FileCleanupState` (issue #573). Second variant,
+from the #563 cycle: a **single self-capturing re-entrant closure**
+(`$next = function () use (&$next, …)`) is also a GC cycle — a per-request
+dispatcher built this way trades allocation pressure for GC pressure. The
+class-based fix is a re-entrant `__invoke()` object that receives itself
+(`$next = $this`) without ever storing it back — refcount cleanup stays
+immediate. Canonical example: `MiddlewareDispatcher` (#563, PR #795).
 
 ## Symfony config tree
 
@@ -440,3 +447,18 @@ The workflow file is pinned by more than one test class: `tests/GithubWorkflowsT
 <!-- kb: id=FAQ-034 date=2026-08-17 tags=ci,yaml,tests trigger="locally validating a GitHub Actions workflow with a YAML deserializer" hits=0 status=active -->
 
 PyYAML `safe_load` and Ruby `YAML.load` (YAML 1.1) parse the workflow's top-level `on:` key as the boolean `true` (a YAML 1.1 bool word), so `yaml.safe_load(...)['on']` silently inspects the wrong key. A parse-error check stays sound, but structural assertions on the trigger block need either a custom loader that keeps raw scalar keys (`construct_mapping`), or — the repo's own convention — regexes on the raw text (the workflow-pinning tests use `assertMatchesRegularExpression` on the file contents, which also survives the `on:` gotcha). First hit in #597 (PR #749) while validating the trigger set locally.
+
+### New PHP syntax must be checked against the minimum supported version — local PHP 8.5 hides 8.3-only constructs
+<!-- kb: id=FAQ-037 date=2026-09-08 tags=php82,ci,lint,tests trigger="using a recently-added PHP syntax feature while composer.json allows an older minor" hits=0 status=active -->
+
+Mirror image of FAQ-029: `new readonly class` (anonymous readonly class) is
+PHP 8.3+ and a hard parse error on PHP 8.2, yet it shipped green locally in
+the #563 cycle because every tool ran on PHP 8.5.10 while `composer.json`
+allows `^8.2` and CI runs 8.2 legs — the defect only surfaced in review
+round 2, and the pre-push lint was blind to it. When a diff introduces
+recently-added syntax (anonymous readonly classes, typed class constants,
+property hooks, asymmetric visibility, `#[\Override]`), sweep the touched
+files for version-gated constructs against the *minimum* version. A local
+PHP 8.2 binary (or a lint leg pinned to the lowest matrix version) is the
+gate this lesson wants; until then, the review + the 8.2 CI leg are the
+only nets.
