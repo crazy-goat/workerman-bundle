@@ -420,6 +420,255 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
+    /**
+     * #566: the "expected array, got X" error must be raised from exactly
+     * one place now that the separate validate() pass has been collapsed
+     * into processFiles(). This test exercises the top-level non-array
+     * entry through toSymfonyRequest, which now goes through the single
+     * processFiles() traversal instead of validate() + processFiles().
+     */
+    public function testExpectedArrayErrorRaisedFromSingleTraversal(): void
+    {
+        $this->expectException(FileUploadValidationException::class);
+        $this->expectExceptionMessage('expected array, got string');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'invalid_file' => 'not an array',
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    /**
+     * #566: a non-array element inside an indexed file list (files[]) must
+     * produce "expected array, got X" from the single traversal, not a
+     * TypeError from passing a non-array to UploadedFile.
+     *
+     * The list must have a valid file entry in position 0 so isFileList()
+     * classifies it as a list (a scalar first element would push it down the
+     * nested-associative branch instead). The scalar in position 1 then hits
+     * the is_array guard inside the list-conversion loop.
+     */
+    public function testNonArrayElementInFileListThroughConverter(): void
+    {
+        $this->expectException(FileUploadValidationException::class);
+        $this->expectExceptionMessage('expected array, got string');
+
+        $tmpFile = $this->createTempFile('file 0 content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'files' => [
+                0 => [
+                    'name' => 'image0.png',
+                    'tmp_name' => $tmpFile,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                1 => 'not an array',
+            ],
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    /**
+     * #566: a non-array element in a file list nested inside an associative
+     * container (gallery[images][]) must raise "expected array, got X" from
+     * the single traversal. This exercises the is_array guard in the nested
+     * list-conversion branch, mirroring the top-level case.
+     */
+    public function testNonArrayElementInNestedFileListThroughConverter(): void
+    {
+        $this->expectException(FileUploadValidationException::class);
+        $this->expectExceptionMessage('expected array, got string');
+
+        $tmpFile = $this->createTempFile('image content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'gallery' => [
+                'images' => [
+                    0 => [
+                        'name' => 'gallery.png',
+                        'tmp_name' => $tmpFile,
+                        'type' => 'image/png',
+                        'size' => 14,
+                        'error' => \UPLOAD_ERR_OK,
+                    ],
+                    1 => 'not an array',
+                ],
+            ],
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    /**
+     * #566: contract test — nested uploads (files[], documents[0], nested
+     * associative fields) must convert to the same UploadedFile structure
+     * after collapsing to a single traversal. Verifies that the output
+     * shape (keys, UploadedFile instances, client names) is identical for
+     * single file, file list, and nested associative structures.
+     */
+    public function testNestedUploadsConvertToIdenticalUploadedFileStructure(): void
+    {
+        $tmpAvatar = $this->createTempFile('avatar content');
+        $tmpResume = $this->createTempFile('resume content');
+        $tmpDoc1 = $this->createTempFile('doc1 content');
+        $tmpDoc2 = $this->createTempFile('doc2 content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'single' => [
+                'name' => 'avatar.png',
+                'tmp_name' => $tmpAvatar,
+                'type' => 'image/png',
+                'size' => 14,
+                'error' => \UPLOAD_ERR_OK,
+            ],
+            'documents' => [
+                [
+                    'name' => 'doc1.pdf',
+                    'tmp_name' => $tmpDoc1,
+                    'type' => 'application/pdf',
+                    'size' => 11,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                [
+                    'name' => 'doc2.pdf',
+                    'tmp_name' => $tmpDoc2,
+                    'type' => 'application/pdf',
+                    'size' => 11,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+            ],
+            'user' => [
+                'avatar' => [
+                    'name' => 'avatar.png',
+                    'tmp_name' => $tmpAvatar,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                'resume' => [
+                    'name' => 'resume.pdf',
+                    'tmp_name' => $tmpResume,
+                    'type' => 'application/pdf',
+                    'size' => 15,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+            ],
+        ]);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+        $files = $symfonyRequest->files->all();
+
+        // Single file → UploadedFile (not array)
+        $this->assertInstanceOf(
+            \Symfony\Component\HttpFoundation\File\UploadedFile::class,
+            $files['single'],
+        );
+        $this->assertSame('avatar.png', $files['single']->getClientOriginalName());
+
+        // File list → array of UploadedFile with numeric keys
+        $this->assertIsArray($files['documents']);
+        $this->assertCount(2, $files['documents']);
+        $this->assertInstanceOf(
+            \Symfony\Component\HttpFoundation\File\UploadedFile::class,
+            $files['documents'][0],
+        );
+        $this->assertInstanceOf(
+            \Symfony\Component\HttpFoundation\File\UploadedFile::class,
+            $files['documents'][1],
+        );
+        $this->assertSame('doc1.pdf', $files['documents'][0]->getClientOriginalName());
+        $this->assertSame('doc2.pdf', $files['documents'][1]->getClientOriginalName());
+
+        // Nested associative → array with string keys, each an UploadedFile
+        $this->assertIsArray($files['user']);
+        $this->assertArrayHasKey('avatar', $files['user']);
+        $this->assertArrayHasKey('resume', $files['user']);
+        $this->assertInstanceOf(
+            \Symfony\Component\HttpFoundation\File\UploadedFile::class,
+            $files['user']['avatar'],
+        );
+        $this->assertInstanceOf(
+            \Symfony\Component\HttpFoundation\File\UploadedFile::class,
+            $files['user']['resume'],
+        );
+        $this->assertSame('avatar.png', $files['user']['avatar']->getClientOriginalName());
+        $this->assertSame('resume.pdf', $files['user']['resume']->getClientOriginalName());
+    }
+
+    /**
+     * #566: contract test — a file list nested inside a nested associative
+     * container (gallery[images][]) must convert correctly in the single
+     * traversal.
+     */
+    public function testFileListNestedInAssociativeContainerConvertsCorrectly(): void
+    {
+        $tmpImg1 = $this->createTempFile('image1 content');
+        $tmpImg2 = $this->createTempFile('image2 content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'gallery' => [
+                'images' => [
+                    [
+                        'name' => 'image1.jpg',
+                        'tmp_name' => $tmpImg1,
+                        'type' => 'image/jpeg',
+                        'size' => 15,
+                        'error' => \UPLOAD_ERR_OK,
+                    ],
+                    [
+                        'name' => 'image2.jpg',
+                        'tmp_name' => $tmpImg2,
+                        'type' => 'image/jpeg',
+                        'size' => 15,
+                        'error' => \UPLOAD_ERR_OK,
+                    ],
+                ],
+            ],
+        ]);
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+        $files = $symfonyRequest->files->all();
+
+        $this->assertArrayHasKey('gallery', $files);
+        $this->assertIsArray($files['gallery']);
+        $this->assertArrayHasKey('images', $files['gallery']);
+        $this->assertIsArray($files['gallery']['images']);
+        $this->assertCount(2, $files['gallery']['images']);
+        $this->assertSame('image1.jpg', $files['gallery']['images'][0]->getClientOriginalName());
+        $this->assertSame('image2.jpg', $files['gallery']['images'][1]->getClientOriginalName());
+    }
+
+    /**
+     * #566: the "unrecognized structure" error must still be raised from
+     * the single traversal for a nested array that is neither a file list,
+     * a single file entry, nor a valid nested container.
+     */
+    public function testUnrecognizedStructureRaisedFromSingleTraversal(): void
+    {
+        $this->expectException(FileUploadValidationException::class);
+        $this->expectExceptionMessage('unrecognized structure');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'nested' => [
+                'unrecognized' => [
+                    'foo' => 'bar',
+                ],
+            ],
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
     public function testHeadersAreAvailableInServerBag(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";

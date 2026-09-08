@@ -95,7 +95,6 @@ final class RequestConverter
         // Fast-path: most requests carry no files — skip validation
         // and processing to keep the hot path lean.
         if ($files !== []) {
-            FileUploadValidator::validate($files);
             $files = self::processFiles($files);
         }
 
@@ -437,47 +436,124 @@ final class RequestConverter
     }
 
     /**
-     * Recursively convert Workerman's $_FILES-style arrays to UploadedFile objects.
+     * Recursively convert Workerman's $_FILES-style arrays to UploadedFile
+     * objects, validating the structure in the same single traversal.
      *
-     * Workerman returns nested arrays for multiple file uploads (e.g., files[] or documents[0]),
-     * but Symfony's Request expects UploadedFile objects in the files ParameterBag.
+     * Workerman returns nested arrays for multiple file uploads (e.g., files[]
+     * or documents[0]), but Symfony's Request expects UploadedFile objects in
+     * the files ParameterBag.
+     *
+     * Shape recognition (isSingleFileEntry, isFileList) and error-message
+     * construction are delegated to FileUploadValidator so there is exactly
+     * one source of truth for what a valid upload looks like. This replaces
+     * the former two-pass design where validate() walked the structure first
+     * and processFiles() walked it again.
      *
      * @param array<string, mixed> $files
      *
      * @return array<string, mixed>
+     *
+     * @throws FileUploadValidationException if file structure is malformed
      */
     private static function processFiles(array $files): array
     {
         $result = [];
         foreach ($files as $key => $value) {
-            if (!is_array($value)) {
-                throw new FileUploadValidationException(
-                    \sprintf(
-                        'Malformed file upload data for field "%s": expected array, got %s',
-                        $key,
-                        \gettype($value),
-                    ),
-                );
-            }
-
-            // Check if this is a single file entry using shared shape recognition
-            if (FileUploadValidator::isSingleFileEntry($value)) {
-                $type = $value['type'] ?? 'application/octet-stream';
-                $error = $value['error'] ?? \UPLOAD_ERR_OK;
-
-                $result[$key] = new UploadedFile(
-                    $value['tmp_name'],
-                    $value['name'] ?? '',
-                    $type === '' ? 'application/octet-stream' : $type,
-                    $error,
-                    true,
-                );
-            } else {
-                // Nested array - recurse
-                $result[$key] = self::processFiles($value);
-            }
+            $result[$key] = self::processFileNode((string) $key, $value);
         }
 
         return $result;
+    }
+
+    /**
+     * Process a single node of the upload tree: validate its shape and
+     * convert it to an UploadedFile (leaf) or recurse (container).
+     *
+     * @param string $fieldName The dotted field path for error messages
+     * @param mixed  $value     The node value from the files array
+     *
+     * @return mixed UploadedFile for a leaf, array for a container
+     *
+     * @throws FileUploadValidationException if the structure is malformed
+     */
+    private static function processFileNode(string $fieldName, mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            throw FileUploadValidator::expectedArrayError($fieldName, $value);
+        }
+
+        if (FileUploadValidator::isFileList($value)) {
+            $list = [];
+            foreach ($value as $index => $entry) {
+                $entryFieldName = $fieldName . '[' . $index . ']';
+                if (!is_array($entry)) {
+                    throw FileUploadValidator::expectedArrayError($entryFieldName, $entry);
+                }
+                $list[$index] = self::processFileEntry($entryFieldName, $entry);
+            }
+
+            return $list;
+        }
+
+        if (FileUploadValidator::isSingleFileEntry($value)) {
+            return self::processFileEntry($fieldName, $value);
+        }
+
+        // Nested associative container — recurse into each sub-field.
+        // This mirrors validateNestedAssociative: each child must be an
+        // array, and must itself be a file list, a single file entry, or
+        // a nested container. A child that is an array but none of these
+        // is an unrecognized structure; a non-array child is "expected
+        // array".
+        $nested = [];
+        foreach ($value as $subKey => $subValue) {
+            $nestedFieldName = $fieldName . '[' . $subKey . ']';
+            if (!is_array($subValue)) {
+                throw FileUploadValidator::expectedArrayError($nestedFieldName, $subValue);
+            }
+
+            if (FileUploadValidator::isFileList($subValue)) {
+                $list = [];
+                foreach ($subValue as $index => $entry) {
+                    $entryFieldName = $nestedFieldName . '[' . $index . ']';
+                    if (!is_array($entry)) {
+                        throw FileUploadValidator::expectedArrayError($entryFieldName, $entry);
+                    }
+                    $list[$index] = self::processFileEntry($entryFieldName, $entry);
+                }
+                $nested[$subKey] = $list;
+            } elseif (FileUploadValidator::isSingleFileEntry($subValue)) {
+                $nested[$subKey] = self::processFileEntry($nestedFieldName, $subValue);
+            } else {
+                throw FileUploadValidator::unrecognizedStructureError($nestedFieldName, $subValue);
+            }
+        }
+
+        return $nested;
+    }
+
+    /**
+     * Convert a single file entry array to an UploadedFile, after asserting
+     * all required fields are present.
+     *
+     * @param string               $fieldName The form field name
+     * @param array<string, mixed> $file      The file entry array
+     *
+     * @throws FileUploadValidationException if required fields are missing
+     */
+    private static function processFileEntry(string $fieldName, array $file): UploadedFile
+    {
+        FileUploadValidator::assertRequiredFields($fieldName, $file);
+
+        $type = $file['type'] ?? 'application/octet-stream';
+        $error = $file['error'] ?? \UPLOAD_ERR_OK;
+
+        return new UploadedFile(
+            $file['tmp_name'],
+            $file['name'] ?? '',
+            $type === '' ? 'application/octet-stream' : $type,
+            $error,
+            true,
+        );
     }
 }
