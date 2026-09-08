@@ -1611,6 +1611,71 @@ PHP;
     }
 
     /**
+     * Fail-closed: the unreadable-UID branch of `matchesFingerprint()` must
+     * refuse an ALIVE process whose UID could not be read.
+     *
+     * A real live process on Linux always yields a readable UID, so the
+     * `$snapshot->uid === null` branch (ProcessInspector line ~133) cannot be
+     * reached through a genuine `/proc` read — it is only hit when
+     * `/proc/{pid}/status` is unreadable (e.g. hidepid) while the stat file
+     * still reports a non-zombie state. This test exercises that branch
+     * directly via the extracted `snapshotMatchesFingerprint()` seam with a
+     * crafted live snapshot (state 'S', uid null) and a matching fingerprint.
+     *
+     * @requires OS Linux
+     */
+    public function testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess(): void
+    {
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(1234, 100, \posix_getuid());
+        // Alive (state 'S', not a zombie) but UID unreadable → must refuse.
+        $snapshot = new \CrazyGoat\WorkermanBundle\ProcessSnapshot('S', 100, null);
+
+        $this->assertFalse(
+            $this->invokeSnapshotMatchesFingerprint($snapshot, $fingerprint),
+            'An alive process with an unreadable UID must fail closed',
+        );
+    }
+
+    /**
+     * Fail-closed: the unreadable-start-time branch of `matchesFingerprint()`
+     * must refuse an ALIVE process whose start time could not be read.
+     *
+     * A real live process on Linux always yields a non-zero start time
+     * (field 22 of /proc/{pid}/stat), so `$snapshot->startTime === 0`
+     * (ProcessInspector line ~156) can only be hit when the stat file is
+     * readable but field 22 is missing/malformed. This test exercises that
+     * branch directly via the extracted `snapshotMatchesFingerprint()` seam
+     * with a crafted live snapshot (state 'S', startTime 0) and a fingerprint
+     * carrying a real start time.
+     *
+     * @requires OS Linux
+     */
+    public function testSnapshotMatchesFingerprintFailsClosedForUnreadableStartTimeOnAliveProcess(): void
+    {
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(1234, 100, \posix_getuid());
+        // Alive (state 'S', not a zombie) but start time unreadable → must refuse.
+        $snapshot = new \CrazyGoat\WorkermanBundle\ProcessSnapshot('S', 0, \posix_getuid());
+
+        $this->assertFalse(
+            $this->invokeSnapshotMatchesFingerprint($snapshot, $fingerprint),
+            'An alive process with an unreadable start time must fail closed',
+        );
+    }
+
+    /**
+     * Invoke the private `snapshotMatchesFingerprint()` method via reflection.
+     */
+    private function invokeSnapshotMatchesFingerprint(
+        \CrazyGoat\WorkermanBundle\ProcessSnapshot $snapshot,
+        \CrazyGoat\WorkermanBundle\MasterFingerprint $fingerprint,
+    ): bool {
+        $reflection = new ReflectionClass($this->inspector);
+        $method = $reflection->getMethod('snapshotMatchesFingerprint');
+
+        return $method->invoke($this->inspector, $snapshot, $fingerprint);
+    }
+
+    /**
      * Fail-closed: `matchesFingerprint()` must return false for a
      * non-existent PID (snapshot is null → not alive → refuse).
      */

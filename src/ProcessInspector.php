@@ -130,71 +130,28 @@ final readonly class ProcessInspector
                 return false;
             }
 
-            if ($snapshot->uid === null) {
-                // UID could not be read but the process is alive (state is
-                // not 'Z'). Fail closed and log so the degraded mode is
-                // visible in production.
-                $this->logger->warning('Cannot read UID for fingerprint verification; refusing to signal', [
-                    'pid' => $pid,
-                    'expected_uid' => $fingerprint->uid,
-                ]);
+            return $this->snapshotMatchesFingerprint($snapshot, $fingerprint);
+        }
 
-                return false;
-            }
+        // Non-Linux: PID + UID verification only. Start time is recorded
+        // as 0 and the start-time check is skipped. Cross-process UID
+        // read requires /proc which is unavailable, so UID is verified
+        // via posix_getuid() of the current process as a best-effort
+        // match. The isProcessAlive() call below uses the non-Linux
+        // pcntl_waitpid/ps path (isAliveNonLinux), unchanged.
+        if (!$this->isProcessAlive($pid)) {
+            return false;
+        }
 
-            if ($snapshot->uid !== $fingerprint->uid) {
-                $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
-                    'pid' => $pid,
-                    'expected_uid' => $fingerprint->uid,
-                    'actual_uid' => $snapshot->uid,
-                ]);
+        $currentUid = \posix_getuid();
+        if ($currentUid !== $fingerprint->uid) {
+            $this->logger->warning('Current process UID does not match master fingerprint; refusing to signal', [
+                'pid' => $pid,
+                'expected_uid' => $fingerprint->uid,
+                'actual_uid' => $currentUid,
+            ]);
 
-                return false;
-            }
-
-            if ($fingerprint->startTime > 0) {
-                if ($snapshot->startTime === 0) {
-                    // Process is alive (state is not 'Z') but start time is
-                    // unreadable — fail closed.
-                    $this->logger->warning('Cannot read start time for fingerprint verification; refusing to signal', [
-                        'pid' => $pid,
-                        'expected_start_time' => $fingerprint->startTime,
-                    ]);
-
-                    return false;
-                }
-
-                if ($snapshot->startTime !== $fingerprint->startTime) {
-                    $this->logger->warning('Process start time does not match master fingerprint; refusing to signal', [
-                        'pid' => $pid,
-                        'expected_start_time' => $fingerprint->startTime,
-                        'actual_start_time' => $snapshot->startTime,
-                    ]);
-
-                    return false;
-                }
-            }
-        } else {
-            // Non-Linux: PID + UID verification only. Start time is recorded
-            // as 0 and the start-time check is skipped. Cross-process UID
-            // read requires /proc which is unavailable, so UID is verified
-            // via posix_getuid() of the current process as a best-effort
-            // match. The isProcessAlive() call below uses the non-Linux
-            // pcntl_waitpid/ps path (isAliveNonLinux), unchanged.
-            if (!$this->isProcessAlive($pid)) {
-                return false;
-            }
-
-            $currentUid = \posix_getuid();
-            if ($currentUid !== $fingerprint->uid) {
-                $this->logger->warning('Current process UID does not match master fingerprint; refusing to signal', [
-                    'pid' => $pid,
-                    'expected_uid' => $fingerprint->uid,
-                    'actual_uid' => $currentUid,
-                ]);
-
-                return false;
-            }
+            return false;
         }
 
         return true;
@@ -562,6 +519,71 @@ final readonly class ProcessInspector
         $uid = MasterFingerprint::readUidForPid($pid);
 
         return new ProcessSnapshot($state, $startTime, $uid);
+    }
+
+    /**
+     * Verify a live Linux process snapshot against the master fingerprint.
+     *
+     * Given a snapshot that has already passed the liveness check (state is
+     * non-null and non-'Z'), verify the identity fields. Fail-closed: an
+     * unreadable UID (`null`), a UID mismatch, an unreadable start time
+     * (`0` when the fingerprint recorded one), or a start-time mismatch each
+     * cause the verification to refuse (return false), never to succeed.
+     *
+     * Extracted from {@see matchesFingerprint()} so the fail-closed branches
+     * can be exercised directly with a crafted snapshot (a real live process
+     * always yields a readable UID and a non-zero start time, so the
+     * unreadable-field branches cannot be reached through a real `/proc`
+     * read).
+     */
+    private function snapshotMatchesFingerprint(\CrazyGoat\WorkermanBundle\ProcessSnapshot $snapshot, \CrazyGoat\WorkermanBundle\MasterFingerprint $fingerprint): bool
+    {
+        if ($snapshot->uid === null) {
+            // UID could not be read but the process is alive (state is
+            // not 'Z'). Fail closed and log so the degraded mode is
+            // visible in production.
+            $this->logger->warning('Cannot read UID for fingerprint verification; refusing to signal', [
+                'pid' => $fingerprint->pid,
+                'expected_uid' => $fingerprint->uid,
+            ]);
+
+            return false;
+        }
+
+        if ($snapshot->uid !== $fingerprint->uid) {
+            $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
+                'pid' => $fingerprint->pid,
+                'expected_uid' => $fingerprint->uid,
+                'actual_uid' => $snapshot->uid,
+            ]);
+
+            return false;
+        }
+
+        if ($fingerprint->startTime > 0) {
+            if ($snapshot->startTime === 0) {
+                // Process is alive (state is not 'Z') but start time is
+                // unreadable — fail closed.
+                $this->logger->warning('Cannot read start time for fingerprint verification; refusing to signal', [
+                    'pid' => $fingerprint->pid,
+                    'expected_start_time' => $fingerprint->startTime,
+                ]);
+
+                return false;
+            }
+
+            if ($snapshot->startTime !== $fingerprint->startTime) {
+                $this->logger->warning('Process start time does not match master fingerprint; refusing to signal', [
+                    'pid' => $fingerprint->pid,
+                    'expected_start_time' => $fingerprint->startTime,
+                    'actual_start_time' => $snapshot->startTime,
+                ]);
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

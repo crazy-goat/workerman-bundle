@@ -1,0 +1,10 @@
+# Findings Review — Issue #567: ProcessInspector liveness poll /proc read reduction
+
+## Round 1
+
+| # | File:line | What is wrong | Severity | Status |
+|---|---|---|---|---|
+| F-1 | tests/ProcessInspectorTest.php (no test at the `$snapshot->uid === null` branch, src/ProcessInspector.php:133) | Missing test for unreadable UID with alive process. `testMatchesFingerprintFailsClosedForMismatchedUid` tests UID mismatch, not unreadable UID. The `$snapshot->uid === null` branch in `matchesFingerprint()` is not directly exercised — `testReadLinuxProcessSnapshotReturnsNullForNonExistentPid` tests the entire snapshot being null (process gone), not alive process with unreadable status. Acceptance criterion explicitly requires this test. | medium | fixed — `testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess` (new, Linux-only, round 1 fix) |
+| F-2 | tests/ProcessInspectorTest.php (no test at the `$snapshot->startTime === 0` branch, src/ProcessInspector.php:156) | Missing test for unreadable start time with alive process. `testMatchesFingerprintFailsClosedForMismatchedStartTime` tests start time mismatch, not unreadable start time (startTime=0 with fingerprint startTime>0 and process alive). The `$snapshot->startTime === 0` branch is not directly exercised. Acceptance criterion explicitly requires this test. | medium | fixed — `testSnapshotMatchesFingerprintFailsClosedForUnreadableStartTimeOnAliveProcess` (new, Linux-only, round 1 fix) |
+| F-3 | src/ProcessInspector.php:487-516, 534-565; src/MasterFingerprint.php:72-106 | Duplicated /proc/{pid}/stat parsing logic (find last `)` then split) in three places. If parsing needs to change, all three must be updated. Coder noted as out of scope. | low | deliberately not fixed — out of scope, could be a follow-up refactor issue |
+| F-4 | src/ProcessInspector.php:129; tests/ProcessInspectorTest.php (multiple) | FQCN `\CrazyGoat\WorkermanBundle\ProcessSnapshot` used instead of import. Consistent with existing convention in the file (`MasterFingerprint` used the same way). | nit | not a real finding — consistent with existing codebase style |

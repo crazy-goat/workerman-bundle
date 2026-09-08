@@ -83,3 +83,48 @@ non-Linux branch since the Linux branch now uses the snapshot for liveness).
   This is pre-existing and unrelated to this issue (I did not touch
   docs/helpers/). Noted for awareness.
 - **Suggested fix:** Promote or drop entries per the docs/helpers workflow.
+
+---
+
+## Round-1 fix (review findings F-1/F-2)
+
+### Biggest problem faced
+
+The two medium findings required tests exercising the `$snapshot->uid === null`
+and `$snapshot->startTime === 0` fail-closed branches of `matchesFingerprint()`
+**with an alive process**. Neither branch can be reached through a real `/proc`
+read: a live Linux process always exposes a readable UID in `/proc/{pid}/status`
+and a non-zero start-time field (field 22 of `/proc/{pid}/stat`). Making
+`/proc/{pid}/status` genuinely unreadable requires a `hidepid` mount (root /
+kernel config, not portable in unit tests), and `ProcessInspector` is `final
+readonly` (not mockable) while `MasterFingerprint::readUidForPid()` is a public
+static (not monkey-patchable). So the only clean seam is to extract the branch
+decision into a method that takes a `ProcessSnapshot` and call it from tests
+with a crafted snapshot via reflection.
+
+### New findings this round
+
+### 5. `matchesFingerprint()` test seam lives in production code
+- **File:** `src/ProcessInspector.php` — new private
+  `snapshotMatchesFingerprint()` extracted from the Linux branch of
+  `matchesFingerprint()`.
+- **Problem:** This adds a small private method purely to make the fail-closed
+  branches testable. It is low-risk (private, dead-ends in `matchesFingerprint`,
+  public behavior unchanged) but is a production-code change driven by test
+  coverage.
+- **Suggested fix:** Accept as-is. If the `ProcessInspector` `final readonly`
+  constraint ever changes, an injectable snapshot-reader dependency would remove
+  the extraction *and* make the unreadable-field branches reachable through
+  the real `matchesFingerprint()` path (cleaner acceptance-criterion coverage).
+  (No action required now.)
+
+### 6. The mismatch tests could stay but are redundant after the extraction guard
+- **File:** `tests/ProcessInspectorTest.php` — `testMatchesFingerprintFailsClosedForMismatchedUid` (line 1528) and `testMatchesFingerprintFailsClosedForMismatchedStartTime` (line 1584).
+- **Problem:** These still exercise the full `matchesFingerprint()` → real-snapshot → `uid !== fingerprint->uid` / startTime-mismatch branches, which complement the new crafted-snapshot tests. Not redundant — keep both. No change needed.
+- **Suggested fix:** None.
+
+### 7. `readLinuxProcessSnapshot()` still reads whole `/proc/{pid}/status` for UID
+- **File:** `src/ProcessInspector.php:562` (`readLinuxProcessSnapshot` → `MasterFingerprint::readUidForPid`), `src/MasterFingerprint.php:114-135`.
+- **Problem:** Already flagged as round-1 coder finding #2. Confirmed out of scope — one read per verification, not per poll. Note only.
+- **Suggested fix:** See round-1 findings #2.
+

@@ -69,6 +69,39 @@ and the non-Linux path are clearly separated.
    `waitForProcessToStop()`. Keeping `readProcessStateFromStat()` as a
    standalone single-read method is cheaper for the poll loop.
 
+## Round-1 fix (review findings F-1/F-2)
+
+The review's two medium findings wanted direct tests for the fail-closed
+"unreadable UID" and "unreadable start time" branches of
+`matchesFingerprint()` on an ALIVE process. These branches cannot be reached
+through a real `/proc` read: a live process always yields a readable UID and a
+non-zero start time. To make them testable with a crafted snapshot, I extracted
+the fail-closed identity checks of the Linux branch into a new private method
+`snapshotMatchesFingerprint(ProcessSnapshot, MasterFingerprint): bool`.
+
+### What I rejected
+
+1. **Making `/proc/{pid}/status` genuinely unreadable in a test** (chmod, or
+   `hidepid` mount) — rejected: `/proc` permissions are kernel-controlled, and
+   hidepid requires root/CI config that is not portable. Such a test would be
+   environment-dependent and flaky.
+2. **Mocking `ProcessInspector` / `MasterFingerprint::readUidForPid()`** —
+   rejected: `ProcessInspector` is `final readonly` (PHPUnit cannot mock it),
+   and `readUidForPid()` is a public static (cannot be monkey-patched).
+3. **Mirroring the mismatch tests but somehow forcing uid=null via a custom
+   stream wrapper** — rejected: PHP stream wrappers cannot override the bare
+   `file`/`/proc` filesystem scheme.
+
+The extraction keeps `matchesFingerprint()`'s public behavior byte-for-byte
+identical (the moved branch bodies are unchanged) and adds the smallest test
+seam. This matches the reviewer's explicit suggestion to "allow injecting a
+null UID/start time on a live process."
+
+- F-3 (duplicated /proc stat parsing) — deliberately not fixed; out of scope,
+  candidate follow-up refactor issue.
+- F-4 (FQCN style nit) — not fixed; not a real finding, consistent with the
+  existing codebase convention.
+
 ## Uncertainties
 
 - The `readProcessStateFromStat()` method reads the full `/proc/{pid}/stat`
