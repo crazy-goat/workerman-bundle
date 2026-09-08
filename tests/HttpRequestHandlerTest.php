@@ -425,7 +425,7 @@ final class HttpRequestHandlerTest extends TestCase
         );
     }
 
-    public function testInvokeMiddlewaresAppliedInReverseOrder(): void
+    public function testInvokeWithMultipleMiddlewaresAllHeadersInResponse(): void
     {
         $connection = new MockTcpConnection();
         $request = new Request(self::HTTP11);
@@ -439,12 +439,12 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString(
             'X-Order-A: first',
             $connection->sentData[0],
-            'Middleware A (inner) should add its header',
+            'Middleware A should add its header',
         );
         $this->assertStringContainsString(
             'X-Order-B: second',
             $connection->sentData[0],
-            'Middleware B (outer) should add its header',
+            'Middleware B should add its header',
         );
     }
 
@@ -1571,21 +1571,15 @@ final class HttpRequestHandlerTest extends TestCase
         self::assertSame(['counting'], $invocations, 'First request should dispatch the middleware exactly once');
         self::assertStringContainsString('200', $connection1->sentData[0]);
 
-        // Second request: different connection, different request path —
-        // a 404 via a kernel that returns 404.
-        $kernel404 = new HttpHandlerTestKernel(new SymfonyResponse('Not Found', SymfonyResponse::HTTP_NOT_FOUND));
-        $controller404 = new SymfonyController($kernel404, $this->responseConverter);
-        $handler404 = new HttpRequestHandler($controller404, $this->rebootStrategy, new NullLogger());
-        $handler404->withMiddlewares($countingMiddleware);
-
+        // Second request: different connection, different request path,
+        // same handler. The dispatcher must start fresh — no index or
+        // state leak from the first request.
         $connection2 = new MockTcpConnection();
         $request2 = new Request("GET /other HTTP/1.1\r\nHost: test\r\n\r\n");
         ($this->handler)($connection2, $request2);
 
         // The middleware should have been invoked exactly twice total (once
-        // per request), and the second request should produce a 200 (using
-        // the same handler/kernel that produced a 200 the first time — no
-        // state leak from the 404 handler we also created).
+        // per request), and the second request should produce a fresh 200.
         self::assertSame(['counting', 'counting'], $invocations, 'Second request should dispatch the middleware exactly once more');
         self::assertStringContainsString('200', $connection2->sentData[0], 'Second request via the same handler must get a fresh 200 response');
     }

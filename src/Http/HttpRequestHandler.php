@@ -49,9 +49,10 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  *
  * Middleware composition: middlewares are added via withMiddlewares() /
  * withRootDirectory(). The pipeline is invalidated on every setter call and
- * rebuilt lazily on the next request. A middleware that sets
- * $connection->context->responseSentDirectly = true can fully short-circuit
- * the response-send step.
+ * rebuilt lazily on the next request. The response-send step is skipped
+ * when $connection->context->responseSentDirectly is set — typically by a
+ * response strategy (StreamedResponseStrategy) that has already sent the
+ * response directly, though a middleware may also set it.
  *
  * Per-request allocations: one thin controller closure
  * (fn(Request): Http\Response) which captures the current TcpConnection, and

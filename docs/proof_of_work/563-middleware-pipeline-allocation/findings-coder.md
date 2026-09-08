@@ -128,3 +128,43 @@ prefer a dedicated class with `__invoke` that passes `$this` as the
 continuation callable — no cycle, immediate refcount-based cleanup. This is
 the dispatcher pattern used by `MiddlewareDispatcher` (issue #563). See
 also FAQ-023 for the long-lived cycle variant.
+
+## Round 1 review fixes
+
+Addressed all four findings from `findings-review.md`:
+
+- **F-1 (medium):** Created `tests/MiddlewareDispatcherTest.php` with 7
+  tests pinning the shipped `MiddlewareDispatcher` directly: registration
+  order, reversed-order contrast, controller-as-innermost, zero-middlewares,
+  short-circuit, and fresh-instance isolation. Flipping the index walk
+  would fail `testMiddlewaresExecuteInRegistrationOrder`.
+- **F-2 (low):** Added
+  `testDoubleNextCallDispatchesRemainingChainTwice` in the same file —
+  verified that removing the try/finally restore causes this test to fail
+  (second `$next` call skips `inner`, goes directly to `controller`).
+- **F-3 (low):** Removed the dead `$kernel404`/`$controller404`/`$handler404`
+  construction from `testHandlerIsSafeForReuseAcrossTwoDifferentRequests`
+  and corrected the comment.
+- **F-4 (nit):** Renamed `testInvokeMiddlewaresAppliedInReverseOrder` →
+  `testInvokeWithMultipleMiddlewaresAllHeadersInResponse`; clarified
+  `MiddlewareInterface` and `HttpRequestHandler` docblocks to state
+  `responseSentDirectly` is set by response strategies
+  (StreamedResponseStrategy), not by middleware directly.
+
+### New observations during review fixes
+
+- **`tests/MiddlewarePipelineTest.php:122-133`** — The
+  `executeMiddlewarePipeline` helper still re-implements the old
+  nested-closure composition. It tests the middleware *contract*
+  (order, short-circuit, exception propagation) independently of the
+  handler's dispatch mechanism, which is valuable — but it's now a
+  divergent copy of the old internals. Not changed in this round
+  (pre-existing, not introduced by #563), but noted for a future
+  refactor: consider re-basing the helper on `MiddlewareDispatcher`
+  or documenting it as an intentional contract-only test.
+
+- **`Workerman\Protocols\Http\Response::rawBody()` returns `string`**
+  — Rector flagged a redundant `(string)` cast in the new test.
+  `rawBody()` is already typed `string` in the vendored Workerman
+  source, so the cast is unnecessary. Other tests in the suite may
+  have the same redundant cast pattern.
