@@ -52,8 +52,15 @@ final class FileUploadValidator
 
     /**
      * Validate the structure of uploaded files array.
+     *
      * Workerman should always return properly structured file data, but this
      * provides clearer error messages if something goes wrong.
+     *
+     * Kept as a standalone entry point for callers that validate without
+     * converting (e.g. FileUploadValidatorTest). The RequestConverter hot
+     * path no longer calls this — processFiles() performs the same checks
+     * inline during its single traversal, using the predicates and
+     * error-construction helpers below as the single source of truth.
      *
      * @param array<string, mixed> $files
      *
@@ -71,116 +78,18 @@ final class FileUploadValidator
     }
 
     /**
-     * Validate a single file entry structure.
+     * Assert that a single file entry array contains all required fields.
      *
-     * @param string $fieldName The form field name
-     * @param mixed  $fileData  The file data to validate
-     *
-     * @throws FileUploadValidationException if file structure is malformed
-     */
-    private static function validateFileEntry(string $fieldName, mixed $fileData): void
-    {
-        if (!is_array($fileData)) {
-            throw new FileUploadValidationException(
-                sprintf(
-                    'Malformed file upload data for field "%s": expected array, got %s',
-                    $fieldName,
-                    gettype($fileData),
-                ),
-            );
-        }
-
-        if (self::isFileList($fileData)) {
-            self::validateFileList($fieldName, $fileData);
-
-            return;
-        }
-
-        if (self::isSingleFileEntry($fileData)) {
-            self::validateSingleFileArray($fieldName, $fileData);
-
-            return;
-        }
-
-        self::validateNestedAssociative($fieldName, $fileData);
-    }
-
-    /**
-     * Validate an indexed list of file entries.
-     *
-     * @param string        $fieldName The form field name
-     * @param array<int, mixed> $list      The list of file entries
-     *
-     * @throws FileUploadValidationException if file structure is malformed
-     */
-    private static function validateFileList(string $fieldName, array $list): void
-    {
-        foreach ($list as $index => $entry) {
-            $entryFieldName = $fieldName . '[' . $index . ']';
-            if (!is_array($entry)) {
-                throw new FileUploadValidationException(
-                    sprintf(
-                        'Malformed file upload data for field "%s": expected array, got %s',
-                        $entryFieldName,
-                        gettype($entry),
-                    ),
-                );
-            }
-            self::validateSingleFileArray($entryFieldName, $entry);
-        }
-    }
-
-    /**
-     * Validate a nested associative array structure.
-     *
-     * Each sub-field is validated as a file list, single file entry, or falls through
-     * to an unrecognized-structure error.
-     *
-     * @param string             $fieldName The form field name
-     * @param array<string, mixed> $data      The nested associative array
-     *
-     * @throws FileUploadValidationException if file structure is malformed
-     */
-    private static function validateNestedAssociative(string $fieldName, array $data): void
-    {
-        foreach ($data as $subFieldName => $subFileData) {
-            $nestedFieldName = $fieldName . '[' . $subFieldName . ']';
-            if (!is_array($subFileData)) {
-                throw new FileUploadValidationException(
-                    sprintf(
-                        'Malformed file upload data for field "%s": expected array, got %s',
-                        $nestedFieldName,
-                        gettype($subFileData),
-                    ),
-                );
-            }
-
-            if (self::isFileList($subFileData)) {
-                self::validateFileList($nestedFieldName, $subFileData);
-            } elseif (self::isSingleFileEntry($subFileData)) {
-                self::validateSingleFileArray($nestedFieldName, $subFileData);
-            } else {
-                throw new FileUploadValidationException(
-                    sprintf(
-                        'Malformed file upload data for field "%s": unrecognized structure. ' .
-                        'Expected file keys (name, tmp_name) or array of files. Got keys: %s',
-                        $nestedFieldName,
-                        implode(', ', array_keys($subFileData)),
-                    ),
-                );
-            }
-        }
-    }
-
-    /**
-     * Validate a single file array has required fields.
+     * Called by RequestConverter::processFiles() inline during conversion so
+     * the required-field check happens in the same pass as shape recognition
+     * and UploadedFile construction — no second traversal.
      *
      * @param string               $fieldName The form field name
-     * @param array<string, mixed> $file      The file array to validate
+     * @param array<string, mixed> $file      The file array to check
      *
      * @throws FileUploadValidationException if required fields are missing
      */
-    private static function validateSingleFileArray(string $fieldName, array $file): void
+    public static function assertRequiredFields(string $fieldName, array $file): void
     {
         foreach (self::REQUIRED_FIELDS as $field) {
             if (!array_key_exists($field, $file)) {
@@ -194,6 +103,124 @@ final class FileUploadValidator
                         implode(', ', array_keys($file)),
                     ),
                 );
+            }
+        }
+    }
+
+    /**
+     * Build the "expected array, got X" error for a field.
+     *
+     * Single source of truth for this message — RequestConverter calls this
+     * from processFiles() instead of constructing its own copy.
+     *
+     * @param string $fieldName The form field name
+     * @param mixed  $value     The non-array value that was encountered
+     */
+    public static function expectedArrayError(string $fieldName, mixed $value): FileUploadValidationException
+    {
+        return new FileUploadValidationException(
+            sprintf(
+                'Malformed file upload data for field "%s": expected array, got %s',
+                $fieldName,
+                gettype($value),
+            ),
+        );
+    }
+
+    /**
+     * Build the "unrecognized structure" error for a nested field.
+     *
+     * Single source of truth for this message — RequestConverter calls this
+     * from processFiles() instead of constructing its own copy.
+     *
+     * @param string               $fieldName The form field name
+     * @param array<string, mixed> $data      The unrecognized array
+     */
+    public static function unrecognizedStructureError(string $fieldName, array $data): FileUploadValidationException
+    {
+        return new FileUploadValidationException(
+            sprintf(
+                'Malformed file upload data for field "%s": unrecognized structure. ' .
+                'Expected file keys (name, tmp_name) or array of files. Got keys: %s',
+                $fieldName,
+                implode(', ', array_keys($data)),
+            ),
+        );
+    }
+
+    /**
+     * Validate a single file entry structure.
+     *
+     * @param string $fieldName The form field name
+     * @param mixed  $fileData  The file data to validate
+     *
+     * @throws FileUploadValidationException if file structure is malformed
+     */
+    private static function validateFileEntry(string $fieldName, mixed $fileData): void
+    {
+        if (!is_array($fileData)) {
+            throw self::expectedArrayError($fieldName, $fileData);
+        }
+
+        if (self::isFileList($fileData)) {
+            self::validateFileList($fieldName, $fileData);
+
+            return;
+        }
+
+        if (self::isSingleFileEntry($fileData)) {
+            self::assertRequiredFields($fieldName, $fileData);
+
+            return;
+        }
+
+        self::validateNestedAssociative($fieldName, $fileData);
+    }
+
+    /**
+     * Validate an indexed list of file entries.
+     *
+     * @param string            $fieldName The form field name
+     * @param array<int, mixed> $list      The list of file entries
+     *
+     * @throws FileUploadValidationException if file structure is malformed
+     */
+    private static function validateFileList(string $fieldName, array $list): void
+    {
+        foreach ($list as $index => $entry) {
+            $entryFieldName = $fieldName . '[' . $index . ']';
+            if (!is_array($entry)) {
+                throw self::expectedArrayError($entryFieldName, $entry);
+            }
+            self::assertRequiredFields($entryFieldName, $entry);
+        }
+    }
+
+    /**
+     * Validate a nested associative array structure.
+     *
+     * Each sub-field is validated as a file list, single file entry, or falls through
+     * to an unrecognized-structure error.
+     *
+     * @param string               $fieldName The form field name
+     * @param array<string, mixed> $data      The nested associative array
+     *
+     * @throws FileUploadValidationException if file structure is malformed
+     */
+    private static function validateNestedAssociative(string $fieldName, array $data): void
+    {
+        foreach ($data as $subFieldName => $subFileData) {
+            $nestedFieldName = $fieldName . '[' . $subFieldName . ']';
+            if (!is_array($subFileData)) {
+                throw self::expectedArrayError($nestedFieldName, $subFileData);
+            }
+
+            if (self::isFileList($subFileData)) {
+                self::validateFileList($nestedFieldName, $subFileData);
+            } elseif (self::isSingleFileEntry($subFileData)) {
+                self::assertRequiredFields($nestedFieldName, $subFileData);
+            } else {
+                throw self::unrecognizedStructureError($nestedFieldName, $subFileData);
             }
         }
     }

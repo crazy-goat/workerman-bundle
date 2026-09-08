@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Multipart upload processing now traverses the file structure once per
+  request instead of twice. `RequestConverter::processFiles()` performs
+  required-field checks inline as it builds `UploadedFile` objects, using
+  `FileUploadValidator`'s shape predicates (`isSingleFileEntry`,
+  `isFileList`) and error-message helpers (`assertRequiredFields`,
+  `expectedArrayError`, `unrecognizedStructureError`) as the single source
+  of truth. The separate `FileUploadValidator::validate()` call has been
+  removed from the hot path (the method is retained for standalone use).
+  The `$files !== []` fast path (skip everything when no files) is
+  unchanged. Error messages, exception types, and `UploadedFile` output
+  structure are identical ([#566](https://github.com/crazy-goat/workerman-bundle/issues/566))
+
 - `HttpRequestHandler` middleware dispatch is now index-based: the cached
   pipeline closure instantiates a single `MiddlewareDispatcher` per request
   that walks the middleware array by index, replacing the nested-closure
