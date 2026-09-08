@@ -1510,16 +1510,12 @@ PHP;
     }
 
     /**
-     * Fail-closed: `matchesFingerprint()` must return false when the UID
-     * is unreadable but the process is alive. On Linux this is simulated
-     * by using a fingerprint with a startTime of 0 (so the start-time
-     * check is skipped) and a mismatched UID — but the real fail-closed
-     * path for unreadable UID is covered by the snapshot returning
-     * uid=null. We test that path directly via readLinuxProcessSnapshot
-     * by verifying that a non-existent PID returns null (uid unreadable).
+     * Fail-closed: `matchesFingerprint()` must return false for a live
+     * process whose UID does not match the fingerprint. The PID and start
+     * time match, but the UID is different — the UID check must refuse.
      *
-     * This test verifies the mismatched-UID fail-closed: a live process
-     * whose UID does not match the fingerprint must be refused.
+     * (The separate unreadable-UID branch — `$snapshot->uid === null` — is
+     * covered by `testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess`.)
      *
      * @requires OS Linux
      * @requires extension pcntl
@@ -1621,8 +1617,6 @@ PHP;
      * still reports a non-zombie state. This test exercises that branch
      * directly via the extracted `snapshotMatchesFingerprint()` seam with a
      * crafted live snapshot (state 'S', uid null) and a matching fingerprint.
-     *
-     * @requires OS Linux
      */
     public function testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess(): void
     {
@@ -1647,8 +1641,6 @@ PHP;
      * branch directly via the extracted `snapshotMatchesFingerprint()` seam
      * with a crafted live snapshot (state 'S', startTime 0) and a fingerprint
      * carrying a real start time.
-     *
-     * @requires OS Linux
      */
     public function testSnapshotMatchesFingerprintFailsClosedForUnreadableStartTimeOnAliveProcess(): void
     {

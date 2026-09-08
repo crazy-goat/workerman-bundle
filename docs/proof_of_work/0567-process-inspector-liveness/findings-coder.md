@@ -128,3 +128,34 @@ with a crafted snapshot via reflection.
 - **Problem:** Already flagged as round-1 coder finding #2. Confirmed out of scope — one read per verification, not per poll. Note only.
 - **Suggested fix:** See round-1 findings #2.
 
+---
+
+## Round-3 findings (review findings F-5/F-6)
+
+### Biggest problem faced
+
+None significant. The two changes were mechanical doc/annotation edits. The only
+deliberation was verifying the F-6 test bodies actually contain no Linux-only
+dependency before removing `@requires OS Linux` — confirmed: both use only
+`\posix_getuid()`, synthetic snapshots, and the reflection seam; neither forks
+nor reads `/proc`. `posix_getuid()` is available on macOS (core `posix` ext),
+so dropping the constraint restores macOS coverage of the unreadable-UID /
+unreadable-start-time fail-closed branches without any loss.
+
+### New findings / weak spots spotted
+
+### 8. `testSnapshotMatchesFingerprintFailsClosedForUnreadable*OnAliveProcess` hard-code the fingerprint PID/start-time
+- **File:** `tests/ProcessInspectorTest.php:1623` and `:1647`
+- **Problem:** Both crafted-snapshot tests build `new MasterFingerprint(1234, 100, posix_getuid())` — the exact fingerprint values (PID `1234`, startTime `100`) are never "matched" against anything here; the test only asserts the snapshot-side fail-closed branches. The opaque constants read as if they must match the snapshot, but they are arbitrary "reasonable" values for the *fingerprint* (the diagrammatic side against which an unreadable snapshot field fails closed). A reader could momentarily think PID `1234` matters. Minor readability nit, not a correctness issue.
+- **Suggested fix:** Optionally add a short comment noting the fingerprint PID/startTime are deliberately non-matching to exercise the snapshot-side unreadable-branch, or rename constants to e.g. `$fingerprintPid = 1234; $fingerprintStartTime = 100;`. Low priority, cosmetic.
+
+### 9. The mismatch tests remain Linux-only by necessity
+- **File:** `tests/ProcessInspectorTest.php:1520,1546` (`testMatchesFingerprintFailsClosedForMismatchedUid`, `testMatchesFingerprintFailsClosedForMismatchedStartTime`)
+- **Problem:** These retain `@requires OS Linux` because they read `/proc/{pid}/stat` directly for a real start time (F-5 test) and because `matchesFingerprint()`'s real-snapshot Linux path is `/proc`-backed. They cannot run on macOS. This is intentional and unchanged. Note only — confirms the F-6 pair still provides the cross-platform fail-closed coverage after this round.
+- **Suggested fix:** None.
+
+### 10. `@requires extension posix` not on the crafted-snapshot tests
+- **File:** `tests/ProcessInspectorTest.php:1621,1645`
+- **Problem:** Both crafted-snapshot tests call `\posix_getuid()`, so they need the `posix` extension, yet carry no `@requires extension posix` annotation. PHPUnit will emit a PHP error (missing function) rather than a graceful skip if `posix` is absent. Pre-existing pattern in the file (`testMatchesFingerprintFailsClosedForNonExistentPidSnapshot` also lacks it), and CI always loads posix, so low risk — but a `@requires extension posix` would make the skip explicit.
+- **Suggested fix:** Add `@requires extension posix` to both crafted-snapshot tests (and ideally the sibling non-existent-PID test) for a clean graceful-skip on posix-less builds.
+
