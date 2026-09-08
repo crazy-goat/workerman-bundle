@@ -21,10 +21,13 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  * Each incoming Workerman request flows through these stages:
  *
  * 1. **Middleware pipeline dispatch** — The Workerman Request runs through a
- *    pre-composed middleware chain (see getPipeline()). The pipeline is built
- *    ONCE in reverse middleware order and cached across requests, eliminating
- *    per-request array_reverse + closure allocation churn. The innermost layer
- *    is the controller callable that delegates to SymfonyController.
+ *    pre-composed middleware chain (see getPipeline()). The pipeline closure
+ *    is built ONCE and cached across requests, eliminating per-request
+ *    array_reverse + closure composition churn. At dispatch time a single
+ *    {@see MiddlewareDispatcher} object walks the middleware array by index,
+ *    so per-request allocations are independent of the middleware count. The
+ *    innermost layer is the controller callable that delegates to
+ *    SymfonyController.
  *
  * 2. **Response send** — The Http\Response returned by the pipeline is encoded
  *    and sent via TcpConnection::send(). The response is stamped with the
@@ -50,10 +53,12 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  * $connection->context->responseSentDirectly = true can fully short-circuit
  * the response-send step.
  *
- * Per-request allocations: the only per-request allocation is the thin
- * controller closure (fn(Request): Http\Response) which captures the
- * current TcpConnection. The middleware pipeline closure and all middleware
- * instances are reused across requests.
+ * Per-request allocations: one thin controller closure
+ * (fn(Request): Http\Response) which captures the current TcpConnection, and
+ * one {@see MiddlewareDispatcher} object that carries the controller through
+ * the middleware array by index. Both are independent of the middleware
+ * count — the pipeline closure and all middleware instances are reused across
+ * requests.
  */
 final class HttpRequestHandler implements StaticFileHandlerInterface, MiddlewareDispatchInterface
 {
@@ -66,10 +71,14 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      * Pre-composed middleware dispatch pipeline.
      *
      * Built once and cached across requests to eliminate per-request
-     * array_reverse + closure allocations. Invalidated whenever
+     * array_reverse + closure composition. Invalidated whenever
      * the middleware set changes (withMiddlewares / withRootDirectory).
      *
      * Signature: fn(Request $request, callable $controller): Http\Response
+     *
+     * At dispatch time the closure creates a single MiddlewareDispatcher
+     * that walks the middleware array by index, so per-request allocations
+     * are independent of the middleware count (issue #563).
      */
     private ?\Closure $pipeline = null;
 
@@ -112,10 +121,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
      * The pipeline is a closure: fn(Request, callable $controller): Http\Response
      * that runs the request through all middlewares and finally the controller.
      * It is composed ONCE and reused across requests, eliminating per-request
-     * array_reverse and closure allocation churn documented in issue #266.
+     * array_reverse and closure composition churn documented in issue #266.
      *
-     * Only the controller callable (which captures the per-request TcpConnection)
-     * is created fresh on each invocation.
+     * At dispatch time the closure instantiates a single
+     * {@see MiddlewareDispatcher} that walks the middleware array by index,
+     * so the per-request allocation count (one dispatcher + one controller
+     * closure) is independent of the middleware count (issue #563).
      */
     private function getPipeline(): \Closure
     {
@@ -123,17 +134,14 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             return $this->pipeline;
         }
 
-        // Build from the innermost (controller) outward
-        $pipeline = (fn(Request $request, callable $controller): Http\Response => $controller($request));
+        // Capture the middleware array in registration order (first
+        // registered = first executed). The dispatcher walks it by index.
+        $middlewares = $this->middlewares;
 
-        foreach (array_reverse($this->middlewares) as $mw) {
-            $previous = $pipeline;
-            $pipeline = (fn(Request $request, callable $controller): Http\Response => $mw($request, fn(Request $req): Http\Response => $previous($req, $controller)));
-        }
+        $this->pipeline = fn(Request $request, callable $controller): Http\Response
+            => (new MiddlewareDispatcher($middlewares, $controller))($request);
 
-        $this->pipeline = $pipeline;
-
-        return $pipeline;
+        return $this->pipeline;
     }
 
     /**

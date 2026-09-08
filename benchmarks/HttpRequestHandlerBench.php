@@ -19,8 +19,9 @@ use Workerman\Connection\TcpConnection;
  * Benchmark HttpRequestHandler::__invoke — the composed middleware chain
  * that represents the full per-request dispatch hot path.
  *
- * The pipeline is built once and cached; only the controller closure
- * (capturing the connection) is created per-request.
+ * The pipeline is built once and cached; per-request allocations are one
+ * controller closure (capturing the connection) and one MiddlewareDispatcher
+ * object — independent of the middleware count (issue #563).
  *
  * @BeforeMethods("init")
  * @Revs(1000)
@@ -31,6 +32,7 @@ final class HttpRequestHandlerBench
 {
     private HttpRequestHandler $handlerNoMiddleware;
     private HttpRequestHandler $handlerWithMiddleware;
+    private HttpRequestHandler $handlerWithFiveMiddleware;
     private Request $request;
     private TcpConnection $connection;
 
@@ -48,6 +50,14 @@ final class HttpRequestHandlerBench
                 new BenchMiddleware('X-Bench-2', 'value-2'),
                 new BenchMiddleware('X-Bench-3', 'value-3'),
             );
+        $this->handlerWithFiveMiddleware = (new HttpRequestHandler($controller, $rebootStrategy))
+            ->withMiddlewares(
+                new BenchMiddleware('X-Bench-1', 'value-1'),
+                new BenchMiddleware('X-Bench-2', 'value-2'),
+                new BenchMiddleware('X-Bench-3', 'value-3'),
+                new BenchMiddleware('X-Bench-4', 'value-4'),
+                new BenchMiddleware('X-Bench-5', 'value-5'),
+            );
 
         $this->request = new Request("GET / HTTP/1.1\r\nHost: test\r\n\r\n");
         $this->connection = new BenchTcpConnection();
@@ -61,5 +71,10 @@ final class HttpRequestHandlerBench
     public function benchWithMiddleware(): void
     {
         ($this->handlerWithMiddleware)($this->connection, $this->request);
+    }
+
+    public function benchWithFiveMiddleware(): void
+    {
+        ($this->handlerWithFiveMiddleware)($this->connection, $this->request);
     }
 }
