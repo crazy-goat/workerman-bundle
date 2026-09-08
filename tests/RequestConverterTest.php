@@ -444,16 +444,62 @@ final class RequestConverterTest extends TestCase
      * #566: a non-array element inside an indexed file list (files[]) must
      * produce "expected array, got X" from the single traversal, not a
      * TypeError from passing a non-array to UploadedFile.
+     *
+     * The list must have a valid file entry in position 0 so isFileList()
+     * classifies it as a list (a scalar first element would push it down the
+     * nested-associative branch instead). The scalar in position 1 then hits
+     * the is_array guard inside the list-conversion loop.
      */
     public function testNonArrayElementInFileListThroughConverter(): void
     {
         $this->expectException(FileUploadValidationException::class);
         $this->expectExceptionMessage('expected array, got string');
 
+        $tmpFile = $this->createTempFile('file 0 content');
+
         $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = $this->createRequestWithFiles($buffer, [
             'files' => [
-                'not an array entry',
+                0 => [
+                    'name' => 'image0.png',
+                    'tmp_name' => $tmpFile,
+                    'type' => 'image/png',
+                    'size' => 14,
+                    'error' => \UPLOAD_ERR_OK,
+                ],
+                1 => 'not an array',
+            ],
+        ]);
+
+        RequestConverter::toSymfonyRequest($rawRequest);
+    }
+
+    /**
+     * #566: a non-array element in a file list nested inside an associative
+     * container (gallery[images][]) must raise "expected array, got X" from
+     * the single traversal. This exercises the is_array guard in the nested
+     * list-conversion branch, mirroring the top-level case.
+     */
+    public function testNonArrayElementInNestedFileListThroughConverter(): void
+    {
+        $this->expectException(FileUploadValidationException::class);
+        $this->expectExceptionMessage('expected array, got string');
+
+        $tmpFile = $this->createTempFile('image content');
+
+        $buffer = "POST /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'gallery' => [
+                'images' => [
+                    0 => [
+                        'name' => 'gallery.png',
+                        'tmp_name' => $tmpFile,
+                        'type' => 'image/png',
+                        'size' => 14,
+                        'error' => \UPLOAD_ERR_OK,
+                    ],
+                    1 => 'not an array',
+                ],
             ],
         ]);
 

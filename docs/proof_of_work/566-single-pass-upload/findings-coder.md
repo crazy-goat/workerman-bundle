@@ -120,3 +120,26 @@ TypeError instead of `FileUploadValidationException`. Fixed by adding an
   file list nor a single file entry), but a naive converter would recurse
   and throw "expected array, got string". The converter's nested-container
   branch must mirror `validateNestedAssociative` exactly.
+
+## Round 2 (review follow-up: cover the list-guard `is_array` checks)
+
+### What this round did
+- Rewrote `testNonArrayElementInFileListThroughConverter`
+  (tests/RequestConverterTest.php) to use `[0 => $validEntry, 1 => 'foo']`
+  so `isFileList()` classifies it as a list and the scalar in position 1
+  reaches the top-level list `is_array` guard
+  (src/DTO/RequestConverter.php:489-491). Updated the docblock accordingly
+  (finding 1+2 of review-1.md fixed).
+- Added `testNonArrayElementInNestedFileListThroughConverter` to cover the
+  parallel nested-branch guard (src/DTO/RequestConverter.php:519-521).
+- Confirmed both guards are genuinely hit by temporarily instrumenting with
+  `fwrite(STDERR, ...)` probes: top-level hit `files[1]`, nested hit
+  `gallery[images][1]`. Probes removed after verification.
+- `vendor/bin/phpunit tests/RequestConverterTest.php tests/FileUploadValidatorTest.php`:
+  126 tests, 616 assertions, OK. `vendor/bin/phpstan analyse`: OK, no
+  errors. `php-cs-fixer` dry-run: clean.
+
+### No new bugs found this round
+Change is test-only plus docblock; no new defects observed beyond what
+finding review-1 #3 (exception priority, advisory), #4 (duplicated list
+loop) and #5 (bench numbers for PR) already capture.
