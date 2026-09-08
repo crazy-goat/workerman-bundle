@@ -127,7 +127,7 @@ final class MiddlewareDispatcherTest extends TestCase
         $order = [];
 
         $before = $this->trackingMiddleware('before', $order);
-        $shortCircuit = new readonly class implements MiddlewareInterface {
+        $shortCircuit = new class implements MiddlewareInterface {
             public function __invoke(Request $request, callable $next): WorkermanResponse
             {
                 return new WorkermanResponse(200, ['X-Short' => '1'], 'short');

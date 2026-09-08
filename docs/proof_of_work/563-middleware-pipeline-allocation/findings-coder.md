@@ -168,3 +168,26 @@ Addressed all four findings from `findings-review.md`:
   `rawBody()` is already typed `string` in the vendored Workerman
   source, so the cast is unnecessary. Other tests in the suite may
   have the same redundant cast pattern.
+
+## Round 2 review fixes
+
+- **F-5 (high):** `tests/MiddlewareDispatcherTest.php:130` used
+  `new readonly class` — anonymous readonly classes are PHP 8.3+ syntax,
+  a parse error on PHP 8.2 which `composer.json` allows (`^8.2`) and CI
+  runs. Dropped `readonly` from the anonymous class (it has no
+  properties, so `readonly` was decorative). Grepped all files added in
+  this branch for other 8.3+-only syntax (anonymous readonly classes,
+  typed class constants, `#[Override]` attribute) — no other occurrences
+  found.
+
+### Deferred: MiddlewarePipelineTest helper
+
+The `executeMiddlewarePipeline` helper in
+`tests/MiddlewarePipelineTest.php:122-133` re-implements the old
+nested-closure composition. It is a pre-existing nit (not introduced by
+#563) and is explicitly **deferred** — not changed in this PR. The
+helper tests the middleware *contract* (order, short-circuit, exception
+propagation) independently of the handler's dispatch mechanism, which
+has standalone value. Re-basing it on `MiddlewareDispatcher` would
+couple the contract test to the implementation under test, reducing its
+independence.
