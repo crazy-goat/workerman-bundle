@@ -19,3 +19,12 @@
 | F-4 | tests/HttpRequestHandlerTest.php:428; src/Middleware/MiddlewareInterface.php:22-24 | Doc/test-name drift (`ReverseOrder` name; `responseSentDirectly` attributed to middleware). | nit | **fixed** in 1602cbc (test renamed, messages corrected, docblocks now credit StreamedResponseStrategy — verified by grep: only `StreamedResponseStrategy.php:92,113` sets the flag) |
 | F-5 | tests/MiddlewareDispatcherTest.php:130 | `new readonly class` (anonymous readonly class) is PHP 8.3+ syntax — a parse error on PHP 8.2, while composer.json allows `^8.2` and `.github/workflows/tests.yaml:29,113` run 8.2 legs. Local tooling (PHP 8.5.10) cannot see it; the 8.2 CI leg would fail. Fix: drop `readonly` (the class has no properties). | high | open |
 | F-6 | tests/MiddlewarePipelineTest.php:122-133 | Helper still re-implements the old nested-closure composition; harmless now that the shipped dispatcher is pinned directly, but should be re-based or commented as a contract-only test. | nit | open (pre-existing; deferred by coder with a note in findings-coder.md) |
+
+## Round 3
+
+| id | file:line | what is wrong | severity | status |
+|----|-----------|---------------|----------|--------|
+| F-5 | tests/MiddlewareDispatcherTest.php:130 | `new readonly class` is PHP 8.3+ syntax; parse error on the 8.2 CI legs. | high | **fixed** in 42a896c (`readonly` dropped; independent sweep of all branch-touched files found no other version-gated syntax — no anonymous readonly, typed class constants, `#[\Override]`, hooks, or asymmetric visibility) |
+| F-6 | tests/MiddlewarePipelineTest.php:122-133 | Helper re-implements the old nested-closure composition instead of the shipped dispatcher. | nit | **still present — deliberately deferred** (coder rationale accepted: contract test intentionally independent of the dispatch implementation; shipped path is pinned by `MiddlewareDispatcherTest`, so no coverage gap) |
+
+No new findings in round 3.
