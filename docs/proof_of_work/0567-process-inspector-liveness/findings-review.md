@@ -24,3 +24,14 @@ Dispositions for the two low findings fixed in this round:
 |---|---|---|---|
 | F-5 | tests/ProcessInspectorTest.php:1512-1519 | **fixed** — the stale docblock's first paragraph (which described the now-closed round-1 unreadable-UID gap via "a non-existent PID returns null") was removed. The docblock now states precisely that the test verifies the mismatched-UID fail-closed branch (live process, matching PID/start-time, different UID → false), and points the unreadable-UID branch readers to `testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess` where it is actually covered. | F-5 open → fixed; docblock rewritten, php-cs-fixer + phpstan clean |
 | F-6 | tests/ProcessInspectorTest.php:1626,1644 | **fixed** — `@requires OS Linux` removed from `testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess` and `testSnapshotMatchesFingerprintFailsClosedForUnreadableStartTimeOnAliveProcess`. Verified both test bodies are platform-independent: they construct synthetic `ProcessSnapshot`/`MasterFingerprint` objects, call `\posix_getuid()` (available on macOS) and the reflection-based `invokeSnapshotMatchesFingerprint()`. No `/proc` read, no `pcntl_fork`. | F-6 open → fixed; both tests now PASS on macOS (`phpunit --filter 'testSnapshotMatchesFingerprintFailsClosedForUnreadable'` → `OK (2 tests, 2 assertions)`), previously skipped |
+
+### Round 3 review confirmation (review-3.md)
+
+All earlier findings (F-1 through F-6) reviewed and dispositioned. No new findings.
+
+| # | File:line | What is wrong | Severity | What happened to it |
+|---|---|---|---|---|
+| F-5 | tests/ProcessInspectorTest.php:1512-1519 | Stale/misleading docblock on `testMatchesFingerprintFailsClosedForMismatchedUid` | low | **fixed** (confirmed by review round 3) — docblock rewritten to accurately describe the mismatched-UID fail-closed test, with a pointer to the unreadable-UID test. New text is precise; `@requires OS Linux/pcntl/posix` annotations correctly preserved (test genuinely forks). |
+| F-6 | tests/ProcessInspectorTest.php:1617,1641 | Unnecessarily restrictive `@requires OS Linux` on crafted-snapshot tests | low | **fixed** (confirmed by review round 3) — `@requires OS Linux` removed from both tests. Verified: both test bodies are platform-independent (synthetic objects, `\posix_getuid()`, reflection seam; no `/proc`, no `pcntl_fork`). Both tests PASS on macOS. `ext-posix` is a hard `composer.json` dependency so no `@requires extension posix` is needed. |
+
+Coder self-findings (findings-coder.md items 8, 9, 10) assessed: none are real findings (item 8: cosmetic only, PID 1234 is arbitrary and unchecked by `snapshotMatchesFingerprint()`; item 9: note only, Linux-only mismatch tests are correct; item 10: `ext-posix` is a hard composer dependency, annotation unnecessary).
