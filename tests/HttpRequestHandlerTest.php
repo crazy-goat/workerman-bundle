@@ -425,7 +425,7 @@ final class HttpRequestHandlerTest extends TestCase
         );
     }
 
-    public function testInvokeMiddlewaresAppliedInReverseOrder(): void
+    public function testInvokeWithMultipleMiddlewaresAllHeadersInResponse(): void
     {
         $connection = new MockTcpConnection();
         $request = new Request(self::HTTP11);
@@ -439,12 +439,12 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString(
             'X-Order-A: first',
             $connection->sentData[0],
-            'Middleware A (inner) should add its header',
+            'Middleware A should add its header',
         );
         $this->assertStringContainsString(
             'X-Order-B: second',
             $connection->sentData[0],
-            'Middleware B (outer) should add its header',
+            'Middleware B should add its header',
         );
     }
 
@@ -1528,5 +1528,99 @@ final class HttpRequestHandlerTest extends TestCase
             'Handler must not escape when sendResponse() throws during error response (blocker from review)',
         );
         $this->assertTrue($connection->closed, 'Connection must be closed when error-response send fails');
+    }
+
+    // ──────────────────────────────────────────────
+    // Issue #563 — handler safe for reuse across requests (stateless)
+    // ──────────────────────────────────────────────
+
+    /**
+     * Two different requests dispatched back-to-back through the same handler
+     * must not leak per-request state. A counting middleware tracks invocation
+     * order; the second request must see a fresh counter and a fresh response,
+     * proving the index-based dispatcher does not carry state across requests.
+     */
+    public function testHandlerIsSafeForReuseAcrossTwoDifferentRequests(): void
+    {
+        /** @var list<string> $invocations */
+        $invocations = [];
+        $countingMiddleware = new class ($invocations) implements MiddlewareInterface {
+            /** @var list<string> */
+            public array $invocations;
+
+            /** @param list<string> $invocations */
+            public function __construct(array &$invocations)
+            {
+                $this->invocations = &$invocations;
+            }
+
+            public function __invoke(Request $request, callable $next): WorkermanResponse
+            {
+                $this->invocations[] = 'counting';
+                return $next($request);
+            }
+        };
+
+        $this->handler->withMiddlewares($countingMiddleware);
+
+        // First request: a 200 OK
+        $connection1 = new MockTcpConnection();
+        $request1 = new Request(self::HTTP11);
+        ($this->handler)($connection1, $request1);
+
+        self::assertSame(['counting'], $invocations, 'First request should dispatch the middleware exactly once');
+        self::assertStringContainsString('200', $connection1->sentData[0]);
+
+        // Second request: different connection, different request path,
+        // same handler. The dispatcher must start fresh — no index or
+        // state leak from the first request.
+        $connection2 = new MockTcpConnection();
+        $request2 = new Request("GET /other HTTP/1.1\r\nHost: test\r\n\r\n");
+        ($this->handler)($connection2, $request2);
+
+        // The middleware should have been invoked exactly twice total (once
+        // per request), and the second request should produce a fresh 200.
+        self::assertSame(['counting', 'counting'], $invocations, 'Second request should dispatch the middleware exactly once more');
+        self::assertStringContainsString('200', $connection2->sentData[0], 'Second request via the same handler must get a fresh 200 response');
+    }
+
+    /**
+     * The index-based dispatcher must correctly restore its index when a
+     * middleware returns without calling $next (short-circuit), proving no
+     * state leaks into a subsequent request on the same handler.
+     */
+    public function testShortCircuitMiddlewareDoesNotLeakStateToNextRequest(): void
+    {
+        $shortCircuitResponse = new WorkermanResponse(200, ['X-Short' => 'true'], 'Short');
+        $shortCircuit = new class ($shortCircuitResponse) implements MiddlewareInterface {
+            public function __construct(private readonly WorkermanResponse $response)
+            {
+            }
+
+            public function __invoke(Request $request, callable $next): WorkermanResponse
+            {
+                return $this->response;
+            }
+        };
+
+        $passThrough = new TestMiddleware('X-Pass', 'pass-value');
+
+        $this->handler->withMiddlewares($shortCircuit, $passThrough);
+
+        // First request: short-circuit middleware returns early, passThrough never runs
+        $connection1 = new MockTcpConnection();
+        ($this->handler)($connection1, new Request(self::HTTP11));
+
+        self::assertStringContainsString('X-Short: true', $connection1->sentData[0]);
+        self::assertStringNotContainsString('X-Pass: pass-value', $connection1->sentData[0]);
+
+        // Second request on the same handler: short-circuit still fires first,
+        // passThrough is still skipped — the dispatcher index was correctly
+        // restored and no state from the first request leaked.
+        $connection2 = new MockTcpConnection();
+        ($this->handler)($connection2, new Request(self::HTTP11));
+
+        self::assertStringContainsString('X-Short: true', $connection2->sentData[0]);
+        self::assertStringNotContainsString('X-Pass: pass-value', $connection2->sentData[0]);
     }
 }

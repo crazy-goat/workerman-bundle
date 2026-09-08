@@ -20,8 +20,10 @@ use Workerman\Protocols\Http\Response;
  *  - Pass the request to $next and return its Response (possibly modified).
  *  - Short-circuit the pipeline by returning a Response without calling $next.
  *  - Set $connection->context->responseSentDirectly = true to skip the
- *    automatic response send step (used by StaticFilesMiddleware for
- *    streaming large files).
+ *    automatic response send step. In practice this flag is set by response
+ *    strategies (StreamedResponseStrategy) called from within
+ *    SymfonyController, not by middleware directly — but a middleware that
+ *    sends the response itself may set it to avoid a double send.
  *
  * The middleware pipeline is built ONCE and cached across requests, so
  * middleware instances are reused. Per-request state should be stored on
