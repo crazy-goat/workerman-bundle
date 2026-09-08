@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed from the hot path (the method is retained for standalone use).
   The `$files !== []` fast path (skip everything when no files) is
   unchanged. Error messages, exception types, and `UploadedFile` output
-  structure are identical ([#566](https://github.com/crazy-goat/workerman-bundle/issues/566))
+  structure are identical for all well-formed and structurally malformed
+  inputs ([#566](https://github.com/crazy-goat/workerman-bundle/issues/566))
 
 - `HttpRequestHandler` middleware dispatch is now index-based: the cached
   pipeline closure instantiates a single `MiddlewareDispatcher` per request
