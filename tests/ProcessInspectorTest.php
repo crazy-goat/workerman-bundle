@@ -1328,4 +1328,323 @@ PHP;
             pcntl_waitpid($pid, $status);
         }
     }
+
+    // ──────────────────────────────────────────────
+    // Issue #567: bounded /proc reads + fail-closed snapshot
+    // ──────────────────────────────────────────────
+
+    /**
+     * `readProcessStateFromStat()` must return the state character for a
+     * running process on Linux. This is the cheaper zombie-detection path
+     * that replaces reading the whole /proc/{pid}/status + multiline regex.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateFromStatReturnsStateForRunningPid(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $state = $this->invokePrivateMethod('readProcessStateFromStat', $pid);
+
+            $this->assertNotNull($state, 'State must be readable for a running PID');
+            $this->assertNotSame('Z', $state, 'A running process must not report zombie state');
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * `readProcessStateFromStat()` must return null for a non-existent PID
+     * (unreadable /proc file) on Linux.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateFromStatReturnsNullForNonExistentPid(): void
+    {
+        $state = $this->invokePrivateMethod('readProcessStateFromStat', 999_999_999);
+
+        $this->assertNull($state, 'State must be null for a non-existent PID');
+    }
+
+    /**
+     * `readProcessStateFromStat()` must return 'Z' for a zombie process on
+     * Linux, so that `isProcessAlive()` reports it as not alive without
+     * reading /proc/{pid}/status.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadProcessStateFromStatReturnsZForZombie(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            posix_kill($pid, SIGKILL);
+            // Poll until the kernel marks the child as a zombie.
+            Wait::until(fn(): bool => $this->invokePrivateMethod('readProcessStateFromStat', $pid) === 'Z', 2);
+
+            $state = $this->invokePrivateMethod('readProcessStateFromStat', $pid);
+            $this->assertSame('Z', $state, 'A zombie must report state Z');
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($pid),
+                'isProcessAlive() must return false for a zombie (state Z from /proc/stat)',
+            );
+        } finally {
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * `readLinuxProcessSnapshot()` must return a non-null snapshot with
+     * state, start time, and UID for a running process on Linux.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadLinuxProcessSnapshotReturnsValidSnapshot(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $snapshot = $this->invokePrivateMethod('readLinuxProcessSnapshot', $pid);
+
+            $this->assertInstanceOf(\CrazyGoat\WorkermanBundle\ProcessSnapshot::class, $snapshot);
+            $this->assertNotNull($snapshot->state);
+            $this->assertNotSame('Z', $snapshot->state);
+            $this->assertGreaterThan(0, $snapshot->startTime);
+            $this->assertSame(\posix_getuid(), $snapshot->uid);
+            $this->assertTrue($snapshot->isAlive());
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * `readLinuxProcessSnapshot()` must return null for a non-existent PID
+     * (unreadable /proc/{pid}/stat) on Linux — the caller fails closed.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testReadLinuxProcessSnapshotReturnsNullForNonExistentPid(): void
+    {
+        $snapshot = $this->invokePrivateMethod('readLinuxProcessSnapshot', 999_999_999);
+
+        $this->assertNull($snapshot, 'Snapshot must be null for a non-existent PID');
+    }
+
+    /**
+     * Fail-closed: `matchesFingerprint()` must return false for a zombie
+     * process (process dying mid-verification). The snapshot state is 'Z',
+     * so `isAlive()` returns false and verification refuses.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testMatchesFingerprintFailsClosedForZombieProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        // Capture the fingerprint from the child while it is still alive.
+        $fingerprint = $this->captureFingerprintForPid($pid);
+
+        try {
+            // Kill the child and wait for it to become a zombie.
+            posix_kill($pid, SIGKILL);
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 2);
+
+            $this->assertFalse(
+                $this->inspector->matchesFingerprint($pid, $fingerprint),
+                'matchesFingerprint() must fail closed for a zombie (process died mid-verification)',
+            );
+        } finally {
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Fail-closed: `matchesFingerprint()` must return false when the UID
+     * is unreadable but the process is alive. On Linux this is simulated
+     * by using a fingerprint with a startTime of 0 (so the start-time
+     * check is skipped) and a mismatched UID — but the real fail-closed
+     * path for unreadable UID is covered by the snapshot returning
+     * uid=null. We test that path directly via readLinuxProcessSnapshot
+     * by verifying that a non-existent PID returns null (uid unreadable).
+     *
+     * This test verifies the mismatched-UID fail-closed: a live process
+     * whose UID does not match the fingerprint must be refused.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testMatchesFingerprintFailsClosedForMismatchedUid(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            // Build a fingerprint with a wrong UID (current UID + 1, or a
+            // different UID if running as root). The PID and start time
+            // match, but the UID does not — must fail closed.
+            $startTime = 0;
+            $statFile = "/proc/{$pid}/stat";
+            if (\is_readable($statFile)) {
+                $content = \file_get_contents($statFile);
+                if (\is_string($content)) {
+                    $closeParen = \strrpos($content, ')');
+                    if ($closeParen !== false) {
+                        $afterParen = \substr($content, $closeParen + 1);
+                        $afterParts = \preg_split('/\s+/', \trim($afterParen));
+                        if (\is_array($afterParts) && \count($afterParts) >= 20) {
+                            $startTime = (int) $afterParts[19];
+                        }
+                    }
+                }
+            }
+
+            $wrongUid = \posix_getuid() === 0 ? 1 : \posix_getuid() + 1;
+            $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $wrongUid);
+
+            $this->assertFalse(
+                $this->inspector->matchesFingerprint($pid, $fingerprint),
+                'matchesFingerprint() must fail closed when UID does not match',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Fail-closed: `matchesFingerprint()` must return false when the start
+     * time does not match the fingerprint. The process is alive, the UID
+     * matches, but the start time is wrong — must fail closed (PID reuse
+     * defense).
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testMatchesFingerprintFailsClosedForMismatchedStartTime(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            // Fingerprint with the correct PID and UID but a wrong start
+            // time. The start-time check must refuse.
+            $wrongStartTime = 1; // impossibly low — will never match a real process
+            $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $wrongStartTime, \posix_getuid());
+
+            $this->assertFalse(
+                $this->inspector->matchesFingerprint($pid, $fingerprint),
+                'matchesFingerprint() must fail closed when start time does not match',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Fail-closed: `matchesFingerprint()` must return false for a
+     * non-existent PID (snapshot is null → not alive → refuse).
+     */
+    public function testMatchesFingerprintFailsClosedForNonExistentPidSnapshot(): void
+    {
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(999_999_999, 0, \posix_getuid());
+
+        $this->assertFalse(
+            $this->inspector->matchesFingerprint(999_999_999, $fingerprint),
+            'matchesFingerprint() must fail closed when the snapshot is null (non-existent PID)',
+        );
+    }
+
+    /**
+     * `ProcessSnapshot::isAlive()` must return false for a null state
+     * (unreadable /proc) and for 'Z' (zombie), true for other states.
+     */
+    public function testProcessSnapshotIsAlive(): void
+    {
+        $this->assertTrue(
+            (new \CrazyGoat\WorkermanBundle\ProcessSnapshot('R', 100, 0))->isAlive(),
+            'A running process (state R) must be alive',
+        );
+        $this->assertTrue(
+            (new \CrazyGoat\WorkermanBundle\ProcessSnapshot('S', 100, 0))->isAlive(),
+            'A sleeping process (state S) must be alive',
+        );
+        $this->assertFalse(
+            (new \CrazyGoat\WorkermanBundle\ProcessSnapshot('Z', 100, 0))->isAlive(),
+            'A zombie (state Z) must not be alive',
+        );
+        $this->assertFalse(
+            (new \CrazyGoat\WorkermanBundle\ProcessSnapshot(null, 0, null))->isAlive(),
+            'An unreadable snapshot (state null) must not be alive',
+        );
+    }
 }

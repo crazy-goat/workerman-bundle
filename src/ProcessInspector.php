@@ -38,15 +38,15 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $statusFile = "/proc/{$pid}/status";
-            if (is_readable($statusFile)) {
-                $status = file_get_contents($statusFile);
-                if (\is_string($status) && preg_match('/^State:\s+Z/m', $status)) {
-                    return false;
-                }
-            }
+            // Read the single state character from /proc/{pid}/stat field 3
+            // instead of slurping the whole /proc/{pid}/status (~1 KB) and
+            // running a multiline regex over it. A state of 'Z' means the
+            // process is a zombie — not alive. When the state cannot be read
+            // (unreadable /proc, process gone) the process is treated as
+            // alive, matching the previous unreadable-status behavior.
+            $state = $this->readProcessStateFromStat($pid);
 
-            return true;
+            return $state !== 'Z';
         }
 
         return $this->isAliveNonLinux($pid);
@@ -86,15 +86,19 @@ final readonly class ProcessInspector
      * process will have a different start time.
      *
      * Platform behavior:
-     * - Linux: full PID + UID + start-time verification.
+     * - Linux: full PID + UID + start-time verification. Reads
+     *   `/proc/{pid}/stat` once (state + start time) and
+     *   `/proc/{pid}/status` once (UID) — two bounded /proc reads per
+     *   call — and reasons over that single snapshot.
      * - Non-Linux POSIX: PID + UID verification only (start time is
      *   recorded as 0 and the start-time check is skipped). UID is
      *   verified via `posix_getuid()` of the current process as a
      *   best-effort match (cross-process UID read requires `/proc`).
      *
-     * Race handling: if the process dies between the initial liveness
-     * check and the UID/start-time reads, the function fails closed
-     * (returns false).
+     * Fail-closed: a snapshot read that fails or comes back empty, an
+     * unreadable UID, an unreadable start time, or a process that dies
+     * mid-verification (state `Z` or null) each cause the function to
+     * refuse (return false), never to succeed.
      */
     public function matchesFingerprint(int $pid, MasterFingerprint $fingerprint): bool
     {
@@ -106,19 +110,30 @@ final readonly class ProcessInspector
             return false;
         }
 
-        if (!$this->isProcessAlive($pid)) {
-            return false;
-        }
-
         if (self::isLinux()) {
-            $candidateUid = MasterFingerprint::readUidForPid($pid);
-            if ($candidateUid === null) {
-                // UID could not be read. If the process is now dead, fail closed.
-                if (!$this->isProcessAlive($pid)) {
-                    return false;
-                }
-                // Process is still alive but UID is unreadable — fail closed
-                // and log a warning so the degraded mode is visible in production.
+            // Take a single snapshot of /proc/{pid}/stat (state + start time)
+            // and /proc/{pid}/status (UID) — two bounded /proc reads total —
+            // and reason over that snapshot. Previously this method called
+            // isProcessAlive() up to 3 times, each reading /proc, plus
+            // readUidForPid() and readStartTimeForPid(), for up to 5 reads.
+            //
+            // Fail-closed is preserved: a snapshot read that fails or comes
+            // back empty causes the verification to refuse (return false),
+            // never to succeed. Concretely:
+            // - /proc/{pid}/stat unreadable or malformed → treat as dead
+            //   (state null) → false; a zombie state 'Z' → false.
+            // - /proc/{pid}/status unreadable → UID null → false.
+            // - start time 0 when the fingerprint recorded one → false.
+            $snapshot = $this->readLinuxProcessSnapshot($pid);
+
+            if (!$snapshot instanceof \CrazyGoat\WorkermanBundle\ProcessSnapshot || !$snapshot->isAlive()) {
+                return false;
+            }
+
+            if ($snapshot->uid === null) {
+                // UID could not be read but the process is alive (state is
+                // not 'Z'). Fail closed and log so the degraded mode is
+                // visible in production.
                 $this->logger->warning('Cannot read UID for fingerprint verification; refusing to signal', [
                     'pid' => $pid,
                     'expected_uid' => $fingerprint->uid,
@@ -127,24 +142,20 @@ final readonly class ProcessInspector
                 return false;
             }
 
-            if ($candidateUid !== $fingerprint->uid) {
+            if ($snapshot->uid !== $fingerprint->uid) {
                 $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
                     'pid' => $pid,
                     'expected_uid' => $fingerprint->uid,
-                    'actual_uid' => $candidateUid,
+                    'actual_uid' => $snapshot->uid,
                 ]);
 
                 return false;
             }
 
             if ($fingerprint->startTime > 0) {
-                $candidateStartTime = MasterFingerprint::readStartTimeForPid($pid);
-                if ($candidateStartTime === 0) {
-                    // Start time could not be read. If the process is now dead, fail closed.
-                    if (!$this->isProcessAlive($pid)) {
-                        return false;
-                    }
-                    // Process is still alive but start time is unreadable — fail closed.
+                if ($snapshot->startTime === 0) {
+                    // Process is alive (state is not 'Z') but start time is
+                    // unreadable — fail closed.
                     $this->logger->warning('Cannot read start time for fingerprint verification; refusing to signal', [
                         'pid' => $pid,
                         'expected_start_time' => $fingerprint->startTime,
@@ -153,21 +164,27 @@ final readonly class ProcessInspector
                     return false;
                 }
 
-                if ($candidateStartTime !== $fingerprint->startTime) {
+                if ($snapshot->startTime !== $fingerprint->startTime) {
                     $this->logger->warning('Process start time does not match master fingerprint; refusing to signal', [
                         'pid' => $pid,
                         'expected_start_time' => $fingerprint->startTime,
-                        'actual_start_time' => $candidateStartTime,
+                        'actual_start_time' => $snapshot->startTime,
                     ]);
 
                     return false;
                 }
             }
         } else {
-            // Non-Linux: UID verification via posix_getuid() of the current
-            // process. This is a best-effort match — if the current process
-            // is running as the same user as the master, the check passes.
-            // Cross-process UID read requires /proc which is unavailable.
+            // Non-Linux: PID + UID verification only. Start time is recorded
+            // as 0 and the start-time check is skipped. Cross-process UID
+            // read requires /proc which is unavailable, so UID is verified
+            // via posix_getuid() of the current process as a best-effort
+            // match. The isProcessAlive() call below uses the non-Linux
+            // pcntl_waitpid/ps path (isAliveNonLinux), unchanged.
+            if (!$this->isProcessAlive($pid)) {
+                return false;
+            }
+
             $currentUid = \posix_getuid();
             if ($currentUid !== $fingerprint->uid) {
                 $this->logger->warning('Current process UID does not match master fingerprint; refusing to signal', [
@@ -454,6 +471,100 @@ final readonly class ProcessInspector
     }
 
     /**
+     * Read the process state character from `/proc/{pid}/stat` field 3.
+     *
+     * This is cheaper than slurping the whole `/proc/{pid}/status` file
+     * (~1 KB) and running a multiline regex over it: `/proc/{pid}/stat` is
+     * a single line, and the state is the first field after the last `)`.
+     * Returns the single state character (e.g. `'R'`, `'S'`, `'Z'`), or
+     * `null` when the file is unreadable or malformed. A `null` result is
+     * treated as "alive" by {@see isProcessAlive()} — matching the previous
+     * unreadable-`/proc` behavior — so that a live process is never read as
+     * dead when /proc is transiently unavailable.
+     *
+     * @phpstan-impure
+     */
+    private function readProcessStateFromStat(int $pid): ?string
+    {
+        $statFile = "/proc/{$pid}/stat";
+        if (!is_readable($statFile)) {
+            return null;
+        }
+
+        $content = @file_get_contents($statFile);
+        if (!\is_string($content) || $content === '') {
+            return null;
+        }
+
+        // The command name (field 2) can contain spaces and parentheses,
+        // so we look for the last ')' and parse after it — the same
+        // approach used in MasterFingerprint::readStartTimeForPid().
+        $closeParen = \strrpos($content, ')');
+        if ($closeParen === false) {
+            return null;
+        }
+
+        $afterParen = \substr($content, $closeParen + 1);
+        // Field 3 (state) is the first whitespace-delimited token after ')'.
+        $state = \trim($afterParen);
+        if ($state === '') {
+            return null;
+        }
+
+        // The state is a single character; return just it.
+        return $state[0];
+    }
+
+    /**
+     * Take a single snapshot of the Linux process identity fields.
+     *
+     * Reads `/proc/{pid}/stat` once (yielding the state character and the
+     * start time) and `/proc/{pid}/status` once (yielding the UID). This
+     * replaces the up-to-five separate /proc reads that
+     * {@see matchesFingerprint()} performed previously (isProcessAlive ×3
+     * + readUidForPid + readStartTimeForPid).
+     *
+     * Returns `null` when `/proc/{pid}/stat` is entirely unreadable (the
+     * process is gone or /proc is unavailable) — the caller fails closed.
+     * When stat is readable but status is not, the snapshot's `$uid` is
+     * `null` — the caller fails closed on the UID check.
+     *
+     * @phpstan-impure
+     */
+    private function readLinuxProcessSnapshot(int $pid): ?ProcessSnapshot
+    {
+        $statFile = "/proc/{$pid}/stat";
+        if (!is_readable($statFile)) {
+            return null;
+        }
+
+        $content = @file_get_contents($statFile);
+        if (!\is_string($content) || $content === '') {
+            return null;
+        }
+
+        $closeParen = \strrpos($content, ')');
+        if ($closeParen === false) {
+            return null;
+        }
+
+        $afterParen = \substr($content, $closeParen + 1);
+        $afterParts = \preg_split('/\s+/', \trim($afterParen));
+        if (!\is_array($afterParts) || $afterParts === [] || $afterParts[0] === '') {
+            return null;
+        }
+
+        // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
+        // starttime is field 22 overall, which is index 19 after ')'.
+        $state = $afterParts[0][0];
+        $startTime = \count($afterParts) >= 20 ? max((int) $afterParts[19], 0) : 0;
+
+        $uid = MasterFingerprint::readUidForPid($pid);
+
+        return new ProcessSnapshot($state, $startTime, $uid);
+    }
+
+    /**
      * Non-Linux POSIX liveness check.
      *
      * `posix_kill($pid, 0)` (which already passed at the call site) returns
@@ -470,7 +581,7 @@ final readonly class ProcessInspector
      *    separate CLI process — query the kernel process state via
      *    `ps -o stat=`. A zombie has state `Z`; an empty result means the
      *    process is already gone (issue #651). This mirrors the Linux
-     *    `/proc/{pid}/status` State check.
+     *    `/proc/{pid}/stat` state-character check.
      *
      * When `ps` cannot be executed, the check fails closed (process treated
      * as alive), mirroring the unreadable-`/proc` case on Linux, and logs a
