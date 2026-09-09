@@ -150,7 +150,9 @@ jobs:
       - name: Update Symfony constraints in composer.json
         run: |
           export SYMFONY_VERSION=${{ matrix.symfony-version }}
-          sed -i -E "s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
+          # symfony/deprecation-contracts versions 2.x/3.x only — it has no
+          # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
+          sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -209,7 +211,9 @@ jobs:
       - name: Update Symfony constraints in composer.json
         run: |
           export SYMFONY_VERSION=${{ matrix.symfony-version }}
-          sed -i -E "s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
+          # symfony/deprecation-contracts versions 2.x/3.x only — it has no
+          # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
+          sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
