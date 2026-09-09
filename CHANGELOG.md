@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ProcessInspector::isProcessAlive()` no longer reads the whole
+  `/proc/{pid}/status` file (~1 KB) and runs a multiline regex over it
+  on every liveness poll. On Linux it now reads the single state
+  character from `/proc/{pid}/stat` field 3 (the "find last `)` then
+  split" parsing already used in `MasterFingerprint::readStartTimeForPid()`).
+  `ProcessInspector::matchesFingerprint()` now takes a single snapshot
+  of `/proc/{pid}/stat` (state + start time) and `/proc/{pid}/status`
+  (UID) — two bounded `/proc` reads per call — instead of calling
+  `isProcessAlive()` up to 3 times (each reading `/proc`) plus
+  `readUidForPid()` and `readStartTimeForPid()` separately (up to 5
+  reads). Fail-closed behaviour is preserved: an unreadable snapshot,
+  unreadable UID, unreadable start time, or a process that dies
+  mid-verification (state `Z` or null) each cause the verification to
+  refuse. Non-Linux behaviour is unchanged
+  ([#567](https://github.com/crazy-goat/workerman-bundle/issues/567))
+
 - Multipart upload processing now traverses the file structure once per
   request instead of twice. `RequestConverter::processFiles()` performs
   required-field checks inline as it builds `UploadedFile` objects, using
