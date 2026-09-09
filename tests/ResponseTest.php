@@ -137,6 +137,12 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponseWithTempFileObject(): void
     {
+        // The E2E daemon boots from this same vendor dir, so property_exists()
+        // here reflects the Symfony version the controller runs against.
+        if (!property_exists(\Symfony\Component\HttpFoundation\BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
         $client = new Client(['http_errors' => false]);
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file');

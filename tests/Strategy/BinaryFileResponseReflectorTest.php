@@ -35,6 +35,10 @@ final class BinaryFileResponseReflectorTest extends TestCase
 
     public function testGetTempFileObjectReturnsObjectWhenSet(): void
     {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
         $reflector = new BinaryFileResponseReflector();
         $response = new BinaryFileResponse($this->testFile);
 

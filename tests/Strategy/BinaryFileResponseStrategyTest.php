@@ -96,6 +96,10 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
     public function testConvertHandlesTempFileObject(): void
     {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
         $strategy = new BinaryFileResponseStrategy();
 
         $tempFile = new \SplTempFileObject();
@@ -852,6 +856,10 @@ final class BinaryFileResponseStrategyTest extends TestCase
      */
     public function testHeadRequestWithTempFileDoesNotReadBodyAndEmitsTempSize(): void
     {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
         $strategy = new BinaryFileResponseStrategy();
 
         $tempFile = new \SplTempFileObject();
@@ -969,6 +977,10 @@ final class BinaryFileResponseStrategyTest extends TestCase
      */
     public function testHeadRequestWithTempFileFallsBackToFstatWhenContentLengthAbsent(): void
     {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
         $strategy = new BinaryFileResponseStrategy();
 
         $content = 'Temp fallback content';

@@ -75,3 +75,64 @@ One entry per review finding: file:line, what is wrong, severity, and what happe
 - **New findings: none.** Shipped-code diff byte-identical to round 2
   (proof-docs-only delta); full sweep green (71 tests, 329 assertions;
   `composer validate --strict` exit 0; `check-changelog.php` OK).
+
+## CI round (PR #806, run 34403956293) — recorded by main session per step 11
+
+- **R-CI-1 — all four Symfony 6.4 matrix legs fail: 4 errors + 2 failures,
+  `BinaryFileResponse::$tempFileObject` does not exist on 6.4 (high,
+  merge-blocking, escaped defect).** Declaring `symfony/http-foundation`
+  as a direct require pins it to `6.4.*` on the 6.4 legs (previously it
+  floated transitively to 7.x/8.x — the 6.4 leg log shows e.g.
+  `symfony/error-handler v7.4.17` still floating). The suite had never
+  actually run against 6.4's `BinaryFileResponse`, which lacks the
+  `$tempFileObject` property (4 errors: reflection `getProperty()` in
+  `BinaryFileResponseReflectorTest::testGetTempFileObjectReturnsObjectWhenSet`,
+  `BinaryFileResponseStrategyTest::testConvertHandlesTempFileObject`,
+  `...::testHeadRequestWithTempFileDoesNotReadBodyAndEmitsTempSize`,
+  `...::testHeadRequestWithTempFileFallsBackToFstatWhenContentLengthAbsent`;
+  1 failure: E2E `ResponseTest::testBinaryFileResponseWithTempFileObject`
+  500s because the `ResponseTestController::tempFileResponse()` fixture
+  uses the same reflection) and throws `LogicException` (not
+  `InvalidArgumentException`) from `setChunkSize(0)` (1 failure:
+  `StreamedBinaryFileResponseTest::testSetChunkSizeThrowsExceptionForInvalidValues`).
+  `src/` needs no change — `BinaryFileResponseReflector` already catches
+  `ReflectionException` and returns `null` for absent properties, so the
+  temp-file path is correctly dead on 6.4. Why rounds 1–3 missed it:
+  every local verification ran against the installed Symfony 8.1 tree;
+  the coder proved the rewritten constraints *resolve* on all legs but
+  never *ran* the suite against the lowest supported minor. Check that
+  could have caught it: running the suite (or at least the
+  http-foundation-touching tests) with `symfony/http-foundation:6.4.*`
+  installed before opening the PR. Status: **fixed** (main session):
+  feature-detection skip guards (`property_exists(...,
+  'tempFileObject')`, following the `StreamedJsonResponse` precedent in
+  `SymfonyControllerTest`) in the 4 unit tests + the E2E test, and
+  `LogicException` (+ shared message fragment) expectation for
+  `setChunkSize(0)` since `InvalidArgumentException extends
+  LogicException`. See `code-decision-2.md`.
+
+## Round 4 (CI-fix round, uncommitted delta on top of `0912280`)
+
+- **R1-1 — verdict: FIXED (unchanged since round 2).** No `composer.json`
+  delta since `d00e0ed`; symfony-scoped keys re-verified `SORTED`
+  (`strcmp` = `-13`).
+- **R1-2 — verdict: STILL PRESENT, deliberately deferred (main-session decision).**
+  No workflow-pinning test in the delta; both `sed` steps unchanged
+  (`:150-155`, `:211-216`). Follow-up GitHub issue, out of scope.
+- **R1-3 — verdict: PARTIALLY FIXED, as decided.** CHANGELOG "three Symfony
+  packages" wording intact (`CHANGELOG.md:51`); 8 `src/` files still import
+  `Symfony\Contracts\*`, deferred to the `composer-require-checker` follow-up.
+- **R2-1 — verdict: FIXED (unchanged since round 2).**
+  `code-decision-1.md:22-24` matches `composer.json:37-38`; S-1's `:211-216`
+  re-verified against the current `tests.yaml`.
+- **R-CI-1 — verdict: FIXED by this delta (pending the matrix re-run as oracle).**
+  All 5 `property_exists(... 'tempFileObject')` skips verified to no-op on 7+
+  (true on installed 8.1; 0 new skips locally) and skip on 6.4 (prop absent in
+  v6.4.0 source); `LogicException` + `'cannot be less than 1'` sound on both
+  (`instanceof` semantics, fragment present in both messages — see `review-4.md`
+  §4). E2E skip valid (daemon shares the vendor dir; route single-caller);
+  fixture correctly unguarded; no other 6.4-sensitive API found in the sweep.
+- **New findings: none.** Verdict **clean**. Targeted runs green (48 + 40 unit,
+  E2E temp-file test 3 assertions; `php-cs-fixer` 0/256, `phpstan` no errors,
+  `composer validate --strict` valid, `check-changelog.php` OK). Full `composer
+  test` passed pre-fix; delta is test-only so a targeted run suffices.
