@@ -55,3 +55,23 @@ One entry per review finding: file:line, what is wrong, severity, and what happe
   now `:211-216`). No shipped-code impact; no plausible automated check (prose
   staleness in scratch docs). Status: **fixed** (main session): swapped the two names in
   code-decision-1.md and updated S-1 line refs to `:211-216`.
+
+## Round 3 (@ `2dd8600`)
+
+- **R1-1 — verdict: FIXED (unchanged since round 2).** No `composer.json` delta
+  since `d00e0ed`; order still `dependency-injection` (`:37`) before
+  `deprecation-contracts` (`:38`), re-verified `SORTED` (`strcmp` = `-13`).
+- **R1-2 — verdict: STILL PRESENT, deliberately deferred (main-session decision).**
+  No `tests/` file in the diff; the drift-only-surfaces-in-CI shape is unchanged.
+  Follow-up GitHub issue, out of scope for this chore.
+- **R1-3 — verdict: PARTIALLY FIXED, as decided.** CHANGELOG wording narrowed to
+  "three Symfony packages" (`CHANGELOG.md:51`); contracts remainder still
+  transitive by design (7 + 1 files), deferred to the `composer-require-checker`
+  follow-up.
+- **R2-1 — verdict: FIXED by `2dd8600`.** `code-decision-1.md:22-24` now lists
+  "dependency-injection, deprecation-contracts" (matches `composer.json:37-38`);
+  S-1 now cites `:211-216`, which exactly covers the second `sed` step
+  (verified against the current file). No remaining proof-doc staleness.
+- **New findings: none.** Shipped-code diff byte-identical to round 2
+  (proof-docs-only delta); full sweep green (71 tests, 329 assertions;
+  `composer validate --strict` exit 0; `check-changelog.php` OK).
