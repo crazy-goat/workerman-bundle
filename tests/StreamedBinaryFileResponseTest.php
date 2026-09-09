@@ -187,7 +187,11 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', 'content');
         $response = new StreamedBinaryFileResponse($testFile);
 
-        $this->expectException(\InvalidArgumentException::class);
+        // Symfony 6.4 throws LogicException here, 7+ throws InvalidArgumentException
+        // (a LogicException subclass), so the parent class covers both; the message
+        // fragment pins it to the chunk-size validation, not just any LogicException.
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('cannot be less than 1');
         $response->setChunkSize(0);
     }
 

@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registered), short-circuit semantics, and `responseSentDirectly` are
   unchanged ([#563](https://github.com/crazy-goat/workerman-bundle/issues/563))
 
+- Declared three Symfony packages the bundle imports directly and dropped the
+  one it never used: `composer.json` now requires `symfony/http-foundation`,
+  `symfony/event-dispatcher`, and `symfony/deprecation-contracts`
+  (previously resolved only transitively via `symfony/http-kernel`), removes
+  the unused `league/mime-type-detection`, and suggests `ext-zip` for
+  `workerman:build:bin`
+  ([#588](https://github.com/crazy-goat/workerman-bundle/issues/588))
+
 ### Removed
 
 - `RebootStrategyInterface::needsPeakMemory()` and the `memory_reset_peak_usage()` gating in `HttpRequestHandler` — no shipped strategy ever returned `true`, so the per-request reset was dead code since ([#317](https://github.com/crazy-goat/workerman-bundle/issues/317)); `MemoryRebootStrategy` stays on `memory_get_usage()` (emalloc) and the interface docblock now matches the implementations. Custom strategies must remove the method; peak-tracking strategies should call `memory_reset_peak_usage()` themselves if needed. See `UPGRADE.md` for migration ([#562](https://github.com/crazy-goat/workerman-bundle/issues/562))
