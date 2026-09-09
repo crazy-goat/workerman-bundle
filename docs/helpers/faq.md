@@ -55,7 +55,8 @@ your diff, read only those `###` entries — never the whole file.
 - `phpbench` — FAQ-028
 - `phpstan` — FAQ-014, FAQ-029
 - `ports` — FAQ-009
-- `process` — FAQ-007, FAQ-030, FAQ-032
+- `process` — FAQ-007, FAQ-030, FAQ-032, FAQ-038
+- `reflection` — FAQ-038
 - `response-strategy` — FAQ-001, FAQ-002
 - `runner` — FAQ-036
 - `scheduler` — FAQ-020, FAQ-021
@@ -65,7 +66,7 @@ your diff, read only those `###` entries — never the whole file.
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
 - `symfony-config` — FAQ-035
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037, FAQ-038
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -462,3 +463,10 @@ files for version-gated constructs against the *minimum* version. A local
 PHP 8.2 binary (or a lint leg pinned to the lowest matrix version) is the
 gate this lesson wants; until then, the review + the 8.2 CI leg are the
 only nets.
+
+## Testing process-inspection code
+
+### Testing unreadable-field fail-closed branches in `final readonly` classes that read real `/proc`
+<!-- kb: id=FAQ-038 date=2026-09-09 tags=tests,process,reflection trigger="needing to test an unreadable/edge branch of a final readonly class that reads real /proc for a live process" hits=0 status=active -->
+
+A fail-closed branch (e.g. unreadable UID / start time in `ProcessInspector::matchesFingerprint()`) cannot be reached through a real `/proc` read on a live process: a live process always yields readable values, and making `/proc` genuinely unreadable needs a `hidepid` mount. `final readonly` classes cannot be mocked, and public static readers (`MasterFingerprint::readUidForPid()`) cannot be monkey-patched. The seam that works: extract the branch decision into a private method taking a value DTO (`ProcessSnapshot`) and invoke it via reflection with a crafted snapshot — see the crafted-snapshot tests in `tests/ProcessInspectorTest.php`. Plan for Rector's `RemoveAlwaysElseRector` if the extraction makes the surrounding `if/else` always-return: flatten to early returns. Keep mismatch tests (real `/proc`, wrong values) alongside the crafted-snapshot unreadable tests — they are complementary, not redundant. Discovered in #567 (PR #801).
