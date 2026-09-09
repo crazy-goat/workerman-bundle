@@ -20,7 +20,7 @@ F-2) but neither changed the fix.
   `^6.4|^7.0|^8.0` — the exact constraint style of every other `symfony/*`
   entry in the file (config, console, dependency-injection, http-kernel,
   runtime). Entries kept alphabetically sorted (`sort-packages: true`):
-  config, console, deprecation-contracts, dependency-injection,
+  config, console, dependency-injection, deprecation-contracts,
   event-dispatcher, http-foundation, http-kernel, runtime.
 - Added `symfony/deprecation-contracts` at `^2.5|^3.0` — the constraint the
   issue prescribes. Verified against reality: sibling packages in the

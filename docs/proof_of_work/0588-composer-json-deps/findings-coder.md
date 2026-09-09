@@ -4,7 +4,7 @@
 
 - **S-1 — The CI matrix `sed` would have broken on the new line.** The
   `Update Symfony constraints` step in `.github/workflows/tests.yaml:150-153`
-  and `:209-212` rewrote every `"symfony/*"` constraint to the leg version.
+  and `:211-216` rewrote every `"symfony/*"` constraint to the leg version.
   `symfony/deprecation-contracts` has no 6.x/7.x/8.x line (verified: versions
   are 2.x/3.x only), so adding it to `require` without touching the workflow
   fails `composer install` on all nine matrix legs. Fixed in this round with

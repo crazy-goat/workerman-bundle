@@ -34,3 +34,24 @@ One entry per review finding: file:line, what is wrong, severity, and what happe
   follow-up from the
   issue's acceptance criteria; declaring them later requires extending the `tests.yaml`
   `sed` exclusion (both are 2.x/3.x-versioned).
+
+## Round 2 (@ `d00e0ed`)
+
+- **R1-1 — verdict: FIXED.** The two lines are swapped (`dependency-injection` at
+  `composer.json:37`, `deprecation-contracts` at `:38`); re-verified `SORTED` with a
+  correct comparison (`array_values` + `sort(SORT_STRING)`, `strcmp` = `-13`). (Round 1's
+  one-liner had a key-preservation flaw that always printed `NOT-SORTED`, but its
+  byte-order reasoning was independently correct — the finding was real.)
+- **R1-2 — verdict: STILL PRESENT, deliberately deferred (main-session decision).**
+  No `tests/` file in the diff; the drift-only-surfaces-in-CI shape is unchanged.
+  Follow-up GitHub issue, out of scope for this chore.
+- **R1-3 — verdict: PARTIALLY FIXED, as decided.** CHANGELOG wording narrowed to
+  "three Symfony packages" (`CHANGELOG.md:51`) — overclaim gone. Contracts remainder
+  still transitive by design, deferred to the `composer-require-checker` follow-up.
+- **R2-1 — `docs/proof_of_work/0588-composer-json-deps/code-decision-1.md:22-24` and
+  `findings-coder.md` S-1, proof docs contradict the fixed tree (nit, docs-only).**
+  `code-decision-1.md` still lists the pre-fix order ("deprecation-contracts,
+  dependency-injection"); S-1 cites the pre-change second-step lines (`:209-212`,
+  now `:211-216`). No shipped-code impact; no plausible automated check (prose
+  staleness in scratch docs). Status: **fixed** (main session): swapped the two names in
+  code-decision-1.md and updated S-1 line refs to `:211-216`.
