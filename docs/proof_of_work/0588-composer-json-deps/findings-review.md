@@ -136,3 +136,24 @@ One entry per review finding: file:line, what is wrong, severity, and what happe
   E2E temp-file test 3 assertions; `php-cs-fixer` 0/256, `phpstan` no errors,
   `composer validate --strict` valid, `check-changelog.php` OK). Full `composer
   test` passed pre-fix; delta is test-only so a targeted run suffices.
+
+## CI re-run (PR #806, run 34405095115) — recorded by main session per step 11
+
+- **R-CI-1 — verdict: FIXED, confirmed by the matrix.** All four 6.4 legs
+  green; skip count on 6.4 went 17 → 22 (exactly the 5 new guards); no
+  remaining `tempFileObject`/`setChunkSize` failures anywhere.
+- **R-CI-2 — `Tests (8.2, 6.4.*)` leg fails on
+  `WorkermanCommandTest::testReloadDoesNotBreakServer` with cURL error 56
+  (connection reset) right after reload (low, flake, NOT caused by this
+  PR).** Evidence: (1) the same leg with the identical dependency tree
+  passed this test 25 min earlier in run 34403956293 — only test files
+  changed between the runs, no runtime code; (2) all other 8 legs green
+  in this run; (3) the test sends `reload`, waits for TCP port-up, then
+  fires a single HTTP request with no retry — port-up ≠ worker-ready, so
+  a mid-reload reset is a textbook race (`tests/WorkermanCommandTest.php:81-93`);
+  (4) this PR's diff (manifest + sed + CHANGELOG + 5 test-only edits +
+  proof docs) touches neither reload, daemon, nor HTTP serving. Status:
+  **not a real finding for this PR — re-ran the failed job**
+  (`gh run rerun --failed`); if it recurs it becomes a real reliability
+  issue to file separately (the test arguably wants a retry around the
+  post-reload request).
