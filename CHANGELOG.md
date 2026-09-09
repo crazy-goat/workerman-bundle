@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registered), short-circuit semantics, and `responseSentDirectly` are
   unchanged ([#563](https://github.com/crazy-goat/workerman-bundle/issues/563))
 
-- Declared the Symfony packages the bundle imports directly and dropped the
+- Declared three Symfony packages the bundle imports directly and dropped the
   one it never used: `composer.json` now requires `symfony/http-foundation`,
   `symfony/event-dispatcher`, and `symfony/deprecation-contracts`
   (previously resolved only transitively via `symfony/http-kernel`), removes
