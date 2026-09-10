@@ -137,7 +137,7 @@ function checkExceptionUsageDeclaredTypes(string $source): array
         // token is the declared name. Anonymous classes (`new class (...)`)
         // and `::class` constant fetches are not declarations: any other
         // significant token in between means there is no name to take.
-        if ($id !== \T_INTERFACE && $id !== \T_CLASS && $id !== \T_TRAIT && (\defined('T_ENUM') === false || $id !== \T_ENUM)) {
+        if (!\in_array($id, [\T_INTERFACE, \T_CLASS, \T_TRAIT], true) && (\defined('T_ENUM') === false || $id !== \T_ENUM)) {
             continue;
         }
 
