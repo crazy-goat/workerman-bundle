@@ -87,8 +87,11 @@ final class PcreLimitGuardTest extends TestCase
         }
 
         // The acceptance criterion: limits restored after the pass even on
-        // throw. (The finally above ran exit(); assert against the original.)
-        self::assertSame($originalBacktrack, ini_get('pcre.backtrack_limit'));
+        // throw (restored to the distorted prior, not the test-start original).
+        self::assertSame('777', ini_get('pcre.backtrack_limit'));
+        self::assertSame('666', ini_get('pcre.recursion_limit'));
+
+        ini_set('pcre.backtrack_limit', $originalBacktrack);
     }
 
     public function testExitIsIdempotentAndSafeWithoutEnter(): void
