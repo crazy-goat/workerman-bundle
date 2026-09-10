@@ -22,8 +22,12 @@ namespace CrazyGoat\WorkermanBundle\Phar;
  *    throws `InvalidArgumentException` if any are detected.
  *  - The compiled regex is dry-run against a small probe string to confirm
  *    PCRE accepts it. Compilation failure throws `InvalidArgumentException`.
- *  - Each match is wrapped in a per-call backtrack-limit guard so a pattern
- *    that somehow slipped through cannot hang the build.
+ *  - Each match runs `@preg_match` and treats a `false` result as "no
+ *    match", so a pattern that somehow slipped through and trips the
+ *    backtrack limit cannot hang the build. The bounded
+ *    `pcre.backtrack_limit` / `pcre.recursion_limit` are now established
+ *    once per filtering pass by `PcreLimitGuard` (issue #568) rather than
+ *    raised and restored on every call.
  *
  * @internal
  */
@@ -33,13 +37,19 @@ final readonly class ExcludePattern
      * Defence ceiling for PCRE backtracking per call. Slightly higher than
      * PHP's default (1,000,000) but still bounded, so a pathological user
      * pattern cannot hang the build indefinitely.
+     *
+     * Public so {@see PcreLimitGuard} can establish the same ceiling once
+     * per filtering pass without duplicating the value.
      */
-    private const BACKTRACK_LIMIT = 1_000_000;
+    public const BACKTRACK_LIMIT = 1_000_000;
 
     /**
      * Defence ceiling for PCRE recursion depth per call.
+     *
+     * Public so {@see PcreLimitGuard} can establish the same ceiling once
+     * per filtering pass without duplicating the value.
      */
-    private const RECURSION_LIMIT = 100_000;
+    public const RECURSION_LIMIT = 100_000;
 
     /**
      * Probe string used at construction time to verify the compiled regex
@@ -93,26 +103,24 @@ final readonly class ExcludePattern
         $this->regex = $regex;
     }
 
+    /**
+     * Must be called inside a PcreLimitGuard pass (e.g. via
+     * PharBuilder::build()) for the bounded ReDoS ceilings to apply;
+     * outside a pass the process-default PCRE limits are in effect.
+     *
+     * @see PcreLimitGuard
+     */
     public function matches(string $path): bool
     {
-        $previousBacktrack = ini_set('pcre.backtrack_limit', (string) self::BACKTRACK_LIMIT);
-        $previousRecursion = ini_set('pcre.recursion_limit', (string) self::RECURSION_LIMIT);
-        try {
-            $result = @preg_match($this->regex, $path);
-            if ($result === false) {
-                // Catastrophic backtracking tripped the limit; treat as "no match"
-                // so the file is included rather than the build hanging. The
-                // proper guard is the structural check in the constructor; this
-                // branch is a safety net.
-                return false;
-            }
-        } finally {
-            if (is_string($previousBacktrack)) {
-                ini_set('pcre.backtrack_limit', $previousBacktrack);
-            }
-            if (is_string($previousRecursion)) {
-                ini_set('pcre.recursion_limit', $previousRecursion);
-            }
+        $result = @preg_match($this->regex, $path);
+        if ($result === false) {
+            // Catastrophic backtracking tripped the limit; treat as "no match"
+            // so the file is included rather than the build hanging. The
+            // proper guard is the structural check in the constructor; this
+            // branch is a safety net. The bounded pcre.backtrack_limit /
+            // pcre.recursion_limit are established once per filtering pass
+            // by PcreLimitGuard (issue #568).
+            return false;
         }
 
         return $result === 1;

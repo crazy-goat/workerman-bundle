@@ -375,4 +375,65 @@ final class PharBuilderTest extends TestCase
             'exclude_files' => [],
         ], $this->tempDir . '/build/test.phar');
     }
+
+    /**
+     * The bounded PCRE limits are established once for the filtering pass
+     * and must be restored afterwards — including when the build throws
+     * mid-pass (issue #568 acceptance criterion). We force a throw inside
+     * the guarded buildFromIterator() region by making a source file
+     * unreadable, then assert the ini values are exactly restored.
+     */
+    public function testBuildRestoresPcreLimitsWhenPassThrows(): void
+    {
+        if ((bool) ini_get('phar.readonly')) {
+            self::markTestSkipped('phar.readonly is On — cannot build PHARs.');
+        }
+
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            self::markTestSkipped('Running as root — chmod 000 does not prevent reads.');
+        }
+
+        mkdir($this->tempDir . '/src', 0755, true);
+        file_put_contents($this->tempDir . '/src/keep.php', '<?php');
+        file_put_contents($this->tempDir . '/src/unreadable.php', '<?php');
+        chmod($this->tempDir . '/src/unreadable.php', 0000);
+
+        $originalBacktrack = ini_get('pcre.backtrack_limit');
+        $originalRecursion = ini_get('pcre.recursion_limit');
+        self::assertIsString($originalBacktrack);
+        self::assertIsString($originalRecursion);
+
+        // Distort the limits so a "restore to PHP default" bug would be
+        // caught — the guard must restore *our* prior values, not defaults.
+        ini_set('pcre.backtrack_limit', '123456');
+        ini_set('pcre.recursion_limit', '65432');
+        $distortedBacktrack = ini_get('pcre.backtrack_limit');
+        $distortedRecursion = ini_get('pcre.recursion_limit');
+
+        $threw = false;
+        try {
+            (new PharBuilder($this->tempDir, 'test'))->build([
+                'kernel_class' => 'App\\Kernel',
+                'exclude_patterns' => [],
+                'exclude_files' => [],
+            ], $this->tempDir . '/build/test.phar');
+        } catch (\Throwable $e) {
+            $threw = true;
+            // buildFromIterator must fail on the unreadable file.
+            self::assertStringContainsString('unreadable', $e->getMessage());
+        } finally {
+            chmod($this->tempDir . '/src/unreadable.php', 0644);
+        }
+
+        self::assertTrue($threw, 'build() was expected to throw on an unreadable source file.');
+
+        // The acceptance criterion: limits restored to the pre-pass values
+        // even though the pass threw.
+        self::assertSame($distortedBacktrack, ini_get('pcre.backtrack_limit'));
+        self::assertSame($distortedRecursion, ini_get('pcre.recursion_limit'));
+
+        // Restore the originals for any later test in the process.
+        ini_set('pcre.backtrack_limit', $originalBacktrack);
+        ini_set('pcre.recursion_limit', $originalRecursion);
+    }
 }
