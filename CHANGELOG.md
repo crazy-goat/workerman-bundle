@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ExcludePattern::matches()` no longer raises and restores
+  `pcre.backtrack_limit` / `pcre.recursion_limit` on every call — four
+  `ini_set()` calls per pattern per file, ~62% of the function's cost. The
+  bounded PCRE limits are now established once per filtering pass by a new
+  `PcreLimitGuard` that `PharBuilder::build()` enters before
+  `buildFromIterator()` and exits in a `finally` (restoring the prior values
+  even when the build throws). `matches()` is now a bare `@preg_match` plus
+  the existing `false`-result safety net (the ReDoS guard from #334 that
+  turns a tripped backtrack limit into "no match" instead of a hang);
+  construction-time structural validation of patterns is unchanged
+  ([#568](https://github.com/crazy-goat/workerman-bundle/issues/568))
+
 - `ProcessInspector::isProcessAlive()` no longer reads the whole
   `/proc/{pid}/status` file (~1 KB) and runs a multiline regex over it
   on every liveness poll. On Linux it now reads the single state

@@ -64,16 +64,16 @@ final class ExcludePatternTest extends TestCase
         new ExcludePattern('#src/[unterminated#');
     }
 
-    public function testMatchesAppliesBacktrackLimitGuardPerCall(): void
+    public function testMatchesCompletesQuicklyUnderBacktrackLimit(): void
     {
-        // Verify that matches() temporarily raises pcre.backtrack_limit
-        // around preg_match(). We capture the limit before and after a
-        // call; the limit should be set to a positive integer during the
-        // call and restored afterwards. We assert this by injecting a
-        // pathological-but-structurally-accepted pattern and confirming
-        // the call returns within a tight budget (proving the guard is
-        // set rather than relying on defaults, which on some PHP versions
-        // can be effectively unbounded).
+        // The ReDoS safety net from #334: a pathological pattern that
+        // somehow slipped past the structural check must not hang the build.
+        // matches() runs @preg_match and treats a false result (limit
+        // tripped) as "no match". The bounded pcre.backtrack_limit /
+        // pcre.recursion_limit are established once per filtering pass by
+        // PcreLimitGuard (issue #568); outside a pass, PHP's defaults
+        // (1_000_000 / 100_000) match the guard's ceilings, so the same
+        // bound applies and the call still completes quickly.
         $pattern = new ExcludePattern('#.*foo.*#');
 
         // Snapshot before, then deliberately use a known-bad pattern that
@@ -89,7 +89,8 @@ final class ExcludePatternTest extends TestCase
         // pathological pattern could hang for seconds.
         self::assertLessThan(1.0, $elapsed, 'matches() took too long; backtrack-limit guard is not effective.');
 
-        // The ini value must be exactly restored.
+        // matches() no longer touches the ini value itself (issue #568);
+        // it must leave it exactly as it found it.
         self::assertSame($previous, ini_get('pcre.backtrack_limit'));
     }
 }

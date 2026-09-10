@@ -89,9 +89,20 @@ final readonly class PharBuilder
 
         $filtered = new \CallbackFilterIterator($iterator, $filter->shouldInclude(...));
 
-        $phar->buildFromIterator($filtered, $this->projectDir);
-        $phar->setStub($this->generateStub($buildConfig, $pharFilename));
-        $phar->stopBuffering();
+        // Establish the bounded PCRE limits once for the whole filtering
+        // pass (issue #568): ExcludePattern::matches() used to raise and
+        // restore pcre.backtrack_limit / pcre.recursion_limit on every
+        // call — four ini_set() calls per pattern per file. Restore on the
+        // way out, including when buildFromIterator() throws.
+        $limitGuard = new PcreLimitGuard();
+        $limitGuard->enter();
+        try {
+            $phar->buildFromIterator($filtered, $this->projectDir);
+            $phar->setStub($this->generateStub($buildConfig, $pharFilename));
+            $phar->stopBuffering();
+        } finally {
+            $limitGuard->exit();
+        }
 
         unset($phar);
 
