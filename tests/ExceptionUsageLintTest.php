@@ -267,17 +267,17 @@ final class ExceptionUsageLintTest extends TestCase
 
             if ($item->isDir()) {
                 if (!@rmdir($item->getPathname())) {
-                    @trigger_error(sprintf('removeRecursively: rmdir(%s) failed', $item->getPathname()), \E_USER_WARNING);
+                    error_log(sprintf('ExceptionUsageLintTest removeRecursively: rmdir(%s) failed', $item->getPathname()));
                 }
             } else {
                 if (!@unlink($item->getPathname())) {
-                    @trigger_error(sprintf('removeRecursively: unlink(%s) failed', $item->getPathname()), \E_USER_WARNING);
+                    error_log(sprintf('ExceptionUsageLintTest removeRecursively: unlink(%s) failed', $item->getPathname()));
                 }
             }
         }
 
         if (!@rmdir($path)) {
-            @trigger_error(sprintf('removeRecursively: rmdir(%s) failed', $path), \E_USER_WARNING);
+            error_log(sprintf('ExceptionUsageLintTest removeRecursively: rmdir(%s) failed', $path));
         }
     }
 }
