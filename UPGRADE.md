@@ -489,22 +489,27 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
-| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException` |
-| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`  |
+| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException` |
+| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
 **Exception hierarchy:**
 
 ```text
 WorkermanExceptionInterface
+├── ClientInputExceptionInterface (extends WorkermanExceptionInterface)
+│   ├── MalformedRequestException (extends \InvalidArgumentException)
+│   └── FileUploadValidationException (extends ValidationException)
 ├── WorkermanException (extends \RuntimeException)
 │   ├── ServerException
 │   │   ├── ServerAlreadyRunningException
 │   │   ├── ServerNotRunningException
 │   │   └── ServerStopFailedException
-│   └── KernelException
-│       ├── KernelCreationException
-│       └── InvalidCacheDirectoryException
+│   ├── KernelException
+│   │   ├── KernelCreationException
+│   │   └── InvalidCacheDirectoryException
+│   └── UnsupportedListenSchemeException
+├── SfxExtractionException (extends \RuntimeException)
 ├── ValidationException (extends \InvalidArgumentException)
 │   └── FileUploadValidationException
 ├── SchedulerException (extends \InvalidArgumentException)

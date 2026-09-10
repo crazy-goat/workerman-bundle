@@ -152,3 +152,91 @@ simpler.
   `ConfigurationValidationException` was deleted: the 0.12 CHANGELOG entry
   kept the name (history) while the 0.12 UPGRADE table was corrected
   (guidance).
+
+---
+
+## Round 2 — fixing review round 1 findings
+
+### Biggest problem faced
+
+**Confirming that the F-01 regex bug was real and that the tokenizer fix
+actually solves it, not just moves the problem.**
+
+The review's F-01 finding was precise: the regex
+`\b(?:interface|abstract\s+class|final\s+class|class)\s+(\w+)/` captures
+`for` from the docblock "Marker interface for exceptions" in both interface
+files. I verified this directly:
+
+```
+$ php -r "preg_match('/\b(?:interface|abstract\s+class|final\s+class|class)\s+(\w+)/', file_get_contents('src/Exception/ClientInputExceptionInterface.php'), \$m); echo \$m[1];"
+for
+```
+
+So the script was reporting "22 types OK" but two of those 22 "types" were
+actually the word `for` — a PHP keyword that matches in virtually every PHP
+file. The interfaces `ClientInputExceptionInterface` and
+`WorkermanExceptionInterface` were never checked at all. An unused interface
+would have passed silently.
+
+The tokenizer fix (`token_get_all()` → find `T_INTERFACE`/`T_CLASS` →
+extract next `T_STRING`) is the textbook solution, but I needed to confirm
+it handles the real-world modifiers in the tree (`abstract class`, `final
+class`). It does: modifiers like `abstract`, `final`, `readonly` are
+separate tokens that *precede* `T_CLASS`, so the scanner sees `T_CLASS`
+regardless of which modifiers are present. The count stays 22 (same as
+before), but now all 22 are real type names, not `for`.
+
+I also confirmed the regression test catches the bug: reverting to the old
+regex causes `testTheWordInterfaceInADocblockIsNotMistakenForADeclaration`
+to fail (the script reports `for` instead of `UnusedMarkerInterface`).
+
+### Obstacles / surprises
+
+- **`getenv()` returns `array<string|false>` in PHP's type system, but
+  `proc_open`'s env parameter expects `array<string, string>`.** Passing
+  `[...getenv(), ...$env]` directly works at runtime (the `false` values
+  are just skipped), but PHPStan at the project's level could flag it. In
+  this case PHPStan passed clean — the `proc_open` parameter is typed
+  loosely enough. If it had flagged, I would have filtered out `false`
+  values with `array_filter(getenv(), fn ($v) => $v !== false)`.
+
+- **The UPGRADE.md hierarchy tree has a structural ambiguity with
+  `FileUploadValidationException`.** It extends `ValidationException` AND
+  implements `ClientInputExceptionInterface`. In a tree, a node can only
+  have one parent. I chose to show it under both (once under
+  `ClientInputExceptionInterface`, once under `ValidationException`) since
+  the tree is a human-readable guide, not a strict single-inheritance
+  diagram. This is the same convention the pre-existing tree used for
+  `WorkermanExceptionInterface` (shown as the root even though some classes
+  implement it rather than extend a class that does).
+
+### Discovered bugs / places to improve (including out-of-scope)
+
+6. **The F-01 regex bug means every prior CI run of
+   `bin/check-exception-usage.php` was partially vacuous.** Before round 1's
+   fix (which is what round 2 fixes), the two marker interfaces
+   (`ClientInputExceptionInterface`, `WorkermanExceptionInterface`) were
+   never actually checked for references — the regex captured `for` from
+   their docblocks and `for` matches everywhere. This means the "22 types
+   OK" output was misleading: only 20 were genuinely verified. Now fixed by
+   the tokenizer approach. No residual impact — both interfaces are
+   genuinely referenced in the codebase.
+
+7. **`UPGRADE.md` hierarchy tree was missing 4 types (pre-existing, F-04).**
+   `MalformedRequestException`, `SfxExtractionException`,
+   `UnsupportedListenSchemeException`, and `ClientInputExceptionInterface`
+   were absent from the "Upgrading to 0.12" tree. The migration table was
+   also missing `MalformedRequestException` (from the
+   `\InvalidArgumentException` row) and `SfxExtractionException` +
+   `UnsupportedListenSchemeException` (from the `\RuntimeException` row).
+   Fixed in this round. Suggested follow-up: a CI gate that verifies the
+   UPGRADE.md tree matches `src/Exception/` would prevent future drift, but
+   that is out of scope for #593.
+
+### F-05 confirmation
+
+The released `## [0.12.0]` CHANGELOG entry at `CHANGELOG.md:1507` still
+names the deleted `ConfigurationValidationException`. This is confirmed and
+intentionally left unedited — released changelog entries are an immutable
+historical ledger. The `[Unreleased]` section correctly records the removal.
+No action needed.

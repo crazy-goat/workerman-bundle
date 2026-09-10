@@ -113,6 +113,54 @@ function checkExceptionUsagePhpFiles(string $dir): array
 }
 
 /**
+ * Return the short names of every interface and class declared in the given
+ * PHP source, using the tokenizer so that "interface"/"class" inside comments
+ * or strings is never mistaken for a declaration.
+ *
+ * @return list<string>
+ */
+function checkExceptionUsageDeclaredTypes(string $source): array
+{
+    $tokens = \token_get_all($source);
+
+    $names = [];
+    $count = \count($tokens);
+
+    for ($i = 0; $i < $count; ++$i) {
+        if (!\is_array($tokens[$i])) {
+            continue;
+        }
+
+        $id = $tokens[$i][0];
+
+        // T_INTERFACE or T_CLASS — the next non-whitespace, non-comment
+        // token is the declared name.
+        if ($id !== \T_INTERFACE && $id !== \T_CLASS) {
+            continue;
+        }
+
+        for ($j = $i + 1; $j < $count; ++$j) {
+            if (!\is_array($tokens[$j])) {
+                continue;
+            }
+
+            // Skip whitespace and comments between the keyword and the name.
+            if (\in_array($tokens[$j][0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            if ($tokens[$j][0] === \T_STRING) {
+                $names[] = $tokens[$j][1];
+            }
+
+            break;
+        }
+    }
+
+    return $names;
+}
+
+/**
  * @param array{root: string} $options
  */
 function checkExceptionUsageMain(array $options): void
@@ -150,13 +198,13 @@ function checkExceptionUsageMain(array $options): void
         $path = $file->getRealPath();
         $source = (string) file_get_contents($path);
 
-        // Match `interface Foo`, `abstract class Foo`, `final class Foo`,
-        // `class Foo`. The short name is what other files reference.
-        if (preg_match('/\b(?:interface|abstract\s+class|final\s+class|class)\s+(\w+)/', $source, $matches) !== 1) {
-            continue;
+        // Discover declared types via the PHP tokenizer so that the word
+        // "interface"/"class" inside docblock comments or strings cannot be
+        // mistaken for a real declaration. Handles interface, class (incl.
+        // abstract/final/readonly modifiers) and multiple types per file.
+        foreach (checkExceptionUsageDeclaredTypes($source) as $name) {
+            $declared[] = ['name' => $name, 'path' => $path];
         }
-
-        $declared[] = ['name' => $matches[1], 'path' => $path];
     }
 
     if ($declared === []) {

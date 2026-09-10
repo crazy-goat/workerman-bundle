@@ -91,6 +91,44 @@ final class ExceptionUsageLintTest extends TestCase
         self::assertStringContainsString('SelfReferentialException is declared in src/Exception but referenced by no other PHP file', $result['err']);
     }
 
+    public function testTheWordInterfaceInADocblockIsNotMistakenForADeclaration(): void
+    {
+        // Regression test for review finding F-01: the type-discovery step
+        // must use the PHP tokenizer, not a regex, so that the word
+        // "interface" (or "class") inside a docblock cannot be captured as
+        // the declared type name. A naive regex captured "for" from
+        // "Marker interface for exceptions", making the real interface
+        // silently unchecked.
+        $this->writeException(
+            'UnusedMarkerInterface',
+            "/** Marker interface for unreferenced exceptions. */\n"
+            . "interface UnusedMarkerInterface extends \\Throwable\n{\n}\n",
+        );
+        $this->writeReferencingFile('src/Other.php', "<?php\n\n// no reference\n");
+
+        $result = $this->runChecked();
+
+        // The script must report the *real* type name, not "for".
+        self::assertStringContainsString('UnusedMarkerInterface is declared in src/Exception but referenced by no other PHP file', $result['err']);
+        self::assertStringNotContainsString('for is declared in src/Exception', $result['err']);
+    }
+
+    public function testMultipleTypesInOneFileAreAllDiscovered(): void
+    {
+        // Regression test for review finding F-02: a file that declares
+        // multiple types must have all of them discovered and checked.
+        $body = "interface FirstInterface extends \\Throwable\n{\n}\n\n"
+            . "final class SecondException extends \\RuntimeException\n{\n}\n";
+        $this->writeException('MultiTypeFile', $body);
+        // Reference the first type so only the second is unused.
+        $this->writeReferencingFile('src/UsesFirst.php', "<?php\n\nthrow new \\CrazyGoat\\WorkermanBundle\\Exception\\FirstInterface('x');\n");
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('SecondException is declared in src/Exception but referenced by no other PHP file', $result['err']);
+        self::assertStringNotContainsString('FirstInterface is declared in src/Exception but referenced by no other PHP file', $result['err']);
+    }
+
     public function testAMissingExceptionDirectoryIsAUsageError(): void
     {
         $result = $this->runScript([], ['--root=' . $this->sandbox]);
@@ -154,7 +192,9 @@ final class ExceptionUsageLintTest extends TestCase
     }
 
     /**
-     * Runs the script with exactly the given arguments and environment.
+     * Runs the script with the given arguments. The environment is inherited
+     * from the current process (so that PATH, HOME, and any CI vars the
+     * script might need are available), overlaid with any explicit overrides.
      *
      * @param array<string, string> $env
      * @param list<string> $args
@@ -179,7 +219,7 @@ final class ExceptionUsageLintTest extends TestCase
             $descriptors,
             $pipes,
             $this->sandbox,
-            ['PATH' => (string) getenv('PATH'), ...$env],
+            [...getenv(), ...$env],
         );
         self::assertIsResource($process);
 
@@ -205,12 +245,18 @@ final class ExceptionUsageLintTest extends TestCase
             }
 
             if ($item->isDir()) {
-                rmdir($item->getPathname());
+                if (!@rmdir($item->getPathname())) {
+                    @trigger_error(sprintf('removeRecursively: rmdir(%s) failed', $item->getPathname()), \E_USER_WARNING);
+                }
             } else {
-                unlink($item->getPathname());
+                if (!@unlink($item->getPathname())) {
+                    @trigger_error(sprintf('removeRecursively: unlink(%s) failed', $item->getPathname()), \E_USER_WARNING);
+                }
             }
         }
 
-        rmdir($path);
+        if (!@rmdir($path)) {
+            @trigger_error(sprintf('removeRecursively: rmdir(%s) failed', $path), \E_USER_WARNING);
+        }
     }
 }
