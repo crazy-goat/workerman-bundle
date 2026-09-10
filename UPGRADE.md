@@ -58,6 +58,10 @@ public function shouldReboot(): bool
 }
 ```
 
+### `Runner` now throws `InvalidCacheDirectoryException` for uncreatable runtime directories
+
+`Runner::applyWorkermanConfig()` previously threw a generic `\RuntimeException` when `mkdir()` failed for a PID, log, or stdout directory. It now throws `InvalidCacheDirectoryException` ([#593](https://github.com/crazy-goat/workerman-bundle/issues/593)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
+
 ---
 
 ## Upgrading to 0.25
@@ -485,7 +489,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
-| `\InvalidArgumentException`     | `FileUploadValidationException`, `ConfigurationValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException` |
+| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException` |
 | `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
@@ -502,8 +506,7 @@ WorkermanExceptionInterface
 │       ├── KernelCreationException
 │       └── InvalidCacheDirectoryException
 ├── ValidationException (extends \InvalidArgumentException)
-│   ├── FileUploadValidationException
-│   └── ConfigurationValidationException
+│   └── FileUploadValidationException
 ├── SchedulerException (extends \InvalidArgumentException)
 │   ├── InvalidTriggerException
 │   └── InvalidCronExpressionException

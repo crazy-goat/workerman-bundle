@@ -110,7 +110,8 @@
             "vendor/bin/phpstan",
             "vendor/bin/rector process --dry-run",
             "php bin/kb-lint.php",
-            "php bin/check-changelog.php"
+            "php bin/check-changelog.php",
+            "php bin/check-exception-usage.php"
         ],
         "kb-lint": [
             "php bin/kb-lint.php"

@@ -48,7 +48,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 10. **PHAR/BIN runtime support** — `runtime_dir` config key with `WORKERMAN_RUNTIME_DIR` env var, `PharHelper` for runtime path resolution, automatic runtime directory creation, skips file monitor in PHAR mode, `KernelFactory` with PHAR-aware `getCacheDir()`/`getLogDir()`.
 
-11. **Custom exception hierarchy** — 21 exception classes under `WorkermanExceptionInterface` → `WorkermanException` → category bases (`ServerException`, `KernelException`, `MiddlewareException`, `SchedulerException`, `ValidationException`) with specific exceptions for every error case. Upstream uses only generic PHP exceptions.
+11. **Custom exception hierarchy** — 20 exception classes (plus 2 marker interfaces) under `WorkermanExceptionInterface` → `WorkermanException` → category bases (`ServerException`, `KernelException`, `MiddlewareException`, `SchedulerException`, `ValidationException`) with specific exceptions for the bundle's error cases. Upstream uses only generic PHP exceptions.
 
 12. **`Utils::reload()`** — programmatic worker reload from application code with `reloadAllWorkers: true` param.
 
@@ -70,7 +70,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 ### Code quality / DX
 
-- Full custom exception hierarchy (21 classes) instead of generic `\Exception`
+- Full custom exception hierarchy (20 classes plus 2 marker interfaces) instead of generic `\Exception`
 - `readonly` classes where appropriate
 - Extracted `ConfigurationTreeBuilder`, `ServicesConfigurator`, `WorkermanCompilerPass` as separate testable classes (upstream uses anonymous closures/files)
 - `ServerManager` extracted as standalone service (testable)
