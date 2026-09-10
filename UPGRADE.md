@@ -58,6 +58,10 @@ public function shouldReboot(): bool
 }
 ```
 
+### `Runner` now throws `InvalidCacheDirectoryException` for uncreatable runtime directories
+
+`Runner::applyWorkermanConfig()` previously threw a generic `\RuntimeException` when `mkdir()` failed for a PID, log, or stdout directory. It now throws `InvalidCacheDirectoryException` ([#593](https://github.com/crazy-goat/workerman-bundle/issues/593)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
+
 ---
 
 ## Upgrading to 0.25
@@ -485,25 +489,29 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
-| `\InvalidArgumentException`     | `FileUploadValidationException`, `ConfigurationValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException` |
-| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`  |
+| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException` |
+| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
 **Exception hierarchy:**
 
 ```text
 WorkermanExceptionInterface
+├── ClientInputExceptionInterface (extends WorkermanExceptionInterface)
+│   ├── MalformedRequestException (extends \InvalidArgumentException)
+│   └── FileUploadValidationException (extends ValidationException)
 ├── WorkermanException (extends \RuntimeException)
 │   ├── ServerException
 │   │   ├── ServerAlreadyRunningException
 │   │   ├── ServerNotRunningException
 │   │   └── ServerStopFailedException
-│   └── KernelException
-│       ├── KernelCreationException
-│       └── InvalidCacheDirectoryException
+│   ├── KernelException
+│   │   ├── KernelCreationException
+│   │   └── InvalidCacheDirectoryException
+│   └── UnsupportedListenSchemeException
+├── SfxExtractionException (extends \RuntimeException)
 ├── ValidationException (extends \InvalidArgumentException)
-│   ├── FileUploadValidationException
-│   └── ConfigurationValidationException
+│   └── FileUploadValidationException
 ├── SchedulerException (extends \InvalidArgumentException)
 │   ├── InvalidTriggerException
 │   └── InvalidCronExpressionException

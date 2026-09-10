@@ -67,6 +67,32 @@ the `CHANGELOG_CHECK_ROOT` environment variable, itself reported as a
 warning) points the check at another checkout; the resolved root is always
 printed so it is never ambiguous which tree was checked.
 
+### `check-exception-usage.php`
+
+Verifies that every type declared in `src/Exception/` (interface, abstract
+base or `final class`) is referenced by at least one PHP file outside its
+own definition across `src/`, `tests/`, `e2e/` and `benchmarks/`. The
+exception hierarchy is advertised in the README as a feature with a counted
+size, so an unused member is worse than ordinary dead code: it inflates that
+number and signals a missing throw (a real error path escaping the
+hierarchy). Issue #593 found two such classes that had shipped green for
+many releases because nothing checked. Wired into `composer lint`, so the
+pre-push hook and the CI Lint job run it too;
+`tests/ExceptionUsageLintTest.php` drives the same script as a subprocess
+against synthetic fixtures.
+
+**Usage:**
+```bash
+php bin/check-exception-usage.php               # what composer lint runs
+php bin/check-exception-usage.php --root=/path/to/checkout
+```
+
+Exit codes: 0 = every type is referenced, 1 = one or more unused types,
+2 = usage error (unknown option, missing root, missing/unreadable
+`src/Exception/`). The check is word-boundary based so `KernelException`
+does not match `InvalidCacheDirectoryException`; a `use` import counts as a
+reference, and a self-reference inside the class's own file does not.
+
 ### `gh-branch`
 
 Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,

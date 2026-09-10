@@ -6,6 +6,8 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Exception\WorkermanExceptionInterface;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Runner;
@@ -407,7 +409,7 @@ final class RunnerTest extends TestCase
                 'max_package_size' => 10 * 1024 * 1024,
             ];
 
-            $this->expectException(\RuntimeException::class);
+            $this->expectException(InvalidCacheDirectoryException::class);
             $this->expectExceptionMessage('Unable to create directory');
 
             // The failed mkdir is intentional here: the test places a file at
@@ -419,6 +421,56 @@ final class RunnerTest extends TestCase
             } finally {
                 restore_error_handler();
             }
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
+    /**
+     * The mkdir-failure path must throw the bundle's typed exception, not a
+     * bare \RuntimeException, and the typed exception must sit inside the
+     * hierarchy so a single `WorkermanExceptionInterface` catch covers it
+     * while a `\RuntimeException` catch still works (BC).
+     *
+     * Triggers the real condition (a file blocks the directory path) rather
+     * than constructing and throwing the exception directly.
+     */
+    public function testApplyWorkermanConfigMkdirFailureThrowsTypedExceptionInHierarchy(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+        touch($tmpDir . '/var');
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'pid_file' => $tmpDir . '/var/run/workerman.pid',
+                'log_file' => $tmpDir . '/var/log/workerman.log',
+                'stdout_file' => $tmpDir . '/var/log/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 10 * 1024 * 1024,
+            ];
+
+            $thrown = null;
+            set_error_handler(static fn(int $severity, string $message): bool => $severity === \E_WARNING && \str_contains($message, 'mkdir(): Not a directory'));
+            try {
+                $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+            } catch (\Throwable $e) {
+                $thrown = $e;
+            } finally {
+                restore_error_handler();
+            }
+
+            $this->assertNotNull($thrown, 'applyWorkermanConfig() must throw when mkdir fails');
+            $this->assertInstanceOf(InvalidCacheDirectoryException::class, $thrown);
+            $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+            $this->assertInstanceOf(\RuntimeException::class, $thrown);
+            $this->assertStringContainsString('Unable to create directory', $thrown->getMessage());
         } finally {
             $this->restoreWorkerState($saved);
             $this->removeDir($tmpDir);

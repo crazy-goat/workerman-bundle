@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
@@ -165,7 +166,7 @@ readonly class Runner implements RunnerInterface
      *
      * @param mixed[] $config
      *
-     * @throws \RuntimeException when a runtime directory cannot be created
+     * @throws InvalidCacheDirectoryException when a runtime directory cannot be created
      */
     private function applyWorkermanConfig(array $config): void
     {
@@ -179,7 +180,7 @@ readonly class Runner implements RunnerInterface
 
         $pidDir = dirname($pidFile);
         if (!is_dir($pidDir) && (!mkdir(directory: $pidDir, permissions: 0700, recursive: true) && !is_dir($pidDir))) {
-            throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $pidDir));
+            throw new InvalidCacheDirectoryException(\sprintf('Unable to create directory "%s".', $pidDir));
         }
 
         foreach ([
@@ -187,7 +188,7 @@ readonly class Runner implements RunnerInterface
             dirname($stdoutFile),
         ] as $runtimeDir) {
             if (!is_dir($runtimeDir) && !mkdir(directory: $runtimeDir, permissions: 0700, recursive: true) && !is_dir($runtimeDir)) {
-                throw new \RuntimeException(\sprintf('Unable to create directory "%s".', $runtimeDir));
+                throw new InvalidCacheDirectoryException(\sprintf('Unable to create directory "%s".', $runtimeDir));
             }
         }
 
