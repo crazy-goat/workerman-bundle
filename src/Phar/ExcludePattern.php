@@ -103,6 +103,11 @@ final readonly class ExcludePattern
         $this->regex = $regex;
     }
 
+    /**
+     * @see PcreLimitGuard Must be called inside a PcreLimitGuard pass
+     * (e.g. via PharBuilder::build()) for the bounded ReDoS ceilings to
+     * apply; outside a pass the process-default PCRE limits are in effect.
+     */
     public function matches(string $path): bool
     {
         $result = @preg_match($this->regex, $path);

@@ -69,6 +69,10 @@ final class PcreLimitGuardTest extends TestCase
         $originalBacktrack = ini_get('pcre.backtrack_limit');
         self::assertIsString($originalBacktrack);
 
+        // Distort first so the test proves restore-to-prior, not restore-to-default.
+        ini_set('pcre.backtrack_limit', '777');
+        ini_set('pcre.recursion_limit', '666');
+
         $guard = new PcreLimitGuard();
         $guard->enter();
 
