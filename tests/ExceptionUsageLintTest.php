@@ -129,6 +129,27 @@ final class ExceptionUsageLintTest extends TestCase
         self::assertStringNotContainsString('FirstInterface is declared in src/Exception but referenced by no other PHP file', $result['err']);
     }
 
+    public function testClassConstantFetchIsNotMistakenForADeclaration(): void
+    {
+        // Regression test for review finding F-08: `Foo::class` inside an
+        // exception file is a constant fetch, not a declaration — the token
+        // after T_CLASS must not be captured across other significant
+        // tokens (here `.`), which used to record a phantom type name.
+        $this->writeException(
+            'RealException',
+            "final class RealException extends \\RuntimeException\n{\n}\n"
+            . "function probe(): string\n{\n"
+            . "    return \\Foo\\Bar::class . SOME_SUFFIX;\n"
+            . "}\n",
+        );
+        $this->writeReferencingFile('src/UsesIt.php', "<?php\n\nthrow new \\CrazyGoat\\WorkermanBundle\\Exception\\RealException('x');\n");
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('check-exception-usage: OK', $result['out']);
+    }
+
     public function testAMissingExceptionDirectoryIsAUsageError(): void
     {
         $result = $this->runScript([], ['--root=' . $this->sandbox]);

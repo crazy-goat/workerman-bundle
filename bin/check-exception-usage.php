@@ -113,8 +113,8 @@ function checkExceptionUsagePhpFiles(string $dir): array
 }
 
 /**
- * Return the short names of every interface and class declared in the given
- * PHP source, using the tokenizer so that "interface"/"class" inside comments
+ * Return the short names of every interface, class, trait and enum declared
+ * in the given PHP source, using the tokenizer so that "interface"/"class" inside comments
  * or strings is never mistaken for a declaration.
  *
  * @return list<string>
@@ -134,14 +134,30 @@ function checkExceptionUsageDeclaredTypes(string $source): array
         $id = $tokens[$i][0];
 
         // T_INTERFACE or T_CLASS — the next non-whitespace, non-comment
-        // token is the declared name.
-        if ($id !== \T_INTERFACE && $id !== \T_CLASS) {
+        // token is the declared name. Anonymous classes (`new class (...)`)
+        // and `::class` constant fetches are not declarations: any other
+        // significant token in between means there is no name to take.
+        if ($id !== \T_INTERFACE && $id !== \T_CLASS && $id !== \T_TRAIT && (\defined('T_ENUM') === false || $id !== \T_ENUM)) {
             continue;
+        }
+
+        // `Foo::class` — the T_CLASS here is a constant fetch, not a
+        // declaration. Look back past whitespace/comments for `::`.
+        for ($k = $i - 1; $k >= 0; --$k) {
+            if (\is_array($tokens[$k]) && \in_array($tokens[$k][0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            if (\is_array($tokens[$k]) && $tokens[$k][0] === \T_DOUBLE_COLON) {
+                continue 2;
+            }
+
+            break;
         }
 
         for ($j = $i + 1; $j < $count; ++$j) {
             if (!\is_array($tokens[$j])) {
-                continue;
+                break;
             }
 
             // Skip whitespace and comments between the keyword and the name.
