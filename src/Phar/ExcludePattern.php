@@ -104,9 +104,11 @@ final readonly class ExcludePattern
     }
 
     /**
-     * @see PcreLimitGuard Must be called inside a PcreLimitGuard pass
-     * (e.g. via PharBuilder::build()) for the bounded ReDoS ceilings to
-     * apply; outside a pass the process-default PCRE limits are in effect.
+     * Must be called inside a PcreLimitGuard pass (e.g. via
+     * PharBuilder::build()) for the bounded ReDoS ceilings to apply;
+     * outside a pass the process-default PCRE limits are in effect.
+     *
+     * @see PcreLimitGuard
      */
     public function matches(string $path): bool
     {

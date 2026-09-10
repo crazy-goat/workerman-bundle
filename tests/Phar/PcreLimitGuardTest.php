@@ -67,7 +67,9 @@ final class PcreLimitGuardTest extends TestCase
     public function testExitRestoresEvenWhenProtectedBlockThrows(): void
     {
         $originalBacktrack = ini_get('pcre.backtrack_limit');
+        $originalRecursion = ini_get('pcre.recursion_limit');
         self::assertIsString($originalBacktrack);
+        self::assertIsString($originalRecursion);
 
         // Distort first so the test proves restore-to-prior, not restore-to-default.
         ini_set('pcre.backtrack_limit', '777');
@@ -92,6 +94,7 @@ final class PcreLimitGuardTest extends TestCase
         self::assertSame('666', ini_get('pcre.recursion_limit'));
 
         ini_set('pcre.backtrack_limit', $originalBacktrack);
+        ini_set('pcre.recursion_limit', $originalRecursion);
     }
 
     public function testExitIsIdempotentAndSafeWithoutEnter(): void
