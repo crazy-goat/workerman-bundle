@@ -11,18 +11,20 @@ whole file.
 ## Tag index
 
 <!-- kb-index:start -->
-- `architecture` — DEC-002
-- `ci` — DEC-007
+- `architecture` — DEC-002, DEC-020
+- `changelog` — DEC-021
+- `ci` — DEC-007, DEC-020
 - `config-cache` — DEC-016
 - `cookies` — DEC-010, DEC-015
 - `coverage` — DEC-007
-- `docs` — DEC-012
+- `docs` — DEC-012, DEC-021
 - `env` — DEC-016
+- `exceptions` — DEC-020
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
 - `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018, DEC-019
 - `knowledge-base` — DEC-009
-- `lint` — DEC-008
+- `lint` — DEC-008, DEC-020
 - `logging` — DEC-017
 - `long-running` — DEC-003, DEC-014
 - `markdown` — DEC-012
@@ -37,6 +39,7 @@ whole file.
 - `static-files` — DEC-004
 - `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
+- `upgrade` — DEC-021
 - `uploads` — DEC-019
 - `validation` — DEC-019
 <!-- kb-index:end -->
@@ -331,3 +334,13 @@ for doubly-corrupt input (dangling `tmp_name` with `UPLOAD_ERR_OK` plus a
 later malformed field) the interleaved order can throw Symfony
 `FileNotFoundException` before `FileUploadValidationException`; unreachable
 via real Workerman, documented in PR #797.
+
+### Exception-hierarchy usage is gated, not just counted (#593)
+<!-- kb: id=DEC-020 date=2026-09-11 tags=lint,ci,architecture,exceptions trigger="adding a new class under src/Exception/ or touching the exception hierarchy" hits=0 status=active -->
+
+`bin/check-exception-usage.php` (wired into `composer lint`) verifies every type in `src/Exception/` is referenced outside its own file. A new exception class needs a real throw site, not just a file — #593 found two classes that shipped unused for many releases because nothing checked. The discovery uses `token_get_all()`, never a regex over raw source: a regex matches `interface`/`class` inside docblocks (round 1 captured `for` from "Marker interface for…", leaving both marker interfaces vacuously unchecked) and captures only the first declaration per file.
+
+### Released CHANGELOG entries are immutable; UPGRADE.md is living (#593)
+<!-- kb: id=DEC-021 date=2026-09-11 tags=docs,upgrade,changelog trigger="removing a class/method or changing a thrown type and wondering whether to edit history" hits=0 status=active -->
+
+Record removals and thrown-type changes in `[Unreleased]`; never edit released CHANGELOG entries (the 0.12.0 entry still names the deleted `ConfigurationValidationException`, deliberately). `UPGRADE.md` is the opposite: a living migration guide, so its hierarchy tree and Before/After table are corrected in place (the 0.12 table wrongly listed the never-thrown class as a replacement and the tree was missing 4 classes — both fixed in PR #814).
