@@ -24,3 +24,11 @@ and R1-F7 confirmed honestly dispositioned. Two new documentation findings:
 | - | --------- | -------- | ------------- | ------------- |
 | R2-N1 | `code-decision-1.md:47-48`, `findings-review.md` (R1-F4 row) | low | Wrong reason given for why the PHPStan probe was inconclusive: cited `treatPhpDocTypesAsCertain: false`, but the actual suppression is the `?? null` form (`offsetAccess.notFound` is reported for a plain access even under that setting) | **fixed** — rationale corrected in both files |
 | R2-N2 | `findings-review.md` (R1-F7 row) | nit | "PHPStan at level 8 is the enforcement for the alias" overstated — PHPStan checks consumers, not alias vs `ConfigurationTreeBuilder` drift | **fixed** — claim narrowed to "checks the alias's consumers but cannot detect drift between the alias and `ConfigurationTreeBuilder`" |
+
+## Round 3
+
+Round 3 verified `211c0e9` and looked for new issues. R2-N1 and R2-N2 confirmed
+**fixed** with evidence (R2-N1 empirically re-probed: a plain optional-key access
+is flagged `offsetAccess.notFound`, `?? null` is not). No new findings.
+
+**Open findings after round 3: 0.**
