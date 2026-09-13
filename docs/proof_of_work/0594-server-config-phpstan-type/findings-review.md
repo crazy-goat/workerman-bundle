@@ -32,3 +32,9 @@ Round 3 verified `211c0e9` and looked for new issues. R2-N1 and R2-N2 confirmed
 is flagged `offsetAccess.notFound`, `?? null` is not). No new findings.
 
 **Open findings after round 3: 0.**
+
+## CI failure (PR #820, run 34761217159)
+
+| # | Location | Severity | What is wrong | What happened |
+| - | -------- | -------- | ------------- | ------------- |
+| CI-1 | `tests/WorkermanCommandTest.php:91` | low | Job `Tests (8.4, 7.4.*)` failed with `GuzzleHttp\Exception\RequestException: cURL error 56: Recv failure: Connection reset by peer` in `testReloadDoesNotBreakServer`. The same commit passed on the other eight matrix legs, and this PR changes no executable line (docblock-only), so the failure is not caused by the diff. | **not a real finding / tracked** — a known flake, filed as [#810](https://github.com/crazy-goat/workerman-bundle/issues/810) ("testReloadDoesNotBreakServer flaky — single post-reload request races worker restart (cURL error 56)"). Re-running the failed job. |
