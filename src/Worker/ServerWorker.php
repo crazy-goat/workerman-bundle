@@ -17,24 +17,30 @@ use Workerman\Protocols\Http;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * @phpstan-type ServerConfig array{
+ *     name: string,
+ *     listen?: string|null,
+ *     local_cert?: string|null,
+ *     local_pk?: string|null,
+ *     processes?: int|null,
+ *     reuse_port?: bool,
+ *     body_size_cap?: int|null,
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
+ *     serve_files?: bool,
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
+ *     root_dir?: string|null,
+ *     middlewares?: list<string>,
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
+ *     static_files?: array{allowed_extensions?: list<string>},
+ * }
+ */
 final readonly class ServerWorker
 {
     private const PROCESS_TITLE = '[Server]';
 
     /**
-     * @param array{
-     *     name: string,
-     *     listen?: string|null,
-     *     local_cert?: string|null,
-     *     local_pk?: string|null,
-     *     processes?: int|null,
-     *     reuse_port?: bool,
-     *     body_size_cap?: int|null,
-     *     serve_files?: bool,
-     *     root_dir?: string|null,
-     *     middlewares?: list<string>,
-     *     static_files?: array{allowed_extensions?: list<string>},
-     * } $serverConfig
+     * @param ServerConfig $serverConfig
      */
     public function __construct(
         KernelFactory $kernelFactory,
@@ -154,19 +160,7 @@ final readonly class ServerWorker
     /**
      * Boot kernel, resolve the request handler and middlewares, and configure the handler.
      *
-     * @param array{
-     *     name: string,
-     *     listen?: string|null,
-     *     local_cert?: string|null,
-     *     local_pk?: string|null,
-     *     processes?: int|null,
-     *     reuse_port?: bool,
-     *     body_size_cap?: int|null,
-     *     serve_files?: bool,
-     *     root_dir?: string|null,
-     *     middlewares?: list<string>,
-     *     static_files?: array{allowed_extensions?: list<string>},
-     * } $serverConfig
+     * @param ServerConfig $serverConfig
      *
      * @return callable The fully configured request handler
      */
@@ -200,19 +194,8 @@ final readonly class ServerWorker
     }
 
     /**
-     * @param array{
-     *     name: string,
-     *     listen?: string|null,
-     *     local_cert?: string|null,
-     *     local_pk?: string|null,
-     *     processes?: int|null,
-     *     reuse_port?: bool,
-     *     body_size_cap?: int|null,
-     *     serve_files?: bool,
-     *     root_dir?: string|null,
-     *     middlewares?: list<string>,
-     *     static_files?: array{allowed_extensions?: list<string>},
-     * } $serverConfig
+     * @param ServerConfig $serverConfig
+     *
      * @return array{ssl: array{local_cert: string, local_pk: string}}
      */
     private function createSslContext(array $serverConfig): array

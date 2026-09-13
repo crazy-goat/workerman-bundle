@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The server-configuration array shape is now declared once as a
+  `@phpstan-type ServerConfig` alias on `ServerWorker` and imported into
+  `WorkermanBundle` via `@phpstan-import-type`, instead of being inlined four
+  times across the two files. Docblock-only change, no runtime behaviour
+  difference; the alias also records that `serve_files`, `root_dir` and
+  `static_files` are deprecated
+  ([#594](https://github.com/crazy-goat/workerman-bundle/issues/594))
+
 - `Runner::applyWorkermanConfig()` now throws
   `InvalidCacheDirectoryException` (extends `KernelException` →
   `WorkermanException` → `\RuntimeException`) instead of a bare
