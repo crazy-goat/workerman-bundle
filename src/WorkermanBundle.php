@@ -12,6 +12,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
+/**
+ * @phpstan-import-type ServerConfig from \CrazyGoat\WorkermanBundle\Worker\ServerWorker
+ */
 final class WorkermanBundle extends AbstractBundle
 {
     public function __construct(
@@ -46,19 +49,7 @@ final class WorkermanBundle extends AbstractBundle
      *     keepalive_timeout?: int,
      *     response_chunk_size?: int,
      *     trusted_hosts?: list<string>,
-     *     servers?: list<array{
-     *         name: string,
-     *         listen?: string|null,
-     *         local_cert?: string|null,
-     *         local_pk?: string|null,
-     *         processes?: int|null,
-     *         reuse_port?: bool,
-     *         body_size_cap?: int|null,
-     *         serve_files?: bool,
-     *         root_dir?: string|null,
-     *         middlewares?: list<string>,
-     *         static_files?: array{allowed_extensions?: list<string>},
-     *     }>,
+     *     servers?: list<ServerConfig>,
      *     reload_strategy?: array{
      *         exception?: array{active?: bool, allowed_exceptions?: list<string>},
      *         max_requests?: array{active?: bool, requests?: int, dispersion?: int},
