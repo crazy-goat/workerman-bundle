@@ -26,12 +26,12 @@ use Workerman\Worker;
  *     processes?: int|null,
  *     reuse_port?: bool,
  *     body_size_cap?: int|null,
- *     // @deprecated since 0.9.3, use the static file handler configuration instead
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
  *     serve_files?: bool,
- *     // @deprecated since 0.9.3, use the static file handler configuration instead
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
  *     root_dir?: string|null,
  *     middlewares?: list<string>,
- *     // @deprecated since 0.9.3, use the static file handler configuration instead
+ *     // @deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead
  *     static_files?: array{allowed_extensions?: list<string>},
  * }
  */

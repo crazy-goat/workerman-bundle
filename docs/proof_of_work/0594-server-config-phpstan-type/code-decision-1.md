@@ -40,6 +40,16 @@ shape), and imported into `CrazyGoat\WorkermanBundle\WorkermanBundle` with
   cannot attach `@deprecated` to an array-shape key — so they are documentation
   only, matching the acceptance criterion's "marks … as deprecated".
 - Acceptance criterion 3 ("adding a key to the alias makes it available at all
-  four former call sites") is satisfied structurally: all four sites now
-  dereference the same alias, so a new key is visible everywhere in one edit.
-  No temporary throwaway key was committed.
+  four former call sites") is proven **structurally, not by a PHPStan probe**.
+  A temporary `probe_key?: int` was added to the alias and dereferenced from
+  `configureHandler()` (`$serverConfig['probe_key'] ?? null`); `vendor/bin/phpstan`
+  reported no error. That is not a valid demonstration, because the same "no
+  error" is produced for a deliberately unknown key: `treatPhpDocTypesAsCertain: false`
+  (phpstan.neon.dist) means PHPStan does not flag unknown offsets in this
+  configuration. The real evidence is that all four former sites now dereference
+  the one alias, so a new key is visible at every site in one edit. Neither the
+  temporary key nor the temporary dereference was committed.
+- Round-1 review nit R1-F6 adopted: the inline deprecation comments now name the
+  concrete replacement and removal target
+  (`@deprecated since 0.9.3, removed in 1.0 — use StaticFilesMiddleware instead`),
+  matching `UPGRADE.md:16`.
