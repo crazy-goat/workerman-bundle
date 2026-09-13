@@ -43,10 +43,11 @@ shape), and imported into `CrazyGoat\WorkermanBundle\WorkermanBundle` with
   four former call sites") is proven **structurally, not by a PHPStan probe**.
   A temporary `probe_key?: int` was added to the alias and dereferenced from
   `configureHandler()` (`$serverConfig['probe_key'] ?? null`); `vendor/bin/phpstan`
-  reported no error. That is not a valid demonstration, because the same "no
-  error" is produced for a deliberately unknown key: `treatPhpDocTypesAsCertain: false`
-  (phpstan.neon.dist) means PHPStan does not flag unknown offsets in this
-  configuration. The real evidence is that all four former sites now dereference
+  reported no error. That is not a valid demonstration: the `?? null` form
+  suppresses the `offsetAccess.notFound` diagnostic (a plain
+  `$serverConfig['probe_key']` *is* flagged, even under
+  `treatPhpDocTypesAsCertain: false`), so "no error" proves nothing about
+  propagation. The real evidence is that all four former sites now dereference
   the one alias, so a new key is visible at every site in one edit. Neither the
   temporary key nor the temporary dereference was committed.
 - Round-1 review nit R1-F6 adopted: the inline deprecation comments now name the
