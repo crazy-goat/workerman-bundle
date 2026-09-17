@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `workerman:build:bin`
   ([#588](https://github.com/crazy-goat/workerman-bundle/issues/588))
 
+  `workerman:build:bin`
+  ([#588](https://github.com/crazy-goat/workerman-bundle/issues/588))
+
 ### Removed
 
 - `ConfigurationValidationException` — the class was never thrown from any
@@ -96,6 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RebootStrategyInterface::needsPeakMemory()` and the `memory_reset_peak_usage()` gating in `HttpRequestHandler` — no shipped strategy ever returned `true`, so the per-request reset was dead code since ([#317](https://github.com/crazy-goat/workerman-bundle/issues/317)); `MemoryRebootStrategy` stays on `memory_get_usage()` (emalloc) and the interface docblock now matches the implementations. Custom strategies must remove the method; peak-tracking strategies should call `memory_reset_peak_usage()` themselves if needed. See `UPGRADE.md` for migration ([#562](https://github.com/crazy-goat/workerman-bundle/issues/562))
 
 ### Fixed
+
+- `SchedulerWorker` no longer discards the exception message when a task's
+  trigger fails validation. The skip log line now reads
+  `Task "<task>" skipped. Trigger "<schedule>" is incorrect: <message>`
+  (previously the underlying cause — e.g. `Interval must be a positive
+  duration` — was swallowed and the operator saw only "is incorrect")
+  ([#700](https://github.com/crazy-goat/workerman-bundle/issues/700))
 
 - `ProcessInspector::killOrphanedIntermediateFork()` can now kill the hung
   daemonize intermediate in daemon mode via ancestry verification. The old
