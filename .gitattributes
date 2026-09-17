@@ -7,3 +7,23 @@
 /docs/superpowers export-ignore
 /docs/proof_of_work export-ignore
 /.pi export-ignore
+
+# Contributor-only files; keep runtime resources and user-facing documentation.
+/benchmarks export-ignore
+/e2e export-ignore
+/rector.php export-ignore
+/phpbench.json export-ignore
+/phpstan.neon.dist export-ignore
+/CONTRIBUTING.md export-ignore
+/docs/workflow.md export-ignore
+/docs/release-workflow.md export-ignore
+/docs/process-changelog.md export-ignore
+/docs/process-notices.md export-ignore
+/docs/helpers export-ignore
+/Dockerfile export-ignore
+/.dockerignore export-ignore
+/docker-entrypoint.sh export-ignore
+
+# README.md links to bin/README.md; all executable tooling is development-only.
+/bin/* export-ignore
+/bin/README.md -export-ignore

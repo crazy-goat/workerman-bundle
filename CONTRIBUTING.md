@@ -30,6 +30,11 @@ CI must report green before a pull request is merged:
 
 ## Development Workflow
 
+This section is the short setup and pre-PR checklist. For the detailed
+issue-to-merge process, including branch naming, commit conventions and review
+rounds, see [docs/workflow.md](docs/workflow.md). Shared linting and CHANGELOG
+steps below summarize that companion rather than define a separate workflow.
+
 ### Pre-Push Hook
 
 A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` before each push to catch issues early.

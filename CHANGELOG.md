@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Make the detailed contributor workflow discoverable from the documentation
+  index and contributing checklist, and exclude contributor-only documentation,
+  development scripts, benchmarks, E2E fixtures and analysis configuration from
+  Composer dist archives while preserving user-facing documentation and runtime
+  files ([#596](https://github.com/crazy-goat/workerman-bundle/issues/596)).
+
 - Commit the root `composer.lock` so contributors and CI lint/benchmark jobs
   install the same dependency versions. Symfony matrix jobs explicitly resolve
   fresh dependencies after rewriting their constraints, preserving compatibility

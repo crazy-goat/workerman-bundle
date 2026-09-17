@@ -4,6 +4,13 @@ This document describes the complete workflow for handling issues in the
 [crazy-goat/workerman-bundle](https://github.com/crazy-goat/workerman-bundle)
 repository using `gh` and `git`.
 
+The branch and commit conventions, validation checks, CHANGELOG updates and
+CI-before-merge requirement are project conventions. Delegating the steps to
+subagents is one contributor's method, not a tooling requirement: contributors
+without agents can perform the same work and review manually. Start with the
+short checklist in [CONTRIBUTING.md](../CONTRIBUTING.md#development-workflow);
+this document is its detailed companion.
+
 Every cycle leaves a **proof of work** under `docs/proof_of_work/<NNNN>-<slug>/`:
 four kinds of Markdown file, written by the agents that did the work and
 committed on the branch. See [Proof of Work](#proof-of-work-docsproof_of_work)

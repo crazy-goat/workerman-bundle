@@ -2,6 +2,10 @@
 
 This directory contains development and contribution scripts for this bundle.
 It is **not** the Symfony console you use to run the Workerman server.
+Only this README is included in Composer dist archives; to run these scripts,
+use a [source checkout](https://github.com/crazy-goat/workerman-bundle).
+Composer runs lifecycle scripts only for the root package, not dependencies,
+so installing this bundle into an application does not install its git hook.
 
 For the Workerman server commands, use your **application's** `bin/console`
 (e.g., `bin/console workerman:server start`).
@@ -154,7 +158,7 @@ Requires the `gh` CLI (authenticated). Exit codes: 0 = candidates,
 Lints the subagent knowledge base in `docs/helpers/` (`faq.md`, `decisions.md`)
 and regenerates its tag index. Wired into `composer lint`; `composer lint-fix`
 runs it with `--fix`. See
-[docs/helpers/README.md](../docs/helpers/README.md) for the entry format and the
+[docs/helpers/README.md](https://github.com/crazy-goat/workerman-bundle/blob/master/docs/helpers/README.md) for the entry format and the
 decay rules it enforces.
 
 **Usage:**
