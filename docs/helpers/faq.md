@@ -22,7 +22,7 @@ your diff, read only those `###` entries — never the whole file.
 - `content-length` — FAQ-001
 - `control-plane` — FAQ-016
 - `coverage` — FAQ-010, FAQ-011
-- `daemon` — FAQ-007, FAQ-008, FAQ-009
+- `daemon` — FAQ-007, FAQ-008, FAQ-009, FAQ-039
 - `date-time` — FAQ-021, FAQ-022
 - `deprecation` — FAQ-024, FAQ-029
 - `docker` — FAQ-005
@@ -55,7 +55,7 @@ your diff, read only those `###` entries — never the whole file.
 - `phpbench` — FAQ-028
 - `phpstan` — FAQ-014, FAQ-029
 - `ports` — FAQ-009
-- `process` — FAQ-007, FAQ-030, FAQ-032, FAQ-038
+- `process` — FAQ-007, FAQ-030, FAQ-032, FAQ-038, FAQ-039
 - `reflection` — FAQ-038
 - `response-strategy` — FAQ-001, FAQ-002
 - `runner` — FAQ-036
@@ -66,7 +66,7 @@ your diff, read only those `###` entries — never the whole file.
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
 - `symfony-config` — FAQ-035
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037, FAQ-038
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037, FAQ-038, FAQ-039
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -144,6 +144,11 @@ do the same. This also explains why `WORKERMAN_CACHE_WARMUP_TIMEOUT` is
 inert on the Runner path — tracked as issue #759 (regression from #528).
 
 ## Test suite
+
+### Even filtered PHPUnit runs stop the shared daemon on shutdown
+<!-- kb: id=FAQ-039 date=2026-09-17 tags=tests,daemon,process trigger="running filtered PHPUnit checks alongside a full suite in the same checkout" hits=0 status=active -->
+
+The global [test bootstrap](../../tests/App/bootstrap.php) starts the daemon and unconditionally registers its stop callback, even for workflow-only filters. A short run can therefore stop a concurrent suite's daemon and delete shared markers. Serialize PHPUnit runs, or follow the [isolated-container setup](../../CONTRIBUTING.md#running-tests-in-docker-no-local-php-needed) with separate filesystem/PID state and network ports; separate worktrees alone do not isolate host ports. Observed during #714 review (PR #822); the unchanged suite passed when rerun serially.
 
 ### Testing an `inotify_add_watch()` failure without exhausting watch limits
 <!-- kb: id=FAQ-006 date=2026-08-10 tags=tests,inotify trigger="writing tests for InotifyMonitorWatcher" hits=0 status=active -->
