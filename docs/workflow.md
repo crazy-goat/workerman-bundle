@@ -444,6 +444,17 @@ has five jobs:
    on schedule, `tests-scheduled`); opens an issue if a scheduled run
    fails with nobody watching
 
+The root `composer.lock` is committed: contributors, lint and benchmark use
+`composer install` so lint tools do not drift between runs. Refresh the lock
+with `composer update --no-interaction --prefer-dist` **on PHP 8.2** (the
+minimum supported runtime), then run `composer validate --strict`,
+`composer check-platform-reqs`, `composer audit`, `composer lint` and
+`composer test` before committing it. Do not ignore platform requirements.
+Both `tests` and `tests-scheduled` intentionally run a full `composer update`
+after rewriting Symfony constraints: they continue testing freshly resolved
+matrix dependencies rather than the lint lock. Their modified manifests and
+locks are disposable CI artifacts, not lock-refresh candidates.
+
 Runs on a pull request are cancelled by a newer push to the same PR
 (`concurrency: cancel-in-progress` for `pull_request` events), so two full
 matrices never grind against the same PR at once. Runs on `master` are

@@ -43,6 +43,47 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
+    public function testLintAndBenchmarkInstallLockedDependencies(): void
+    {
+        foreach (['lint', 'benchmark'] as $job) {
+            $content = $this->jobContent($job);
+            $this->assertSame(1, substr_count($content, 'run: composer install --no-interaction --prefer-dist'));
+            $this->assertStringNotContainsString('composer update', $content);
+            $this->assertStringNotContainsString('sed -i', $content);
+            $this->assertMatchesRegularExpression(
+                '/run: composer install --no-interaction --prefer-dist.*run: composer (?:lint|bench)\b/s',
+                $content,
+                'Locked dependencies must be installed before running tools',
+            );
+        }
+    }
+
+    public function testBothTestJobsResolveFreshDependenciesAfterMatrixRewrite(): void
+    {
+        foreach (['tests', 'tests-scheduled'] as $job) {
+            $content = $this->jobContent($job);
+            $this->assertSame(1, substr_count($content, "run: composer update --no-interaction --prefer-dist\n"));
+            $this->assertStringNotContainsString('composer install', $content);
+            $this->assertMatchesRegularExpression(
+                '/export SYMFONY_VERSION=.*sed -i[^\n]+composer\.json.*run: composer update --no-interaction --prefer-dist\n.*run: composer test(?:\:coverage)?\n/s',
+                $content,
+                'Each matrix job must rewrite constraints, fully update dependencies, then run tests',
+            );
+        }
+    }
+
+    private function jobContent(string $job): string
+    {
+        $matched = preg_match(
+            '/^  ' . preg_quote($job, '/') . ':\n.*?(?=^  [\\w-]+:\n|\z)/ms',
+            $this->workflowContent,
+            $matches,
+        );
+        $this->assertSame(1, $matched, 'Workflow job must exist: ' . $job);
+
+        return $matches[0];
+    }
+
     public function testTestsJobUsesMatrixPhpVersion(): void
     {
         $this->assertStringContainsString(

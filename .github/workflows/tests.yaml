@@ -154,8 +154,10 @@ jobs:
           # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
           sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
+      # Matrix jobs intentionally resolve fresh dependencies after rewriting
+      # Symfony constraints; lint and benchmark install the committed lock.
+      - name: Update dependencies
+        run: composer update --no-interaction --prefer-dist
 
       - name: Run tests with coverage
         run: composer test:coverage
@@ -215,8 +217,10 @@ jobs:
           # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
           sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
+      # Matrix jobs intentionally resolve fresh dependencies after rewriting
+      # Symfony constraints; lint and benchmark install the committed lock.
+      - name: Update dependencies
+        run: composer update --no-interaction --prefer-dist
 
       - name: Run tests
         run: composer test
