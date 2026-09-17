@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Commit the root `composer.lock` so contributors and CI lint/benchmark jobs
+  install the same dependency versions. Symfony matrix jobs explicitly resolve
+  fresh dependencies after rewriting their constraints, preserving compatibility
+  coverage ([#714](https://github.com/crazy-goat/workerman-bundle/issues/714)).
+
 - The server-configuration array shape is now declared once as a
   `@phpstan-type ServerConfig` alias on `ServerWorker` and imported into
   `WorkermanBundle` via `@phpstan-import-type`, instead of being inlined four
