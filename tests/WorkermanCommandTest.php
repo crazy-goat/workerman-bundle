@@ -8,6 +8,12 @@ use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\AssertionFailedError;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -86,10 +92,107 @@ final class WorkermanCommandTest extends KernelTestCase
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
 
-        self::assertTrue($this->waitForPortUp(8888, 5), 'Server port 8888 should still be up after reload');
-        $client = new Client(['http_errors' => false]);
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
-        self::assertSame(200, $response->getStatusCode());
+        // The listening socket can stay up while workers are restarting.
+        $this->assertHttpReadyAfterReload(new Client());
+    }
+
+    public function testReloadHttpReadinessRetriesTransientTransportFailures(): void
+    {
+        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $handler = new MockHandler([
+            new ConnectException('Connection refused', $request, null, ['errno' => 7]),
+            new ConnectException('Operation timed out', $request, null, ['errno' => 28]),
+            new ConnectException('Empty reply from server', $request, null, ['errno' => 52]),
+            new RequestException('Connection reset by peer', $request, null, null, ['errno' => 56]),
+            new Response(200),
+        ]);
+
+        $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+
+        self::assertCount(0, $handler);
+        self::assertSame(1, $handler->getLastOptions()['timeout']);
+        self::assertSame(0.2, $handler->getLastOptions()['connect_timeout']);
+    }
+
+    public function testReloadHttpReadinessFailsWhenTransportFailurePersists(): void
+    {
+        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $handler = new MockHandler([
+            new RequestException('Connection reset by peer', $request, null, null, ['errno' => 56]),
+            new Response(200),
+        ]);
+
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('HTTP 200 after reload within 0 seconds; last transport error: Connection reset by peer');
+
+        // A zero deadline deterministically exercises exhaustion after the first failed probe.
+        try {
+            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]), 0);
+        } finally {
+            self::assertCount(1, $handler, 'Must not probe again after the deadline');
+        }
+    }
+
+    public function testReloadHttpReadinessDoesNotRetryUnexpectedHttpStatus(): void
+    {
+        $handler = new MockHandler([new Response(500), new Response(200)]);
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('Unexpected HTTP status after reload');
+
+        try {
+            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+        } finally {
+            self::assertCount(1, $handler);
+        }
+    }
+
+    public function testReloadHttpReadinessDoesNotRetryUnexpectedTransportError(): void
+    {
+        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $error = new RequestException('Malformed response', $request, null, null, ['errno' => 8]);
+        $handler = new MockHandler([$error, new Response(200)]);
+        $this->expectExceptionObject($error);
+
+        try {
+            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+        } finally {
+            self::assertCount(1, $handler);
+        }
+    }
+
+    private function assertHttpReadyAfterReload(Client $client, int $timeoutSeconds = 5): void
+    {
+        $lastError = 'none';
+        $ready = Wait::until(static function () use ($client, &$lastError): bool {
+            try {
+                $response = $client->request('GET', 'http://127.0.0.1:8888/response_test', [
+                    'http_errors' => false,
+                    'allow_redirects' => false,
+                    'connect_timeout' => 0.2,
+                    'timeout' => 1,
+                ]);
+            } catch (ConnectException | RequestException $exception) {
+                // cURL: connect failure, timeout, empty reply, receive/reset failure.
+                // Do not hide HTTP responses or unrelated transport/configuration errors.
+                if (($exception instanceof RequestException && $exception->hasResponse())
+                    || !in_array($exception->getHandlerContext()['errno'] ?? null, [7, 28, 52, 56], true)) {
+                    throw $exception;
+                }
+                $lastError = $exception->getMessage();
+
+                return false;
+            }
+
+            self::assertSame(200, $response->getStatusCode(), 'Unexpected HTTP status after reload');
+
+            return true;
+        }, $timeoutSeconds);
+
+        self::assertTrue($ready, sprintf(
+            'Expected HTTP 200 after reload within %d seconds; last transport error: %s',
+            $timeoutSeconds,
+            $lastError,
+        ));
     }
 
     /**

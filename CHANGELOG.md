@@ -105,6 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wait for an actual HTTP 200 after reload in `WorkermanCommandTest`, retrying
+  transient transport failures with bounded request and polling timeouts instead
+  of treating an open TCP port as worker readiness
+  ([#810](https://github.com/crazy-goat/workerman-bundle/issues/810)).
+
 - `SchedulerWorker` no longer discards the exception message when a task's
   trigger fails validation. The skip log line now reads
   `Task "<task>" skipped. Trigger "<schedule>" is incorrect: <message>`
