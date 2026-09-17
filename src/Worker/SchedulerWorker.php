@@ -58,8 +58,8 @@ final class SchedulerWorker
 
                 try {
                     $trigger = TriggerFactory::create($serviceConfig['schedule'], $serviceConfig['jitter'] ?? 0);
-                } catch (\InvalidArgumentException) {
-                    $this->worker->log(sprintf('%s Task "%s" skipped. Trigger "%s" is incorrect', $this->worker->name, $taskName, $serviceConfig['schedule']));
+                } catch (\InvalidArgumentException $e) {
+                    $this->worker->log(sprintf('%s Task "%s" skipped. Trigger "%s" is incorrect: %s', $this->worker->name, $taskName, $serviceConfig['schedule'], $e->getMessage()));
                     continue;
                 }
 

@@ -249,7 +249,34 @@ final class SchedulerWorkerTest extends TestCase
 
         $this->assertStringContainsString('Task "my_service" skipped.', $output);
         $this->assertStringContainsString('Trigger "PT0S" is incorrect', $output);
+        $this->assertStringContainsString('Interval must be a positive duration', $output);
         $this->assertStringNotContainsString('Task "my_service" scheduled', $output);
+    }
+
+    /**
+     * The trigger rejection log must carry the underlying exception message
+     * so operators can see *why* the trigger was rejected, not just that it
+     * was (issue #700). A malformed ISO-8601 duration that fails
+     * DateInterval parsing exercises a different rejection path than PT0S.
+     */
+    public function testIncorrectTriggerLogIncludesExceptionMessage(): void
+    {
+        $output = $this->invokeOnWorkerStartWithConfig(
+            ['my_service' => ['schedule' => 'PT']],
+        );
+
+        $this->assertStringContainsString('Task "my_service" skipped.', $output);
+        $this->assertStringContainsString('Trigger "PT" is incorrect:', $output);
+        // The exact DateInterval parse error text varies by PHP version, but
+        // it always contains the offending input or a descriptive phrase.
+        $this->assertStringNotContainsString('Task "my_service" scheduled', $output);
+        // The log line must not end at "is incorrect" — the exception message
+        // must be appended after the colon.
+        $this->assertMatchesRegularExpression(
+            '/Trigger "PT" is incorrect: .+/',
+            $output,
+            'The trigger rejection log must append the exception message after "is incorrect:"',
+        );
     }
 
     // --- Behavioral tests via isolated runner ---
