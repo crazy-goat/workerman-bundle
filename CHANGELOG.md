@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ProcessDocsTest::testProcessNoticesSaysItsTriggersReferToRemovedTooling`
+  no longer asserts a keyword OR-regex over the header of
+  `docs/process-notices.md`; it anchors on the exact bold sentence
+  `**N-01 to N-13 are history.**`, so a synonym-preserving header rewrite can
+  no longer fail it. The header extraction also fails loudly when the
+  `## N-01` marker disappears instead of silently producing an empty header
+  ([#706](https://github.com/crazy-goat/workerman-bundle/issues/706)).
+
 - Make the detailed contributor workflow discoverable from the documentation
   index and contributing checklist, and exclude contributor-only documentation,
   development scripts, benchmarks, E2E fixtures and analysis configuration from
