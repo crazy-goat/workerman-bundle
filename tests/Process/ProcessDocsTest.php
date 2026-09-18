@@ -120,8 +120,12 @@ final class ProcessDocsTest extends TestCase
     {
         $header = substr($this->read('docs/process-notices.md'), 0, (int) strpos($this->read('docs/process-notices.md'), '## N-01'));
 
-        self::assertMatchesRegularExpression(
-            '/history|no longer exist|cannot fire|removed/i',
+        // Anchored on the exact bold sentence rather than a keyword regex: a
+        // synonym-preserving rewrite of the header must not fail this test.
+        // Kept meaning: N-01..N-13 describe a mechanism that was removed
+        // (N-12/N-13 are named in the header as superseded exceptions).
+        self::assertStringContainsString(
+            '**N-01 to N-13 are history.**',
             $header,
             'the notices file must warn that N-01..N-13 describe a mechanism that was removed',
         );
