@@ -118,12 +118,26 @@ final class ProcessDocsTest extends TestCase
      */
     public function testProcessNoticesSaysItsTriggersReferToRemovedTooling(): void
     {
-        $header = substr($this->read('docs/process-notices.md'), 0, (int) strpos($this->read('docs/process-notices.md'), '## N-01'));
+        $content = $this->read('docs/process-notices.md');
 
-        self::assertMatchesRegularExpression(
-            '/history|no longer exist|cannot fire|removed/i',
+        // The header is everything before the first notice section; if the
+        // marker disappears the extraction must fail loudly, not silently
+        // produce an empty header.
+        $markerPosition = strpos($content, '## N-01');
+        self::assertNotFalse(
+            $markerPosition,
+            'docs/process-notices.md must keep the "## N-01" marker this header extraction relies on',
+        );
+        $header = substr($content, 0, $markerPosition);
+
+        // Anchored on the exact bold sentence rather than a keyword regex: a
+        // synonym-preserving rewrite of the header must not fail this test.
+        // Kept meaning: N-01..N-13 describe a mechanism that was removed
+        // (N-12/N-13 are named in the header as superseded exceptions).
+        self::assertStringContainsString(
+            '**N-01 to N-13 are history.**',
             $header,
-            'the notices file must warn that N-01..N-13 describe a mechanism that was removed',
+            'the notices file must warn that N-01..N-13 describe a mechanism that was removed (N-12/N-13 excepted as superseded)',
         );
     }
 
