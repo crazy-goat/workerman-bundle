@@ -31,3 +31,14 @@
 - tests/Process/ProcessDocsTest.php:126 (failure message omits exceptions) —
   **fixed**: message now reads "…a mechanism that was removed (N-12/N-13
   excepted as superseded)".
+
+## Round 2 review (post-fix commit 799d7b4)
+
+- tests/Process/ProcessDocsTest.php:121 (double `read()`) — **fixed** (round 2
+  verified: `$content = $this->read(...)` read once, reused at lines 126/131).
+- tests/Process/ProcessDocsTest.php:121 (silent `strpos` false) — **fixed**
+  (round 2 verified: `assertNotFalse($markerPosition, ...)` at lines 127–130
+  precedes `substr`; cast removed, Rector-clean, PHPStan level 8 passes).
+- tests/Process/ProcessDocsTest.php:126 (failure message omits exceptions) —
+  **fixed** (round 2 verified: message ends "(N-12/N-13 excepted as superseded)").
+- New findings round 2: none. Test run: 10/10 pass, 89 assertions.
