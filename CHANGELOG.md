@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `InotifyMonitorWatcherTest::waitForInotifyEvents()` no longer sleeps a fixed
+  200 ms per event batch. It waits on the watcher's non-blocking inotify fd with
+  `stream_select()` (1 s bounded timeout) and asserts readiness, removing
+  several seconds of unconditional sleep per CI matrix leg while failing at the
+  wait — with a named message — when an expected event never arrives
+  ([#663](https://github.com/crazy-goat/workerman-bundle/issues/663)).
+
 - `ProcessDocsTest::testProcessNoticesSaysItsTriggersReferToRemovedTooling`
   no longer asserts a keyword OR-regex over the header of
   `docs/process-notices.md`; it anchors on the exact bold sentence
