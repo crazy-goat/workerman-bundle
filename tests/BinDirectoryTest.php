@@ -152,10 +152,15 @@ final class BinDirectoryTest extends TestCase
     }
 
     /**
-     * CONTRIBUTING.md states the coverage threshold in prose twice while
+     * CONTRIBUTING.md states the coverage threshold in prose while
      * composer.json's `coverage:check` is the single source of truth. Pin the
      * prose to the config so a threshold change cannot leave the doc stale,
      * the same drift class as the PHPStan level in #693.
+     *
+     * Every line naming the threshold is checked, so drift in any one
+     * occurrence fails. The counter only requires at least one mention: a
+     * deliberate consolidation of the prose must stay green, while an emptied
+     * or reworded-away mention must not pass vacuously.
      */
     public function testContributingCoverageThresholdMatchesComposer(): void
     {
