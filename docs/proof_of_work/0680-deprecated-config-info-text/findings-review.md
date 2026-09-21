@@ -16,3 +16,23 @@ This file is append-only across rounds; nothing is ever deleted.
 - `findings-coder.md` #1 (`info()`/`setDeprecated()` drift) | still present by design; not a defect of this diff | nit | mirrored above (F4)
 - `findings-coder.md` #2 (`serve_files`/`root_dir` independently settable) | pre-existing, out of scope for a string-only change | — | not a real finding against this diff
 - `findings-coder.md` #3 (long `info()` lines) | consistent with the file; no linter rule violated | — | not a real finding
+
+## Round 2
+
+Adjudication of round-1 findings against the current tree, plus new findings.
+
+- `CHANGELOG.md:8` ([Unreleased]) | No changelog entry for #680 (round-1 F1). | low | **fixed** — `CHANGELOG.md:12-18` adds a `### Changed` entry under `[Unreleased]` referencing #680 and describing the distinct/deprecation-aware texts and the regression test. `php bin/check-changelog.php` → OK; DEC-021 ([Unreleased] only, no released-entry edits) respected.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:140` | `root_dir` info read as if `serve_files` were the path (round-1 F2). | nit | **fixed** — current `:140` reads "Deprecated path to the public directory served when the legacy serve_files switch is enabled…"; `serve_files` is now explicitly a "switch" at `:135`. Ambiguity gone.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:135,140` vs `:150` | Style mismatch with sibling `static_files` info (round-1 F3). | nit | **still present — deliberate non-fix accepted** — texts still lead with "Deprecated" while `:150` buries it mid-sentence. Rationale in `code-decision-2.md` (leading word is what a `config:dump-reference` skimmer sees first) is coherent for a cosmetic nit; no behavioural impact. No further action.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:135,140` | Nothing links `info()` to `setDeprecated()`; deprecation wording can drift (round-1 F4). | nit | **fixed (for the #680 nodes)** — `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:306-341` asserts each of `serve_files`/`root_dir` `info()` contains "deprecat". Residual: the guard does not cover the third deprecated node `static_files` — see new F6.
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:256` | No test fails if the two texts regress to identical (round-1 F5). | nit | **fixed** — `assertNotSame` at `:335`; mutation test (re-merging both `info()` strings) fails the suite with "two strings are not identical" (verified in an out-of-tree copy).
+
+### New findings — round 2
+
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:306-341` | The new guard is narrower than the defect class it locks: it covers only `serve_files`/`root_dir`, not the third deprecated node `static_files` (`ConfigurationTreeBuilder.php:150`), whose `info()` also carries the only in-tree "deprecated" signal; and it asserts only the "deprecat" substring, not the `StaticFilesMiddleware` replacement hint that is part of #680's acceptance criteria. A rewrite could drop `static_files`' deprecation mention or the replacement hint and this test would still pass. | nit | **fixed** — the guard is now split: `testDeprecatedStaticFileNodeInfoTextsAreDistinct` asserts `serve_files` vs `root_dir` distinctness, and `testDeprecatedStaticFileNodeInfoNamesDeprecationAndReplacement` walks a `legacyStaticFileNodeInfos()` helper over all three legacy nodes (`serve_files`, `root_dir`, `static_files`), asserting each `info()` contains "deprecat" *and* "StaticFilesMiddleware".
+
+### Coder findings (findings-coder.md) re-adjudication — round 2
+
+- `findings-coder.md` #1 (`info()`/`setDeprecated()` drift) | now partially gated for the two #680 nodes; `static_files` still ungated | nit | mirrored as new F6, still open.
+- `findings-coder.md` #2 (`serve_files`/`root_dir` independently settable) | pre-existing, out of scope for a string/test-only change | — | not a real finding against this diff (unchanged from round 1).
+- `findings-coder.md` #3 (long `info()` lines) | consistent with the file; no linter rule violated | — | not a real finding (unchanged from round 1).

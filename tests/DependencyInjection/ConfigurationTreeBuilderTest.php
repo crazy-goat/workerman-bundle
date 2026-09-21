@@ -298,12 +298,46 @@ final class ConfigurationTreeBuilderTest extends TestCase
     /**
      * Regression guard for #680: `serve_files` and `root_dir` used to share
      * one identical `info()` string ("Should current worker serve files from
-     * public directory") that also omitted the deprecation. `info()` and
-     * `setDeprecated()` are independent attributes with no other coupling, so
-     * without this test a rewrite can silently re-merge the two nodes' texts
-     * or drop the deprecation signal from `config:dump-reference`.
+     * public directory") that also omitted the deprecation. Distinctness is
+     * asserted separately from the deprecation/replacement wording below.
      */
-    public function testDeprecatedStaticFileNodeInfoTextsAreDistinctAndMentionDeprecation(): void
+    public function testDeprecatedStaticFileNodeInfoTextsAreDistinct(): void
+    {
+        $infos = $this->legacyStaticFileNodeInfos();
+
+        self::assertNotSame(
+            $infos['serve_files'],
+            $infos['root_dir'],
+            'serve_files and root_dir must not share identical info() text',
+        );
+    }
+
+    /**
+     * `info()` and `setDeprecated()` are independent Symfony attributes with no
+     * other coupling, so without this test a rewrite can silently drop the
+     * deprecation signal or the replacement hint from every legacy static-file
+     * node shown by `config:dump-reference` (issue #680).
+     */
+    public function testDeprecatedStaticFileNodeInfoNamesDeprecationAndReplacement(): void
+    {
+        foreach ($this->legacyStaticFileNodeInfos() as $name => $info) {
+            self::assertStringContainsStringIgnoringCase(
+                'deprecat',
+                $info,
+                sprintf('%s info() must name the deprecation', $name),
+            );
+            self::assertStringContainsString(
+                'StaticFilesMiddleware',
+                $info,
+                sprintf('%s info() must name the StaticFilesMiddleware replacement', $name),
+            );
+        }
+    }
+
+    /**
+     * @return array<string, string> legacy node name => its info() text
+     */
+    private function legacyStaticFileNodeInfos(): array
     {
         $configurator = $this->createDefinitionConfigurator();
         (new ConfigurationTreeBuilder())->configure($configurator);
@@ -320,25 +354,14 @@ final class ConfigurationTreeBuilderTest extends TestCase
         $prototype = $servers->getPrototype();
         self::assertInstanceOf(ArrayNode::class, $prototype);
 
-        $children = $prototype->getChildren();
-        self::assertArrayHasKey('serve_files', $children);
-        self::assertArrayHasKey('root_dir', $children);
+        $infos = [];
+        foreach (['serve_files', 'root_dir', 'static_files'] as $name) {
+            $node = $prototype->getChildren()[$name] ?? null;
+            self::assertInstanceOf(BaseNode::class, $node, sprintf('missing config node %s', $name));
+            $infos[$name] = (string) $node->getInfo();
+        }
 
-        $serveFilesNode = $children['serve_files'];
-        $rootDirNode = $children['root_dir'];
-        self::assertInstanceOf(BaseNode::class, $serveFilesNode);
-        self::assertInstanceOf(BaseNode::class, $rootDirNode);
-
-        $serveFilesInfo = (string) $serveFilesNode->getInfo();
-        $rootDirInfo = (string) $rootDirNode->getInfo();
-
-        self::assertNotSame(
-            $serveFilesInfo,
-            $rootDirInfo,
-            'serve_files and root_dir must not share identical info() text',
-        );
-        self::assertStringContainsStringIgnoringCase('deprecat', $serveFilesInfo);
-        self::assertStringContainsStringIgnoringCase('deprecat', $rootDirInfo);
+        return $infos;
     }
 
     private function createDefinitionConfigurator(): DefinitionConfigurator
