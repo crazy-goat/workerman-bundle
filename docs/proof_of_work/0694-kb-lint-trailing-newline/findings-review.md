@@ -75,3 +75,32 @@ replay matrix of master / round-2 `7dc27a0` / HEAD against scratch sandboxes.
 - Gates run this round: PHPUnit 25/280 + 42/1167, PHPStan 8 clean,
   php-cs-fixer 0/2, Rector clean, real-tree `--fix` exit 0 with no diff,
   `grep -rln kb-lint tests/` sweep (no workflow file touched, FAQ-032 N/A).
+
+## Round 4
+
+Adjudication of the open findings against round-4 commit `9272588`
+("test(bin): cover LF-only normalisation of CRLF files (#694)"), which adds only
+`testFixLeavesCrlfFilesUntouched`. Evidence: `review-4.md` §§0,3-5; mutation run
+of the new test against a scratch copy with the CRLF guard deleted.
+
+| # | file:line | What is wrong | Severity | What happened to it |
+|---|---|---|---|---|
+| F-1 | `bin/kb-lint.php:568-571`, `:579` | Append/create path kept the trailing blank run, giving two blanks before the created heading. | low | **fixed at HEAD** (intact through round 4; `testFixCollapsesExtraTrailingNewlinesBeforeACreatedIndex` green). |
+| F-2 | `bin/kb-lint.php:596` | `normalizeTrailingNewline()` advertised an ignored bool. | nit | **fixed** — still `void`, docblock still states write-only-when-changed. |
+| F-3 | `bin/kb-lint.php:17-18`, `:625-626`, `bin/README.md:168` | `--fix` help only mentioned the tag index. | nit | **fixed** — docblock, `printUsage()` and README all mention trailing-newline normalisation. |
+| F-4 | `tests/KnowledgeBase/KbLintScriptTest.php` | Tests mixed `str_ends_with`+`assertTrue/False` with the file's `assertStringEnds*` style. | nit | **fixed** — only `assertStringEndsWith`/`assertStringEndsNotWith` remain. |
+| F-5 | `bin/kb-lint.php:606-610` | `rtrim($contents, "\n")` could not collapse a `\r\n\r\n` tail. | nit | **fixed/superseded** — the CRLF guard means such files are intentionally left untouched (LF-only contract), and LF tails collapse via `rtrim(..., "\n") . "\n"`. |
+| F-6 | `bin/kb-lint.php:559-579` | `## Tag index` heading present but start/end markers missing → create path splices a second `## Tag index` before the existing heading; the file still lints clean. | low | **still present — deliberately deferred.** Reproduced at HEAD in round 4 (marker-less `## Tag index` file → two `## Tag index` headings, `--fix` exit 0, `kb-lint` exit 0). Unchanged by round 4 (test-only delta). Acceptable to defer for #694 **only if step 14 opens the issue with this reproduction**; until that issue exists it stays open on the record. |
+| F-7 | `bin/kb-lint.php:568-579` | Round 2 sliced the tail from the collapsed index, doubling the blank before a blank-preceded `##` heading. | medium | **fixed at HEAD** (intact through round 4; `testFixCreatesTheIndexWithoutDoublingTheSeparatorBeforeAnExistingHeading` green; create matrix in review-3 §3 unchanged). |
+| F-8 | `bin/kb-lint.php:604-608` | `normalizeTrailingNewline()` produced mixed `\r\n` + `\n` for CRLF files. | nit | **fixed at HEAD** — `:606` returns early for any file containing `\r`; round 4 adds the missing regression test (F-9). |
+| F-9 | `tests/KnowledgeBase/KbLintScriptTest.php:297-312` | The CRLF early return that fixes F-8 had no test. | low | **fixed** — `testFixLeavesCrlfFilesUntouched` (round 4) builds an in-sync CRLF fixture with its trailing newline stripped, runs `--fix` and asserts byte-for-byte equality. Mutation-verified: deleting the guard at `bin/kb-lint.php:606` makes the test fail (tail rewritten to a bare `\n`); the test passes at HEAD. |
+
+### Notes on checks (round 4)
+
+- F-6: no automated check; needs marker-vs-heading reconciliation or a new lint
+  error with its own tests. Deferred to step 14, unchanged condition.
+- F-9: caught by the new test itself. Mutation run (guard deleted) fails the
+  assertion, so the guard is genuinely pinned. No other check covers `bin/`
+  (outside coverage `<source>`).
+- F-1..F-5/F-7/F-8: no regression; the round-4 delta is test + proof-of-work
+  only (`git diff ba46f16..HEAD`). All gates green; no gate lowered.
