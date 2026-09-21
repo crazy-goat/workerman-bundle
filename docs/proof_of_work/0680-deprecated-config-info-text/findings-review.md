@@ -60,3 +60,10 @@ Adjudication of every open item from rounds 1–2 against the current tree
 None. No high/medium/low/nit finding survives review of the current diff. All
 round-1 and round-2 items are `fixed` or accepted non-fixes, and
 `findings-coder.md` #1 is closed.
+
+## Round 4 — local full-suite finding (escaped by rounds 1-3)
+
+Rounds 1-3 ran targeted tests only. Step 7's full `composer test` surfaced an
+interaction the targeted runs could not.
+
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php` (new guard tests) + `tests/RebootStrategyTest.php:312` | After the two new guard tests were added, the full suite failed deterministically 2/2 at `RebootStrategyTest::testMemoryRebootStrategyGcCollectsCyclesWhenTriggered` ("gc_collect_cycles() should collect cyclic garbage", `assertGreaterThan(0, $collected)` got `0`). Reverting `ConfigurationTreeBuilderTest.php` to `master` made the full suite pass (2759 tests); replacing the two new tests with two trivial assertions also passed — so the new tests' cyclic config-tree garbage, left in the GC root buffer, tips `RebootStrategyTest`'s order-dependent auto-GC assumption. Not caused by `info()`/`setDeprecated()` logic; a latent fragility in the RebootStrategy GC test that only a full-suite run can expose. | medium (full-suite red locally) | **mitigated** — `ConfigurationTreeBuilderTest::tearDown()` calls `gc_collect_cycles()` so the file no longer perturbs other tests; two consecutive full `composer test` runs pass (2761 tests). The latent order-dependence in `RebootStrategyTest` remains and is proposed as a separate issue at step 14 (it is not #680's defect). |
