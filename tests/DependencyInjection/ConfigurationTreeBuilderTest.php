@@ -364,6 +364,16 @@ final class ConfigurationTreeBuilderTest extends TestCase
         return $infos;
     }
 
+    /**
+     * The config trees built here create cyclic node references. Left in the
+     * GC root buffer they perturb order-dependent GC assumptions elsewhere in
+     * the suite (RebootStrategyTest's gc_collect_cycles count), so drain them.
+     */
+    protected function tearDown(): void
+    {
+        gc_collect_cycles();
+    }
+
     private function createDefinitionConfigurator(): DefinitionConfigurator
     {
         $treeBuilder = new TreeBuilder('workerman');
