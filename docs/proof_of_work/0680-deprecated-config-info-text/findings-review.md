@@ -36,3 +36,27 @@ Adjudication of round-1 findings against the current tree, plus new findings.
 - `findings-coder.md` #1 (`info()`/`setDeprecated()` drift) | now partially gated for the two #680 nodes; `static_files` still ungated | nit | mirrored as new F6, still open.
 - `findings-coder.md` #2 (`serve_files`/`root_dir` independently settable) | pre-existing, out of scope for a string/test-only change | — | not a real finding against this diff (unchanged from round 1).
 - `findings-coder.md` #3 (long `info()` lines) | consistent with the file; no linter rule violated | — | not a real finding (unchanged from round 1).
+
+## Round 3
+
+Adjudication of every open item from rounds 1–2 against the current tree
+(`159f824`), then new findings.
+
+- `CHANGELOG.md:12-18` ([Unreleased]) | No changelog entry for #680 (round-1 F1). | low | **still fixed** — `### Changed` entry under `[Unreleased]` names #680, the distinct/type-accurate texts and the regression test; `php bin/check-changelog.php` OK; DEC-021 respected. No change this round.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:140` | `root_dir` info read as if `serve_files` were the path (round-1 F2). | nit | **still fixed** — `:140` reads "Deprecated path to the public directory served when the legacy serve_files switch is enabled…" and `:135` calls `serve_files` a "boolean switch". Source is byte-identical to round 2.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:135,140` vs `:150` | Style mismatch with sibling `static_files` info (round-1 F3). | nit | **still present — accepted non-fix, not a real defect** — texts still lead with "Deprecated" while `:150` buries it mid-sentence; rationale in `code-decision-2.md`/`code-decision-3.md` is sound for a cosmetic nit, no behavioural or test impact. Not re-opened.
+- `src/DependencyInjection/ConfigurationTreeBuilder.php:135,140` | Nothing links `info()` to `setDeprecated()` (round-1 F4). | nit | **fixed, and no longer partial** — `testDeprecatedStaticFileNodeInfoNamesDeprecationAndReplacement` (`tests/DependencyInjection/ConfigurationTreeBuilderTest.php:321-335`) now gates all three legacy nodes on both the deprecation and replacement keyword. The round-2 residual is closed by the same test (see F6).
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:304-313` | No test fails if `serve_files`/`root_dir` regress to identical text (round-1 F5). | nit | **still fixed** — `assertNotSame` at `:308-312`; mutation M4 (re-merge the two `info()` texts in a scratch copy) fails with "serve_files and root_dir must not share identical info() text".
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:321-365` | Round-2 F6: guard covered only `serve_files`/`root_dir` and only "deprecat", missing `static_files` and the `StaticFilesMiddleware` replacement hint. | nit | **fixed** — the guard is split and widened: `legacyStaticFileNodeInfos()` resolves `serve_files`, `root_dir`, `static_files` (fail-loud `missing config node %s` on the `?? null` branch), and the names test asserts `deprecat` (case-insensitive) plus `StaticFilesMiddleware` on each. Mutation-verified in an out-of-tree copy: M1 remove `StaticFilesMiddleware` from `serve_files` → FAIL; M2 same for `static_files` → FAIL; M3 remove "deprecated" from `static_files` → FAIL; M5 remove `StaticFilesMiddleware` from `root_dir` → FAIL.
+
+### Coder findings (findings-coder.md) adjudication — round 3
+
+- `findings-coder.md` #1 (`info()`/`setDeprecated()` drift) | now gated for all three legacy nodes on both keywords | nit | **fixed / closed** — no residual.
+- `findings-coder.md` #2 (`serve_files`/`root_dir` independently settable) | pre-existing, out of scope for a string/test-only change | — | not a real finding against this diff (unchanged from rounds 1–2).
+- `findings-coder.md` #3 (long `info()` lines) | consistent with the file; no linter rule violated | — | not a real finding (unchanged).
+
+### New findings — round 3
+
+None. No high/medium/low/nit finding survives review of the current diff. All
+round-1 and round-2 items are `fixed` or accepted non-fixes, and
+`findings-coder.md` #1 is closed.
