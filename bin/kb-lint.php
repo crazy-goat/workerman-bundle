@@ -558,10 +558,21 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
     } else {
         $at = $firstSection !== null ? $firstSection - 1 : \count($lines);
         $section = ['## Tag index', '', INDEX_START, ...$rendered, INDEX_END, ''];
+
+        // The blank line separating the heading from the preceding content is
+        // part of the block. Relying on the input's trailing newline made the
+        // created index depend on whether the file ended in a newline.
+        if ($at > 0 && trim($lines[$at - 1] ?? '') !== '') {
+            $section = ['', ...$section];
+        }
+
         $lines = [...\array_slice($lines, 0, $at), ...$section, ...\array_slice($lines, $at)];
     }
 
-    file_put_contents($absolute, implode("\n", $lines));
+    // Normalise the write path to POSIX: exactly one trailing newline,
+    // whatever state the input was in. Only the write path changes; readLines()
+    // still exposes the input's trailing state to the parser.
+    file_put_contents($absolute, rtrim(implode("\n", $lines), "\n") . "\n");
 }
 
 /** @param list<string> $args */

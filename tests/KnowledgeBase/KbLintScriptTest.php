@@ -197,6 +197,60 @@ final class KbLintScriptTest extends TestCase
         self::assertSame(0, $this->kbLint()['code']);
     }
 
+    public function testFixNormalizesAStrippedTrailingNewline(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $faq = str_replace(
+            '- `alpha` — FAQ-001',
+            '- `wrong` — FAQ-999',
+            rtrim($this->read(self::FAQ), "\n"),
+        );
+        $this->write(self::FAQ, $faq);
+
+        self::assertStringEndsNotWith("\n", $this->read(self::FAQ));
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+        self::assertStringContainsString('tag index regenerated', $fixed['out']);
+
+        $content = $this->read(self::FAQ);
+        self::assertTrue(str_ends_with($content, "\n"), 'the write path must normalise to POSIX');
+        self::assertFalse(str_ends_with($content, "\n\n"), 'exactly one trailing newline, not a spare one');
+    }
+
+    public function testFixCreatesTheIndexWithABlankSeparatorRegardlessOfTrailingNewline(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $withoutIndex = preg_replace(
+            '/## Tag index\n\n<!-- kb-index:start -->\n.*?<!-- kb-index:end -->\n\n## Section\n/s',
+            '',
+            $this->read(self::FAQ),
+        );
+        self::assertIsString($withoutIndex);
+        self::assertStringContainsString('### ', $withoutIndex);
+        self::assertStringNotContainsString('## Tag index', $withoutIndex);
+
+        $this->write(self::FAQ, rtrim($withoutIndex, "\n"));
+        self::assertStringEndsNotWith("\n", $this->read(self::FAQ));
+
+        $noNewlineFixed = $this->kbLint('--fix');
+        self::assertSame(0, $noNewlineFixed['code'], $noNewlineFixed['err']);
+        self::assertStringContainsString('tag index created', $noNewlineFixed['out']);
+
+        $content = $this->read(self::FAQ);
+        self::assertStringContainsString("\n\n## Tag index", $content, 'the blank separator must not depend on the input');
+        self::assertTrue(str_ends_with($content, "\n"));
+
+        // The equivalent input that *does* end in a newline must normalise to
+        // the exact same bytes.
+        $this->write(self::FAQ, $withoutIndex);
+        $withNewlineFixed = $this->kbLint('--fix');
+        self::assertSame(0, $withNewlineFixed['code'], $withNewlineFixed['err']);
+        self::assertSame($content, $this->read(self::FAQ));
+
+        self::assertSame(0, $this->kbLint()['code'], 'the created index must be in sync');
+    }
+
     public function testJsonOutputIsMachineReadable(): void
     {
         $this->writeValidKnowledgeBase();
