@@ -67,3 +67,30 @@ Rounds 1-3 ran targeted tests only. Step 7's full `composer test` surfaced an
 interaction the targeted runs could not.
 
 - `tests/DependencyInjection/ConfigurationTreeBuilderTest.php` (new guard tests) + `tests/RebootStrategyTest.php:312` | After the two new guard tests were added, the full suite failed deterministically 2/2 at `RebootStrategyTest::testMemoryRebootStrategyGcCollectsCyclesWhenTriggered` ("gc_collect_cycles() should collect cyclic garbage", `assertGreaterThan(0, $collected)` got `0`). Reverting `ConfigurationTreeBuilderTest.php` to `master` made the full suite pass (2759 tests); replacing the two new tests with two trivial assertions also passed — so the new tests' cyclic config-tree garbage, left in the GC root buffer, tips `RebootStrategyTest`'s order-dependent auto-GC assumption. Not caused by `info()`/`setDeprecated()` logic; a latent fragility in the RebootStrategy GC test that only a full-suite run can expose. | medium (full-suite red locally) | **mitigated** — `ConfigurationTreeBuilderTest::tearDown()` calls `gc_collect_cycles()` so the file no longer perturbs other tests; two consecutive full `composer test` runs pass (2761 tests). The latent order-dependence in `RebootStrategyTest` remains and is proposed as a separate issue at step 14 (it is not #680's defect). |
+
+## Round 4 — review adjudication
+
+Adjudication of the round-4 GC finding above (and of every earlier item)
+against the current tree at `d8c9643`; full analysis in `review-4.md`.
+
+- `tests/DependencyInjection/ConfigurationTreeBuilderTest.php:372-375` (new `tearDown()` → `gc_collect_cycles()`) + `tests/RebootStrategyTest.php:292-312` | The drain removes the new guard tests' cyclic config-tree garbage so it cannot tip `RebootStrategyTest`'s order-dependent `gc_collect_cycles() > 0` assertion, but the underlying assumption — that an explicit collection must find the just-built cycles, ignoring whether PHP's automatic GC already drained them — remains and can be re-broken by any later GC-heavy test inserted before it in suite order. | low | **mitigated — accepted in scope; follow-up required.** Independent full `composer test` this round: 2763 tests, OK (exit 0). The durable fix (`gc_disable()` before the 10 000-cycle loop / `gc_enable()` before the explicit collection, or asserting strategy invocation instead of a positive count) belongs in `RebootStrategyTest`, is out of #680's scope, and is recorded as a step-14 candidate issue. Correctly a `low`, not a blocker: no product code retains the cycles (`ConfigurationTreeBuilder` is `final readonly`, no static state; the cycles are Symfony tree node parent/prototype references), so no product leak is masked.
+
+### Earlier findings re-adjudicated — round 4
+
+- F1 (CHANGELOG `[Unreleased]`) | still fixed — `CHANGELOG.md:12-18`; `check-changelog` OK.
+- F2 (`root_dir` ambiguity) | still fixed — `ConfigurationTreeBuilder.php:140` "…served when the legacy serve_files switch is enabled…".
+- F3 (style mismatch vs `static_files`) | still present — accepted non-fix, not a real finding.
+- F4 (`info()`/`setDeprecated()` drift) | still fixed — all three legacy nodes gated on both keywords.
+- F5 (identical texts) | still fixed — `assertNotSame` at `:308-312`.
+- F6 (guard narrower than the defect class) | still fixed — `legacyStaticFileNodeInfos()` covers `serve_files`/`root_dir`/`static_files` with `deprecat` + `StaticFilesMiddleware`.
+- `findings-coder.md` #1 | fixed/closed; #2/#3 | not a real finding against this diff (unchanged rounds 1–4).
+- Round 3 recorded no new finding; nothing to re-adjudicate.
+- No earlier finding regressed: `git diff 159f824..HEAD -- src/ CHANGELOG.md` is empty, and DI test 15/15 + full suite 2763 pass.
+
+### New findings — round 4
+
+- None beyond the adjudicated round-4 GC item above (recorded as `low`, accepted
+  in scope with the durable `RebootStrategyTest` fix tracked as a follow-up).
+  The only code change since round 3 is that `tearDown()`; PSR/PHPStan are
+  clean, `parent::tearDown()` is not needed (`TestCase::tearDown()` is empty and
+  36/37 in-repo `tearDown()` methods omit it), and no gate was lowered.
