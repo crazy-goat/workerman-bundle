@@ -6,11 +6,14 @@ namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\ConfigurationTreeBuilder;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\ArrayNode;
+use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\Config\Definition\Loader\DefinitionFileLoader;
 use Symfony\Component\Config\Definition\Processor;
+use Symfony\Component\Config\Definition\PrototypedArrayNode;
 use Symfony\Component\Config\FileLocator;
 
 final class ConfigurationTreeBuilderTest extends TestCase
@@ -290,6 +293,85 @@ final class ConfigurationTreeBuilderTest extends TestCase
 
         self::assertNotNull($deprecationMessage, 'Expected a config deprecation for the deprecated node');
         self::assertStringContainsString('Will be removed in 1.0', $deprecationMessage);
+    }
+
+    /**
+     * Regression guard for #680: `serve_files` and `root_dir` used to share
+     * one identical `info()` string ("Should current worker serve files from
+     * public directory") that also omitted the deprecation. Distinctness is
+     * asserted separately from the deprecation/replacement wording below.
+     */
+    public function testDeprecatedStaticFileNodeInfoTextsAreDistinct(): void
+    {
+        $infos = $this->legacyStaticFileNodeInfos();
+
+        self::assertNotSame(
+            $infos['serve_files'],
+            $infos['root_dir'],
+            'serve_files and root_dir must not share identical info() text',
+        );
+    }
+
+    /**
+     * `info()` and `setDeprecated()` are independent Symfony attributes with no
+     * other coupling, so without this test a rewrite can silently drop the
+     * deprecation signal or the replacement hint from every legacy static-file
+     * node shown by `config:dump-reference` (issue #680).
+     */
+    public function testDeprecatedStaticFileNodeInfoNamesDeprecationAndReplacement(): void
+    {
+        foreach ($this->legacyStaticFileNodeInfos() as $name => $info) {
+            self::assertStringContainsStringIgnoringCase(
+                'deprecat',
+                $info,
+                sprintf('%s info() must name the deprecation', $name),
+            );
+            self::assertStringContainsString(
+                'StaticFilesMiddleware',
+                $info,
+                sprintf('%s info() must name the StaticFilesMiddleware replacement', $name),
+            );
+        }
+    }
+
+    /**
+     * @return array<string, string> legacy node name => its info() text
+     */
+    private function legacyStaticFileNodeInfos(): array
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $rootNode = $root->getNode(true);
+        self::assertInstanceOf(ArrayNode::class, $rootNode);
+
+        $servers = $rootNode->getChildren()['servers'] ?? null;
+        self::assertInstanceOf(PrototypedArrayNode::class, $servers);
+
+        $prototype = $servers->getPrototype();
+        self::assertInstanceOf(ArrayNode::class, $prototype);
+
+        $infos = [];
+        foreach (['serve_files', 'root_dir', 'static_files'] as $name) {
+            $node = $prototype->getChildren()[$name] ?? null;
+            self::assertInstanceOf(BaseNode::class, $node, sprintf('missing config node %s', $name));
+            $infos[$name] = (string) $node->getInfo();
+        }
+
+        return $infos;
+    }
+
+    /**
+     * The config trees built here create cyclic node references. Left in the
+     * GC root buffer they perturb order-dependent GC assumptions elsewhere in
+     * the suite (RebootStrategyTest's gc_collect_cycles count), so drain them.
+     */
+    protected function tearDown(): void
+    {
+        gc_collect_cycles();
     }
 
     private function createDefinitionConfigurator(): DefinitionConfigurator
