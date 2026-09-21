@@ -23,3 +23,26 @@ Not lowered. PHPStan level 8 on the changed file: clean. php-cs-fixer: clean.
 `tests/BinDirectoryTest.php` + `tests/CoverageCiGateTest.php`: 21 tests, 75
 assertions, OK. Scratch mutations were reverted and `git status` is clean;
 nothing committed by review.
+
+---
+
+# Findings — Review round 2 (#710)
+
+Round 2. Round-1 file unchanged above; the six entries below are carried
+forward and re-adjudicated against the current lines. Format:
+file:line | what is wrong | severity | what happened to it.
+
+- `tests/BinDirectoryTest.php:154-164` (docblock) / `:205-209` (guard) | Round-1 low: docblock claimed the threshold appears "twice" while the non-vacuity guard is `assertGreaterThan(0, ...)`; deleting one prose occurrence stayed green. | low | **fixed (acceptably)** — commit `2b3504a` removed "twice" and states the `>= 1` rule plus the consolidation rationale; docblock now matches the guard exactly. The guard itself was deliberately not tightened: drift in either prose occurrence is already caught (round-1 mutations), so requiring two mentions would only fail a legitimate prose consolidation. |
+- `tests/BinDirectoryTest.php:194-195` | Phrase-keyed selection is brittle: a phrase-bearing line without `<threshold>%` fails even without drift, and a figure stated without the phrase is not pinned. Hypothetical today (both `CONTRIBUTING.md:86`/`:264` occur with `80%`). | nit | **still present — accepted nit** — the stable phrase is what lets the loop cover every occurrence; a reword that drops it trips the guard loudly rather than passing silently. |
+- `tests/BinDirectoryTest.php:178` | Threshold regex duplicated from `tests/CoverageCiGateTest.php` (gate at `:66-75`); the two can diverge if the script form changes. | nit | **still present — accepted nit** — two call sites, two lines each; a shared helper would couple a doc assertion to a CI-gate assertion. |
+- `tests/BinDirectoryTest.php:175-181` | Loop overwrites `$threshold` per matching script, so a second disagreeing `coverage:check` entry is invisible in this test; the single-entry invariant lives in `CoverageCiGateTest::testComposerCoverageCheckDefinesNonZeroThreshold` (`assertCount(1, $scripts)`, `tests/CoverageCiGateTest.php:68`). Together sound. | nit | **still present — not a defect** — count is enforced by the other test; duplicating it adds no coverage. |
+- `tests/BinDirectoryTest.php:184-188` | `number_format($threshold, 1)` cannot represent a non-one-decimal threshold (`80.25` renders `80.3`), so such a doc value would fail. | nit | **still present — accepted nit** — threshold is a line-coverage percentage with a documented one-decimal prose form; a 2-decimal threshold is out of spec. |
+- `bin/check-coverage.php:21` (round 1 wrote `:22`) | Pre-existing, out of scope: missing `$argv[2]` defaults the threshold to `0.0`, so a direct invocation passes unconditionally. CI is forbidden from calling the binary directly (`CoverageCiGateTest`). | low | **still present — deferred** — pre-existing and outside #710; candidate issue at step 14 (require the argument / exit 2). |
+
+## Round 2 verdict
+
+Clean. The only source change this round is the F-1 docblock (no executable
+line touched). Gates not lowered: PHPUnit `BinDirectoryTest` +
+`CoverageCiGateTest` = 21 tests / 75 assertions OK; PHPStan level 8 on the
+changed file clean; php-cs-fixer clean. No new findings. Working tree clean;
+review committed nothing.
