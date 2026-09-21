@@ -835,21 +835,29 @@ final class InotifyMonitorWatcherTest extends TestCase
         // Inotify events are queued synchronously at syscall time (see
         // docs/helpers/faq.md FAQ-006): the kernel makes the watch descriptor
         // readable as soon as the filesystem call that triggered the event
-        // returns. stream_select() on the read set is therefore a condition
-        // wait, not an arbitrary settle — it returns immediately when events
-        // are already queued and otherwise blocks until the kernel delivers
-        // them. The 1s timeout is a safety net so a missing event fails the
-        // following assertion instead of hanging the suite.
+        // returns, and InotifyMonitorWatcher::start() sets the fd
+        // non-blocking. stream_select() on the read set is therefore a
+        // condition wait, so the common case returns immediately instead of
+        // paying a fixed settle. The 1s timeout is a safety net: a missing
+        // event fails the assertion below instead of hanging the suite.
+        //
+        // This is not a general per-event wait: an earlier event still queued
+        // on the fd makes stream_select() return at once. That is fine here
+        // because the synchronous-enqueue invariant means the newly triggered
+        // event is already queued too when the filesystem call returned.
         $fd = $this->getPrivateProperty($watcher, 'fd');
-
-        if (!\is_resource($fd)) {
-            return;
-        }
+        self::assertIsResource($fd, 'watcher must expose an inotify fd');
 
         $read = [$fd];
         $write = null;
         $except = null;
-        @\stream_select($read, $write, $except, 1);
+        $ready = @\stream_select($read, $write, $except, 1);
+
+        self::assertGreaterThan(
+            0,
+            $ready,
+            'no inotify event became readable within 1s of the triggering syscall',
+        );
     }
 
     private function createTempDir(): string
