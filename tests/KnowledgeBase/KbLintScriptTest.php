@@ -294,6 +294,23 @@ final class KbLintScriptTest extends TestCase
         self::assertStringNotContainsString("\n\n\n## Section\n", $content);
     }
 
+    public function testFixLeavesCrlfFilesUntouched(): void
+    {
+        $this->writeValidKnowledgeBase();
+
+        // The index is left in sync; only the line endings are CRLF. The LF-only
+        // normalisation must not rewrite the tail and produce mixed endings.
+        $crlf = str_replace("\n", "\r\n", $this->read(self::FAQ));
+        $this->write(self::FAQ, rtrim($crlf, "\r\n"));
+        $before = $this->read(self::FAQ);
+        self::assertStringContainsString("\r\n", $before, 'fixture must be CRLF');
+        self::assertStringEndsNotWith("\n", $before);
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+        self::assertSame($before, $this->read(self::FAQ), 'a CRLF file must be left byte-for-byte untouched');
+    }
+
     public function testFixCollapsesExtraTrailingNewlinesBeforeACreatedIndex(): void
     {
         $this->writeValidKnowledgeBase();

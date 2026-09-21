@@ -50,3 +50,28 @@ master / round-1 `b1b5d39` / HEAD against a scratch sandbox.
   php-cs-fixer / Rector (all ran clean on the changed files).
 - Gates run this round: PHPUnit 24/265 + 41/1152, PHPStan 8 clean,
   php-cs-fixer 0/2, Rector clean, real-tree `--fix` exit 0 with no diff.
+
+## Round 3
+
+Adjudication of the open findings (F-6, F-7, F-8) against round-3 commit
+`ba46f16`, plus new finding F-9. Evidence: `review-3.md` §§0,3-6; create-path
+replay matrix of master / round-2 `7dc27a0` / HEAD against scratch sandboxes.
+
+| # | file:line | What is wrong | Severity | What happened to it |
+|---|---|---|---|---|
+| F-6 | `bin/kb-lint.php:559-579` | `## Tag index` heading present but the start/end markers missing → create path splices a second `## Tag index` before the existing heading; still lints clean. | low | **still present — deliberately deferred.** Reproduced at HEAD (`Body.\n\n## Tag index\n\nSome stale text.\n` → duplicate heading, exit 0). Unchanged by round 3. Acceptable to defer for #694 **only if** step 14 opens the issue with this reproduction; otherwise it remains open. Round 3 does not worsen it. |
+| F-7 | `bin/kb-lint.php:568-579` | Round 2 collapsed the blank run by moving `$at`, but sliced the tail from that moved index, so the dropped blanks stayed in the tail and the separator doubled them. Any blank-preceded first `##` heading got two blanks. | medium | **fixed** — `:568-571` walks `$headEnd` (leaving `$at` at the original insertion point), `:579` slices head from `$headEnd` and tail from `$at`, `:575-577` gates the separator on `$headEnd > 0`. HEAD matrix: 0/1/2/3 trailing `\n` (append) and blank-preceded `## Section` all produce exactly one blank; round-2 produced two before the heading. New test `tests/KnowledgeBase/KbLintScriptTest.php:273-295` fails on `7dc27a0`, passes now. Second `--fix` pass byte-identical in all 12 states. |
+| F-8 | `bin/kb-lint.php:604-610` | `normalizeTrailingNewline()` rewrote only the tail, turning an in-sync CRLF file into mixed `\r\n` + bare `\n`. | nit | **fixed** — `:606-608` returns early for any file containing `\r`; `:610` is `rtrim($contents, "\n") . "\n"`. Verified: in-sync CRLF fixture with the final newline stripped is byte-identical after `--fix` (9 `\r\n`, last byte `0d`), no mixed endings. Residual: a CRLF file keeps a stripped trailing newline (LF-only contract, documented at `:604-605`); out-of-sync CRLF→LF conversion is pre-existing. |
+| F-9 | `bin/kb-lint.php:604-608` | **NEW (low, test gap).** The CRLF early return that fixes F-8 is the only thing preventing mixed line endings, and no test exercises it — deleting/inverting it re-introduces F-8 silently. `grep -rn '\r' tests/KnowledgeBase/` finds no CRLF fixture. | low | **fixed** — `testFixLeavesCrlfFilesUntouched` writes an in-sync CRLF fixture with the trailing newline stripped, runs `--fix`, and asserts the bytes are unchanged; removing the `\r` early return makes it fail. |
+
+### Notes on checks (round 3)
+
+- F-7/F-9: caught by create-path / CRLF fixture tests; F-7's assertion was added
+  in this PR (same class as F-1), F-9's is proposed for this PR or a follow-up.
+- F-6: no automated check; needs marker-vs-heading reconciliation or a new lint
+  error with its own tests.
+- F-1..F-5 remain fixed at HEAD; F-2/F-3/F-4 resolutions still not
+  machine-checkable by PHPStan / php-cs-fixer / Rector (all ran clean).
+- Gates run this round: PHPUnit 25/280 + 42/1167, PHPStan 8 clean,
+  php-cs-fixer 0/2, Rector clean, real-tree `--fix` exit 0 with no diff,
+  `grep -rln kb-lint tests/` sweep (no workflow file touched, FAQ-032 N/A).
