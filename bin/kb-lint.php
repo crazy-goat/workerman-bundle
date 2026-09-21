@@ -575,6 +575,32 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
     file_put_contents($absolute, rtrim(implode("\n", $lines), "\n") . "\n");
 }
 
+/**
+ * Rewrites a file that does not end in exactly one newline.
+ *
+ * `writeIndex()` is only reached when the tag index is missing or out of sync,
+ * so a file whose index is already correct would otherwise never be normalised
+ * by `--fix` (issue #694). Returns true when the file was rewritten.
+ */
+function normalizeTrailingNewline(string $absolute): bool
+{
+    $contents = file_get_contents($absolute);
+
+    if ($contents === false) {
+        return false;
+    }
+
+    $normalized = rtrim($contents, "\n") . "\n";
+
+    if ($normalized === $contents) {
+        return false;
+    }
+
+    file_put_contents($absolute, $normalized);
+
+    return true;
+}
+
 /** @param list<string> $args */
 function printUsage(array $args): void
 {
@@ -736,6 +762,12 @@ function main(array $options): int
                     $errors[] = sprintf('%s: tag index is out of sync with the entries (run --fix)', $relative);
                 }
             }
+        }
+
+        // The index being in sync does not mean the file needs no fix: `--fix`
+        // also normalises the trailing newline (#694).
+        if ($options['fix']) {
+            normalizeTrailingNewline($absolute);
         }
 
         $files[] = [

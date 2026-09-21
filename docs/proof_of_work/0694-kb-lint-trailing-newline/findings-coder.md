@@ -27,23 +27,20 @@ on both files, and `rector --dry-run` reported no changes. The real
 
 ## Bugs / weak spots discovered
 
-### 1. `--fix` does not normalise a file whose index is already in sync — in scope-adjacent, not fixed
+### 1. `--fix` did not normalise a file whose index was already in sync — FIXED in this round
 
 `bin/kb-lint.php:710-728` only calls `writeIndex()` when `$parsed['index']`
 is `null` or its body differs from `renderIndex()`. A KB file with an in-sync
-index but a stripped trailing newline still lints clean (`code 0`) and
-`--fix` leaves it byte-for-byte unchanged, so the new normalisation never runs.
+index but a stripped trailing newline still linted clean (`code 0`) and `--fix`
+left it byte-for-byte unchanged, so the write-path normalisation never ran.
+This is exactly the issue's reproduction against the real `faq.md`, so leaving
+it would not have satisfied #694.
 
-Reproduced: fixture with `- \`alpha\` — FAQ-001` and body ending without
-`"\n"` → `php bin/kb-lint.php --root=$S` exits 0; `php bin/kb-lint.php --fix
---root=$S` exits 0 and `tail -c1` is still `0x2e` (`.`), not `0x0a`.
-
-Suggested fix (if a follow-up wants full normalisation): in the `--fix` loop,
-when `$options['fix']` and the raw file does not end in exactly one `"\n"`,
-call `writeIndex(...)` even for an in-sync index (or detect the trailing state
-directly and rewrite). Keep it out of #694 to match the issue's stated scope
-of `writeIndex()`. This is the only place where "`--fix` normalises the
-trailing newline" is not yet universally true.
+Fixed by adding `normalizeTrailingNewline()`, called for every file when
+`--fix` is set (see `code-decision-1.md`, "Follow-up within this round"):
+it rewrites only when the trailing-newline state differs, and emits no warning.
+New test `testFixNormalizesAStrippedTrailingNewlineEvenWhenTheIndexIsInSync`
+pins it. Verified on a scratch copy of the real `faq.md` (ends `0x0a` now).
 
 ### 2. Existing kb-lint line-budget warnings on the real KB — pre-existing
 
@@ -90,7 +87,8 @@ proposed, just a maintenance risk.
 ## Checks run
 
 - `php -d phar.readonly=0 vendor/bin/phpunit --no-coverage tests/KnowledgeBase/KbLintScriptTest.php`
-  → 22 tests, 235 assertions, OK.
+  → 23 tests, 251 assertions, OK (the round's final count, including the
+  in-sync normalisation test).
 - `vendor/bin/phpstan analyse bin/kb-lint.php tests/KnowledgeBase/KbLintScriptTest.php --no-progress`
   → No errors (level 8).
 - `vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff --path-mode=intersection bin/kb-lint.php tests/KnowledgeBase/KbLintScriptTest.php`

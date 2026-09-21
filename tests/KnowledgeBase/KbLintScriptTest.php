@@ -218,6 +218,25 @@ final class KbLintScriptTest extends TestCase
         self::assertFalse(str_ends_with($content, "\n\n"), 'exactly one trailing newline, not a spare one');
     }
 
+    public function testFixNormalizesAStrippedTrailingNewlineEvenWhenTheIndexIsInSync(): void
+    {
+        $this->writeValidKnowledgeBase();
+        self::assertSame(0, $this->kbLint()['code'], 'the fixture must start with an in-sync index');
+
+        $original = $this->read(self::FAQ);
+        $this->write(self::FAQ, rtrim($original, "\n"));
+        self::assertStringEndsNotWith("\n", $this->read(self::FAQ));
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+        self::assertStringNotContainsString('tag index regenerated', $fixed['out']);
+        self::assertStringNotContainsString('tag index created', $fixed['out']);
+
+        // Restoring the dropped newline must reproduce the original bytes
+        // exactly: the index is left untouched and only the newline changes.
+        self::assertSame($original, $this->read(self::FAQ));
+    }
+
     public function testFixCreatesTheIndexWithABlankSeparatorRegardlessOfTrailingNewline(): void
     {
         $this->writeValidKnowledgeBase();

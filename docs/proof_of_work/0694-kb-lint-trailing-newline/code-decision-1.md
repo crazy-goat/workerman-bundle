@@ -74,7 +74,43 @@ Regression tests added to `tests/KnowledgeBase/KbLintScriptTest.php`:
   double-blank can be introduced by the new code.
 - `writeIndex()` is only invoked when the index is missing or out of sync
   (see `main()`, lines ~710–728). A file with an in-sync index but no trailing
-  newline therefore still passes lint and `--fix` never touches it — the write
-  path is normalised, but the *decision to write* is not. This is outside the
-  task's stated scope (which targets `writeIndex()`) but is recorded in
-  `findings-coder.md` as a weak spot.
+  newline would therefore still pass lint and `--fix` would never touch it.
+  This was initially left as a weak spot, but the issue's own reproduction
+  ("stripped the trailing `\n` from `faq.md`, ran `--fix` → still ends in
+  `0x2e`") is exactly this case: a real KB file has an in-sync index. Verified
+  against a scratch copy of the real `faq.md` — before the follow-up the byte
+  stayed `.`; it is now normalised.
+
+## Follow-up within this round (in-sync index path)
+
+Added `normalizeTrailingNewline(string $absolute): bool`, called from `main()`
+for every file when `--fix` is set, after the index handling:
+
+```php
+function normalizeTrailingNewline(string $absolute): bool
+{
+    $contents = file_get_contents($absolute);
+    if ($contents === false) {
+        return false;
+    }
+    $normalized = rtrim($contents, "\n") . "\n";
+    if ($normalized === $contents) {
+        return false;                 // already POSIX — do not rewrite
+    }
+    file_put_contents($absolute, $normalized);
+
+    return true;
+}
+```
+
+- It rewrites only when the trailing-newline state actually differs, so files
+  that are already correct are never touched (no spurious mtime churn), and it
+  runs even when the index is in sync.
+- No warning is emitted for a newline-only normalisation, to avoid noise; the
+  existing "tag index created/regenerated" warnings are unchanged.
+- The `writeIndex()` normalisation is kept: when a write happens anyway, the
+  bytes are correct without relying on the follow-up call.
+- New test `testFixNormalizesAStrippedTrailingNewlineEvenWhenTheIndexIsInSync`
+  asserts the fixture starts in sync, strips the newline, runs `--fix`, sees no
+  "regenerated"/"created" warning, and asserts the file bytes return to the
+  **original** content (proving only the newline changed).
