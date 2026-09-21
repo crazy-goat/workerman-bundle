@@ -151,6 +151,59 @@ final class BinDirectoryTest extends TestCase
         );
     }
 
+    /**
+     * CONTRIBUTING.md states the coverage threshold in prose twice while
+     * composer.json's `coverage:check` is the single source of truth. Pin the
+     * prose to the config so a threshold change cannot leave the doc stale,
+     * the same drift class as the PHPStan level in #693.
+     */
+    public function testContributingCoverageThresholdMatchesComposer(): void
+    {
+        $composerContent = file_get_contents($this->projectDir . '/composer.json');
+        $this->assertNotFalse($composerContent);
+        $composer = json_decode($composerContent, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertIsArray($composer);
+
+        $scripts = $composer['scripts']['coverage:check'] ?? null;
+        $this->assertIsArray($scripts, 'composer.json must define a coverage:check script');
+
+        $threshold = null;
+        foreach ($scripts as $script) {
+            $this->assertIsString($script);
+            if (preg_match('/check-coverage\.php\s+\S+\s+(\d+(?:\.\d+)?)/', $script, $matches) === 1) {
+                $threshold = (float) $matches[1];
+            }
+        }
+        $this->assertNotNull($threshold, 'coverage:check must pass an explicit threshold to check-coverage.php');
+
+        // Prose form: integral values drop the trailing ".0" (80.0 -> "80"),
+        // non-integral values keep one decimal (85.5 -> "85.5").
+        $display = $threshold === floor($threshold)
+            ? (string) (int) $threshold
+            : number_format($threshold, 1, '.', '');
+
+        $contribContent = file_get_contents($this->projectDir . '/CONTRIBUTING.md');
+        $this->assertNotFalse($contribContent);
+
+        $matchedLines = 0;
+        foreach (preg_split('/\R/', $contribContent) ?: [] as $line) {
+            if (str_contains($line, 'line-coverage threshold')) {
+                ++$matchedLines;
+                $this->assertStringContainsString(
+                    $display . '%',
+                    $line,
+                    'CONTRIBUTING.md must state the same coverage threshold as composer.json coverage:check',
+                );
+            }
+        }
+
+        $this->assertGreaterThan(
+            0,
+            $matchedLines,
+            'CONTRIBUTING.md must mention the "line-coverage threshold" phrase at least once',
+        );
+    }
+
     public function testReadmeHasLicenseSection(): void
     {
         $content = file_get_contents($this->projectDir . '/README.md');
