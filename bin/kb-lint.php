@@ -15,6 +15,7 @@ declare(strict_types=1);
  *
  * Options:
  *   --fix               regenerate the tag index of every knowledge-base file
+ *                       and normalise its trailing newline
  *   --json              machine-readable output (JSON on stdout)
  *   --root=DIR          repository root (default: the parent of bin/)
  *   --help              show this help
@@ -557,12 +558,20 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
         $lines = [...$head, ...$rendered, ...$tail];
     } else {
         $at = $firstSection !== null ? $firstSection - 1 : \count($lines);
+
+        // Drop the blank run immediately before the insertion point; the
+        // separator rule below re-adds exactly one. Without this, an input
+        // ending in two or more newlines would leave a double blank line
+        // before the created heading. Relying on the input's trailing state
+        // also made the created index depend on whether the file ended in a
+        // newline at all.
+        while ($at > 0 && trim($lines[$at - 1] ?? '') === '') {
+            --$at;
+        }
+
         $section = ['## Tag index', '', INDEX_START, ...$rendered, INDEX_END, ''];
 
-        // The blank line separating the heading from the preceding content is
-        // part of the block. Relying on the input's trailing newline made the
-        // created index depend on whether the file ended in a newline.
-        if ($at > 0 && trim($lines[$at - 1] ?? '') !== '') {
+        if ($at > 0) {
             $section = ['', ...$section];
         }
 
@@ -576,29 +585,30 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
 }
 
 /**
- * Rewrites a file that does not end in exactly one newline.
+ * Rewrites a file that does not end in exactly one LF newline.
  *
  * `writeIndex()` is only reached when the tag index is missing or out of sync,
  * so a file whose index is already correct would otherwise never be normalised
- * by `--fix` (issue #694). Returns true when the file was rewritten.
+ * by `--fix` (issue #694). A file that already ends in exactly one newline is
+ * left untouched, so no spurious rewrite happens.
  */
-function normalizeTrailingNewline(string $absolute): bool
+function normalizeTrailingNewline(string $absolute): void
 {
     $contents = file_get_contents($absolute);
 
     if ($contents === false) {
-        return false;
+        return;
     }
 
-    $normalized = rtrim($contents, "\n") . "\n";
+    // Strip every trailing CR/LF, then terminate with a single LF. This also
+    // collapses a stray "\r\n" tail, so the file ends in exactly one "\n".
+    $normalized = rtrim($contents, "\r\n") . "\n";
 
     if ($normalized === $contents) {
-        return false;
+        return;
     }
 
     file_put_contents($absolute, $normalized);
-
-    return true;
 }
 
 /** @param list<string> $args */
@@ -607,7 +617,8 @@ function printUsage(array $args): void
     fwrite(STDOUT, ($args[0] ?? 'bin/kb-lint.php') . " — lint the docs/helpers/ knowledge base\n\n");
     fwrite(STDOUT, "Usage: php bin/kb-lint.php [options]\n\n");
     fwrite(STDOUT, "Options:\n");
-    fwrite(STDOUT, "  --fix               regenerate the tag index of every knowledge-base file\n");
+    fwrite(STDOUT, "  --fix               regenerate the tag index of every knowledge-base file and\n");
+    fwrite(STDOUT, "                      normalise its trailing newline\n");
     fwrite(STDOUT, "  --json              machine-readable output (JSON on stdout)\n");
     fwrite(STDOUT, "  --root=DIR          repository root (default: the parent of bin/)\n");
     fwrite(STDOUT, "  --help              show this help\n\n");

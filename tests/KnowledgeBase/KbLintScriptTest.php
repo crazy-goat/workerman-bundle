@@ -214,8 +214,8 @@ final class KbLintScriptTest extends TestCase
         self::assertStringContainsString('tag index regenerated', $fixed['out']);
 
         $content = $this->read(self::FAQ);
-        self::assertTrue(str_ends_with($content, "\n"), 'the write path must normalise to POSIX');
-        self::assertFalse(str_ends_with($content, "\n\n"), 'exactly one trailing newline, not a spare one');
+        self::assertStringEndsWith("\n", $content, 'the write path must normalise to POSIX');
+        self::assertStringEndsNotWith("\n\n", $content, 'exactly one trailing newline, not a spare one');
     }
 
     public function testFixNormalizesAStrippedTrailingNewlineEvenWhenTheIndexIsInSync(): void
@@ -258,7 +258,7 @@ final class KbLintScriptTest extends TestCase
 
         $content = $this->read(self::FAQ);
         self::assertStringContainsString("\n\n## Tag index", $content, 'the blank separator must not depend on the input');
-        self::assertTrue(str_ends_with($content, "\n"));
+        self::assertStringEndsWith("\n", $content);
 
         // The equivalent input that *does* end in a newline must normalise to
         // the exact same bytes.
@@ -268,6 +268,30 @@ final class KbLintScriptTest extends TestCase
         self::assertSame($content, $this->read(self::FAQ));
 
         self::assertSame(0, $this->kbLint()['code'], 'the created index must be in sync');
+    }
+
+    public function testFixCollapsesExtraTrailingNewlinesBeforeACreatedIndex(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $withoutIndex = preg_replace(
+            '/## Tag index\n\n<!-- kb-index:start -->\n.*?<!-- kb-index:end -->\n\n## Section\n/s',
+            '',
+            $this->read(self::FAQ),
+        );
+        self::assertIsString($withoutIndex);
+
+        // Two blank lines before EOF: the created heading must still be
+        // separated by exactly one blank line, not inherit the run.
+        $this->write(self::FAQ, rtrim($withoutIndex, "\n") . "\n\n\n");
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+
+        $content = $this->read(self::FAQ);
+        self::assertStringContainsString("\n\n## Tag index", $content);
+        self::assertStringNotContainsString("\n\n\n## Tag index", $content);
+        self::assertStringEndsWith("\n", $content);
+        self::assertStringEndsNotWith("\n\n", $content);
     }
 
     public function testJsonOutputIsMachineReadable(): void
