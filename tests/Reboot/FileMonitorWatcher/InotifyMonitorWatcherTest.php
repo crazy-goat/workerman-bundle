@@ -209,7 +209,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
 
         file_put_contents($tmpDir . '/newfile.php', '<?php');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -236,7 +236,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
 
         file_put_contents($tmpDir . '/existing.php', '<?php // v2');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -261,7 +261,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
 
         file_put_contents($tmpDir . '/data.csv', 'a,b,c');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -294,7 +294,7 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         rmdir($tmpDir . '/subdir');
         clearstatcache();
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -308,7 +308,7 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         rmdir($tmpDir);
         clearstatcache();
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $this->invokeOnNotify($watcher, $fd);
 
@@ -337,7 +337,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $dirCountBefore = count($pathByWdBefore);
 
         mkdir($tmpDir . '/newsub');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -377,7 +377,7 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         file_put_contents($tmpDir . '/a.php', '<?php');
         file_put_contents($tmpDir . '/b.php', '<?php');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
 
@@ -446,7 +446,7 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         // Arm a pending reload with a matching file change.
         file_put_contents($tmpDir . '/a.php', '<?php');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -460,7 +460,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         // Delete a watched subdirectory while the reload is still pending.
         rmdir($tmpDir . '/subdir');
         clearstatcache();
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
         $this->invokeOnNotify($watcher, $fd);
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -500,7 +500,7 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         rmdir($tmpDir . '/subdir');
         clearstatcache();
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -517,7 +517,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
 
         mkdir($tmpDir . '/subdir', 0700);
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
         $this->invokeOnNotify($watcher, $fd);
 
         $this->assertContains(
@@ -564,7 +564,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watchedPathsBefore = $this->getPrivateProperty($watcher, 'watchedPaths');
 
         mkdir($unrecordedDir . '/child', 0700);
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
         $this->invokeOnNotify($watcher, $fd);
 
         $this->assertSame(
@@ -599,7 +599,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         // A directory moved into the tree arrives as IN_MOVED_TO|IN_ISDIR with
         // its children already present (they were created outside any watch).
         rename($staging, $tmpDir . '/moved');
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -636,7 +636,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         // descriptor for the new location; the old path must not linger.
         rename($tmpDir . '/alpha', $tmpDir . '/beta');
         clearstatcache();
-        $this->waitForInotifyEvents();
+        $this->waitForInotifyEvents($watcher);
 
         $fd = $this->getPrivateProperty($watcher, 'fd');
         $this->invokeOnNotify($watcher, $fd);
@@ -677,7 +677,7 @@ final class InotifyMonitorWatcherTest extends TestCase
             // clear the stale bookkeeping.
             rename($tmpDir . '/subdir', $outside . '/subdir');
             clearstatcache();
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
             $this->invokeOnNotify($watcher, $fd);
 
             $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -696,7 +696,7 @@ final class InotifyMonitorWatcherTest extends TestCase
             // re-mapped to the restored path.
             rename($outside . '/subdir', $tmpDir . '/subdir');
             clearstatcache();
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
             $this->invokeOnNotify($watcher, $fd);
 
             $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -733,7 +733,7 @@ final class InotifyMonitorWatcherTest extends TestCase
             // A matching file moved out of the tree arrives as a plain
             // IN_MOVED_FROM (no IN_ISDIR) and must behave like a deletion.
             rename($tmpDir . '/gone.php', $outside . '/gone.php');
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
 
             $fd = $this->getPrivateProperty($watcher, 'fd');
             $this->invokeOnNotify($watcher, $fd);
@@ -779,10 +779,10 @@ final class InotifyMonitorWatcherTest extends TestCase
             // processed: the IN_CREATE|IN_ISDIR then hits a path that no longer
             // exists, so inotify_add_watch() fails.
             mkdir($tmpDir . '/ghost', 0700);
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
             rmdir($tmpDir . '/ghost');
             clearstatcache();
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
 
             $this->invokeOnNotify($watcher, $fd);
 
@@ -804,10 +804,10 @@ final class InotifyMonitorWatcherTest extends TestCase
 
             // Repeat the same failing cycle: the warning is emitted once per path.
             mkdir($tmpDir . '/ghost', 0700);
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
             rmdir($tmpDir . '/ghost');
             clearstatcache();
-            $this->waitForInotifyEvents();
+            $this->waitForInotifyEvents($watcher);
 
             $this->invokeOnNotify($watcher, $fd);
 
@@ -830,13 +830,35 @@ final class InotifyMonitorWatcherTest extends TestCase
         Worker::$globalEvent = $eventLoop;
     }
 
-    private function waitForInotifyEvents(): void
+    private function waitForInotifyEvents(InotifyMonitorWatcher $watcher): void
     {
-        // Fixed delay for inotify kernel event delivery — not a condition
-        // wait. inotify events are pushed asynchronously by the kernel and
-        // there is no userspace condition to poll, so a fixed settle is
-        // the correct approach here.
-        usleep(200000);
+        // Inotify events are queued synchronously at syscall time (see
+        // docs/helpers/faq.md FAQ-006): the kernel makes the watch descriptor
+        // readable as soon as the filesystem call that triggered the event
+        // returns, and InotifyMonitorWatcher::start() sets the fd
+        // non-blocking. stream_select() on the read set is therefore a
+        // condition wait, so the common case returns immediately instead of
+        // paying a fixed settle. The 1s timeout is a safety net: a missing
+        // event fails the assertion below instead of hanging the suite.
+        //
+        // This is not a general per-event wait: an earlier event still queued
+        // on the fd makes stream_select() return at once. That is fine here
+        // because the synchronous-enqueue invariant means the newly triggered
+        // event is already queued too when the filesystem call returned.
+        $fd = $this->getPrivateProperty($watcher, 'fd');
+        self::assertIsResource($fd, 'watcher must expose an inotify fd');
+
+        $read = [$fd];
+        $write = null;
+        $except = null;
+        $ready = @\stream_select($read, $write, $except, 1);
+
+        self::assertNotFalse($ready, 'stream_select() on the inotify fd failed (interrupted?)');
+        self::assertGreaterThan(
+            0,
+            $ready,
+            'no inotify event became readable within 1s of the triggering syscall',
+        );
     }
 
     private function createTempDir(): string
