@@ -30,6 +30,7 @@ private function waitForInotifyEvents(InotifyMonitorWatcher $watcher): void
     $except = null;
     $ready = @\stream_select($read, $write, $except, 1);
 
+    self::assertNotFalse($ready, 'stream_select() on the inotify fd failed (interrupted?)');
     self::assertGreaterThan(
         0,
         $ready,

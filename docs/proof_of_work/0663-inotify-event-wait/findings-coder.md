@@ -36,13 +36,13 @@
    `@inotify_add_watch` failure handling take over by treating a non-resource fd
    as "watch unavailable"). Out of scope for #663; no fix made.
 
-2. `tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php:833-853` (new
+2. `tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php` (new
    helper) — `stream_select()` returns `false` on EINTR (signal-interrupted)
-   and `0` on timeout; both are ignored. An interrupted select would let the
-   test proceed without a queued event and fail on the assertion, which is the
-   intended failure mode, but retrying on `false` would remove a potential
-   flake in signal-heavy environments. Suggested fix (only if flakiness is ever
-   observed):
+   and `0` on timeout. The helper now asserts `assertNotFalse` and
+   `assertGreaterThan(0, ...)` (review round 1, F-1), so neither is silently
+   ignored: a missing event fails at the wait with a named message. Retrying on
+   `false` would still remove a potential EINTR flake in signal-heavy
+   environments. Suggested fix (only if flakiness is ever observed):
    ```php
    while (@\stream_select($read, $write, $except, 1) === false) {
        // retry once on EINTR
@@ -64,4 +64,6 @@
   — OK, 25 tests, 7 assertions, 18 skipped (extension unavailable on macOS),
   0.041 s.
 - `vendor/bin/phpstan analyse tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php` — OK.
-- No assertions or `@requires` guards changed.
+- No `@requires` guards changed. The helper gained assertions in review round
+  1 (F-1/F-4: `assertIsResource`, `assertNotFalse`, `assertGreaterThan(0, ...)`);
+  no test's own assertions changed.
