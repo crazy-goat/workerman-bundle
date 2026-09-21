@@ -559,23 +559,24 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
     } else {
         $at = $firstSection !== null ? $firstSection - 1 : \count($lines);
 
-        // Drop the blank run immediately before the insertion point; the
-        // separator rule below re-adds exactly one. Without this, an input
-        // ending in two or more newlines would leave a double blank line
-        // before the created heading. Relying on the input's trailing state
-        // also made the created index depend on whether the file ended in a
-        // newline at all.
-        while ($at > 0 && trim($lines[$at - 1] ?? '') === '') {
-            --$at;
+        // The heading must be separated from the preceding content by exactly
+        // one blank line, regardless of how many blank lines (or none) the
+        // input had there. Find the start of the blank run before the insertion
+        // point, drop it from the head slice, and let the separator below
+        // re-add exactly one. `$at` is kept for the tail slice so the dropped
+        // blanks are not re-emitted after the inserted section.
+        $headEnd = $at;
+        while ($headEnd > 0 && trim($lines[$headEnd - 1] ?? '') === '') {
+            --$headEnd;
         }
 
         $section = ['## Tag index', '', INDEX_START, ...$rendered, INDEX_END, ''];
 
-        if ($at > 0) {
+        if ($headEnd > 0) {
             $section = ['', ...$section];
         }
 
-        $lines = [...\array_slice($lines, 0, $at), ...$section, ...\array_slice($lines, $at)];
+        $lines = [...\array_slice($lines, 0, $headEnd), ...$section, ...\array_slice($lines, $at)];
     }
 
     // Normalise the write path to POSIX: exactly one trailing newline,
@@ -600,9 +601,13 @@ function normalizeTrailingNewline(string $absolute): void
         return;
     }
 
-    // Strip every trailing CR/LF, then terminate with a single LF. This also
-    // collapses a stray "\r\n" tail, so the file ends in exactly one "\n".
-    $normalized = rtrim($contents, "\r\n") . "\n";
+    // Only LF files are normalised. Rewriting just the tail of a CRLF file
+    // would leave it with mixed line endings, and the knowledge base is LF-only.
+    if (str_contains($contents, "\r")) {
+        return;
+    }
+
+    $normalized = rtrim($contents, "\n") . "\n";
 
     if ($normalized === $contents) {
         return;

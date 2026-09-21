@@ -270,6 +270,30 @@ final class KbLintScriptTest extends TestCase
         self::assertSame(0, $this->kbLint()['code'], 'the created index must be in sync');
     }
 
+    public function testFixCreatesTheIndexWithoutDoublingTheSeparatorBeforeAnExistingHeading(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $withoutIndex = preg_replace(
+            '/## Tag index\n\n<!-- kb-index:start -->\n.*?<!-- kb-index:end -->\n\n/s',
+            '',
+            $this->read(self::FAQ),
+        );
+        self::assertIsString($withoutIndex);
+        self::assertStringContainsString('## Section', $withoutIndex);
+
+        // Rebuild the blank line that used to precede the removed index block.
+        $this->write(self::FAQ, rtrim($withoutIndex, "\n") . "\n");
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+
+        $content = $this->read(self::FAQ);
+        self::assertStringContainsString("\n\n## Tag index", $content);
+        self::assertStringNotContainsString("\n\n\n## Tag index", $content);
+        self::assertStringContainsString("\n\n## Section\n", $content);
+        self::assertStringNotContainsString("\n\n\n## Section\n", $content);
+    }
+
     public function testFixCollapsesExtraTrailingNewlinesBeforeACreatedIndex(): void
     {
         $this->writeValidKnowledgeBase();

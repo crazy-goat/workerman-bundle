@@ -23,3 +23,30 @@ No `findings-review.md` existed before this round — nothing to adjudicate.
 - F-5: no automated check; no CRLF fixture exists in the suite.
 - F-2/F-3/F-4: not machine-checkable by PHPStan / php-cs-fixer / Rector (all
   three ran clean on the changed files).
+
+## Round 2
+
+Adjudication of round 1 (F-1..F-6) against the round-2 commit `7dc27a0`, plus
+new findings F-7/F-8. Evidence: `review-2.md` §§0,3-6; replay matrix of
+master / round-1 `b1b5d39` / HEAD against a scratch sandbox.
+
+| # | file:line | What is wrong | Severity | What happened to it |
+|---|---|---|---|---|
+| F-1 | `bin/kb-lint.php:568-578` | Create-index append (`$firstSection === null`) kept the trailing blank run; 2+ trailing newlines yielded two blanks before the created heading. | low | **fixed for the branch it named** — the run is collapsed (`:568-570`) and one blank re-added (`:574-576`); 0/1/2/3 trailing `\n` now produce byte-identical output; `testFixCollapsesExtraTrailingNewlinesBeforeACreatedIndex` fails against master/round-1 and passes now. The same collapse is broken on the sibling `$firstSection !== null` branch → **F-7**. |
+| F-2 | `bin/kb-lint.php:595` | `normalizeTrailingNewline()` advertised a bool return the caller ignored. | nit | **fixed** — now `void`; docblock describes write-only-when-changed. |
+| F-3 | `bin/kb-lint.php:17-18`, `:620-621`, `bin/README.md:168` | `--fix` help/file docblock only said "regenerate the tag index". | nit | **fixed** — all three now mention the trailing-newline normalisation; no stale string remains in `bin/`. |
+| F-4 | `tests/KnowledgeBase/KbLintScriptTest.php:210-294` | New tests mixed `str_ends_with`+`assertTrue/False` with the file's `assertStringEnds*` style. | nit | **fixed** — only `assertStringEndsWith`/`assertStringEndsNotWith` remain in the file. |
+| F-5 | `bin/kb-lint.php:605` | `rtrim($contents, "\n")` could not collapse a `\r\n\r\n` tail. | nit | **fixed** — first `rtrim($contents, "\r\n") . "\n"`, then superseded by the F-8 fix: `normalizeTrailingNewline()` now leaves any file containing `\r` untouched and normalises LF-only files with `rtrim($contents, "\n") . "\n"`. |
+| F-6 | `bin/kb-lint.php:558-578` | `## Tag index` heading present but markers missing → create path splices a second heading that still lints clean. | low | **still present — deliberately not fixed.** Reproduced (`…Body.\n\n## Tag index\n\nSome stale text.\n` → duplicate heading, exit 0). Acceptable to defer for #694 **only if** a separate issue is opened with the reproduction; otherwise it remains open. Round 2 does not worsen it. |
+| F-7 | `bin/kb-lint.php:568-578` | **NEW (regression).** The collapse moves `$at` back over the blank run but the tail is sliced from the collapsed `$at` (`:578`), so the run stays in the tail and the unconditional `''` prepend (`:574-576`) doubles it. A file whose first `##` heading is preceded by a blank line (normal Markdown / a new KB file with sections) gets two blanks between the created index and that heading. master and round-1 produced one. Contradicts the "exactly one blank for every input state" claim in `code-decision-2.md`; the new tests miss it because they delete `## Section`, forcing the append branch. | medium | **fixed** — the head slice now ends at `$headEnd` (start of the collapsed blank run) while the tail still slices from the original `$at`, so dropped blanks are not re-emitted. New test `testFixCreatesTheIndexWithoutDoublingTheSeparatorBeforeAnExistingHeading` keeps a blank-preceded `## Section` and asserts exactly one blank before both headings; it fails on round-2 `7dc27a0` and passes now. |
+| F-8 | `bin/kb-lint.php:603-611` | **NEW (nit).** `normalizeTrailingNewline()` rewrites only the tail, so an in-sync CRLF file ends with a bare LF and keeps `\r\n` everywhere else (verified: 11 `\r\n` + 1 `\n`). master/round-1 left such a file fully CRLF; `writeIndex()` converts the whole file to LF, so the paths disagree. | nit | **fixed** — `normalizeTrailingNewline()` now returns early for any file containing `\r` (LF-only normalisation), so it cannot introduce mixed line endings; docblock states the LF-only scope. |
+
+### Notes on checks (round 2)
+
+- F-7: caught by a create-path test on the `$firstSection !== null` branch; the
+  same class as F-1, so the assertion should be added in this PR.
+- F-8: no automated check; still no CRLF fixture in the suite.
+- F-1/F-2/F-3/F-4/F-5 resolutions: not machine-checkable by PHPStan /
+  php-cs-fixer / Rector (all ran clean on the changed files).
+- Gates run this round: PHPUnit 24/265 + 41/1152, PHPStan 8 clean,
+  php-cs-fixer 0/2, Rector clean, real-tree `--fix` exit 0 with no diff.
