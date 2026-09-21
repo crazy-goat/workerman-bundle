@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `tests/BinDirectoryTest.php` pins the coverage threshold stated in prose in
+  `CONTRIBUTING.md` to the single source of truth in `composer.json`
+  (`coverage:check`), asserting every line that names the threshold, so the
+  figure can no longer drift stale the way the PHPStan level did (#693)
+  ([#710](https://github.com/crazy-goat/workerman-bundle/issues/710)).
+
 - The deprecated `serve_files` and `root_dir` config nodes now have distinct,
   type-accurate `info()` texts that name their deprecation and point at the
   `StaticFilesMiddleware` replacement; previously both read "Should current
