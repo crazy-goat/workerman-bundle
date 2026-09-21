@@ -15,6 +15,7 @@ declare(strict_types=1);
  *
  * Options:
  *   --fix               regenerate the tag index of every knowledge-base file
+ *                       and normalise its trailing newline
  *   --json              machine-readable output (JSON on stdout)
  *   --root=DIR          repository root (default: the parent of bin/)
  *   --help              show this help
@@ -557,11 +558,62 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
         $lines = [...$head, ...$rendered, ...$tail];
     } else {
         $at = $firstSection !== null ? $firstSection - 1 : \count($lines);
+
+        // The heading must be separated from the preceding content by exactly
+        // one blank line, regardless of how many blank lines (or none) the
+        // input had there. Find the start of the blank run before the insertion
+        // point, drop it from the head slice, and let the separator below
+        // re-add exactly one. `$at` is kept for the tail slice so the dropped
+        // blanks are not re-emitted after the inserted section.
+        $headEnd = $at;
+        while ($headEnd > 0 && trim($lines[$headEnd - 1] ?? '') === '') {
+            --$headEnd;
+        }
+
         $section = ['## Tag index', '', INDEX_START, ...$rendered, INDEX_END, ''];
-        $lines = [...\array_slice($lines, 0, $at), ...$section, ...\array_slice($lines, $at)];
+
+        if ($headEnd > 0) {
+            $section = ['', ...$section];
+        }
+
+        $lines = [...\array_slice($lines, 0, $headEnd), ...$section, ...\array_slice($lines, $at)];
     }
 
-    file_put_contents($absolute, implode("\n", $lines));
+    // Normalise the write path to POSIX: exactly one trailing newline,
+    // whatever state the input was in. Only the write path changes; readLines()
+    // still exposes the input's trailing state to the parser.
+    file_put_contents($absolute, rtrim(implode("\n", $lines), "\n") . "\n");
+}
+
+/**
+ * Rewrites a file that does not end in exactly one LF newline.
+ *
+ * `writeIndex()` is only reached when the tag index is missing or out of sync,
+ * so a file whose index is already correct would otherwise never be normalised
+ * by `--fix` (issue #694). A file that already ends in exactly one newline is
+ * left untouched, so no spurious rewrite happens.
+ */
+function normalizeTrailingNewline(string $absolute): void
+{
+    $contents = file_get_contents($absolute);
+
+    if ($contents === false) {
+        return;
+    }
+
+    // Only LF files are normalised. Rewriting just the tail of a CRLF file
+    // would leave it with mixed line endings, and the knowledge base is LF-only.
+    if (str_contains($contents, "\r")) {
+        return;
+    }
+
+    $normalized = rtrim($contents, "\n") . "\n";
+
+    if ($normalized === $contents) {
+        return;
+    }
+
+    file_put_contents($absolute, $normalized);
 }
 
 /** @param list<string> $args */
@@ -570,7 +622,8 @@ function printUsage(array $args): void
     fwrite(STDOUT, ($args[0] ?? 'bin/kb-lint.php') . " — lint the docs/helpers/ knowledge base\n\n");
     fwrite(STDOUT, "Usage: php bin/kb-lint.php [options]\n\n");
     fwrite(STDOUT, "Options:\n");
-    fwrite(STDOUT, "  --fix               regenerate the tag index of every knowledge-base file\n");
+    fwrite(STDOUT, "  --fix               regenerate the tag index of every knowledge-base file and\n");
+    fwrite(STDOUT, "                      normalise its trailing newline\n");
     fwrite(STDOUT, "  --json              machine-readable output (JSON on stdout)\n");
     fwrite(STDOUT, "  --root=DIR          repository root (default: the parent of bin/)\n");
     fwrite(STDOUT, "  --help              show this help\n\n");
@@ -725,6 +778,12 @@ function main(array $options): int
                     $errors[] = sprintf('%s: tag index is out of sync with the entries (run --fix)', $relative);
                 }
             }
+        }
+
+        // The index being in sync does not mean the file needs no fix: `--fix`
+        // also normalises the trailing newline (#694).
+        if ($options['fix']) {
+            normalizeTrailingNewline($absolute);
         }
 
         $files[] = [

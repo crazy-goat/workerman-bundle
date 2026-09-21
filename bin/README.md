@@ -165,7 +165,7 @@ decay rules it enforces.
 ```bash
 php bin/kb-lint.php            # what composer lint runs
 composer kb-lint               # the same, as a composer script
-php bin/kb-lint.php --fix      # regenerate the tag index of every KB file
+php bin/kb-lint.php --fix      # regenerate the tag index and normalise the trailing newline
 php bin/kb-lint.php --json     # machine-readable output
 php bin/kb-lint.php --root=/path/to/checkout
 ```

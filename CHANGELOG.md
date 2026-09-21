@@ -134,6 +134,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `php bin/kb-lint.php --fix` now ends every LF knowledge-base file with
+  exactly one trailing newline, even when its tag index is already in sync
+  (previously it only rewrote files whose index was missing or out of sync, so
+  a stripped final newline survived `--fix`), and the created-index path
+  inserts a single blank separator before `## Tag index` regardless of the
+  input's trailing-newline state. CRLF files are left untouched
+  ([#694](https://github.com/crazy-goat/workerman-bundle/issues/694)).
+
 - Wait for an actual HTTP 200 after reload in `WorkermanCommandTest`, retrying
   transient transport failures with bounded request and polling timeouts instead
   of treating an open TCP port as worker readiness
