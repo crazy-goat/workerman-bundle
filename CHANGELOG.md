@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The deprecated `serve_files` and `root_dir` config nodes now have distinct,
+  type-accurate `info()` texts that name their deprecation and point at the
+  `StaticFilesMiddleware` replacement; previously both read "Should current
+  worker serve files from public directory", which described `root_dir` (a
+  path) as a boolean and hid the deprecation from `config:dump-reference`. A
+  regression test pins the two texts as distinct and deprecation-aware
+  ([#680](https://github.com/crazy-goat/workerman-bundle/issues/680)).
+
 - `InotifyMonitorWatcherTest::waitForInotifyEvents()` no longer sleeps a fixed
   200 ms per event batch. It waits on the watcher's non-blocking inotify fd with
   `stream_select()` (1 s bounded timeout) and asserts readiness, removing
