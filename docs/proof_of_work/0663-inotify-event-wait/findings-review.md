@@ -41,3 +41,34 @@ Checks re-run: `php -l`, PHPStan level 8 (file and repo-wide), php-cs-fixer
 (`@PER-CS2x0`+`:risky`), rector dry-run, kb-lint, phpunit (25 tests / 7
 assertions / 18 skipped). No gate lowered. The 18 `ext-inotify`-gated tests are
 still unexecuted on this macOS host; CI must confirm.
+
+## Round 3 (final expected)
+
+Round-2 fixes verified against the current branch (`44d0d5b`, which includes
+`659efb0` for N-1/N-2). Full detail in `review-3.md`. No earlier entry is
+`still present` or `not a real finding`; all are resolved.
+
+| id | file:line | what is wrong | severity | what happened / status |
+|----|-----------|---------------|----------|------------------------|
+| F-1 | tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php:854,856-861 | (round 1) `stream_select()` return value discarded; timeout/EINTR indistinguishable from readiness, so negative tests could pass vacuously. | low | **fixed** (re-confirmed) — `$ready = @\stream_select($read, $write, $except, 1);` :854, `self::assertNotFalse(...)` :856, `self::assertGreaterThan(0, $ready, 'no inotify event became readable within 1s of the triggering syscall');` :857-861. |
+| F-2 | tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php:835-847 | (round 1) comment overstated the wait as a general per-event wait. | low | **fixed** (re-confirmed) — comment at :843-847 documents that an earlier queued event makes select return at once and why that is sound under the synchronous-enqueue invariant (FAQ-006); helper behaviour intentionally unchanged. |
+| F-3 | docs/proof_of_work/0663-inotify-event-wait/code-decision-1.md:63-79 | (round 1) `Util\Wait::until()` absent from rejected alternatives; reversal of #592 rationale undocumented. | low | **fixed** (re-confirmed) — rejected alternative added at :72-79, #592 reversal recorded at :65-71. Durable FAQ/DEC note remains a step-14 proposal (helpers are retro-owned). |
+| F-4 | tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php:849 | (round 1) silent `is_resource` early return. | nit | **fixed** (re-confirmed) — `self::assertIsResource($fd, 'watcher must expose an inotify fd');`, matching :143. |
+| N-1 | docs/proof_of_work/0663-inotify-event-wait/findings-coder.md:39-51,67-69 | (round 2) stale after the F-1 fix: still claimed `false`/`0` "both are ignored" and "No assertions … changed". | nit | **fixed** — item 2 now describes the `assertNotFalse`/`assertGreaterThan` guards; the verification bullet now says the helper gained `assertIsResource`/`assertNotFalse`/`assertGreaterThan(0, ...)` and that no test's own assertions changed. Matches test:849-861. |
+| N-2 | tests/Reboot/FileMonitorWatcher/InotifyMonitorWatcherTest.php:856-857 | (round 2) assertion message always said "within 1s", though `stream_select` returns `false` immediately on EINTR. | nit | **fixed** — `self::assertNotFalse($ready, 'stream_select() on the inotify fd failed (interrupted?)');` at :856 now precedes the timeout assertion, distinguishing EINTR from timeout by message. |
+
+No new findings in round 3. Two residual nits considered and explicitly
+dismissed as not worth another cycle (both already documented/answered):
+
+- On EINTR the helper fails the test rather than retrying the select
+  (`code-decision-1.md:95-100`, `findings-coder.md` item 2). Deliberate minimal
+  choice; retry only if flakiness is ever observed.
+- The second wait of the `mkdir`/`rmdir` pairs at :785/:810 returns on the
+  still-undrained earlier event, i.e. it is not an independent per-event wait.
+  This is the F-2 trade-off, now documented in the helper comment.
+
+Checks re-run: `php -l`, PHPStan level 8 (file and repo-wide), php-cs-fixer
+(`@PER-CS2x0`+`:risky`, 0 fixes), rector dry-run, kb-lint (0 stale), phpunit
+(25 tests / 7 assertions / 18 skipped). No gate lowered. The 18
+`ext-inotify`-gated tests remain unexecuted on this macOS host; a Linux CI leg
+must confirm them.
