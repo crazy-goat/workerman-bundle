@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-22
+
 ### Changed
 
 - `tests/BinDirectoryTest.php` pins the coverage threshold stated in prose in
