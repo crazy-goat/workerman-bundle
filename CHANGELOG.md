@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- With `allowed_extensions` configured, reject unallowlisted file extensions before filesystem probing while keeping ambiguous paths on the existing validation path (#732)
+
 ### Fixed
 
 - Avoid PHPUnit 10 shutdown errors when test bootstrap marker files are absent (#753)

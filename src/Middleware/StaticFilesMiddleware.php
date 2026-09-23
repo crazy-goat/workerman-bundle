@@ -94,6 +94,10 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     public function __invoke(Request $request, callable $next): Response
     {
+        if ($this->isAllowlistExtensionMismatch($request->path())) {
+            return new Response(404);
+        }
+
         $filePath = $this->getPublicPathFile($request);
         if ($filePath === false || !is_file($filePath)) {
             return $next($request);
@@ -246,6 +250,32 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         return $resolved;
+    }
+
+    /**
+     * Reject an obviously disallowed final-file extension before filesystem work.
+     * Paths that are ambiguous or may be directories continue through the normal
+     * resolver and component checks (fail-open, DEC-013; FAQ-004).
+     */
+    private function isAllowlistExtensionMismatch(string $path): bool
+    {
+        if ($this->allowedExtensions === [] || $path === '' || str_ends_with($path, '/') || str_contains($path, '\\') || str_contains($path, "\0") || str_contains($path, '%00')) {
+            return false;
+        }
+
+        $basename = basename($path);
+        if ($basename === '' || str_starts_with($basename, '.')) {
+            return false;
+        }
+
+        $extension = strtolower(pathinfo($basename, PATHINFO_EXTENSION));
+        if ($extension === '' || in_array($extension, self::LEAK_EXTENSIONS, true)
+            || in_array($extension, self::RESIDUE_EXTENSIONS, true)
+        ) {
+            return false;
+        }
+
+        return !in_array($extension, $this->allowedExtensions, true);
     }
 
     private function resolveRealPath(string $cacheKey): string|false
