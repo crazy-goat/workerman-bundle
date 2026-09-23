@@ -121,5 +121,25 @@ checked; FAQ-035 ruled out).
   a null-valued key until `tearDown()` cleans it. Harmless (tearDown restores
   the setUp snapshot), but `unset`-on-null would be tidier.
 - **Severity:** nit
-- **Status:** open
+- **Status:** fixed (round 3 — `unset()`-on-null restore in `WorkermanBundleIntegrationTest.php:146-150`)
 - **Automatable check:** no.
+
+---
+
+# Review round 3 (2026-09-23, diff `74066e3..HEAD`)
+
+Full detail in `review-3.md`. Per-finding verdicts: F-1 fixed (still fixed —
+precedence now single-sourced in `readEnvRaw()`; repro `''`+`'55'` → `55`),
+F-2 fixed (still fixed; exported-var repro passes), F-3 fixed (still fixed),
+F-4 still present (deliberate — `(int)` truncation now via shared helper,
+`"45.9"`→`45` repro-confirmed, test-pinned), F-5 fixed (still fixed;
+whitespace-only → `null`/`30`), F-6 still present (maintainer call —
+`CHANGELOG.md:8` `[Unreleased]` still empty), F-7 fixed (still fixed —
+`is_scalar()` guard lives in the helper, both callers inherit; array → `30`),
+N-1 fixed (bridge extracted to `readEnvRaw(): ?string`, both paths call it),
+N-2 fixed (`unset()`-on-null restore). New findings: none — `readEnvRaw()`
+visibility (`public` + `@internal`) is public-by-necessity and matches the
+`reset()` precedent; extraction verified behavior-identical on all four
+probes. Checks: phpunit subsets OK (88 + 9 tests), exported-var repro passes,
+phpstan clean, cs-fixer clean. Helper-entry violations: none (FAQ-036,
+DEC-016, DEC-007, DEC-014, DEC-021 checked; FAQ-035 ruled out).
