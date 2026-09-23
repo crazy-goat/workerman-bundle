@@ -332,6 +332,34 @@ final class RequestConverterTest extends TestCase
         $this->assertSame($production, $benchmark);
     }
 
+    /**
+     * Issue #736: parameterised subjects used to render as identical rows with
+     * a null parameter column, so a reader could not tell the sets apart. The
+     * report must partition rows by variant and show the set name.
+     */
+    public function testBenchmarkAggregateReportIdentifiesParameterSets(): void
+    {
+        $contents = file_get_contents(__DIR__ . '/../phpbench.json');
+        $this->assertIsString($contents);
+
+        $config = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertIsArray($config);
+
+        $report = $config['report.generators']['aggregate'] ?? null;
+        $this->assertIsArray($report, 'The aggregate report must be configured');
+
+        $this->assertContains(
+            'variant_index',
+            $report['aggregate'] ?? [],
+            'The aggregate report must partition rows by variant, or variant_name resolves to null',
+        );
+        $this->assertContains(
+            'set',
+            $report['cols'] ?? [],
+            'The aggregate report must show the parameter-set name so parameterised rows are identifiable',
+        );
+    }
+
     private function assertHeaderByteValidation(int $byte): void
     {
         if ($byte < 0 || $byte > 255) {
