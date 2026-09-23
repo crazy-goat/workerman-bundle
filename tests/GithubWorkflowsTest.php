@@ -212,6 +212,39 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
+    /**
+     * Issue #760: the three root-only ConfigLoader permission cases skip on
+     * a non-root runner. A dedicated job must run them under sudo and be
+     * required by the ci aggregator, or the guard paths silently stop being
+     * exercised in CI.
+     */
+    public function testRootOnlyPermissionTestsRunAsRootAndGateCi(): void
+    {
+        $content = $this->jobContent('tests-root-permissions');
+
+        $this->assertStringContainsString(
+            'sudo "$php_bin" vendor/bin/phpunit',
+            $content,
+            'The root-only permission tests must execute through sudo',
+        );
+        $this->assertStringContainsString(
+            'Skipped: [1-9]',
+            $content,
+            'The root-only job must fail when its tests skip instead of passing silently',
+        );
+
+        $this->assertStringContainsString(
+            'needs: [lint, tests, tests-root-permissions, benchmark, tests-scheduled, detect-changes]',
+            $this->workflowContent,
+            'The ci aggregator must require the root-only permission job',
+        );
+        $this->assertMatchesRegularExpression(
+            '/needs\.tests-root-permissions\.result \}\}" != "success"/',
+            $this->workflowContent,
+            'The ci aggregator must fail when the root-only permission job is not successful',
+        );
+    }
+
     public function testScheduledRunFailureOpensAnIssue(): void
     {
         $this->assertMatchesRegularExpression(
