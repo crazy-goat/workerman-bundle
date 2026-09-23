@@ -177,6 +177,28 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
         self::assertSame(CacheWarmupTimeoutConfig::DEFAULT, CacheWarmupTimeoutConfig::resolve());
     }
 
+    public function testResolveTreatsWhitespaceOnlyEnvVarAsAbsent(): void
+    {
+        $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '   ';
+
+        self::assertSame(CacheWarmupTimeoutConfig::DEFAULT, CacheWarmupTimeoutConfig::resolve());
+    }
+
+    public function testResolveFallsThroughBlankServerValueToEnvSuperglobal(): void
+    {
+        $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '  ';
+        $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = '55';
+
+        self::assertSame(55, CacheWarmupTimeoutConfig::resolve());
+    }
+
+    public function testResolveTrimsPaddedEnvVar(): void
+    {
+        $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = ' 77 ';
+
+        self::assertSame(77, CacheWarmupTimeoutConfig::resolve());
+    }
+
     /**
      * @dataProvider invalidEnvValueProvider
      */

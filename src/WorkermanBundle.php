@@ -89,13 +89,21 @@ final class WorkermanBundle extends AbstractBundle
         $this->servicesConfigurator->configure($config, $builder);
 
         $timeout = $config['cache_warmup_timeout'];
-        $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
-        if ($envOverride === null || $envOverride === '') {
+        // Sequential null-or-blank checks (mirrors CacheWarmupTimeoutConfig::resolve()):
+        // `??` falls through only on null, so an empty $_SERVER value would
+        // otherwise shadow $_ENV (issue #759 review F-1). Whitespace-only is
+        // treated as absent like the ConfigCacheGuardConfig sibling (F-5), and
+        // non-scalar superglobal values are treated as absent rather than cast (F-7).
+        $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        if (!is_scalar($envOverride) || trim((string) $envOverride) === '') {
+            $envOverride = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        }
+        if (!is_scalar($envOverride) || trim((string) $envOverride) === '') {
             $getenvOverride = function_exists('getenv') ? getenv(CacheWarmupTimeoutConfig::ENV_VAR) : false;
             $envOverride = $getenvOverride === false ? null : $getenvOverride;
         }
-        if ($envOverride !== null && $envOverride !== '') {
-            $timeout = (int) $envOverride;
+        if (is_scalar($envOverride) && trim((string) $envOverride) !== '') {
+            $timeout = (int) trim((string) $envOverride);
         }
 
         CacheWarmupTimeoutConfig::set($timeout);

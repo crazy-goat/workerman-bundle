@@ -58,10 +58,10 @@ final class CacheWarmupTimeoutConfig
         }
 
         $raw = $_SERVER[self::ENV_VAR] ?? null;
-        if ($raw === null || $raw === '') {
+        if (!is_scalar($raw) || trim((string) $raw) === '') {
             $raw = $_ENV[self::ENV_VAR] ?? null;
         }
-        if ($raw === null || $raw === '') {
+        if (!is_scalar($raw) || trim((string) $raw) === '') {
             // function_exists(): getenv() may be disabled via disable_functions;
             // resolve() runs pre-boot on the Runner path, so it must not fatal
             // even in strict mode when the fallback is unavailable.
@@ -69,11 +69,15 @@ final class CacheWarmupTimeoutConfig
             $raw = $env === false ? null : $env;
         }
 
-        if ($raw === null || $raw === '') {
+        // Whitespace-only is treated as absent (matches the
+        // ConfigCacheGuardConfig sibling, which trims before its emptiness
+        // check); non-scalar superglobal values (pathological — SAPIs deliver
+        // strings) are treated as absent rather than cast.
+        if (!is_scalar($raw) || trim((string) $raw) === '') {
             return self::DEFAULT;
         }
 
-        $timeout = (int) $raw;
+        $timeout = (int) trim((string) $raw);
         if ($timeout < 1) {
             throw new \InvalidArgumentException(\sprintf(
                 '%s must be a positive integer, got %d',
