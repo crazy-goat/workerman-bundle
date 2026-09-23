@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
+use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use Symfony\Component\Config\Definition\Builder\NodeBuilder;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 
@@ -255,6 +256,16 @@ final readonly class ConfigurationTreeBuilder
                             '*.php',
                             '*.yaml',
                         ])
+                        ->end()
+                    ->integerNode('polling_interval')
+                        ->info('Seconds between polling sweeps when the inotify extension is unavailable')
+                        ->defaultValue(FileMonitorWatcher::DEFAULT_POLLING_INTERVAL)
+                        ->min(1)
+                        ->end()
+                    ->integerNode('max_files_per_tick')
+                        ->info('Maximum number of entries inspected per polling tick when the inotify extension is unavailable')
+                        ->defaultValue(FileMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK)
+                        ->min(1)
                         ->end()
                     ->end()
                 ->end()

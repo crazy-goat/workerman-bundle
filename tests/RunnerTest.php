@@ -782,6 +782,51 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testCreateWorkersForwardsFileMonitorPollingTuning(): void
+    {
+        $saved = $this->saveWorkerState();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(true);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $config = [
+                'servers' => [],
+                'user' => null,
+                'group' => null,
+                'reload_strategy' => [
+                    'file_monitor' => [
+                        'active' => true,
+                        'source_dir' => ['/src'],
+                        'file_pattern' => ['*.php'],
+                        'polling_interval' => 7,
+                        'max_files_per_tick' => 250,
+                    ],
+                ],
+            ];
+
+            $before = $this->getWorkersProperty();
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+            $new = array_diff_key($this->getWorkersProperty(), $before);
+
+            self::assertCount(1, $new, 'Expected exactly one new FileMonitorWorker');
+            $worker = reset($new);
+            self::assertInstanceOf(Worker::class, $worker);
+            self::assertSame('[FileMonitor]', $worker->name);
+
+            $callable = $worker->onWorkerStart;
+            self::assertInstanceOf(\Closure::class, $callable);
+            $vars = (new \ReflectionFunction($callable))->getStaticVariables();
+
+            self::assertSame(7, $vars['pollingInterval']);
+            self::assertSame(250, $vars['maxFilesPerTick']);
+        } finally {
+            $this->restoreWorkerState($saved);
+        }
+    }
+
     public function testCreateWorkersWithFileMonitorInactiveDoesNotCreateFileMonitorWorker(): void
     {
         $saved = $this->saveWorkerState();

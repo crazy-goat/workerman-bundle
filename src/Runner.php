@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
@@ -291,6 +292,10 @@ readonly class Runner implements RunnerInterface
                     group: $config['group'],
                     sourceDir: $config['reload_strategy']['file_monitor']['source_dir'],
                     filePattern: $config['reload_strategy']['file_monitor']['file_pattern'],
+                    pollingInterval: $config['reload_strategy']['file_monitor']['polling_interval']
+                        ?? FileMonitorWatcher::DEFAULT_POLLING_INTERVAL,
+                    maxFilesPerTick: $config['reload_strategy']['file_monitor']['max_files_per_tick']
+                        ?? FileMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK,
                 );
             }
         }

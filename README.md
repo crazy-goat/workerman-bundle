@@ -131,6 +131,11 @@ workerman:
 
     file_monitor:
       active: true
+      source_dir: ['%kernel.project_dir%/src']
+      file_pattern: ['*.php', '*.yaml']
+      # Polling fallback (used only without ext-inotify):
+      polling_interval: 3
+      max_files_per_tick: 500
 ```
 
 > **Note:** The example above binds an unprivileged port (`8080`) so it works without `sudo`.
@@ -204,6 +209,8 @@ The deprecated `serve_files`/`root_dir` path reads one sub-key from `static_file
 | `file_monitor.active` | `bool` | `false` | Reload all workers each time code changes. |
 | `file_monitor.source_dir` | `string[]` | `['%kernel.project_dir%/src', '%kernel.project_dir%/config']` | Source directories monitored for changes. |
 | `file_monitor.file_pattern` | `string[]` | `['*.php', '*.yaml']` | File patterns monitored inside `source_dir`. |
+| `file_monitor.polling_interval` | `int` | `3` | Seconds between polling sweeps when `ext-inotify` is unavailable. Must be ≥ 1. |
+| `file_monitor.max_files_per_tick` | `int` | `500` | Maximum directory entries inspected per polling tick when `ext-inotify` is unavailable. Must be ≥ 1. |
 | `always.active` | `bool` | `false` | Reload the worker after each request. |
 | `memory.active` | `bool` | `false` | Reload the worker when memory usage reaches a threshold. |
 | `memory.limit` | `int` | `134217728` (128 MB) | Memory threshold (`memory_get_usage()`, not real usage) after which the worker is reloaded. |

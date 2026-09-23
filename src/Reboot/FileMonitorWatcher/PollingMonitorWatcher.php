@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher;
 
+use Workerman\Worker;
+
 class PollingMonitorWatcher extends FileMonitorWatcher
 {
-    private const POLLING_INTERVAL = 3;
-    private const MAX_FILES_PER_TICK = 500;
-
     private int $lastMTime;
 
     /**
@@ -23,11 +22,33 @@ class PollingMonitorWatcher extends FileMonitorWatcher
      */
     private array $iterators = [];
 
+    /**
+     * @param string[] $sourceDir
+     * @param string[] $filePattern
+     */
+    public function __construct(
+        Worker $worker,
+        array $sourceDir,
+        array $filePattern,
+        private readonly int $pollingInterval = self::DEFAULT_POLLING_INTERVAL,
+        private readonly int $maxFilesPerTick = self::DEFAULT_MAX_FILES_PER_TICK,
+    ) {
+        if ($pollingInterval < 1 || $maxFilesPerTick < 1) {
+            throw new \InvalidArgumentException(sprintf(
+                'Polling interval and max files per tick must be >= 1, got %d and %d.',
+                $pollingInterval,
+                $maxFilesPerTick,
+            ));
+        }
+
+        parent::__construct($worker, $sourceDir, $filePattern);
+    }
+
     public function start(): void
     {
         $this->lastMTime = time();
-        $this->worker::$globalEvent?->repeat(self::POLLING_INTERVAL, $this->checkFileSystemChanges(...));
-        $this->worker->log($this->worker->name . ' Polling file monitoring started with interval ' . self::POLLING_INTERVAL . 's, max ' . self::MAX_FILES_PER_TICK . ' files/tick.');
+        $this->worker::$globalEvent?->repeat($this->pollingInterval, $this->checkFileSystemChanges(...));
+        $this->worker->log($this->worker->name . ' Polling file monitoring started with interval ' . $this->pollingInterval . 's, max ' . $this->maxFilesPerTick . ' files/tick.');
     }
 
     private function checkFileSystemChanges(): void
@@ -51,7 +72,7 @@ class PollingMonitorWatcher extends FileMonitorWatcher
                     // Every entry counts against the budget — including the
                     // first one after a resume — so the tick bound is real.
                     $filesProcessed++;
-                    if ($filesProcessed > self::MAX_FILES_PER_TICK) {
+                    if ($filesProcessed > $this->maxFilesPerTick) {
                         return;
                     }
 
@@ -59,8 +80,8 @@ class PollingMonitorWatcher extends FileMonitorWatcher
                     $file = $iterator->current();
 
                     if ($this->checkPattern($file->getFilename())) {
-                        // The iterator is held across ticks (3 s polling
-                        // interval), so the file at current() may have been
+                        // The iterator is held across ticks (polling interval
+                        // seconds), so the file at current() may have been
                         // deleted between ticks.  A deleted file is not a
                         // modification — skip it.  SplFileInfo::getMTime()
                         // on a missing path throws \RuntimeException

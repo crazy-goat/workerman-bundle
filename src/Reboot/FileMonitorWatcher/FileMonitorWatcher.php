@@ -9,6 +9,12 @@ use Workerman\Worker;
 
 abstract class FileMonitorWatcher
 {
+    /** Default seconds between polling sweeps (issue #734). */
+    public const DEFAULT_POLLING_INTERVAL = 3;
+
+    /** Default maximum entries inspected per polling tick (issue #734). */
+    public const DEFAULT_MAX_FILES_PER_TICK = 500;
+
     /** @var string[] */
     protected readonly array $sourceDir;
 
@@ -19,11 +25,16 @@ abstract class FileMonitorWatcher
      * @param string[] $sourceDir
      * @param string[] $filePattern
      */
-    public static function create(Worker $worker, array $sourceDir, array $filePattern): self
-    {
+    public static function create(
+        Worker $worker,
+        array $sourceDir,
+        array $filePattern,
+        int $pollingInterval = self::DEFAULT_POLLING_INTERVAL,
+        int $maxFilesPerTick = self::DEFAULT_MAX_FILES_PER_TICK,
+    ): self {
         return \extension_loaded('inotify')
             ? new InotifyMonitorWatcher($worker, $sourceDir, $filePattern)
-            : new PollingMonitorWatcher($worker, $sourceDir, $filePattern)
+            : new PollingMonitorWatcher($worker, $sourceDir, $filePattern, $pollingInterval, $maxFilesPerTick)
         ;
     }
 

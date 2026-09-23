@@ -10,6 +10,7 @@ use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingPollin
 use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingRecursiveDirectoryIterator;
 use CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher\CountingSplFileInfo;
 use PHPUnit\Framework\TestCase;
+use Workerman\Events\EventInterface;
 use Workerman\Worker;
 
 final class PollingMonitorWatcherTest extends TestCase
@@ -56,6 +57,8 @@ final class PollingMonitorWatcherTest extends TestCase
         array $sourceDir,
         array $filePattern = ['*.php'],
         ?string $class = null,
+        int $pollingInterval = PollingMonitorWatcher::DEFAULT_POLLING_INTERVAL,
+        int $maxFilesPerTick = PollingMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK,
     ): PollingMonitorWatcher {
         $class ??= PollingMonitorWatcher::class;
         $reflection = new \ReflectionClass($class);
@@ -64,6 +67,8 @@ final class PollingMonitorWatcherTest extends TestCase
         $this->findProperty($reflection, 'worker')->setValue($instance, $worker);
         $this->findProperty($reflection, 'sourceDir')->setValue($instance, $sourceDir);
         $this->findProperty($reflection, 'lastMTime')->setValue($instance, \time());
+        $this->findProperty($reflection, 'pollingInterval')->setValue($instance, $pollingInterval);
+        $this->findProperty($reflection, 'maxFilesPerTick')->setValue($instance, $maxFilesPerTick);
 
         $regexProp = $this->findProperty($reflection, 'filePatternRegex');
         $compilePatterns = new \ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
@@ -309,6 +314,106 @@ final class PollingMonitorWatcherTest extends TestCase
         $this->assertSame([], $this->getIterators($watcher), 'iterators should be empty after full scan');
     }
 
+    public function testConstructorStoresConfigurablePollingTuning(): void
+    {
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = new PollingMonitorWatcher($worker, [$this->tempDir], ['*.php'], 7, 42);
+
+        $reflection = new \ReflectionClass(PollingMonitorWatcher::class);
+        self::assertSame(7, $this->findProperty($reflection, 'pollingInterval')->getValue($watcher));
+        self::assertSame(42, $this->findProperty($reflection, 'maxFilesPerTick')->getValue($watcher));
+    }
+
+    public function testStartSchedulesConfiguredPollingInterval(): void
+    {
+        $event = $this->createMock(EventInterface::class);
+        $event->expects(self::once())
+            ->method('repeat')
+            ->with(9, self::isType('callable'))
+            ->willReturn(1);
+
+        $savedEvent = Worker::$globalEvent;
+        $savedWorkers = (new \ReflectionProperty(Worker::class, 'workers'))->getValue();
+        $savedOutputStream = Worker::$outputStream;
+        $savedLogFile = Worker::$logFile;
+        $stream = fopen('php://memory', 'r+');
+        if ($stream === false) {
+            throw new \RuntimeException('Failed to open php://memory stream');
+        }
+        // Worker::log() is static, so a real Worker is used instead of a mock;
+        // route its output to a memory stream to keep the test quiet.
+        Worker::$globalEvent = $event;
+        Worker::$outputStream = $stream;
+        Worker::$logFile = '/dev/null';
+        try {
+            $worker = new Worker();
+            $worker->name = 'test';
+
+            $watcher = new PollingMonitorWatcher($worker, [$this->tempDir], ['*.php'], 9, 500);
+            $watcher->start();
+        } finally {
+            Worker::$globalEvent = $savedEvent;
+            Worker::$outputStream = $savedOutputStream;
+            Worker::$logFile = $savedLogFile;
+            (new \ReflectionProperty(Worker::class, 'workers'))->setValue(null, $savedWorkers);
+            fclose($stream);
+        }
+    }
+
+    public function testConstructorRejectsNonPositivePollingTuning(): void
+    {
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new PollingMonitorWatcher($worker, [$this->tempDir], ['*.php'], 0, 500);
+    }
+
+    public function testConstructorRejectsNonPositiveMaxFilesPerTick(): void
+    {
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new PollingMonitorWatcher($worker, [$this->tempDir], ['*.php'], 3, 0);
+    }
+
+    public function testConfigurableMaxFilesPerTickBoundsTheSweep(): void
+    {
+        for ($i = 0; $i < 5; ++$i) {
+            \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
+        }
+
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher(
+            $worker,
+            [$this->tempDir],
+            ['*.php'],
+            null,
+            PollingMonitorWatcher::DEFAULT_POLLING_INTERVAL,
+            2,
+        );
+
+        // Budget 2 over 5 files: the sweep must span several ticks.
+        $this->invokeCheckFileSystemChanges($watcher);
+        $this->assertNotEmpty($this->getIterators($watcher), 'With max_files_per_tick=2 the 5-file sweep must not finish in one tick');
+
+        $ticks = 1;
+        while ($this->getIterators($watcher) !== [] && $ticks < 10) {
+            $this->invokeCheckFileSystemChanges($watcher);
+            ++$ticks;
+        }
+
+        $this->assertSame([], $this->getIterators($watcher), 'The sweep must complete across ticks at the configured budget');
+        self::assertGreaterThan(1, $ticks, 'A budget of 2 over 5 files must require more than one tick');
+    }
+
     public function testMaxFilesPerTickRespectsBound(): void
     {
         for ($i = 0; $i < 600; $i++) {
@@ -322,7 +427,7 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->invokeCheckFileSystemChanges($watcher);
 
-        $this->assertNotEmpty($this->getIterators($watcher), 'iterators should have an entry when files exceed MAX_FILES_PER_TICK');
+        $this->assertNotEmpty($this->getIterators($watcher), 'iterators should have an entry when files exceed the per-tick budget');
     }
 
     public function testResumeContinuesAcrossMultipleTicks(): void
@@ -409,7 +514,7 @@ final class PollingMonitorWatcherTest extends TestCase
     }
 
     /**
-     * No tick may process more than MAX_FILES_PER_TICK entries, including
+     * No tick may process more than the configured per-tick budget, including
      * resumed ones.  The old code did not count skipped entries against
      * the budget, so a tick could do far more filesystem work than the
      * budget allowed.
@@ -438,7 +543,7 @@ final class PollingMonitorWatcherTest extends TestCase
             CountingRecursiveDirectoryIterator::reset();
             $this->invokeCheckFileSystemChanges($watcher);
 
-            // Each tick must not exceed MAX_FILES_PER_TICK advances.
+            // Each tick must not exceed the configured per-tick budget.
             // Allow +1 because the budget check is > (strictly greater than)
             // so the entry that trips the boundary is still counted.
             $this->assertLessThanOrEqual(
