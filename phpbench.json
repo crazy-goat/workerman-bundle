@@ -7,7 +7,8 @@
     "report.generators": {
         "aggregate": {
             "generator": "expression",
-            "cols": ["benchmark", "subject", "revs", "its", "mem_peak", "mode", "rstdev"]
+            "aggregate": ["benchmark_class", "subject_name", "variant_index"],
+            "cols": ["benchmark", "subject", "set", "revs", "its", "mem_peak", "mode", "rstdev"]
         }
     }
 }
