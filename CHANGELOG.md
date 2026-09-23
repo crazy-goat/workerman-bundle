@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Avoid PHPUnit 10 shutdown errors when test bootstrap marker files are absent (#753)
 - `WORKERMAN_CACHE_WARMUP_TIMEOUT` (and the `cache_warmup_timeout` YAML key
   bridge) is honoured on the Runner path
   (`APP_RUNTIME=...Runtime php public/index.php`). `CacheWarmupTimeoutConfig::resolve()`
