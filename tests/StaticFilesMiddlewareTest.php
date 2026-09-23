@@ -1099,6 +1099,53 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
+    public function testAllowlistFastPathRejectsDisallowedExtensionBeforeFilesystemProbe(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css']);
+        $nextCalled = false;
+        $response = $middleware($this->createRequest('/assets/image.png'), static function (Request $request) use (&$nextCalled): Response {
+            $nextCalled = true;
+
+            return new Response(200);
+        });
+
+        self::assertFalse($nextCalled);
+        self::assertSame(404, $response->getStatusCode());
+
+        $mismatch = new \ReflectionMethod($middleware, 'isAllowlistExtensionMismatch');
+        self::assertFalse($mismatch->invoke($middleware, '/assets/image.css'));
+        self::assertTrue($mismatch->invoke($middleware, '/assets.dist/logo.png'));
+        self::assertFalse($mismatch->invoke($middleware, '/assets/.hidden'));
+        self::assertFalse($mismatch->invoke($middleware, '/assets/no-extension'));
+        self::assertFalse($mismatch->invoke($middleware, '/assets/'));
+        self::assertFalse($mismatch->invoke($middleware, "/assets/invalid\0.png"));
+        self::assertFalse($mismatch->invoke($middleware, '/assets/invalid%00.png'));
+    }
+
+    public function testAllowlistFastPathDoesNotChangeDirectoryComponentSemantics(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory, ['png']);
+        $directory = $this->rootDirectory . '/assets.dist';
+        mkdir($directory);
+        $file = $directory . '/logo.png';
+        file_put_contents($file, 'image');
+
+        try {
+            $nextCalled = false;
+            $response = $middleware($this->createRequest('/assets.dist/logo.png'), static function (Request $request) use (&$nextCalled): Response {
+                $nextCalled = true;
+
+                return new Response(404);
+            });
+
+            self::assertFalse($nextCalled);
+            self::assertSame(200, $response->getStatusCode());
+        } finally {
+            unlink($file);
+            rmdir($directory);
+        }
+    }
+
     public function testAllowlistedFileInSubdirectoryIsServed(): void
     {
         $subDir = $this->rootDirectory . '/assets/css';
