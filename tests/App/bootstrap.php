@@ -55,7 +55,10 @@ function workerman_start(): void
 function workerman_stop(): void
 {
     \shell_exec(\workerman_create_command('stop'));
-    @unlink(__DIR__ . '/../../var/task_status.log');
-    @unlink(__DIR__ . '/../../var/process_start.marker');
-    @unlink(__DIR__ . '/../../var/process_error.marker');
+    foreach (['task_status.log', 'process_start.marker', 'process_error.marker'] as $marker) {
+        $path = __DIR__ . '/../../var/' . $marker;
+        if (\is_file($path)) {
+            \unlink($path);
+        }
+    }
 }
