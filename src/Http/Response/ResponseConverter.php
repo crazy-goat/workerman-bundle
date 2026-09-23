@@ -120,9 +120,12 @@ final readonly class ResponseConverter
      */
     private function flattenHeaderValues(string $name, array $values): string|array
     {
-        $nonNull = array_values(array_filter($values, static fn(?string $v): bool => $v !== null));
-
         $isSetCookie = strcasecmp($name, 'Set-Cookie') === 0;
+        if (!$isSetCookie && count($values) === 1 && $values[0] !== null) {
+            return $values[0];
+        }
+
+        $nonNull = array_values(array_filter($values, static fn(?string $v): bool => $v !== null));
 
         if (!$isSetCookie && count($nonNull) === 1) {
             return $nonNull[0];
