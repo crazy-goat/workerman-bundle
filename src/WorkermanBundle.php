@@ -89,8 +89,12 @@ final class WorkermanBundle extends AbstractBundle
         $this->servicesConfigurator->configure($config, $builder);
 
         $timeout = $config['cache_warmup_timeout'];
-        $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
-        if ($envOverride !== null && $envOverride !== '') {
+        // Shared env bridge (issue #759 review N-1): precedence lives in
+        // CacheWarmupTimeoutConfig::readEnvRaw() so the two paths cannot
+        // drift again (F-1). Whitespace-only / non-scalar treated as absent
+        // there; a present value is cast like resolve() (F-4 parity).
+        $envOverride = CacheWarmupTimeoutConfig::readEnvRaw();
+        if ($envOverride !== null) {
             $timeout = (int) $envOverride;
         }
 

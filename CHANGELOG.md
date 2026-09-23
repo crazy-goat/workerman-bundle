@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `WORKERMAN_CACHE_WARMUP_TIMEOUT` (and the `cache_warmup_timeout` YAML key
+  bridge) is honoured on the Runner path
+  (`APP_RUNTIME=...Runtime php public/index.php`). `CacheWarmupTimeoutConfig::resolve()`
+  now reads `$_SERVER` → `$_ENV` → `getenv()` lazily on every call — following
+  the `ConfigCacheGuardConfig::resolve()` pattern — instead of returning
+  `DEFAULT` (30) when the holder was never `set()` pre-kernel-boot; both
+  `resolve()` and `WorkermanBundle::loadExtension()` share the new
+  `CacheWarmupTimeoutConfig::readEnvRaw()` helper so precedence cannot drift
+  ([#759](https://github.com/crazy-goat/workerman-bundle/issues/759)).
+
 ## [0.28.0] - 2026-09-22
 
 ### Changed

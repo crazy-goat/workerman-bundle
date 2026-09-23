@@ -30,6 +30,12 @@ final class ServerManagerTest extends TestCase
     private StatusFileReader $statusFileReader;
     private ServerManager $manager;
 
+    private mixed $savedServerTimeout = null;
+
+    private mixed $savedEnvTimeout = null;
+
+    private mixed $savedGetenvTimeout = null;
+
     protected function setUp(): void
     {
         $this->tmpDir = sys_get_temp_dir() . '/workerman_server_test_' . uniqid();
@@ -64,12 +70,37 @@ final class ServerManagerTest extends TestCase
         );
 
         CacheWarmupTimeoutConfig::reset();
+
+        // resolve() reads the env lazily, so a stray
+        // WORKERMAN_CACHE_WARMUP_TIMEOUT in the test environment would flip
+        // the defaults assertions below — save/clear/restore all channels.
+        $this->savedServerTimeout = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $this->savedEnvTimeout = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR], $_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+        $this->savedGetenvTimeout = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        putenv(CacheWarmupTimeoutConfig::ENV_VAR);
     }
 
     protected function tearDown(): void
     {
         $this->removeDir($this->tmpDir);
         CacheWarmupTimeoutConfig::reset();
+
+        if ($this->savedServerTimeout !== null) {
+            $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $this->savedServerTimeout;
+        } else {
+            unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR]);
+        }
+        if ($this->savedEnvTimeout !== null) {
+            $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = $this->savedEnvTimeout;
+        } else {
+            unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+        }
+        if (is_string($this->savedGetenvTimeout)) {
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $this->savedGetenvTimeout);
+        } else {
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        }
     }
 
     // ──────────────────────────────────────────────

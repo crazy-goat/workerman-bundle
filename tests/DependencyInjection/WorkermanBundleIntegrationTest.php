@@ -17,8 +17,20 @@ final class WorkermanBundleIntegrationTest extends TestCase
     private WorkermanBundle $bundle;
     private ExtensionInterface $extension;
 
+    private mixed $savedServerTimeout = null;
+
+    private mixed $savedEnvTimeout = null;
+
+    private mixed $savedGetenvTimeout = null;
+
     protected function setUp(): void
     {
+        $this->savedServerTimeout = $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        $this->savedEnvTimeout = $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT'] ?? null;
+        unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'], $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        $this->savedGetenvTimeout = getenv('WORKERMAN_CACHE_WARMUP_TIMEOUT');
+        putenv('WORKERMAN_CACHE_WARMUP_TIMEOUT');
+
         $this->container = new ContainerBuilder(new ParameterBag([
             'kernel.project_dir' => sys_get_temp_dir(),
             'kernel.cache_dir' => sys_get_temp_dir() . '/cache',
@@ -40,7 +52,22 @@ final class WorkermanBundleIntegrationTest extends TestCase
     protected function tearDown(): void
     {
         CacheWarmupTimeoutConfig::reset();
-        unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'], $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+
+        if ($this->savedServerTimeout !== null) {
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $this->savedServerTimeout;
+        } else {
+            unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        }
+        if ($this->savedEnvTimeout !== null) {
+            $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $this->savedEnvTimeout;
+        } else {
+            unset($_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        }
+        if (is_string($this->savedGetenvTimeout)) {
+            putenv('WORKERMAN_CACHE_WARMUP_TIMEOUT=' . $this->savedGetenvTimeout);
+        } else {
+            putenv('WORKERMAN_CACHE_WARMUP_TIMEOUT');
+        }
     }
 
     public function testBundleSetsParameters(): void
@@ -116,7 +143,11 @@ final class WorkermanBundleIntegrationTest extends TestCase
             'loadExtension must not write to $_SERVER',
         );
 
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedServer;
+        if ($savedServer !== null) {
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedServer;
+        } else {
+            unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        }
     }
 
     public function testLoadExtensionRespectsServerEnvOverride(): void
@@ -225,5 +256,51 @@ final class WorkermanBundleIntegrationTest extends TestCase
         ]], $this->container);
 
         self::assertSame(60, CacheWarmupTimeoutConfig::get());
+    }
+
+    public function testLoadExtensionEmptyServerFallsThroughToEnv(): void
+    {
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '';
+        $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '55';
+
+        $this->extension->load([[
+            'cache_warmup_timeout' => 30,
+        ]], $this->container);
+
+        self::assertSame(55, CacheWarmupTimeoutConfig::get());
+    }
+
+    public function testLoadExtensionBlankServerFallsThroughToEnv(): void
+    {
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '   ';
+        $_ENV['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '55';
+
+        $this->extension->load([[
+            'cache_warmup_timeout' => 30,
+        ]], $this->container);
+
+        self::assertSame(55, CacheWarmupTimeoutConfig::get());
+    }
+
+    public function testLoadExtensionReadsGetenvOnlyOverride(): void
+    {
+        putenv('WORKERMAN_CACHE_WARMUP_TIMEOUT=63');
+
+        $this->extension->load([[
+            'cache_warmup_timeout' => 30,
+        ]], $this->container);
+
+        self::assertSame(63, CacheWarmupTimeoutConfig::get());
+    }
+
+    public function testLoadExtensionWhitespaceOnlyEnvOverrideFallsBackToConfig(): void
+    {
+        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '   ';
+
+        $this->extension->load([[
+            'cache_warmup_timeout' => 30,
+        ]], $this->container);
+
+        self::assertSame(30, CacheWarmupTimeoutConfig::get());
     }
 }
