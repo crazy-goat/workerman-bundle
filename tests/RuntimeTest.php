@@ -15,14 +15,41 @@ use Symfony\Component\Runtime\RunnerInterface;
 
 final class RuntimeTest extends TestCase
 {
+    private mixed $savedServerTimeout = null;
+
+    private mixed $savedEnvTimeout = null;
+
+    private mixed $savedGetenvTimeout = null;
     protected function setUp(): void
     {
         CacheWarmupTimeoutConfig::reset();
+
+        $this->savedServerTimeout = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $this->savedEnvTimeout = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR], $_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+        $this->savedGetenvTimeout = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        putenv(CacheWarmupTimeoutConfig::ENV_VAR);
     }
 
     protected function tearDown(): void
     {
         CacheWarmupTimeoutConfig::reset();
+
+        if ($this->savedServerTimeout !== null) {
+            $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $this->savedServerTimeout;
+        } else {
+            unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR]);
+        }
+        if ($this->savedEnvTimeout !== null) {
+            $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = $this->savedEnvTimeout;
+        } else {
+            unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+        }
+        if (is_string($this->savedGetenvTimeout)) {
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $this->savedGetenvTimeout);
+        } else {
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        }
     }
 
     public function testGetRunnerWithKernelFactoryReturnsRunner(): void
@@ -75,6 +102,27 @@ final class RuntimeTest extends TestCase
 
         $ref = new \ReflectionProperty(Runner::class, 'cacheWarmupTimeout');
         self::assertSame(45, $ref->getValue($runner));
+    }
+
+    /**
+     * Issue #759: on the Runner path Runtime::getRunner() runs pre-kernel-boot
+     * (no set() from WorkermanBundle::loadExtension() has run), so the env var
+     * must flow into the Runner without any prior set() call.
+     */
+    public function testGetRunnerReadsTimeoutFromEnvWithoutPriorSet(): void
+    {
+        $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '77';
+
+        $kernelFactory = new KernelFactory(
+            static fn(): KernelInterface => self::createMock(KernelInterface::class),
+            [],
+        );
+
+        $runtime = new Runtime([]);
+        $runner = $runtime->getRunner($kernelFactory);
+
+        $ref = new \ReflectionProperty(Runner::class, 'cacheWarmupTimeout');
+        self::assertSame(77, $ref->getValue($runner));
     }
 
     public function testGetRunnerReadsHolderFreshlyOnEachCall(): void

@@ -90,6 +90,10 @@ final class WorkermanBundle extends AbstractBundle
 
         $timeout = $config['cache_warmup_timeout'];
         $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        if ($envOverride === null || $envOverride === '') {
+            $getenvOverride = function_exists('getenv') ? getenv(CacheWarmupTimeoutConfig::ENV_VAR) : false;
+            $envOverride = $getenvOverride === false ? null : $getenvOverride;
+        }
         if ($envOverride !== null && $envOverride !== '') {
             $timeout = (int) $envOverride;
         }
