@@ -42,7 +42,7 @@ jobs:
         run: composer lint
 
   # A pull request that touches only documentation does not need the nine-leg
-  # tests matrix or the benchmark. This job classifies the diff once, so the
+  # tests matrix, root-only permission leg, or benchmark. This job classifies the diff once, so the
   # heavy jobs can skip themselves while lint (fast, and the only job that
   # catches a broken workflow YAML) and the ci aggregator still report. The
   # job runs on every trigger so its dependents never inherit a skip: on
@@ -184,6 +184,52 @@ jobs:
           path: var/coverage.xml
           if-no-files-found: ignore
 
+  tests-root-permissions:
+    name: Tests (root-only cache permissions)
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name != 'schedule'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: '8.2'
+          extensions: zip, pcntl, posix
+          ini-values: phar.readonly=0
+          tools: composer:v2
+
+      - name: Create var directory
+        run: mkdir -p var
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run root-only permission tests and reject skips
+        run: |
+          set -euo pipefail
+          filter='testLoadFromCacheRefusesGroupWritableCacheDirectoryOfForeignGroup|testLoadFromCacheRefusesCacheFileOwnedByAnotherUser|testLoadFromCacheProceedsWithWarningForForeignOwnedFileWhenTrustSet'
+          php_bin="$(command -v php)"
+          output="$(sudo "$php_bin" vendor/bin/phpunit --no-coverage --filter="$filter" tests/ConfigLoaderTest.php 2>&1)" || {
+            printf '%s\n' "$output"
+            exit 1
+          }
+          printf '%s\n' "$output"
+          # PHPUnit 10 prints "OK (3 tests, N assertions)" when clean and
+          # "Tests: 3, Assertions: 0, Skipped: 3." when the tests skipped
+          # (chgrp/chown failed). A skip here means the root leg lost its
+          # privileges, which must fail the job rather than pass silently.
+          if grep -Eq 'some tests were skipped|Skipped: [1-9]' <<<"$output"; then
+            echo 'Root-only cache permission tests were skipped; the leg must run as root.' >&2
+            exit 1
+          fi
+          if ! grep -Eq 'OK \(3 tests|Tests: 3,' <<<"$output"; then
+            echo 'Expected exactly the three root-only cache permission tests to run.' >&2
+            exit 1
+          fi
+
   tests-scheduled:
     name: Tests (scheduled)
     runs-on: ubuntu-latest
@@ -248,7 +294,7 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, tests, benchmark, tests-scheduled, detect-changes]
+    needs: [lint, tests, tests-root-permissions, benchmark, tests-scheduled, detect-changes]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -258,10 +304,11 @@ jobs:
       - name: Check test results
         run: |
           if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
+          docs_only="${{ needs.detect-changes.outputs.docs-only }}"
+          if [ "$docs_only" != "true" ] && [ "${{ github.event_name }}" != "schedule" ] && [ "${{ needs.tests-root-permissions.result }}" != "success" ]; then exit 1; fi
           # A docs-only pull request intentionally skips the tests and
           # benchmark jobs; that is a green result, not a failure. On
           # non-pull-request events detect-changes reports docs-only=false.
-          docs_only="${{ needs.detect-changes.outputs.docs-only }}"
           if [ "$docs_only" = "true" ]; then
             echo "Docs-only change: tests and benchmark intentionally skipped"
             exit 0

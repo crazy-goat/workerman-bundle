@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI now runs the root-only `ConfigLoader` permission tests in a dedicated root job and fails the job if they skip, so the foreign-uid/foreign-group refusal paths execute on every pull request and master push (#760)
 - `StaticFilesMiddlewareBench` now includes a high-cardinality missing-path scenario that exercises realpath-cache eviction (#729)
 - `ResponseConverter` now flattens the common single-value response-header case without allocating filtered copies (#741)
 - With `allowed_extensions` configured, reject unallowlisted file extensions before filesystem probing while keeping ambiguous paths on the existing validation path (#732)
