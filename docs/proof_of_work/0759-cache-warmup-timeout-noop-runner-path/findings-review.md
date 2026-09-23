@@ -13,10 +13,16 @@ One entry per finding. Status `open` unless fixed in a later round.
   "same precedence" claim in `code-decision-1.md`. Verified empirically with `php -r`
   (replica of lines 92-96 yields `NULL` where `resolve()` yields `55`).
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (round 2 — see note below)
 - **Automatable check:** yes — a test pinning `loadExtension()` precedence
   (`$_SERVER=''`, `$_ENV='55'`, getenv unset → holder is `55`). No such test exists (see F-3).
   Propose writing it: one test per precedence layer, mirroring the `resolve()` provider tests.
+
+## F-1 — round-2 re-check (2026-09-23): fixed
+- Evidence: `src/WorkermanBundle.php:97-105` sequential `!is_scalar || trim()===''` checks;
+  `php -r` repro (`$_SERVER=''`, `$_ENV='55'` → `55`); pinned by
+  `tests/DependencyInjection/WorkermanBundleIntegrationTest.php:257`
+  (`testLoadExtensionEmptyServerFallsThroughToEnv`).
 
 ## F-2 — `ServerManagerTest` timeout tests lack env isolation, now env-sensitive
 - **File:line:** `tests/ServerManagerTest.php:91-96` (`testResolveCacheWarmupTimeoutDefaultsWhenHolderEmpty`)
@@ -28,7 +34,7 @@ One entry per finding. Status `open` unless fixed in a later round.
   Reproduces via `WORKERMAN_CACHE_WARMUP_TIMEOUT=77 vendor/bin/phpunit tests/ServerManagerTest.php
   --filter testResolveCacheWarmupTimeoutDefaultsWhenHolderEmpty`.
 - **Severity:** medium
-- **Status:** open
+- **Status:** fixed (round 2 — save/clear/restore added; exported-var repro passes)
 - **Automatable check:** yes — the exported-var invocation above. Propose adding the same
   save/clear/restore block to `ServerManagerTest::setUp/tearDown`.
 
@@ -39,7 +45,7 @@ One entry per finding. Status `open` unless fixed in a later round.
   `WorkermanBundle` test class at all, and the 80% line-coverage gate (DEC-007) is global, so it
   cannot pin this branch. F-1 shipped undetected for exactly this reason.
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (round 2 — `testLoadExtensionReadsGetenvOnlyOverride` + 3 precedence tests in `WorkermanBundleIntegrationTest.php:257-301`)
 - **Automatable check:** partially — the F-1 precedence test would cover it. Propose writing
   `loadExtension()`-level tests (getenv-only override wins; empty-everywhere keeps YAML value).
 
@@ -51,7 +57,7 @@ One entry per finding. Status `open` unless fixed in a later round.
   scope). Suggested fix (unchanged): strict-validate with `filter_var($raw, FILTER_VALIDATE_INT)`
   and include the raw string in the message.
 - **Severity:** low
-- **Status:** open
+- **Status:** still present, deliberate (round 2 — repro `"45.9"`→`45` confirmed; now pinned by `testLoadExtensionFloatEnvOverrideIsTruncated`, so specified behavior)
 - **Automatable check:** no — manual review only (behavioral choice, coder-documented).
 
 ## F-5 — whitespace-only env value throws instead of resolving to default
@@ -61,7 +67,7 @@ One entry per finding. Status `open` unless fixed in a later round.
   whitespace-only as absent. Minor inconsistency between the two holders that now share a docblock
   precedence claim.
 - **Severity:** low
-- **Status:** open
+- **Status:** fixed (round 2 — `trim()` checks on both paths; repro `'   '`→`30`; pinned by `testResolveTreatsWhitespaceOnlyEnvVarAsAbsent` + `testLoadExtensionWhitespaceOnlyEnvOverrideFallsBackToConfig`)
 - **Automatable check:** yes — a test (`$_SERVER[...] = ' '` → `DEFAULT`). Propose adding the case
   alongside `testResolveIgnoresEmptyEnvVar`.
 
@@ -72,7 +78,7 @@ One entry per finding. Status `open` unless fixed in a later round.
   every change. Whether a fix of this size warrants an entry is a maintainer call (as with the
   README scope note), but round 1 flags the absence.
 - **Severity:** nit
-- **Status:** open
+- **Status:** still present (round 2 — `CHANGELOG.md:8` `[Unreleased]` still empty; maintainer call per DEC-021)
 - **Automatable check:** no.
 
 ## F-7 — non-string superglobal values flow unguarded into `(int)`
@@ -83,5 +89,37 @@ One entry per finding. Status `open` unless fixed in a later round.
   (SAPIs deliver strings), PHPStan level 8 is clean, so nit only. Optional hardening: accept only
   `is_scalar()` values, treat the rest as absent.
 - **Severity:** nit
-- **Status:** open
+- **Status:** fixed (round 2 — `is_scalar()` guards on both paths; repro array value→`30`)
 - **Automatable check:** no (PHPStan already passes; would need a dedicated rule).
+
+---
+
+# Review round 2 (2026-09-23, diff `02b1d64..HEAD`)
+
+Full detail in `review-2.md`. Per-finding verdicts: F-1 fixed, F-2 fixed,
+F-3 fixed, F-4 still present (deliberate, now test-pinned), F-5 fixed,
+F-6 still present (maintainer call), F-7 fixed. Checks: phpunit subsets OK
+(88 + 9 tests), exported-var repro passes, phpstan clean, cs-fixer clean.
+Helper-entry violations: none (FAQ-036, DEC-016, DEC-007, DEC-014, DEC-021
+checked; FAQ-035 ruled out).
+
+## N-1 — env-bridge logic duplicated between `resolve()` and `loadExtension()`
+- **File:line:** `src/CacheWarmupTimeoutConfig.php:60-74`, `src/WorkermanBundle.php:97-105`
+- **What is wrong:** the three-step sequential env read now exists twice and
+  must evolve in lockstep — the two copies already drifted once (F-1).
+  A shared `@internal` helper (e.g. `readEnvRaw(): mixed`) would remove the
+  drift surface; optional, since `loadExtension()` falls back to YAML while
+  `resolve()` falls back to `DEFAULT`, so they cannot share the whole method.
+- **Severity:** low
+- **Status:** open
+- **Automatable check:** no — manual review only.
+
+## N-2 — `testLoadExtensionDoesNotMutateServerSuperglobal` restores a null-valued key
+- **File:line:** `tests/DependencyInjection/WorkermanBundleIntegrationTest.php:132-147`
+- **What is wrong:** the test-local restore does
+  `$_SERVER[...] = $savedServer` even when `$savedServer` is `null`, leaving
+  a null-valued key until `tearDown()` cleans it. Harmless (tearDown restores
+  the setUp snapshot), but `unset`-on-null would be tidier.
+- **Severity:** nit
+- **Status:** open
+- **Automatable check:** no.

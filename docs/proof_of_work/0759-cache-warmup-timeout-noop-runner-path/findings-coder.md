@@ -136,3 +136,24 @@ Deliberately not fixed:
   on all five touched files on the first pass; `phpstan` clean. New tests
   use the `ENV_VAR . '=' . $x` concat-spacing the round-1 obstacle taught.
 
+
+## Round 3 — review round 2 fixes applied (code-decision-3.md)
+
+Fixed (see code-decision-3.md for approach/rejected alternatives):
+
+- **N-1 (low):** env bridge extracted to
+  `CacheWarmupTimeoutConfig::readEnvRaw(): ?string` (`@internal`,
+  trimmed-or-null, precedence `$_SERVER` → `$_ENV` → `getenv()` with
+  trim/empty/non-scalar handling in one place). Both `resolve()` and
+  `WorkermanBundle::loadExtension()` call it; behavior verified identical
+  (`''`+`'55'` → `55`, whitespace-only → `DEFAULT`). Cast semantics untouched
+  (F-4 parity).
+- **N-2 (nit):** `testLoadExtensionDoesNotMutateServerSuperglobal` restores
+  with `unset()` when the key was originally absent instead of writing a
+  null-valued key.
+
+Deliberately not fixed:
+
+- **F-4 (low):** `(int)` truncation still present by design, now via the
+  shared helper on both paths.
+- **F-6 (nit):** `CHANGELOG.md` untouched — main session changelog job.

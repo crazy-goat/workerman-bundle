@@ -89,21 +89,13 @@ final class WorkermanBundle extends AbstractBundle
         $this->servicesConfigurator->configure($config, $builder);
 
         $timeout = $config['cache_warmup_timeout'];
-        // Sequential null-or-blank checks (mirrors CacheWarmupTimeoutConfig::resolve()):
-        // `??` falls through only on null, so an empty $_SERVER value would
-        // otherwise shadow $_ENV (issue #759 review F-1). Whitespace-only is
-        // treated as absent like the ConfigCacheGuardConfig sibling (F-5), and
-        // non-scalar superglobal values are treated as absent rather than cast (F-7).
-        $envOverride = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
-        if (!is_scalar($envOverride) || trim((string) $envOverride) === '') {
-            $envOverride = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
-        }
-        if (!is_scalar($envOverride) || trim((string) $envOverride) === '') {
-            $getenvOverride = function_exists('getenv') ? getenv(CacheWarmupTimeoutConfig::ENV_VAR) : false;
-            $envOverride = $getenvOverride === false ? null : $getenvOverride;
-        }
-        if (is_scalar($envOverride) && trim((string) $envOverride) !== '') {
-            $timeout = (int) trim((string) $envOverride);
+        // Shared env bridge (issue #759 review N-1): precedence lives in
+        // CacheWarmupTimeoutConfig::readEnvRaw() so the two paths cannot
+        // drift again (F-1). Whitespace-only / non-scalar treated as absent
+        // there; a present value is cast like resolve() (F-4 parity).
+        $envOverride = CacheWarmupTimeoutConfig::readEnvRaw();
+        if ($envOverride !== null) {
+            $timeout = (int) $envOverride;
         }
 
         CacheWarmupTimeoutConfig::set($timeout);

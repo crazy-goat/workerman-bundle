@@ -39,24 +39,18 @@ final class CacheWarmupTimeoutConfig
     }
 
     /**
-     * Resolve the effective timeout.
+     * Read the raw env var across the three channels.
      *
-     * An explicit {@see self::set()} value (written by
-     * {@see WorkermanBundle::loadExtension()} during kernel boot) always wins.
-     * Otherwise the environment is read lazily (`$_SERVER`, then `$_ENV`, then
-     * `getenv()`) on every call — the same precedence as
-     * {@see ConfigCacheGuardConfig::resolve()} — because
-     * {@see Runtime::getRunner()} constructs the {@see Runner} before any
-     * kernel boot on the Runner path, where no `set()` has run yet (issue
-     * #759). Absent or empty resolves to {@see self::DEFAULT}; a present but
-     * non-positive value throws, consistent with {@see self::set()}.
+     * Shared bridge for {@see self::resolve()} and
+     * {@see WorkermanBundle::loadExtension()} so precedence cannot drift
+     * again (issue #759 review F-1). Precedence: `$_SERVER`, then `$_ENV`,
+     * then `getenv()`. Trims before the emptiness check (whitespace-only is
+     * absent) and treats non-scalar superglobal values as absent.
+     *
+     * @internal Shared with WorkermanBundle; not part of the public API.
      */
-    public static function resolve(): int
+    public static function readEnvRaw(): ?string
     {
-        if (self::$timeout !== null) {
-            return self::$timeout;
-        }
-
         $raw = $_SERVER[self::ENV_VAR] ?? null;
         if (!is_scalar($raw) || trim((string) $raw) === '') {
             $raw = $_ENV[self::ENV_VAR] ?? null;
@@ -74,10 +68,37 @@ final class CacheWarmupTimeoutConfig
         // check); non-scalar superglobal values (pathological — SAPIs deliver
         // strings) are treated as absent rather than cast.
         if (!is_scalar($raw) || trim((string) $raw) === '') {
+            return null;
+        }
+
+        return trim((string) $raw);
+    }
+
+    /**
+     * Resolve the effective timeout.
+     *
+     * An explicit {@see self::set()} value (written by
+     * {@see WorkermanBundle::loadExtension()} during kernel boot) always wins.
+     * Otherwise the environment is read lazily via {@see self::readEnvRaw()}
+     * on every call — the same precedence as
+     * {@see ConfigCacheGuardConfig::resolve()} — because
+     * {@see Runtime::getRunner()} constructs the {@see Runner} before any
+     * kernel boot on the Runner path, where no `set()` has run yet (issue
+     * #759). Absent or empty resolves to {@see self::DEFAULT}; a present but
+     * non-positive value throws, consistent with {@see self::set()}.
+     */
+    public static function resolve(): int
+    {
+        if (self::$timeout !== null) {
+            return self::$timeout;
+        }
+
+        $trimmed = self::readEnvRaw();
+        if ($trimmed === null) {
             return self::DEFAULT;
         }
 
-        $timeout = (int) trim((string) $raw);
+        $timeout = (int) $trimmed;
         if ($timeout < 1) {
             throw new \InvalidArgumentException(\sprintf(
                 '%s must be a positive integer, got %d',

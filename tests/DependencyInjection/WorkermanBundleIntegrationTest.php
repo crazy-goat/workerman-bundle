@@ -143,7 +143,11 @@ final class WorkermanBundleIntegrationTest extends TestCase
             'loadExtension must not write to $_SERVER',
         );
 
-        $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedServer;
+        if ($savedServer !== null) {
+            $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = $savedServer;
+        } else {
+            unset($_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT']);
+        }
     }
 
     public function testLoadExtensionRespectsServerEnvOverride(): void
