@@ -317,6 +317,18 @@ final class ResponseConverterTest extends TestCase
      * Set-Cookie legitimately needs multiple values (one Set-Cookie header per
      * cookie), so flattening must not collapse it to a single string.
      */
+    public function testConvertFlattensSingleHeaderValueWithoutFilteringCopy(): void
+    {
+        $converter = new ResponseConverter([new DefaultResponseStrategy()]);
+        $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
+            'X-Custom' => 'single-value',
+        ]);
+
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
+
+        $this->assertSame('single-value', $workermanResponse->getHeader('X-Custom'));
+    }
+
     public function testConvertPreservesMultipleSetCookieValues(): void
     {
         $strategies = [new DefaultResponseStrategy()];

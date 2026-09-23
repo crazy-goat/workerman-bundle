@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ResponseConverter` now flattens the common single-value response-header case without allocating filtered copies (#741)
 - With `allowed_extensions` configured, reject unallowlisted file extensions before filesystem probing while keeping ambiguous paths on the existing validation path (#732)
 
 ### Fixed
