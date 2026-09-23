@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `file_monitor.polling_interval` and `file_monitor.max_files_per_tick` configuration keys for the inotify-less polling fallback, defaulting to the previous hardcoded 3 s / 500 entries (#734)
+
 ### Changed
 
 - `composer bench`'s aggregate report now shows a `set` column, so parameterised `RequestConverterBench` rows are self-identifying instead of rendering identical subject names (#736)

@@ -57,6 +57,8 @@ final class WorkermanBundle extends AbstractBundle
      *             active?: bool,
      *             source_dir?: list<string>,
      *             file_pattern?: list<string>,
+     *             polling_interval?: int,
+     *             max_files_per_tick?: int,
      *         },
      *         always?: array{active?: bool},
      *         memory?: array{

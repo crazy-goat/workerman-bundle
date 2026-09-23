@@ -84,6 +84,18 @@ final class FileMonitorWorkerTest extends TestCase
         $this->assertSame(['*.php', '*.twig'], $vars['filePattern']);
     }
 
+    public function testOnWorkerStartClosureCapturesPollingTuning(): void
+    {
+        new FileMonitorWorker(null, null, ['/src'], ['*.php'], 7, 250);
+        $callable = $this->getNewWorker()->onWorkerStart;
+        $this->assertInstanceOf(\Closure::class, $callable);
+
+        $vars = (new \ReflectionFunction($callable))->getStaticVariables();
+
+        $this->assertSame(7, $vars['pollingInterval']);
+        $this->assertSame(250, $vars['maxFilesPerTick']);
+    }
+
     public function testOnWorkerStartCreatesCorrectWatcherBasedOnExtension(): void
     {
         new FileMonitorWorker(null, null, ['/nonexistent'], ['*.php']);

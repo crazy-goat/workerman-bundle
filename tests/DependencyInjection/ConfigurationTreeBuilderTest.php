@@ -88,6 +88,8 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertFalse($config['reload_strategy']['max_requests']['active']);
         self::assertTrue($config['reload_strategy']['exception']['active']);
         self::assertFalse($config['reload_strategy']['file_monitor']['active']);
+        self::assertSame(3, $config['reload_strategy']['file_monitor']['polling_interval']);
+        self::assertSame(500, $config['reload_strategy']['file_monitor']['max_files_per_tick']);
         self::assertFalse($config['reload_strategy']['always']['active']);
         self::assertFalse($config['reload_strategy']['memory']['active']);
     }
@@ -164,6 +166,91 @@ final class ConfigurationTreeBuilderTest extends TestCase
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
 
         $processor->process($node, [[$override]]);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, int>}>
+     */
+    public static function provideInvalidFileMonitorPollingOverrides(): iterable
+    {
+        yield 'polling_interval zero' => [['polling_interval' => 0]];
+        yield 'polling_interval negative' => [['polling_interval' => -1]];
+        yield 'max_files_per_tick zero' => [['max_files_per_tick' => 0]];
+        yield 'max_files_per_tick negative' => [['max_files_per_tick' => -1]];
+    }
+
+    /**
+     * @dataProvider provideInvalidFileMonitorPollingOverrides
+     *
+     * @param array<string, int> $override
+     */
+    public function testConfiguredTreeRejectsNonPositiveFileMonitorPollingValues(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($node, [[
+            'reload_strategy' => [
+                'file_monitor' => $override,
+            ],
+        ]]);
+    }
+
+    public function testConfiguredTreeParsesFileMonitorPollingValues(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'reload_strategy' => [
+                'file_monitor' => [
+                    'active' => true,
+                    'polling_interval' => 10,
+                    'max_files_per_tick' => 250,
+                ],
+            ],
+        ]]);
+
+        self::assertSame(10, $config['reload_strategy']['file_monitor']['polling_interval']);
+        self::assertSame(250, $config['reload_strategy']['file_monitor']['max_files_per_tick']);
+    }
+
+    public function testConfiguredTreeAcceptsFileMonitorPollingBoundaryOne(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'reload_strategy' => [
+                'file_monitor' => [
+                    'polling_interval' => 1,
+                    'max_files_per_tick' => 1,
+                ],
+            ],
+        ]]);
+
+        self::assertSame(1, $config['reload_strategy']['file_monitor']['polling_interval']);
+        self::assertSame(1, $config['reload_strategy']['file_monitor']['max_files_per_tick']);
     }
 
     public function testConfiguredTreeParsesServerBodySizeCap(): void

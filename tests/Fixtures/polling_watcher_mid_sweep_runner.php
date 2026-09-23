@@ -36,7 +36,7 @@ require $autoloadPath;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\PollingMonitorWatcher;
 
-// Build a tree spanning two ticks: 600 files at MAX_FILES_PER_TICK=500/tick.
+// Build a tree spanning two ticks: 600 files at DEFAULT_MAX_FILES_PER_TICK=500/tick.
 for ($i = 0; $i < 600; $i++) {
     file_put_contents($tempDir . '/file' . $i . '.php', '<?php');
 }
@@ -68,6 +68,11 @@ $lastMTimeProp = $watcherClass->getProperty('lastMTime');
 // Set lastMTime to now so existing files are not seen as modified.
 $initialMTime = time();
 $lastMTimeProp->setValue($watcher, $initialMTime);
+
+// Promoted readonly polling tuning is initialized by the constructor; this
+// fixture bypasses it, so set the defaults explicitly.
+$watcherClass->getProperty('pollingInterval')->setValue($watcher, FileMonitorWatcher::DEFAULT_POLLING_INTERVAL);
+$watcherClass->getProperty('maxFilesPerTick')->setValue($watcher, FileMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK);
 
 $checkMethod = $watcherClass->getMethod('checkFileSystemChanges');
 
