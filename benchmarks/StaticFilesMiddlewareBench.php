@@ -35,6 +35,9 @@ final class StaticFilesMiddlewareBench
     private Request $assetRequest;
     private Request $nestedAssetRequest;
     private Request $blockedBackupRequest;
+    /** @var list<Request> */
+    private array $uniquePathRequests = [];
+    private int $nextUniquePath = 0;
 
     public function init(): void
     {
@@ -54,6 +57,12 @@ final class StaticFilesMiddlewareBench
         $this->assetRequest = new Request("GET /style.css HTTP/1.1\r\nHost: localhost\r\n\r\n");
         $this->nestedAssetRequest = new Request("GET /assets/logo.png HTTP/1.1\r\nHost: localhost\r\n\r\n");
         $this->blockedBackupRequest = new Request("GET /index.php.bak HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        for ($i = 0; $i < 20_000; ++$i) {
+            $this->uniquePathRequests[] = new Request(sprintf(
+                "GET /assets/missing-%d.css HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                $i,
+            ));
+        }
     }
 
     public function tearDown(): void
@@ -95,6 +104,18 @@ final class StaticFilesMiddlewareBench
     public function benchBlockedBackupFile(): void
     {
         ($this->middleware)($this->blockedBackupRequest, $this->next(...));
+    }
+
+    /**
+     * Exercise unique negative cache keys beyond CACHE_MAX_SIZE instead of
+     * repeatedly hitting the same realpath-cache entry.
+     */
+    public function benchThrashingUniquePaths(): void
+    {
+        $request = $this->uniquePathRequests[$this->nextUniquePath];
+        $this->nextUniquePath = ($this->nextUniquePath + 1) % count($this->uniquePathRequests);
+
+        ($this->middleware)($request, $this->next(...));
     }
 
     private function next(): Response
