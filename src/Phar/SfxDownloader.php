@@ -670,7 +670,9 @@ final readonly class SfxDownloader
      */
     private function locateSfxEntry(array $entryNames, string $zipPath, string $destinationDir): string
     {
-        $expected = rtrim($destinationDir, '/') . '/' . str_replace('.zip', '', basename($zipPath));
+        $basename = basename($zipPath);
+        $expectedName = str_ends_with($basename, '.zip') ? substr($basename, 0, -4) : $basename;
+        $expected = rtrim($destinationDir, '/') . '/' . $expectedName;
         if (is_file($expected)) {
             return $expected;
         }

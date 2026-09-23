@@ -1227,6 +1227,18 @@ PHP_WRAP);
         }
     }
 
+    public function testLocateSfxEntryRemovesOnlyTrailingZipExtension(): void
+    {
+        $archivePath = $this->tempDir . '/my.zip.archive.zip';
+        $expected = $this->tempDir . '/my.zip.archive';
+        file_put_contents($expected, 'sfx');
+
+        self::assertSame(
+            $expected,
+            $this->invokePrivateSfxMethod('locateSfxEntry', [], $archivePath, $this->tempDir),
+        );
+    }
+
     private function invokeBuildContext(string $url, bool $allowInsecure): mixed
     {
         return $this->invokePrivateSfxMethod('buildContext', $url, $allowInsecure);
