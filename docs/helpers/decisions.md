@@ -11,7 +11,7 @@ whole file.
 ## Tag index
 
 <!-- kb-index:start -->
-- `architecture` — DEC-002, DEC-020
+- `architecture` — DEC-002, DEC-020, DEC-022
 - `changelog` — DEC-021
 - `ci` — DEC-007, DEC-020
 - `config-cache` — DEC-016
@@ -22,21 +22,21 @@ whole file.
 - `exceptions` — DEC-020
 - `gh` — DEC-011
 - `git-hooks` — DEC-008
-- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018, DEC-019
+- `http` — DEC-001, DEC-002, DEC-005, DEC-010, DEC-013, DEC-014, DEC-015, DEC-018, DEC-019, DEC-022
 - `knowledge-base` — DEC-009
 - `lint` — DEC-008, DEC-020
 - `logging` — DEC-017
 - `long-running` — DEC-003, DEC-014
 - `markdown` — DEC-012
 - `memory` — DEC-004, DEC-005, DEC-014, DEC-018
-- `middleware` — DEC-018
+- `middleware` — DEC-018, DEC-022
 - `performance` — DEC-013, DEC-018, DEC-019
 - `policy` — DEC-006, DEC-007, DEC-008, DEC-009, DEC-016, DEC-017
 - `pr` — DEC-011
 - `process` — DEC-009, DEC-011
 - `response-strategy` — DEC-001, DEC-002
 - `security` — DEC-005, DEC-006, DEC-010, DEC-013, DEC-015, DEC-016, DEC-017
-- `static-files` — DEC-004
+- `static-files` — DEC-004, DEC-022
 - `tests` — DEC-014, DEC-015
 - `timers` — DEC-003
 - `upgrade` — DEC-021
@@ -309,6 +309,18 @@ outermost first, double-`$next` re-entrancy, fresh-instance isolation) and
 the handler's docblock documents the allocation model. `tests/MiddlewarePipelineTest.php`
 intentionally re-implements the old nested composition — it is a
 contract-only test kept independent of the shipped implementation.
+
+### `StaticFilesMiddleware` is intentionally the innermost pipeline layer (#730)
+<!-- kb: id=DEC-022 date=2026-09-24 tags=middleware,static-files,architecture,http trigger="changing HttpRequestHandler::withRootDirectory() middleware order, or considering hoisting StaticFilesMiddleware" hits=0 status=active -->
+
+`HttpRequestHandler::withRootDirectory()` appends `StaticFilesMiddleware`
+last, so it is the innermost layer: user middleware runs first and may
+short-circuit, authenticate, add CORS/security headers to, or otherwise wrap
+static-file responses before the static layer serves them (#730). Hoisting the
+static layer outward would let it answer requests before user middleware runs,
+silently removing those hooks for static assets. Do not reorder it without a
+decision superseding this entry and acceptance criteria for the behaviour
+change; the ordering is documented in the `withRootDirectory()` docblock.
 
 ### Upload structure is traversed once — validate-while-converting; do not reintroduce a separate validate() pass (#566)
 <!-- kb: id=DEC-019 date=2026-09-08 tags=http,performance,uploads,validation trigger="touching RequestConverter::processFileNode()/processFileEntry(), FileUploadValidator shape predicates, or thinking about adding a validate() call before conversion" hits=0 status=active -->
