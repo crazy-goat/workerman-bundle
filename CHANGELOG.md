@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Document the third test port (9991) alongside 8888/9999 in `docs/workflow.md`, `docs/troubleshooting.md`, `CONTRIBUTING.md` and FAQ-009, and fix FAQ-009's stale troubleshooting reference (#776)
 - Avoid PHPUnit 10 shutdown errors when test bootstrap marker files are absent (#753)
 - `SfxDownloader::locateSfxEntry()` removes only a trailing `.zip` extension when deriving the extracted SFX filename, preserving earlier `.zip` segments (#765)
 - `WORKERMAN_CACHE_WARMUP_TIMEOUT` (and the `cache_warmup_timeout` YAML key

@@ -245,6 +245,26 @@ module shutdown entirely.
   dead. The hung intermediate itself is still not reaped/killed on
   non-Linux; clean it up by hand if it accumulates.
 
+## Ports used by the test suite
+
+`composer test` boots a real Workerman daemon that binds **127.0.0.1:8888**,
+**127.0.0.1:9999** and **127.0.0.1:9991** (the last is the middleware
+dispatch-contract server). The port numbers are hardcoded in
+`tests/App/Kernel.php`; the listen *address* can be overridden with
+`WMB_LISTEN_ADDR` (default `127.0.0.1`).
+
+"Address already in use" during `composer test` means one of the three ports
+is held by a stale daemon or an unrelated service. Find and free it:
+
+```bash
+lsof -i :8888 -i :9999 -i :9991   # or: ss -tlnp | grep -E '8888|9999|9991'
+php tests/App/index.php stop       # stop a daemon left by an interrupted run
+```
+
+Additional knobs (parallel runs across git worktrees, ephemeral Docker port
+publishing) are documented in
+[CONTRIBUTING.md](../CONTRIBUTING.md#parallel-test-runs-across-git-worktrees).
+
 ## Reload Strategies Reference
 
 Consider which restart strategy matches your deployment model:

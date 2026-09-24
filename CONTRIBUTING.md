@@ -100,8 +100,8 @@ rm .git/hooks/pre-push
    >   ```bash
    >   vendor/bin/phpunit
    >   ```
-   > - On macOS, ports below 1024 require root. Ports 8888 and 9999 are above
-   >   that threshold and should work without special privileges.
+   > - On macOS, ports below 1024 require root. Ports 8888, 9999 and 9991 are
+   >   above that threshold and should work without special privileges.
 
    > **Signal-logic tests and pcntl/posix extensions**
    > Three tests in `UtilsTest` (`testReloadSendsSigusr1`,
