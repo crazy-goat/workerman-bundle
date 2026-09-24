@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removed the unnecessary `static` keyword from seven free-function closures in `tests/Fixtures/sigchld_test_runner.php` (#748)
 - Trimmed and promoted `docs/helpers/faq.md` and `docs/helpers/decisions.md` back under the 300-line knowledge-base budget (#744)
 - Documented that `StaticFilesMiddleware` is intentionally the innermost pipeline layer, so user middleware can short-circuit or decorate static-file responses (#730)
 - `composer bench`'s aggregate report now shows a `set` column, so parameterised `RequestConverterBench` rows are self-identifying instead of rendering identical subject names (#736)
