@@ -103,6 +103,10 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         if ($rootDirectory === null) {
             return $this;
         }
+        // Appended last intentionally: the static layer is the innermost
+        // pipeline layer, so user middleware runs first and may short-circuit,
+        // authenticate or decorate static-file responses (DEC-022, issue #730).
+        // Do not hoist it outward without superseding that decision.
         $allowedExtensions = $this->staticFileConfig['allowed_extensions'] ?? [];
         $this->middlewares[] = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
         $this->pipeline = null; // invalidate cached pipeline

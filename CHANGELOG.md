@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documented that `StaticFilesMiddleware` is intentionally the innermost pipeline layer, so user middleware can short-circuit or decorate static-file responses (#730)
 - `composer bench`'s aggregate report now shows a `set` column, so parameterised `RequestConverterBench` rows are self-identifying instead of rendering identical subject names (#736)
 - CI now runs the root-only `ConfigLoader` permission tests in a dedicated root job and fails the job if they skip, so the foreign-uid/foreign-group refusal paths execute on every pull request and master push (#760)
 - `StaticFilesMiddlewareBench` now includes a high-cardinality missing-path scenario that exercises realpath-cache eviction (#729)
