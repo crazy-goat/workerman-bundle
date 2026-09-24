@@ -96,52 +96,23 @@ Workerman's `Response::__toString()` **unconditionally appends** its computed `C
 ## Static files
 
 ### File-only rules must be gated on the last path component
-<!-- kb: id=FAQ-004 date=2026-08-09 tags=static-files,middleware trigger="changing StaticFilesMiddleware path or extension rules" hits=0 status=active -->
+<!-- kb: id=FAQ-004 date=2026-08-09 tags=static-files,middleware trigger="changing StaticFilesMiddleware path or extension rules" hits=0 status=promoted gate="tests/StaticFilesMiddlewareTest.php (residue-suffix directory + allowlist cases)" -->
 
-`StaticFilesMiddleware` walks every relative-path component
-(`isFilePathBlocked()`), so file-only rules — the `allowed_extensions`
-allowlist and residue-extension blocking — must be applied only to the
-final component (`array_key_last`, `$isFile` flag). Directory components
-must not be evaluated by file-only rules even when their names contain dots
-(`assets.dist/`, `backup.bak/`) — before the fix they were denied whenever
-an allowlist was configured, making every subdirectory file 404 (issue
-#637).
+Promoted — `isFilePathBlocked()` applies the `allowed_extensions` allowlist and residue-extension blocking only to the final component (`array_key_last`, `$isFile`); `tests/StaticFilesMiddlewareTest.php` pins dotted-directory (`assets.dist/`, `backup.bak/`), extensionless and dotfile cases (issue #637).
 
 ## Config cache
 
 ### Warm-as-root cache trips the ownership guard at boot
 <!-- kb: id=FAQ-005 date=2026-08-09 tags=config-cache,permissions,docker trigger="config cache ownership, Docker/container deployment" hits=0 status=active -->
 
-Since 0.25.0 the config cache file (`{cacheDir}/workerman/config.cache.php`)
-must be owned by the process that loads it. Warming it as `root` in a
-Docker build and starting the server as another user is a hard boot
-`RuntimeException` (raised by the launcher process before any worker forks),
-not a warning. Worked examples live in README (§ "Config cache and runtime
-user") and security.md (§ "Containerised deployments (Docker)") — link to
-them instead of restating the pattern in issues or PRs.
+Since 0.25.0 the config cache file (`{cacheDir}/workerman/config.cache.php`) must be owned by the process that loads it. Warming it as `root` in a Docker build and starting as another user is a hard boot `RuntimeException` (launcher process, before any fork), not a warning. Worked examples: README § "Config cache and runtime user" and security.md § "Containerised deployments (Docker)" — link, don't restate.
 
-Since #648 there is one escape hatch: `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`
-downgrades the refusal checks to warnings for deployments that explicitly
-trust the cache directory (managed build systems, sudoless image builders,
-frozen base images). It is a **documented security downgrade** — the cache
-file is executed PHP — only unambiguous truthy values enable it (fail-closed
-parsing), and strict mode stays the default. Point at security.md
-(§ "Guard downgrade (explicit opt-out)") rather than restating the details;
-never recommend it as a first-line fix for a warm-as-root misconfiguration.
+The one escape hatch (#648) is `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`, which downgrades refusals to warnings for deployments that explicitly trust the directory. It is a **documented security downgrade** (the cache file is executed PHP): only unambiguous truthy values enable it (fail-closed), strict mode stays default. See security.md § "Guard downgrade (explicit opt-out)"; never recommend it as a first-line fix for warm-as-root.
 
 ### An env-var bridge set only in `loadExtension()` never reaches consumers constructed before kernel boot — resolve lazily instead
 <!-- kb: id=FAQ-036 date=2026-08-21 tags=config-cache,permissions,env,runner trigger="adding an env-var bridge for a class constructed outside DI, or touching CacheWarmupTimeoutConfig / ConfigCacheGuardConfig" hits=0 status=active -->
 
-`CacheWarmupTimeoutConfig` is set from `WorkermanBundle::loadExtension()`,
-but `Runner` constructs its `ConfigLoader` and validates the config cache in
-the launcher main process **before** any kernel boot, so a
-loadExtension-only bridge is invisible there (the warm-up fork's `set()`
-does not propagate back to the parent; `Runtime::getRunner()` runs
-pre-boot too). The #648 opt-out (`ConfigCacheGuardConfig`) therefore
-resolves `$_SERVER`/`$_ENV`/`getenv()` lazily on every call, with `set()`
-as an override; a bridge that must work on every construction path should
-do the same. This also explains why `WORKERMAN_CACHE_WARMUP_TIMEOUT` is
-inert on the Runner path — tracked as issue #759 (regression from #528).
+`CacheWarmupTimeoutConfig` is set from `WorkermanBundle::loadExtension()`, but `Runner` builds its `ConfigLoader` and validates the config cache in the launcher main process **before** kernel boot, so a loadExtension-only bridge is invisible there (the warm-up fork's `set()` does not propagate to the parent; `Runtime::getRunner()` also runs pre-boot). The #648 opt-out (`ConfigCacheGuardConfig`) therefore resolves `$_SERVER`/`$_ENV`/`getenv()` lazily per call with `set()` as override; any bridge that must work on every construction path should do the same. This is why `WORKERMAN_CACHE_WARMUP_TIMEOUT` was inert on the Runner path (#759, regression from #528).
 
 ## Test suite
 
@@ -163,38 +134,16 @@ time, so `mkdir` → `rmdir` → `invokeOnNotify` is race-free.)
 ### grpc extension on macOS: stop timeouts, zombie masters, no worker restarts
 <!-- kb: id=FAQ-007 date=2026-08-09 tags=tests,grpc,macos,daemon,process trigger="daemon hangs, zombie master or no worker restart on macOS" hits=0 status=active -->
 
-If the `grpc` extension is loaded (Homebrew PHP), its shutdown handler
-(`grpc_shutdown()`) **can hang indefinitely in forked children** on
-affected macOS/Homebrew setups. On such hosts (tracked in
-[#651](https://github.com/crazy-goat/workerman-bundle/issues/651)):
+If `grpc` is loaded (Homebrew PHP), `grpc_shutdown()` **can hang indefinitely in forked children** on affected macOS setups ([#651](https://github.com/crazy-goat/workerman-bundle/issues/651)):
 
-- The daemonize intermediate can hang at `start -d`. Since #720
-  (`ProcessInspector::isAliveNonLinux()`), a zombie master is detected
-  via `ps -o stat= -p <pid>` (state `Z` or empty = dead), so `stop()`
-  no longer times out on the zombie-master shape. The **hung
-  intermediate itself still leaks** on non-Linux
-  (`killOrphanedIntermediateFork()` is Linux-only — #722); clean up
-  with a **repo-scoped** command (never a bare `pkill -f WorkerMan` —
-  it would kill unrelated Workerman applications on the host):
+- `start -d`'s intermediate can hang. Since #720 a zombie master is detected via `ps -o stat= -p <pid>` (`Z`/empty = dead), so `stop()` no longer times out, but the **hung intermediate still leaks** on non-Linux (`killOrphanedIntermediateFork()` is Linux-only, #722). Clean up repo-scoped (never a bare `pkill -f WorkerMan`):
   ```bash
   pkill -9 -f 'tests/App/index.php'; rm -f var/run/workerman.pid*
   ```
-- A self-called `exit()` inside a process service hangs the worker (no
-  restarts). The bundle terminates worker/task children with SIGKILL when
-  grpc is loaded (`Util\ProcessTerminator`, since #650); make sure your
-  process services do not `exit()` themselves — return instead. The same
-  trap applies to **forked test children** on grpc hosts — kill them with
-  `posix_kill(getmypid(), SIGKILL)`, never `exit()`, or `grpc_shutdown()`
-  can hang the test suite.
-- Expect **exactly one** start-up warning in the Workerman log file
-  (`var/log/workerman.log`): with `GRPC_ENABLE_FORK_SUPPORT` unset it
-  says to set it; with it set (or `true`) it announces SIGKILL
-  termination. They are mutually exclusive, not both emitted.
+- A self-called `exit()` in a process service hangs the worker (no restarts). The bundle SIGKILLs worker/task children when grpc is loaded (`Util\ProcessTerminator`, #650); do not `exit()` — return. Same for **forked test children**: kill with `posix_kill(getmypid(), SIGKILL)`, never `exit()`.
+- Expect **exactly one** start-up warning in `var/log/workerman.log`: `GRPC_ENABLE_FORK_SUPPORT` unset means "set it"; set means SIGKILL termination — mutually exclusive.
 
-CI (Linux, no grpc) does not exercise any of this. `pcntl_waitpid` answers
-only for **direct children**; on non-Linux the state comes from `ps`, and
-any inspection failure (exec disabled, `ps` 126/127) fails closed —
-treated as alive, a warning is logged.
+CI (Linux, no grpc) exercises none of this. `pcntl_waitpid` answers only for **direct children**; on non-Linux the state comes from `ps`, and any inspection failure (exec disabled, `ps` 126/127) fails closed as alive with a warning.
 
 ### Don't write start-up warnings to stderr before daemonize()
 <!-- kb: id=FAQ-008 date=2026-08-09 tags=tests,daemon,logging trigger="adding start-up output in Runner or anything before daemonize()" hits=0 status=active -->
@@ -224,23 +173,12 @@ Promoted — the floor is defined once in `composer.json` (`coverage:check`) and
 ### Fork-helper readiness markers must kill the child when the wait fails
 <!-- kb: id=FAQ-030 date=2026-08-17 tags=tests,process trigger="moving a readiness wait into a fork helper, or adding a marker-file wait inside a helper that returns \$pid" hits=0 status=active -->
 
-A fork helper that waits for a child-side readiness marker **inside the helper**
-(before `return $pid`) orphans the child when the wait fails: the exception
-propagates before the test method's `try/finally { killChildBlocking($pid); }`
-is entered, and the child runs forever. Wrap the wait in a try/catch
-(`\PHPUnit\Framework\AssertionFailedError`) that kills the child
-(`killChildBlocking`, which guards with `posix_kill($pid, 0)` so there is no
-double-kill) and re-throws. Helpers that use `waitForFile` do not need the
-wrapper — it does not assert and always returns `$pid`. Introduced in #592.
+A fork helper that waits for a child-side readiness marker **inside the helper** (before `return $pid`) orphans the child when the wait fails: the exception propagates before the test's `try/finally { killChildBlocking($pid); }` is entered, and the child runs forever. Wrap the wait in a try/catch (`AssertionFailedError`) that kills the child (`killChildBlocking` guards with `posix_kill($pid, 0)` against double-kill) and rethrows. Helpers using `waitForFile` need no wrapper — it never asserts and always returns `$pid`. Introduced in #592.
 
 ### `bin/` is inside linter scope in this repo
-<!-- kb: id=FAQ-031 date=2026-08-17 tags=lint,bin,tests trigger="reviewing or editing a file under bin/, or relying on 'bin/ is outside linter scope'" hits=0 status=active -->
+<!-- kb: id=FAQ-031 date=2026-08-17 tags=lint,bin,tests trigger="reviewing or editing a file under bin/, or relying on 'bin/ is outside linter scope'" hits=0 status=promoted gate="phpstan.neon.dist paths + .php-cs-fixer.dist.php Finder both include bin/" -->
 
-Both `phpstan.neon.dist` and `.php-cs-fixer.dist.php` include `bin/`, so
-`composer lint` covers scripts there — the review prompts' blanket claim that
-they don't is wrong for this repo. Still review `bin/` by reading (coverage
-floor excludes it: `phpunit.xml` `<source>` includes only `src/`), but do not
-hand-wave past a lint failure in `bin/`. Verified in #592's review round 1.
+Promoted — `phpstan.neon.dist` and `.php-cs-fixer.dist.php` both include `bin/`, so `composer lint` covers it; coverage excludes it (`phpunit.xml` `<source>` is `src/` only) (verified #592).
 
 ### Underscore header test fixtures need a literal `_` character
 <!-- kb: id=FAQ-012 date=2026-08-09 tags=tests,http,headers trigger="writing a fixture for the underscore-header drop path" hits=0 status=active -->
@@ -255,16 +193,7 @@ decision behind #638.
 ### Initialize `Workerman\Timer` with the test event loop before calling `onWorkerStart`
 <!-- kb: id=FAQ-013 date=2026-08-08 tags=tests,timers trigger="unit-testing ServerWorker timers or the timeout sweeper" hits=0 status=active -->
 
-When invoking `ServerWorker::onWorkerStart` directly in a unit test, initialize
-`Workerman\Timer` with the test event loop first. Production initializes the
-event loop before `onWorkerStart`; direct callback tests otherwise register
-process-level alarm timers instead of timers on the test loop.
-
-Timer-count assertions see an empty loop after `runEventLoopFor`:
-`Select::stop()` calls `deleteAllTimer()`. And because the sweeper's
-activity bookkeeping is second-granular (`time()`), "closed within X"
-timeout tests must run the loop for more than two sweep intervals (e.g.
-2.2 s with a 1 s interval) to avoid second-boundary phase flakes.
+When invoking `ServerWorker::onWorkerStart` directly in a unit test, initialize `Workerman\Timer` with the test event loop first — otherwise it registers process-level alarm timers instead of timers on the test loop. Timer-count assertions see an empty loop after `runEventLoopFor` (`Select::stop()` calls `deleteAllTimer()`), and because sweeper bookkeeping is second-granular (`time()`), "closed within X" tests must run the loop for more than two sweep intervals (e.g. 2.2 s for a 1 s interval) to avoid phase flakes.
 
 ### Byte-oriented test helpers must prove the `chr()` range to PHPStan
 <!-- kb: id=FAQ-014 date=2026-08-08 tags=tests,phpstan trigger="writing a test helper that turns an int into a byte" hits=0 status=active -->
@@ -285,22 +214,7 @@ Promoted — installed by `php bin/install-git-hook.php` and asserted by `tests/
 ### `stop`/`reload`/`status` refuse to signal after a 0.25.0 upgrade
 <!-- kb: id=FAQ-016 date=2026-08-10 tags=control-plane,master,upgrade trigger="control commands refuse to signal a running master" hits=1 status=active -->
 
-Master identification fails closed since 0.25.0 (issue #584): without the
-`.fingerprint` sidecar next to the pid file, control commands refuse to
-signal. Since #657 the operator-facing message distinguishes the causes:
-"Workerman is not running (no pid file found …)" / "(master process \<pid\>
-is not alive)" vs "Cannot verify master process \<pid\>: …" for the
-unverifiable cases (fingerprint mismatch or no sidecar). The fail-closed
-behaviour is unchanged — only the message improved. Bites in three
-situations: (1) upgrade without stopping the old server first — stop
-*before* upgrading; (2) macOS/BSD, where the cmdline fallback does not
-exist — the fingerprint is the only identity check, so a single restart
-restores the control plane; (3) the instant after `start -d` returns,
-before pid file + fingerprint are written — wait for both, then retry.
-Recovery when the old master cannot be verified: PID from the pid file,
-verify with `ps -p <pid> -o pid,comm,args`, kill by hand (never a bare
-`pkill -f WorkerMan`), remove stale pid file, start once. Full guidance:
-UPGRADE.md "Upgrading to 0.25" (issue #640).
+Master identification fails closed since 0.25.0 (#584): without the `.fingerprint` sidecar next to the pid file, control commands refuse to signal. Since #657 the message distinguishes "Workerman is not running …" / "(master process \<pid\> is not alive)" from "Cannot verify master process \<pid\>: …" (fingerprint mismatch or missing sidecar); the fail-closed behaviour is unchanged. Bites when (1) upgrading without stopping the old server first (stop *before* upgrading), (2) on macOS/BSD the cmdline fallback is absent so the fingerprint is the only identity check (one restart restores it), or (3) immediately after `start -d` returns, before pid file + fingerprint exist — wait for both. To recover an unverifiable master: read the PID from the pid file, verify with `ps -p <pid> -o pid,comm,args`, kill by hand (never a bare `pkill -f WorkerMan`), remove the stale pid file, start once. Full guidance: UPGRADE.md "Upgrading to 0.25" (#640).
 
 ## GitHub CLI
 
@@ -314,32 +228,14 @@ Promoted — `bin/pick-issue.php` paginates and `docs/workflow.md` step 1/14 man
 ### Symfony container / service state survives requests
 <!-- kb: id=FAQ-018 date=2026-08-08 tags=long-running,state trigger="stateful services, kernel.reset, request-to-request leakage" hits=0 status=active -->
 
-Workerman keeps the kernel and DI container alive across requests, so any
-stateful service (Doctrine `EntityManager` identity map, buffering Monolog
-handlers, caching repositories, static/global state) leaks data between
-requests. See [docs/troubleshooting.md](../troubleshooting.md) for
-detection and mitigation (`kernel.reset`, `EntityManager::clear()`,
-reload strategies).
-
-The `services_resetter` must also run on kernel/response exceptions,
-independently of `TerminableInterface`: `terminateIfNeeded()` clears request
-references even when no kernel termination is available, and controller
-failure paths reset before rethrowing so the handler can still send its
-error response (#572).
+Workerman keeps the kernel and DI container alive across requests, so stateful services (Doctrine `EntityManager`, buffering Monolog handlers, caching repositories, statics/globals) leak data between requests. See [docs/troubleshooting.md](../troubleshooting.md) for detection and mitigation (`kernel.reset`, `EntityManager::clear()`, reload strategies). The `services_resetter` must also run on kernel/response exceptions, independently of `TerminableInterface`: `terminateIfNeeded()` clears request references even without kernel termination, and failure paths reset before rethrowing so the error response still sends (#572).
 
 ## Documentation claims vs. runtime support
 
 ### README used to list `tcp://` as a supported scheme, but `ListenScheme` rejects it
 <!-- kb: id=FAQ-019 date=2026-08-09 tags=docs,listen-scheme trigger="documenting or changing the supported listen schemes" hits=0 status=active -->
 
-Older README versions and the `listen` node's `info()` text listed `tcp://` among the
-supported URI schemes, but `ListenScheme::fromListen()` throws
-`UnsupportedListenSchemeException` for it — `tests/Worker/ListenSchemeTest.php`
-asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://`, `https://`,
-`ws://` and `wss://` work. The README and the `info()` text now match the enum
-(issue #590); keep them in sync with the
-enum unless real `tcp://` support (a `Tcp` case with transport `tcp` and no
-protocol) is added.
+Older README and the `listen` node's `info()` text listed `tcp://`, but `ListenScheme::fromListen()` throws `UnsupportedListenSchemeException` for it — `tests/Worker/ListenSchemeTest.php` asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://`, `https://`, `ws://`, `wss://` work; README and `info()` now match the enum (#590). Keep them in sync unless real `tcp://` support is added.
 
 ## Scheduler / date-time
 
@@ -377,21 +273,7 @@ stub-configuration time. If the code under test calls `getNextRunDate()` repeate
 ### Mutual by-reference capture (`&$a` / `&$b`) between two closures is a reference cycle
 <!-- kb: id=FAQ-023 date=2026-08-10 tags=closures,gc,memory trigger="closures that reference each other in a long-lived worker" hits=0 status=active -->
 
-Two closures that capture each other **by reference** cannot be freed by
-refcounting — only the cycle collector reclaims them (in a long-lived
-worker: ~2.4 KB uncollectable per download, a full collection every
-~3 300 events, unbounded under `gc_disable()`). Solution: both closures
-capture one small shared state object **by value** (same handle is not
-a cycle) and self-removal uses a flag on the state, not identity against
-the closure. Corollary: never store a closure *inside* an object that
-closure captures (store data, not handlers). Reference:
-`scheduleFileCleanup()` + `FileCleanupState` (issue #573). Second variant,
-from the #563 cycle: a **single self-capturing re-entrant closure**
-(`$next = function () use (&$next, …)`) is also a GC cycle — a per-request
-dispatcher built this way trades allocation pressure for GC pressure. The
-class-based fix is a re-entrant `__invoke()` object that receives itself
-(`$next = $this`) without ever storing it back — refcount cleanup stays
-immediate. Canonical example: `MiddlewareDispatcher` (#563, PR #795).
+Two closures capturing each other **by reference** cannot be freed by refcounting — only the cycle collector reclaims them (in a long-lived worker: ~2.4 KB uncollectable per download, a full collection every ~3 300 events, unbounded under `gc_disable()`). Fix: both closures capture one small shared state object **by value** (same handle is not a cycle) and self-removal uses a flag on the state, not closure identity. Corollary: never store a closure *inside* an object that closure captures (store data, not handlers). See `scheduleFileCleanup()` + `FileCleanupState` (#573). A **single self-capturing re-entrant closure** (`$next = function () use (&$next, …)`) is the same cycle; the class-based fix is a re-entrant `__invoke()` object that receives itself (`$next = $this`) without storing it back — `MiddlewareDispatcher` (#563).
 
 ## Symfony config tree
 
@@ -408,22 +290,16 @@ Symfony's `ArrayNode::finalizeValue()` (vendor/symfony/config/Definition/ArrayNo
 ## Control-character filters (RequestConverter)
 
 ### `strcspn()`/`strpbrk()` masks are literal byte sets — `..` ranges only exist in `addcslashes()`/`trim()`
-<!-- kb: id=FAQ-027 date=2026-08-16 tags=http,headers,security,php-strings trigger="writing or reviewing a byte-mask argument to strcspn()/strpbrk(), or replacing an explicit byte list with a range" hits=0 status=active -->
+<!-- kb: id=FAQ-027 date=2026-08-16 tags=http,headers,security,php-strings trigger="writing or reviewing a byte-mask argument to strcspn()/strpbrk(), or replacing an explicit byte list with a range" hits=0 status=promoted gate="tests/RequestConverterTest.php::testBenchmarkControlCharMaskMatchesProduction + testHeaderControlCharacterBoundaryIsRejectedExceptTab" -->
 
-`strcspn()`/`strpbrk()` treat the mask as a literal set of bytes: `php_charmask` range syntax is not applied, so `"\x00..\x08"` matches only {0x00, '.', 0x08} and would let bytes 1–7 through a control-character filter — a silent security regression. List every byte explicitly, as `RequestConverter::HEADER_VALUE_CONTROL_CHARS` does. By contrast `addcslashes($s, "\x00..\x1F\x7F")` (the `MalformedRequestException` message) *does* honour `..` ranges: do not unify the two forms. Discovered while replacing the #581 regex filter (PR #735).
+Promoted — list every mask byte explicitly (`RequestConverter::HEADER_VALUE_CONTROL_CHARS`); the mask-equality and exhaustive 0–255 boundary tests gate it. `addcslashes()` *does* honour `..` ranges — do not unify the two forms (PR #735).
 
 ## HTTP header parsing / Workerman internals
 
 ### Workerman `header()` joins duplicates with `,`, never trims names, and `rawHead()` excludes the trailing CRLF — count-based gates need three corrections
-<!-- kb: id=FAQ-025 date=2026-08-15 tags=http,headers,tests,vendor trigger="gating or testing header parsing on a raw-head line count, or relying on Workerman header semantics" hits=0 status=active -->
+<!-- kb: id=FAQ-025 date=2026-08-15 tags=http,headers,tests,vendor trigger="gating or testing header parsing on a raw-head line count, or relying on Workerman header semantics" hits=0 status=promoted gate="tests/RequestConverterTest.php::testRawHeadMayHaveDuplicates*" -->
 
-The vendored Workerman (`vendor/workerman/workerman/src/Protocols/Http/Request.php`) header semantics differ from the naive assumption in three ways that all bit the `rawHeadMayHaveDuplicates()` gate in `RequestConverter` (issue #557):
-
-1. **`rawHead()` excludes the trailing CRLF** — `strstr($buffer, "\r\n\r\n", true)`, so `substr_count($rawHead, "\r\n")` is exactly the header-line count; a `- 1` correction disables the optimization (always-true → always slow path). Verify the offset against the vendored `rawHead()` before gating.
-2. **`parseHeaders()` does not trim header names** — `strtolower($parts[0])` verbatim, so `" X-Fold: v"` becomes a distinct `" x-fold"` key: a duplicate for the raw parser, two keys for Workerman. Re-parse whenever `name !== trim(name)`.
-3. **`header()` joins duplicates with a bare `,`** (RFC 7230 uses `, `) — only `count()` matters for the gate, but assertions on the joined value must expect `,`.
-
-A fourth gotcha: middleware runs before conversion, so `header()` contains names absent from the raw head — an attacker could hide a duplicate `Cookie` behind equal counts. The gate subtracts `Http\Request::addedHeaderCount()`. Any future count-based gate must verify all four points against the vendored parser, not the issue brief.
+Promoted — the four corrections are pinned by `testRawHeadMayHaveDuplicates*` in `tests/RequestConverterTest.php`: `rawHead()` drops the trailing CRLF (no `- 1`), `parseHeaders()` does not trim names, duplicates join with a bare `,`, and middleware-added headers need `Http\Request::addedHeaderCount()` (issue #557).
 
 ### phpbench 1.x: only the `aggregate` report exists — and `@ParamProviders` sets arrive as one `array` argument
 <!-- kb: id=FAQ-028 date=2026-08-16 tags=benchmarks,tests,phpbench trigger="running a phpbench benchmark in this repo, or adding a parameterized benchmark method (@ParamProviders)" hits=0 status=active -->
@@ -457,17 +333,7 @@ PyYAML `safe_load` and Ruby `YAML.load` (YAML 1.1) parse the workflow's top-leve
 ### New PHP syntax must be checked against the minimum supported version — local PHP 8.5 hides 8.3-only constructs
 <!-- kb: id=FAQ-037 date=2026-09-08 tags=php82,ci,lint,tests trigger="using a recently-added PHP syntax feature while composer.json allows an older minor" hits=0 status=active -->
 
-Mirror image of FAQ-029: `new readonly class` (anonymous readonly class) is
-PHP 8.3+ and a hard parse error on PHP 8.2, yet it shipped green locally in
-the #563 cycle because every tool ran on PHP 8.5.10 while `composer.json`
-allows `^8.2` and CI runs 8.2 legs — the defect only surfaced in review
-round 2, and the pre-push lint was blind to it. When a diff introduces
-recently-added syntax (anonymous readonly classes, typed class constants,
-property hooks, asymmetric visibility, `#[\Override]`), sweep the touched
-files for version-gated constructs against the *minimum* version. A local
-PHP 8.2 binary (or a lint leg pinned to the lowest matrix version) is the
-gate this lesson wants; until then, the review + the 8.2 CI leg are the
-only nets.
+Mirror image of FAQ-029: `new readonly class` (anonymous readonly class) is PHP 8.3+ and a hard parse error on 8.2, yet shipped green in the #563 cycle because every tool ran on PHP 8.5.10 while `composer.json` allows `^8.2` and CI runs 8.2 legs — caught only in review round 2, with the pre-push lint blind to it. When a diff adds recently-added syntax (anonymous readonly classes, typed class constants, property hooks, asymmetric visibility, `#[\Override]`), sweep the touched files against the *minimum* version. A lint leg pinned to the lowest matrix version is the gate this wants; until then the review + the 8.2 CI leg are the only nets.
 
 ## Testing process-inspection code
 

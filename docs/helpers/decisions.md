@@ -101,24 +101,15 @@ not match the value `getHost()` validates.
 ### Security hardening from the #582–#586 review must stay intact
 <!-- kb: id=DEC-006 date=2026-08-09 tags=security,policy trigger="touching static file serving, headers, master identification or cache permissions" hits=0 status=active -->
 
-The following hardening measures were consolidated through the security
-review (#582–#586 series) — keep them intact when touching the related
-code paths:
+Hardening consolidated through the #582–#586 review — keep intact:
 
-- Cache directory permissions and ownership are checked before `require`
-  (#586, #611).
-- Static file serving allows only an explicit allowlist; backup/credential
-  extensions (`.bak`, `.env`, etc.) are blocked (#580/#582, #603/#609).
+- Cache directory permissions and ownership are checked before `require` (#586, #611).
+- Static file serving allows only an explicit allowlist; backup/credential extensions (`.bak`, `.env`, …) are blocked (#580/#582, #603/#609).
 - Master process identification is hardened (#584, #608).
 - HTTP headers starting with underscore are dropped (#578, #605).
-- Dropped-underscore-header logging is bounded per worker: at most 64
-  distinct client-supplied header names are recorded and logged, then a
-  single suppression notice (issue #638). The map is capped and the
-  suppression flag is a separate scalar, so attacker-sent names can
-  neither grow worker memory nor amplify log writes.
+- Dropped-underscore-header logging is bounded per worker: at most 64 distinct client-supplied names are recorded, then one suppression notice (#638). The capped map plus a separate suppression scalar prevents memory growth and log amplification.
 - SFX redirect policy is unified across modes (#585, #606).
-- Transport-owned headers are stripped to prevent duplicate
-  `Content-Length` (#579, #602).
+- Transport-owned headers are stripped to prevent duplicate `Content-Length` (#579, #602).
 
 Do not loosen these without an explicit, documented reason.
 
@@ -313,39 +304,12 @@ contract-only test kept independent of the shipped implementation.
 ### `StaticFilesMiddleware` is intentionally the innermost pipeline layer (#730)
 <!-- kb: id=DEC-022 date=2026-09-24 tags=middleware,static-files,architecture,http trigger="changing HttpRequestHandler::withRootDirectory() middleware order, or considering hoisting StaticFilesMiddleware" hits=0 status=active -->
 
-`HttpRequestHandler::withRootDirectory()` appends `StaticFilesMiddleware`
-last, so it is the innermost layer: user middleware runs first and may
-short-circuit, authenticate, add CORS/security headers to, or otherwise wrap
-static-file responses before the static layer serves them (#730). Hoisting the
-static layer outward would let it answer requests before user middleware runs,
-silently removing those hooks for static assets. Do not reorder it without a
-decision superseding this entry and acceptance criteria for the behaviour
-change; the ordering is documented in the `withRootDirectory()` docblock.
+`HttpRequestHandler::withRootDirectory()` appends `StaticFilesMiddleware` last (innermost), so user middleware runs first and may short-circuit, authenticate or decorate static-file responses (#730). Hoisting it outward would let static assets bypass those hooks. Do not reorder without a superseding decision and acceptance criteria; the `withRootDirectory()` docblock points here.
 
 ### Upload structure is traversed once — validate-while-converting; do not reintroduce a separate validate() pass (#566)
 <!-- kb: id=DEC-019 date=2026-09-08 tags=http,performance,uploads,validation trigger="touching RequestConverter::processFileNode()/processFileEntry(), FileUploadValidator shape predicates, or thinking about adding a validate() call before conversion" hits=0 status=active -->
 
-`RequestConverter` converts the multipart upload structure in a **single**
-traversal: `processFileNode()`/`processFileEntry()` do shape recognition
-(via `FileUploadValidator::isFileList()`/`isSingleFileEntry()` — the only
-home of shape predicates), required-field checks (`assertRequiredFields()`)
-and `UploadedFile` construction in one pass (#566, PR #797). The old two-pass
-shape (`FileUploadValidator::validate()` followed by `processFiles()`) is
-deliberately gone. Do not reintroduce a standalone `validate()` call before
-conversion: it walks the structure twice and re-opens the drift that let the
-two implementations disagree about what a valid upload looks like. Two
-non-obvious properties to preserve: (1) the converter must mirror the
-validator's three-way dispatch exactly — a scalar-first list such as
-`['not an array']` is classified by `isFileList()` as a *nested associative
-container* (not a file list), so the error is "expected array"/"unrecognized
-structure", never an `UploadedFile` TypeError — assert the guard branches by
-coverage, not by exception assertion, since the same message is reachable
-from three branches; (2) nesting is one level of associative containers, by
-design (matches the validator's pre-existing boundary). Accepted deviation:
-for doubly-corrupt input (dangling `tmp_name` with `UPLOAD_ERR_OK` plus a
-later malformed field) the interleaved order can throw Symfony
-`FileNotFoundException` before `FileUploadValidationException`; unreachable
-via real Workerman, documented in PR #797.
+`RequestConverter` converts multipart uploads in a **single** traversal: `processFileNode()`/`processFileEntry()` do shape recognition (`FileUploadValidator::isFileList()`/`isSingleFileEntry()` — the only home of shape predicates), required-field checks and `UploadedFile` construction in one pass (#566, PR #797). The old two-pass shape (`validate()` then `processFiles()`) is deliberately gone; do not reintroduce a standalone `validate()` — it walks twice and re-opens the drift between the two implementations. Preserve: (1) the converter mirrors the validator's three-way dispatch — a scalar-first list like `['not an array']` is a *nested associative container*, so the error is "expected array"/"unrecognized structure", never an `UploadedFile` TypeError; assert guard branches by coverage, not exception (same message from three branches). (2) Nesting is one level of associative containers by design. Accepted deviation: doubly-corrupt input (dangling `tmp_name` + `UPLOAD_ERR_OK` plus a later malformed field) can throw `FileNotFoundException` before `FileUploadValidationException`; unreachable via real Workerman (PR #797).
 
 ### Exception-hierarchy usage is gated, not just counted (#593)
 <!-- kb: id=DEC-020 date=2026-09-11 tags=lint,ci,architecture,exceptions trigger="adding a new class under src/Exception/ or touching the exception hierarchy" hits=0 status=active -->
