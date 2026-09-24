@@ -499,6 +499,42 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame($config, $loaderC->getWorkermanConfig());
     }
 
+    /**
+     * Regression guard for the umask(0077) pin in warmUp() (#779): a real
+     * warm-up under a permissive process umask must still produce a
+     * non-world-writable cache directory and file. Without the pin the
+     * directory would be 0777 / the file 0666 here.
+     */
+    public function testWarmUpKeepsCacheArtifactsNonWorldWritableUnderPermissiveUmask(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loader->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loader->setProcessConfig([]);
+        $loader->setSchedulerConfig([]);
+        $loader->setBuildConfig([]);
+
+        $previousUmask = umask(0000);
+        try {
+            $loader->warmUp($this->tempDir . '/cache');
+        } finally {
+            umask($previousUmask);
+        }
+
+        $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
+        $cacheDir = dirname($cachePath);
+
+        self::assertDirectoryExists($cacheDir);
+        self::assertFileExists($cachePath);
+
+        $dirPerms = fileperms($cacheDir);
+        $filePerms = fileperms($cachePath);
+        self::assertIsInt($dirPerms);
+        self::assertIsInt($filePerms);
+
+        self::assertSame(0, $dirPerms & 0o002, 'warmUp() must leave the cache directory non-world-writable even under umask 0000');
+        self::assertSame(0, $filePerms & 0o002, 'warmUp() must leave the cache file non-world-writable even under umask 0000');
+    }
+
     public function testValidateCacheFilePermissionsLogsWarningWhenMetadataIsUnreadable(): void
     {
         $logger = new class extends AbstractLogger {
