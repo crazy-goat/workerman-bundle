@@ -22,7 +22,7 @@ your diff, read only those `###` entries — never the whole file.
 - `content-length` — FAQ-001
 - `control-plane` — FAQ-016
 - `coverage` — FAQ-010, FAQ-011
-- `daemon` — FAQ-007, FAQ-008, FAQ-009, FAQ-039
+- `daemon` — FAQ-007, FAQ-008, FAQ-009, FAQ-039, FAQ-040
 - `date-time` — FAQ-021, FAQ-022
 - `deprecation` — FAQ-024, FAQ-029
 - `docker` — FAQ-005
@@ -48,7 +48,7 @@ your diff, read only those `###` entries — never the whole file.
 - `memory` — FAQ-023
 - `middleware` — FAQ-004
 - `mocks` — FAQ-022
-- `permissions` — FAQ-005, FAQ-036
+- `permissions` — FAQ-005, FAQ-036, FAQ-040
 - `php-strings` — FAQ-027
 - `php82` — FAQ-037
 - `php84` — FAQ-029
@@ -66,7 +66,7 @@ your diff, read only those `###` entries — never the whole file.
 - `static-files` — FAQ-004
 - `streamed-response` — FAQ-002
 - `symfony-config` — FAQ-035
-- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037, FAQ-038, FAQ-039
+- `tests` — FAQ-006, FAQ-007, FAQ-008, FAQ-009, FAQ-010, FAQ-011, FAQ-012, FAQ-013, FAQ-014, FAQ-022, FAQ-025, FAQ-028, FAQ-030, FAQ-031, FAQ-032, FAQ-034, FAQ-035, FAQ-037, FAQ-038, FAQ-039, FAQ-040
 - `timers` — FAQ-013
 - `triage` — FAQ-017
 - `upgrade` — FAQ-016
@@ -154,6 +154,11 @@ pipe under `proc_open` (SIGPIPE) — the daemon never started and
 stop/reload commands failed. `Worker::log()` is equally unusable there: its
 `safeEcho()` path reads `Worker::$outputStream`, which is only initialized
 inside `runAll()` (feof() on null).
+
+### Symfony Runtime and `Worker::daemonize()` reset the umask to 0
+<!-- kb: id=FAQ-040 date=2026-09-24 tags=tests,daemon,permissions trigger="trying to control file modes in the test daemon by setting umask in index.php or the bootstrap" hits=0 status=active -->
+
+`Symfony\Runtime\GenericRuntime::__construct()` calls `umask(0o000)` in debug, and `Workerman\Worker::daemonize()` calls `umask(0)` before forking workers, so setting `umask(0077)` at the top of `tests/App/index.php` (or before starting the daemon) is overwritten before the kernel writes `var/cache`/`var/log`. `tests/App/bootstrap.php` pins the umask for the PHPUnit process and calls `harden_test_var_tree()` **after** `workerman_start()` to chmod the daemon's tree (drop group/other bits on dirs, group/other write on files). See #778.
 
 ### "Address already in use" when running `composer test`
 <!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999/9991" hits=0 status=promoted gate="docs/workflow.md step 7 note + docs/troubleshooting.md § Ports used by the test suite document 8888/9999/9991 and php tests/App/index.php stop" -->
