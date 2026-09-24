@@ -88,7 +88,7 @@ function waitForChildren(array &$logMessages, int $expectedCount, int $timeoutMs
 function waitForChildReap(int $childPid, int $timeoutMs = 5000): void
 {
     \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($childPid): bool {
+        function () use ($childPid): bool {
             pcntl_signal_dispatch();
             // Check if child is still alive
             $result = pcntl_waitpid($childPid, $status, WNOHANG);
@@ -310,7 +310,7 @@ function testSchedulerWorkerHandler(): void
     }
 
     $foundNonZero = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($readLogs): bool {
+        function () use ($readLogs): bool {
             pcntl_signal_dispatch();
             foreach ($readLogs() as $log) {
                 if (str_contains($log, 'exited with code 42')) {
@@ -345,7 +345,7 @@ function testSchedulerWorkerHandler(): void
     }
 
     \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($pid2): bool {
+        function () use ($pid2): bool {
             $r = pcntl_waitpid($pid2, $ws, WNOHANG);
 
             return $r === $pid2 || $r === -1;
@@ -380,7 +380,7 @@ function testSchedulerWorkerHandler(): void
     posix_kill($pid3, SIGTERM);
 
     $foundKill = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($readLogs, $logCountBefore): bool {
+        function () use ($readLogs, $logCountBefore): bool {
             pcntl_signal_dispatch();
             $newLogs = array_slice($readLogs(), $logCountBefore);
             foreach ($newLogs as $log) {
@@ -602,7 +602,7 @@ function testSigkillNormalWhenGrpc(): void
     }
 
     $reaped = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($pid): bool {
+        function () use ($pid): bool {
             pcntl_signal_dispatch();
             // The handler reaps the child silently (normal completion), so
             // existence-check the pid instead of waitpid.
@@ -641,7 +641,7 @@ function testSigkillNormalWhenGrpc(): void
     \posix_kill($pid2, \SIGTERM);
 
     $found = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($logFilePath): bool {
+        function () use ($logFilePath): bool {
             pcntl_signal_dispatch();
             $log = (string) file_get_contents($logFilePath);
 
@@ -693,7 +693,7 @@ function testSigkillWarnsWithoutGrpc(): void
     }
 
     $found = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function () use ($logFilePath): bool {
+        function () use ($logFilePath): bool {
             pcntl_signal_dispatch();
 
             return str_contains((string) file_get_contents($logFilePath), 'was killed by signal 9');
