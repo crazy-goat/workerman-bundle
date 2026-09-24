@@ -156,14 +156,14 @@ stop/reload commands failed. `Worker::log()` is equally unusable there: its
 inside `runAll()` (feof() on null).
 
 ### "Address already in use" when running `composer test`
-<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999" hits=0 status=promoted gate="docs/workflow.md step 7 note + docs/troubleshooting.md document ports 8888/9999 and php tests/App/index.php stop" -->
+<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999/9991" hits=0 status=promoted gate="docs/workflow.md step 7 note + docs/troubleshooting.md § Ports used by the test suite document 8888/9999/9991 and php tests/App/index.php stop" -->
 
-Promoted — ports 8888/9999 and `php tests/App/index.php stop` are documented in `docs/workflow.md` step 7 and `docs/troubleshooting.md`.
+Promoted — ports 8888/9999/9991 and `php tests/App/index.php stop` are documented in `docs/workflow.md` step 7 and `docs/troubleshooting.md` § "Ports used by the test suite".
 
 ### How the test suite works
 <!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=promoted gate="composer.json test scripts + docs/workflow.md step 7" -->
 
-Promoted — the three scripts live in `composer.json`; ports 8888/9999 and the daemon stop command in `docs/workflow.md` step 7 / `docs/troubleshooting.md`. Gotcha that survives here: on slow hosts (grpc/macOS) Composer's 300 s process timeout can kill `phpunit` mid-run — raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test`.
+Promoted — the three scripts live in `composer.json`; ports 8888/9999/9991 and the daemon stop command in `docs/workflow.md` step 7 / `docs/troubleshooting.md`. Gotcha that survives here: on slow hosts (grpc/macOS) Composer's 300 s process timeout can kill `phpunit` mid-run — raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test`.
 
 ### CI enforces an 80% line-coverage floor
 <!-- kb: id=FAQ-011 date=2026-08-08 tags=tests,coverage,ci trigger="adding logic that needs coverage" hits=0 status=promoted gate="composer.json coverage:check + tests/CoverageCiGateTest.php" -->

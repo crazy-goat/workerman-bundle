@@ -330,7 +330,7 @@ composer lint
 # Auto-fix fixable issues (php-cs-fixer, rector, kb-lint --fix)
 composer lint-fix
 
-# Run tests (boots a real Workerman daemon on ports 8888 and 9999)
+# Run tests (boots a real Workerman daemon on ports 8888, 9999 and 9991)
 composer test
 
 # (Optional) Verify the coverage gate locally — requires PCOV or Xdebug:
@@ -343,9 +343,10 @@ composer coverage:check
 > matrix leg. If your PR adds meaningful logic, verify the gate locally so CI
 > doesn't tell you first.
 
-> **Note:** `composer test` boots a real Workerman daemon binding ports 8888
-> and 9999 for E2E tests. If you see "Address already in use" errors, ensure
-> those ports are free. To stop the server manually if tests were interrupted:
+> **Note:** `composer test` boots a real Workerman daemon binding ports **8888,
+> 9999 and 9991** for E2E tests (9991 is the middleware dispatch-contract
+> server). If you see "Address already in use" errors, ensure all three are
+> free. To stop the server manually if tests were interrupted:
 > `php tests/App/index.php stop`
 
 After `composer lint-fix`, commit any fixes:
