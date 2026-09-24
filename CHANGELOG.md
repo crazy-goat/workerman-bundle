@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Regression test asserting `ConfigLoader::warmUp()` keeps the produced cache directory and file non-world-writable even under a permissive umask (#779)
 - `file_monitor.polling_interval` and `file_monitor.max_files_per_tick` configuration keys for the inotify-less polling fallback, defaulting to the previous hardcoded 3 s / 500 entries (#734)
 
 ### Changed
