@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-29
+
 ### Added
 
 - Regression test asserting `ConfigLoader::warmUp()` keeps the produced cache directory and file non-world-writable even under a permissive umask (#779)
