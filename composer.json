@@ -44,7 +44,7 @@
     },
     "require-dev": {
         "dragonmantank/cron-expression": "^3.4",
-        "guzzlehttp/guzzle": "^7.8",
+        "guzzlehttp/guzzle": "^8.2",
         "php-cs-fixer/shim": "^3.75",
         "phpbench/phpbench": "^1.2",
         "phpstan/phpstan": "2.2.8",

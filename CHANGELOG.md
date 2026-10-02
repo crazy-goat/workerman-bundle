@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI runs the shared `changes` and `docs` jobs, a `lint` job that only runs `bin/lint.sh`, test jobs gated on code changes and a `ci-ok` aggregator, which replaces the `ci` check (#859)
 - `release.yaml` builds the GitHub Release notes from the CHANGELOG section of the tag with `gh release create --verify-tag` instead of a third-party action (#859)
 - `bin/pick-issue.sh`, `bin/worktree.sh`, `bin/worktree-done.sh` and `docs/workflow.md` are the shared copies from crazy-goat/.github; the coder and review agents talk through the gitignored `findings.md` and `review.md` (#859)
+- Dev dependency `guzzlehttp/guzzle` is bumped to `^8.2`; `WorkermanCommandTest` builds `NetworkException`/`NetworkTimeoutException` instead of the removed handler-context constructors (#873)
 
 ### Removed
 

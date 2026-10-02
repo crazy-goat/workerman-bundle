@@ -8,6 +8,8 @@ use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\NetworkException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -100,10 +102,10 @@ final class WorkermanCommandTest extends KernelTestCase
     {
         $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
         $handler = new MockHandler([
-            new ConnectException('Connection refused', $request, null, ['errno' => 7]),
-            new ConnectException('Operation timed out', $request, null, ['errno' => 28]),
-            new ConnectException('Empty reply from server', $request, null, ['errno' => 52]),
-            new RequestException('Connection reset by peer', $request, null, null, ['errno' => 56]),
+            new ConnectException('Connection refused', $request),
+            new NetworkTimeoutException('Operation timed out', $request),
+            new NetworkException('Empty reply from server', $request),
+            new NetworkException('Connection reset by peer', $request),
             new Response(200),
         ]);
 
@@ -118,7 +120,7 @@ final class WorkermanCommandTest extends KernelTestCase
     {
         $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
         $handler = new MockHandler([
-            new RequestException('Connection reset by peer', $request, null, null, ['errno' => 56]),
+            new NetworkException('Connection reset by peer', $request),
             new Response(200),
         ]);
 
@@ -149,7 +151,7 @@ final class WorkermanCommandTest extends KernelTestCase
     public function testReloadHttpReadinessDoesNotRetryUnexpectedTransportError(): void
     {
         $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
-        $error = new RequestException('Malformed response', $request, null, null, ['errno' => 8]);
+        $error = new RequestException('Malformed response', $request);
         $handler = new MockHandler([$error, new Response(200)]);
         $this->expectExceptionObject($error);
 
@@ -171,13 +173,10 @@ final class WorkermanCommandTest extends KernelTestCase
                     'connect_timeout' => 0.2,
                     'timeout' => 1,
                 ]);
-            } catch (ConnectException | RequestException $exception) {
-                // cURL: connect failure, timeout, empty reply, receive/reset failure.
-                // Do not hide HTTP responses or unrelated transport/configuration errors.
-                if (($exception instanceof RequestException && $exception->hasResponse())
-                    || !in_array($exception->getHandlerContext()['errno'] ?? null, [7, 28, 52, 56], true)) {
-                    throw $exception;
-                }
+            } catch (NetworkException $exception) {
+                // Guzzle 8 transport failures without a response: connect failure, timeout,
+                // empty reply, receive/reset failure. HTTP responses and other
+                // RequestException types are not caught and propagate.
                 $lastError = $exception->getMessage();
 
                 return false;
