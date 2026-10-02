@@ -20,6 +20,9 @@ ARG APP_GID=1000
 # zip extraction, libzip-dev/libinotifytools-dev as build headers for the PHP
 # extensions below, procps so tests that inspect process state (the daemon
 # start/stop cycle) work as they do on CI's ubuntu-latest.
+# Debian package versions are not pinned: the base image tag already fixes the
+# release, and a pinned patch version would break the build on the next security update.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
@@ -58,7 +61,7 @@ WORKDIR /app
 # copy so the image can run as app without root, matching the production
 # guidance in docs/security.md ("Containerised deployments").
 RUN groupadd -g "${APP_GID}" app \
-    && useradd -u "${APP_UID}" -g app -m -s /bin/bash app
+    && useradd -l -u "${APP_UID}" -g app -m -s /bin/bash app
 
 # Copy the repository and install dependencies. --no-scripts skips the
 # post-install git-hook installer (no host git repo inside the build) and

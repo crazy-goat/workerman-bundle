@@ -3,12 +3,10 @@
 declare(strict_types=1);
 
 /**
- * Installs the pre-push hook (see bin/README.md and docs/workflow.md).
+ * Installs the pre-push hook (see bin/README.md and AGENTS.md).
  *
- * The hook runs `composer lint`, the canonical entry point (DEC-008), and
- * nothing else. The proof of work is four plain Markdown files a human reads
- * during review — there is nothing here for a script to verify, so there is
- * no gate to run.
+ * The hook runs `composer lint`, which calls `bin/lint.sh` (DEC-008), and
+ * nothing else. The hard gate is `ci-ok` in CI.
  */
 $hookContent = <<<HOOK
     #!/bin/bash

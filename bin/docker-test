@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# docker-test — run the workerman-bundle test suite (and coverage/lint) in the
+# docker-test — run the workerman-bundle test suite (and coverage) in the
 # PHP 8.2 Docker image, bind-mounting the working tree so edits are picked up
 # without a rebuild. Named volumes persist vendor/ and var/ across runs.
 #
@@ -21,7 +21,7 @@ usage: docker-test [COMMAND] [--build] [--build-arg KEY=VALUE ...]
 Run a command in the ${IMAGE} image with the working tree bind-mounted.
 
   COMMAND     composer script to run (default: test)
-              e.g. test, test:coverage, coverage:check, lint, install, bench
+              e.g. test, test:coverage, coverage:check, install, bench
   --build     build (or rebuild) the image first, then run
   --build-arg KEY=VALUE
               forwarded to 'docker build' (e.g. APP_UID=\$(id -u) APP_GID=\$(id -g))

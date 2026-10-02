@@ -101,17 +101,10 @@
             "php bin/check-changelog.php"
         ],
         "lint-fix": [
-            "vendor/bin/php-cs-fixer fix -v",
-            "vendor/bin/rector process",
-            "php bin/kb-lint.php --fix"
+            "bin/lint.sh --fix"
         ],
         "lint": [
-            "vendor/bin/php-cs-fixer fix -v --dry-run",
-            "vendor/bin/phpstan",
-            "vendor/bin/rector process --dry-run",
-            "php bin/kb-lint.php",
-            "php bin/check-changelog.php",
-            "php bin/check-exception-usage.php"
+            "bin/lint.sh"
         ],
         "kb-lint": [
             "php bin/kb-lint.php"
