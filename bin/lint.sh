@@ -42,8 +42,6 @@ need() {
 run_shellcheck() { need shellcheck && shell_scripts | xargs -0 -r shellcheck; }
 run_hadolint() { need hadolint && dockerfiles | xargs -0 -r hadolint; }
 
-export PHP_CS_FIXER_IGNORE_ENV=1
-
 if [ "$FIX" = 1 ]; then
     vendor/bin/rector process
     vendor/bin/php-cs-fixer fix -v
@@ -51,7 +49,13 @@ if [ "$FIX" = 1 ]; then
 fi
 
 step "composer validate" composer validate --strict
-step "composer audit" composer audit
+# composer audit needs the network and a new upstream advisory fails it on any branch, so
+# the pre-push hook sets LINT_SKIP_AUDIT=1; CI and a plain run always audit (DEC-008).
+if [ "${LINT_SKIP_AUDIT:-0}" = 1 ]; then
+    echo "==> composer audit (skipped: LINT_SKIP_AUDIT=1)"
+else
+    step "composer audit" composer audit
+fi
 step "php-cs-fixer" vendor/bin/php-cs-fixer fix -v --dry-run --diff
 step "phpstan" vendor/bin/phpstan analyse --no-progress
 step "rector" vendor/bin/rector process --dry-run

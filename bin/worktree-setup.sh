@@ -9,8 +9,5 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# --no-scripts: the post-install git-hook installer expects a `.git` directory, but
-# in a worktree `.git` is a file. The pre-push hook is shared by all worktrees and is
-# installed from the main checkout.
-composer install --no-interaction --prefer-dist --no-scripts
+composer install --no-interaction --prefer-dist
 mkdir -p var

@@ -171,7 +171,8 @@ A check inside `lint` must be **safe to run at any point in a cycle**. Composer
 aborts an array script on the first non-zero command, so a check that can fail
 mid-cycle blocks every push on every branch — the `--no-verify` failure mode
 the pre-push hook exists to avoid. A check that cannot meet that bar does not
-belong in `lint`.
+belong in `lint`. `composer audit` is the exception that proves it: it needs the
+network, so the hook runs `LINT_SKIP_AUDIT=1 composer lint` and CI audits.
 
 ### The merging maintainer is the only writer of this knowledge base
 <!-- kb: id=DEC-009 date=2026-10-02 tags=knowledge-base,process,policy trigger="learning something worth recording during implementation or review" hits=0 status=active -->

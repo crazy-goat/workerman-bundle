@@ -14,7 +14,8 @@ For the Workerman server commands, use your **application's** `bin/console`
 
 ### `install-git-hook.php`
 
-Installs a pre-push git hook that runs `composer lint` before each push. The
+Installs a pre-push git hook that runs `LINT_SKIP_AUDIT=1 composer lint` before each push
+(`composer audit` needs the network, so only CI and a plain `bin/lint.sh` run it). The
 hook is automatically installed by Composer via the `post-install-cmd` and
 `post-update-cmd` scripts.
 
