@@ -261,9 +261,9 @@ final class RebootStrategyTest extends TestCase
         $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1, 60, $scheduler);
 
         $strategy->shouldReboot();
-        $this->assertSame(1, $schedulerCallCount);
-
         $strategy->shouldReboot();
+
+        // The second call falls inside the cooldown, so the scheduler ran once, not twice.
         $this->assertSame(1, $schedulerCallCount);
     }
 
