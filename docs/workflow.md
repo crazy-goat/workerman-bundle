@@ -50,11 +50,25 @@ score breakdown. You still make the final pick. Blocked issues
 
 ```bash
 bin/worktree.sh <issue-number>          # optional 2nd argument: feat|fix|docs|refactor|test|chore
-cd ../<repo>-worktrees/issue-<N>
+cd <worktree path printed by the script>
 ```
 
-The script fetches the default branch and creates the worktree
-`../<repo>-worktrees/issue-<N>` on branch `<type>/issue-<N>-<slug>`. It also:
+The script fetches the default branch and creates a worktree on branch
+`<type>/issue-<N>-<slug>`. You choose where it goes; the first match wins:
+
+1. `--dir <path>`: exactly `<path>` (a relative path is relative to where you are),
+2. `WORKTREES_DIR=<dir>` in the environment: `<dir>/<repo>/issue-<N>`,
+3. a `.worktrees` directory next to the clone (a workspace with several clones side by
+   side): `../.worktrees/<repo>/issue-<N>`,
+4. otherwise: `../<repo>-worktrees/issue-<N>`.
+
+`bin/worktree-done.sh` finds the worktree by its branch name, so any location works. The
+scripts are a convenience: a worktree you create yourself is fine, as long as its branch
+is named `<type>/issue-<N>-<slug>` (the cleanup looks for `/issue-<N>-`) and the rest of
+this process is followed.
+
+The main checkout stays on the default branch and is not edited; it is for reading only.
+The script also:
 
 - creates empty `findings.md` and `review.md` (both gitignored),
 - writes `.env.worktree` with a unique `COMPOSE_PROJECT_NAME` and a free host port for
@@ -219,7 +233,7 @@ Every repo must allow several worktrees to build and test at the same time.
 ## Checklist
 
 - [ ] Issue picked with `bin/pick-issue.sh`; it has `type:*`, `priority:*` and a milestone
-- [ ] Work done in a worktree from `bin/worktree.sh`, branch `<type>/issue-<N>-<slug>`
+- [ ] Work done in a worktree (not the main checkout), branch `<type>/issue-<N>-<slug>`
 - [ ] Tests added, all checks pass in the worktree
 - [ ] `CHANGELOG.md` and docs updated
 - [ ] Committed but not pushed before the review accepted
