@@ -1,3 +1,0 @@
-# Findings — Review
-
-No findings.
