@@ -72,8 +72,8 @@ or relaxing the PHPStan level to make a check pass is forbidden; report the conf
 
 ## Worktrees
 
-`bin/worktree.sh <issue>` runs `bin/worktree-setup.sh`, which only runs `composer install
---no-scripts` and creates `var/`. The repository has no compose file, no container is started
+`bin/worktree.sh <issue>` runs `bin/worktree-setup.sh`, which runs `composer install`
+(this also installs the shared pre-push hook) and creates `var/`. The repository has no compose file, no container is started
 and no host port is published. If you add one, use `"${NAME_PORT:-N}:N"` and no
 `container_name`, so that worktrees can run side by side.
 

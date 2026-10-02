@@ -26,7 +26,7 @@ see [docs/workflow.md](docs/workflow.md).
 
 ### Pre-Push Hook
 
-A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` (which calls `bin/lint.sh`) before each push to catch issues early.
+A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` (which calls `bin/lint.sh`) before each push to catch issues early. The hook sets `LINT_SKIP_AUDIT=1`, so `composer audit` runs only in CI.
 
 See [`bin/README.md`](bin/README.md) for details on the hook script.
 

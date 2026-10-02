@@ -224,7 +224,7 @@ final class BinDirectoryTest extends TestCase
             }
 
             $content = (string) file_get_contents($this->projectDir . '/' . $file);
-            foreach (['proof_of_work', 'pick-issue.php', 'gh-branch', 'findings-coder.md', 'findings-review.md'] as $removed) {
+            foreach (['proof_of_work', 'pick-issue.php', 'gh-branch', 'findings-coder.md', 'findings-review.md', 'process-changelog', 'process-notices'] as $removed) {
                 $this->assertStringNotContainsString($removed, $content, $file . ' still mentions the removed ' . $removed);
             }
         }

@@ -25,7 +25,7 @@ $gitHookDir = $resolved !== '' ? $resolved : __DIR__ . '/../.git/hooks';
 $prePushPath = $gitHookDir . '/pre-push';
 
 if (!is_dir($gitHookDir)) {
-    echo "Error: .git/hooks directory not found\n";
+    echo "Error: git hooks directory not found: {$gitHookDir}\n";
     exit(1);
 }
 
