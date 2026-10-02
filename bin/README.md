@@ -19,7 +19,7 @@ hook is automatically installed by Composer via the `post-install-cmd` and
 `post-update-cmd` scripts.
 
 A lint failure blocks the push. That is the whole hook — there is nothing else
-in it, and the hard gate is still CI.
+in it, and the hard gate is still CI (`ci-ok`).
 
 **Manual reinstall:**
 ```bash
@@ -54,8 +54,8 @@ reference — except the entries frozen in the script's
 structure — and an unterminated fence is reported at its opening line instead
 of producing misleading downstream messages. References are matched against
 prose only: inline-code spans are stripped and
-an anchor-style reference (`[x]` followed by `(#123)`) does not count. Wired into `composer lint`, so
-the pre-push hook and the CI Lint job run it too;
+an anchor-style reference (`[x]` followed by `(#123)`) does not count. Wired into `bin/lint.sh`, so
+the pre-push hook and the CI lint job run it too;
 `tests/ChangelogStructureTest.php` drives the same script as a subprocess
 against synthetic fixtures.
 
@@ -97,61 +97,33 @@ Exit codes: 0 = every type is referenced, 1 = one or more unused types,
 does not match `InvalidCacheDirectoryException`; a `use` import counts as a
 reference, and a self-reference inside the class's own file does not.
 
-### `gh-branch`
+### `lint.sh`
 
-Creates or switches to the `<type>/issue-<N>-<slug>` branch for a GitHub issue,
-so the branch name never needs to be invented by hand or by an LLM (see
-`docs/workflow.md`, step 2). The type is inferred from a `[Type]` title prefix
-(`[Bug]`→`fix`, `[Feat]`→`feat`, `[Tests]`→`test`, `[Process]`→`process`, …),
-then from issue labels (`bug`/`security`→`fix`, `enhancement`→`feat`,
-`documentation`→`docs`, `process`→`process`, …), and defaults to `fix`; an
-explicit type argument always wins. The branch is created from the **fresh**
-default remote branch (never from a stale local `master`).
+Runs every static analysis, linter and formatter check: `composer validate --strict`,
+`composer audit`, PHP-CS-Fixer (dry run), PHPStan, Rector (dry run), `kb-lint.php`,
+`check-changelog.php`, `check-exception-usage.php`, `shellcheck` on every shell script
+(including extensionless ones such as `docker-test`) and `hadolint` on the Dockerfile.
+It runs every step, even after one failed, and exits non-zero if any failed. A missing
+tool (`shellcheck`, `hadolint`) is a failure. `composer lint` calls this script.
 
-Allowed types: `fix`, `feat`, `docs`, `perf`, `refactor`, `chore`, `test`,
-`build`, `ci`, `process`. Use `process` for changes to the workflow itself —
-`docs/workflow.md`, `.github/workflows/*` or the `scripts` block of
-`composer.json` — so that "we changed the rules" is visible in the branch name
-rather than buried in a diff.
-
-**Usage:**
 ```bash
-bin/gh-branch 491                 # create/switch to the issue branch
-bin/gh-branch 491 feat            # force type override
-bin/gh-branch 686 process         # workflow/tooling change (protected paths)
-bin/gh-branch 491 --push          # create + push with upstream
-bin/gh-branch 491 --dry-run       # print branch name only (no git mutation)
-bin/gh-branch 491 --force         # create despite dirty tree / non-default branch
+bin/lint.sh            # check only
+bin/lint.sh --fix      # apply Rector, PHP-CS-Fixer and the kb-lint index fix, then check
 ```
 
-Creation is refused on a dirty working tree or when not on the default
-branch — `--force` overrides (uncommitted changes are carried to the new
-branch, exactly as with `git switch -c`).
+The contract is in
+[crazy-goat/.github `standard/lint.md`](https://github.com/crazy-goat/.github/blob/main/standard/lint.md).
 
-Prints the branch name to stdout, so it can be captured
-(`branch=$(bin/gh-branch 491)`). All messages go to stderr.
+### `pick-issue.sh`, `worktree.sh`, `worktree-done.sh`
 
-Requires the `gh` CLI (authenticated); GitHub-issue repos only — nothing
-Jira/decodo related. Exit codes: 0 = ok, 1 = environment/issue/dirty-tree
-error, 2 = usage error.
+Byte-identical copies of the shared scripts from
+[crazy-goat/.github](https://github.com/crazy-goat/.github/tree/main/standard). Do not edit
+them; change the original and copy it again. They pick the next issue, create a worktree
+for it and clean it up. See [docs/workflow.md](../docs/workflow.md).
 
-### `pick-issue.php`
+### `worktree-setup.sh`
 
-Ranks the open issues of the lowest open milestone and prints the top
-candidates with an explainable score, so the next issue can be picked
-cheaply by a human or an LLM (see `docs/workflow.md`, step 1). Exits with
-code 3 — "RELEASE NEEDED" — when the target milestone has no open issues
-left: stop the workflow and cut a release.
-
-**Usage:**
-```bash
-php bin/pick-issue.php                             # top 5 of the lowest milestone
-php bin/pick-issue.php --milestone=0.7.0 --top=5   # explicit milestone
-php bin/pick-issue.php --json                      # machine-readable output
-```
-
-Requires the `gh` CLI (authenticated). Exit codes: 0 = candidates,
-1 = gh/API error, 2 = usage error, 3 = release needed.
+Project hook called by `worktree.sh`: runs `composer install` in the new worktree.
 
 ### `kb-lint.php`
 
@@ -220,7 +192,6 @@ full workflow and the PHP 8.2 / Symfony 6.4 CI-parity rationale.
 bin/docker-test                    # composer test (default)
 bin/docker-test test:coverage      # composer test:coverage
 bin/docker-test coverage:check     # composer coverage:check
-bin/docker-test lint               # composer lint
 bin/docker-test install            # composer install
 bin/docker-test --build            # rebuild the image, then run
 bin/docker-test --build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)

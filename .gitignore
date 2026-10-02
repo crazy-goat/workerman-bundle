@@ -9,3 +9,8 @@ var/
 
 # Subagent harness artifacts
 .pi-subagents/
+
+# Worktree scratch files (docs/workflow.md)
+/findings.md
+/review.md
+/.env.worktree

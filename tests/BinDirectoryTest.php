@@ -32,8 +32,7 @@ final class BinDirectoryTest extends TestCase
 
     /**
      * FAQ-015 is promoted against this test: the hook must run `composer lint`
-     * and a lint failure must actually block the push. It ran unconditionally
-     * before the proof-of-work gate was bolted on beside it, and it still does.
+     * (which calls `bin/lint.sh`) and a lint failure must actually block the push.
      */
     public function testThePrePushHookBlocksOnALintFailure(): void
     {
@@ -65,17 +64,6 @@ final class BinDirectoryTest extends TestCase
         foreach ([$sandbox . '/.git/hooks', $sandbox . '/.git', $sandbox . '/bin', $sandbox] as $dir) {
             rmdir($dir);
         }
-    }
-
-    public function testGhBranchKnowsTheProcessType(): void
-    {
-        $script = file_get_contents($this->projectDir . '/bin/gh-branch');
-        $this->assertNotFalse($script);
-        $this->assertStringContainsString(
-            'TYPES="fix feat docs perf refactor chore test build ci process"',
-            $script,
-        );
-        $this->assertStringContainsString('*,process,*)              TYPE=process ;;', $script);
     }
 
     public function testWaitForPortsScriptExists(): void
