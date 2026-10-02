@@ -8,10 +8,17 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+  # The image is pinned to PHP 8.2 on purpose (the lowest CI leg); only digest and
+  # patch updates are wanted. e2e/composer.json is a fixture app and is not watched.
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: php
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     labels:
       - dependencies
     commit-message:

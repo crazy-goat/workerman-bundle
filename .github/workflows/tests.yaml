@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+# Authenticated Composer downloads avoid the anonymous GitHub API rate limit in every job.
+env:
+  COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ secrets.GITHUB_TOKEN }}"}}'
+
 # A newer pull request run cancels an older one on the same pull request; a
 # master run is never cancelled by a later run, so a post-merge failure stays
 # visible.
@@ -28,7 +32,7 @@ jobs:
       # Narrow on purpose: PHPUnit reads every tracked Markdown file (MarkdownLinkTest,
       # KnowledgeBaseTest, BinDirectoryTest) and bin/lint.sh checks CHANGELOG.md, so only
       # files that no test or linter reads count as documentation.
-      docs-regex: '^(LICENSE.*|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md)$'
+      docs-regex: '^(LICENSE.*|\.github/ISSUE_TEMPLATE/.*)$'
 
   docs:
     name: Docs
@@ -39,8 +43,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    env:
-      COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ secrets.GITHUB_TOKEN }}"}}'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

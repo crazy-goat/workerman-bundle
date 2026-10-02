@@ -166,7 +166,11 @@ final class GithubWorkflowsTest extends TestCase
         $this->assertStringNotContainsString('composer lint', $content);
         $this->assertStringContainsString('shellcheck/releases/download/v0.11.0/', $content);
         $this->assertStringContainsString('hadolint/releases/download/v2.12.0/', $content);
-        $this->assertStringContainsString('COMPOSER_AUTH:', $content);
+        $this->assertMatchesRegularExpression(
+            '/^env:\n  COMPOSER_AUTH: /m',
+            $this->workflowContent,
+            'COMPOSER_AUTH must be set at workflow level so every composer call is authenticated',
+        );
     }
 
     /**
