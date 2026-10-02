@@ -4,9 +4,9 @@
 the files in your diff, then read only those `###` entries. Do not read the
 whole file.
 
-**Who writes here:** only the retro step. Implementation and review subagents
-*propose* candidate entries in their report — they never append (see
-[README.md](README.md)).
+**Who writes here:** only the person who merges. Implementation and review
+subagents *propose* candidate entries in their report and in `findings.md` —
+they never append (see [README.md](README.md)).
 
 ## Tag index
 
@@ -159,28 +159,31 @@ Lowering it is forbidden outright.
 ### `composer lint` / `lint-fix` are the canonical entry points
 <!-- kb: id=DEC-008 date=2026-08-11 tags=lint,git-hooks,policy trigger="adding a new check, or wiring one into CI or the hook" hits=0 status=active -->
 
-`bin/install-git-hook.php` installs a pre-push hook that runs `composer lint`
-— php-cs-fixer, phpstan, rector (dry-run) and the knowledge-base linter
-(`bin/kb-lint.php`). A new repository-wide check is added to the `lint` script,
+`bin/install-git-hook.php` installs a pre-push hook that runs `composer lint`,
+which calls `bin/lint.sh` — composer validate and audit, php-cs-fixer, phpstan,
+rector (dry-run), the knowledge-base, CHANGELOG and exception-usage checks,
+shellcheck and hadolint. A new repository-wide check is added to `bin/lint.sh`,
 and gets a standalone `composer <name>` script only as a convenience alias;
-nothing invokes the individual tools directly, so `lint` stays the one thing
-CI, the hook and a contributor all run.
+nothing invokes the individual tools directly, so `bin/lint.sh` stays the one
+thing CI, the hook and a contributor all run.
 
 A check inside `lint` must be **safe to run at any point in a cycle**. Composer
 aborts an array script on the first non-zero command, so a check that can fail
 mid-cycle blocks every push on every branch — the `--no-verify` failure mode
 the pre-push hook exists to avoid. A check that cannot meet that bar does not
-belong in `lint`.
+belong in `lint`. `composer audit` is the exception that proves it: it needs the
+network, so the hook runs `LINT_SKIP_AUDIT=1 composer lint` and CI audits.
 
-### The main session is the only writer of this knowledge base
-<!-- kb: id=DEC-009 date=2026-08-11 tags=knowledge-base,process,policy trigger="learning something worth recording during implementation or review" hits=0 status=active -->
+### The merging maintainer is the only writer of this knowledge base
+<!-- kb: id=DEC-009 date=2026-10-02 tags=knowledge-base,process,policy trigger="learning something worth recording during implementation or review" hits=0 status=active -->
 
 Two writers (coder and review) produced duplicates, unlabelled entries and a
 file that had to be read in full for every task, so since issue #686 the
-knowledge base has a **single writer**: the main session, at the end of the
-cycle (workflow step 14). Implementation and review subagents *propose*
-candidate entries in their report — id, tags, trigger, one paragraph — and the
-main session decides what lands. Reading is
+knowledge base has a **single writer**. Since the move to the shared
+`docs/workflow.md` that writer is the person who merges: implementation and
+review subagents *propose* candidate entries in their report and in
+`findings.md` — id, tags, trigger, one paragraph — and the entry lands in a
+pull request when the findings are handled (workflow step 7). Reading is
 unchanged and mandatory: tag index first, then only the entries matching the
 files in the diff. `bin/kb-lint.php` enforces front matter, unique ids, index
 freshness and the line budget; the decay rules live in
@@ -208,7 +211,7 @@ GitHub will not create an empty-diff PR. A draft-first step therefore needed
 a junk seed commit that polluted history, and CI on the empty branch ran the
 full matrix for nothing (the #670 cycle; cancelled by the implementation
 push minutes later). Since #704 (PR #705) the workflow opens the PR only
-after implementation and local gates pass — `docs/workflow.md` step 9. The
+after implementation and local gates pass — `docs/workflow.md` step 5. The
 issue link works regardless: `closingIssuesReferences` comes from the body's
 `Closes #N` line from the first push.
 
@@ -217,9 +220,8 @@ issue link works regardless: `closingIssuesReferences` comes from the body's
 
 GitHub's renderer treats a bare `<word>` in prose as an inline HTML tag and
 renders it as nothing, so a raw `<branch>` in a sentence silently disappears
-from the rendered doc — it bit the #704 edit of `docs/workflow.md`,
-`docs/process-notices.md` and `docs/process-changelog.md` and was fixed by
-backticking. Convention: wrap shell placeholders in backticks everywhere
+from the rendered doc — it bit the #704 edit of the process docs and was
+fixed by backticking. Convention: wrap shell placeholders in backticks everywhere
 outside fenced code blocks. A fence- and backtick-aware scan of the tracked
 `.md` files finds 0 raw occurrences today; keep it that way when editing
 docs — the angle-bracket tokens belong in fenced blocks or backticks, never

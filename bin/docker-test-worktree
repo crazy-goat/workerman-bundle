@@ -18,7 +18,7 @@ IMAGE="workerman-bundle-test"
 
 usage() {
   cat <<EOF
-usage: docker-test-worktree [WORKTREE_PATH] [--publish] [--coverage] [--lint]
+usage: docker-test-worktree [WORKTREE_PATH] [--publish] [--coverage]
 
 Run 'composer test' in ${IMAGE} with the given git worktree bind-mounted.
 Each run gets its own container (own network namespace), so parallel
@@ -31,7 +31,6 @@ worktrees never collide on ports 8888/9999/9991.
                  then wait for Ctrl-C and stop the daemon. For manual curl
                  debugging from the host; no test suite is executed.
   --coverage     run 'composer test:coverage' instead of 'composer test'
-  --lint         run 'composer lint' instead of 'composer test'
 
 vendor/ lives in a per-worktree named volume (wmb-vendor-<basename>) so
 dependencies survive between runs; var/ stays in the worktree itself.
@@ -77,7 +76,6 @@ for ((i = 1; i <= $#; i++)); do
   case "$arg" in
     --publish) PUBLISH=1 ;;
     --coverage) COMMAND="test:coverage" ;;
-    --lint) COMMAND="lint" ;;
     -h | --help) usage; exit 0 ;;
     --*) die_usage "unknown argument: $arg" ;;
     -*)

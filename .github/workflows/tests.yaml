@@ -8,16 +8,40 @@ on:
     - cron: '23 5 * * 1'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Authenticated Composer downloads avoid the anonymous GitHub API rate limit in every job.
+env:
+  COMPOSER_AUTH: '{"github-oauth": {"github.com": "${{ secrets.GITHUB_TOKEN }}"}}'
+
 # A newer pull request run cancels an older one on the same pull request; a
 # master run is never cancelled by a later run, so a post-merge failure stays
 # visible.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The required status check is `ci-ok`. Fork pull requests need a maintainer's approval
+# to run workflows (repository/organisation setting), so no actor check is needed here.
 jobs:
+  changes:
+    name: Changes
+    uses: crazy-goat/.github/.github/workflows/changes.yml@main
+    with:
+      # Narrow on purpose: PHPUnit reads every tracked Markdown file (MarkdownLinkTest,
+      # KnowledgeBaseTest, BinDirectoryTest) and bin/lint.sh checks CHANGELOG.md, so only
+      # files that no test or linter reads count as documentation.
+      docs-regex: '^(LICENSE.*|\.github/ISSUE_TEMPLATE/.*)$'
+
+  docs:
+    name: Docs
+    uses: crazy-goat/.github/.github/workflows/docs-check.yml@main
+
   lint:
     name: Lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,83 +53,27 @@ jobs:
           php-version: '8.2'
           tools: composer:v2
 
-      - name: Validate composer.json
-        run: composer validate --strict
-
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Composer Audit
-        run: composer audit
-
-      - name: Run code style checks
-        run: composer lint
-
-  # A pull request that touches only documentation does not need the nine-leg
-  # tests matrix, root-only permission leg, or benchmark. This job classifies the diff once, so the
-  # heavy jobs can skip themselves while lint (fast, and the only job that
-  # catches a broken workflow YAML) and the ci aggregator still report. The
-  # job runs on every trigger so its dependents never inherit a skip: on
-  # non-pull-request events it always reports docs-only=false.
-  detect-changes:
-    name: Detect changes
-    runs-on: ubuntu-latest
-    needs: lint
-    outputs:
-      docs-only: ${{ steps.classify.outputs.docs-only }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: Classify changed files
-        id: classify
+      - name: Install shellcheck and hadolint
         run: |
           set -euo pipefail
-          # Only pull requests carry the file list needed to decide; pushes,
-          # the weekly schedule and manual dispatch always run the full
-          # matrix (the scheduled run exists to cover master).
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "docs-only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          # Fall back to the PR merge-base when the base sha is unavailable
-          # (for example on a freshly force-pushed branch); an empty base
-          # would make git diff list every file in history.
-          if [ -z "$base" ]; then
-            base="$(git merge-base "$head" "origin/${{ github.base_ref }}" || true)"
-          fi
-          if [ -z "$base" ]; then
-            echo "docs-only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files="$(git diff --name-only "$base" "$head")"
-          # No changed files is not a docs-only change; run the full matrix.
-          if [ -z "$files" ]; then
-            echo "docs-only=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # A change is docs-only when every touched file lives under docs/
-          # or is a Markdown file. A broken workflow YAML under .github/ is
-          # not documentation, so it falls through to the default branch and
-          # keeps the full matrix running.
-          docs_only=true
-          while IFS= read -r file; do
-            case "$file" in
-              docs/*|*.md|*.mdx) ;;
-              *) docs_only=false; break ;;
-            esac
-          done <<< "$files"
-          echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
+            | tar -xJ --strip-components=1 -C "$HOME/.local/bin" shellcheck-v0.11.0/shellcheck
+          curl -fsSL -o "$HOME/.local/bin/hadolint" https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x "$HOME/.local/bin/hadolint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run lint
+        run: bin/lint.sh
 
   tests:
     name: Tests
     runs-on: ubuntu-latest
-    needs: [lint, detect-changes]
-    if: github.event_name != 'schedule' && needs.detect-changes.outputs.docs-only != 'true'
+    needs: [changes, lint]
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -187,8 +155,8 @@ jobs:
   tests-root-permissions:
     name: Tests (root-only cache permissions)
     runs-on: ubuntu-latest
-    needs: lint
-    if: github.event_name != 'schedule'
+    needs: [changes, lint]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -230,52 +198,11 @@ jobs:
             exit 1
           fi
 
-  tests-scheduled:
-    name: Tests (scheduled)
-    runs-on: ubuntu-latest
-    needs: lint
-    if: github.event_name == 'schedule'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - php-version: '8.2'
-            symfony-version: '6.4.*'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
-        with:
-          php-version: ${{ matrix.php-version }}
-          extensions: zip, inotify, pcntl, posix
-          ini-values: phar.readonly=0
-
-      - name: Create var directory
-        run: mkdir -p var
-
-      - name: Update Symfony constraints in composer.json
-        run: |
-          export SYMFONY_VERSION=${{ matrix.symfony-version }}
-          # symfony/deprecation-contracts versions 2.x/3.x only — it has no
-          # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
-          sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
-
-      # Matrix jobs intentionally resolve fresh dependencies after rewriting
-      # Symfony constraints; lint and benchmark install the committed lock.
-      - name: Update dependencies
-        run: composer update --no-interaction --prefer-dist
-
-      - name: Run tests
-        run: composer test
-
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
-    needs: [lint, detect-changes]
-    if: github.event_name != 'schedule' && needs.detect-changes.outputs.docs-only != 'true'
+    needs: [changes, lint]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -292,33 +219,33 @@ jobs:
       - name: Run benchmarks
         run: composer bench
 
-  ci:
-    name: CI
-    needs: [lint, tests, tests-root-permissions, benchmark, tests-scheduled, detect-changes]
-    runs-on: ubuntu-latest
+  # Benchmark is advisory (runner timing varies too much to gate merges on it), so it is
+  # not part of `needs`.
+  ci-ok:
+    name: ci-ok
+    needs: [changes, docs, lint, tests, tests-root-permissions]
     if: always()
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
-      - name: Check test results
+      - name: Check results
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ]; then exit 1; fi
-          docs_only="${{ needs.detect-changes.outputs.docs-only }}"
-          if [ "$docs_only" != "true" ] && [ "${{ github.event_name }}" != "schedule" ] && [ "${{ needs.tests-root-permissions.result }}" != "success" ]; then exit 1; fi
-          # A docs-only pull request intentionally skips the tests and
-          # benchmark jobs; that is a green result, not a failure. On
-          # non-pull-request events detect-changes reports docs-only=false.
-          if [ "$docs_only" = "true" ]; then
-            echo "Docs-only change: tests and benchmark intentionally skipped"
-            exit 0
+          echo "Code changes: $CODE"
+          echo "Results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in failure|cancelled) exit 1 ;; esac
+          done
+          # Documentation-only changes skip the heavy jobs; code changes need all of them.
+          if [ "$CODE" = "true" ]; then
+            for r in $RESULTS; do
+              [ "$r" = "success" ] || exit 1
+            done
           fi
-          # Scheduled runs trim the matrix to a single leg, so the rest of
-          # the tests job is skipped; either tests job succeeding is enough.
-          if [ "${{ needs.tests.result }}" != "success" ] && [ "${{ needs.tests-scheduled.result }}" != "success" ]; then exit 1; fi
-          # Benchmark is intentionally advisory: CI runner timing varies too
-          # much to gate merges on it — log status but do not block merge
-          echo "Benchmark status: ${{ needs.benchmark.result }}"
 
       - name: Open issue on scheduled failure
         if: failure() && github.event_name == 'schedule'

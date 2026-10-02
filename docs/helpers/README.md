@@ -1,6 +1,6 @@
 # Knowledge Base (docs/helpers/)
 
-A persistent, **single-writer** knowledge base. Lessons learned here carry over
+A persistent knowledge base with a **single writer**: the person who merges. Lessons learned here carry over
 to future tasks, so the same mistakes are not made twice and past decisions do
 not need to be re-derived.
 
@@ -22,16 +22,13 @@ which runs inside `composer lint`.
    generated **tag index**. Load the index, pick the tags matching the files in
    your diff, then read only those `###` entries. Reading either file end to end
    is a waste of context and is not what the index is for.
-2. **Only the retro step writes here.** `coder` / `coder-high` and
-   `review` / `review-critical` **propose** candidate entries in their report —
-   title, suggested tags, trigger, one paragraph — and the retro step decides
-   what lands and commits it. Two writers gave us duplicates, unlabelled entries
-   and a file nobody could load selectively (issue #686). The retro step
-   (`docs/workflow.md`, steps 15/16, added by phase 4 of that issue) is the
-   single writer — a subagent that "just appends" outside those two steps is
-   doing the wrong thing. Letting every subagent write directly was itself
-   considered and rejected; see `docs/process-notices.md` (N-05) for the
-   trigger that would reopen the question.
+2. **Only the person who merges writes here.** `coder` / `coder-high` and
+   `review` / `review-critical` **propose** candidate entries in their report and
+   in `findings.md` (title, suggested tags, trigger, one paragraph); when the
+   findings are handled after the merge (workflow step 7) the entry is added in
+   a pull request. Two writers gave us duplicates, unlabelled entries and a file
+   nobody could load selectively (issue #686), so a subagent that "just appends"
+   is doing the wrong thing.
 3. **One topic per entry.** The problem, the solution/decision, optionally an
    issue/PR/commit reference. Do not restate what the README or `docs/` already
    says — `docs/troubleshooting.md` already covers long-running worker state
@@ -68,7 +65,7 @@ so the rest of the entry would render as visible text.
 | `date` | yes | ISO-8601 `YYYY-MM-DD` — when the entry was learned (the referenced issue/PR, or the commit that introduced it) |
 | `tags` | yes | comma-separated `[a-z0-9-]` tags, no spaces; these feed the tag index |
 | `trigger` | yes | quoted phrase answering "when should an agent load this?" |
-| `hits` | yes | how many cycles actually used the entry; the retro increments it |
+| `hits` | yes | how many cycles actually used the entry; the maintainer who uses it increments it |
 | `status` | yes | `active` \| `promoted` \| `stale` |
 | `gate` | only for `promoted` | the test/rule that replaced the entry |
 
@@ -94,7 +91,7 @@ awk '/^### /{p=0} /id=FAQ-002/{p=1} p' docs/helpers/faq.md                  # on
 
 The knowledge base is capped at **300 lines per file** (the generated index does
 not count, nor does the `## Tag index` heading and the blank lines around it).
-`bin/kb-lint.php` warns above that; the retro step brings it back under by
+`bin/kb-lint.php` warns above that; the maintainer brings it back under by
 applying two rules:
 
 - **`promoted`** — the lesson is now encoded as a test, a PHPStan rule or a lint
@@ -102,10 +99,10 @@ applying two rules:
   detail lives in the check itself. `kb-lint` enforces the collapse (at most two
   body lines) and refuses a `promoted` entry without a `gate`.
 - **`stale`** — 0 `hits` over 20 cycles. `kb-lint.php` does not compute this
-  from `hits` itself: the retro is the one that judges an entry stale (0 hits
+  from `hits` itself: the maintainer judges an entry stale (0 hits
   over `STALE_AFTER_CYCLES` cycles) and sets `status=stale`; `kb-lint` then
-  only lists entries already marked that way, in a machine-checkable form the
-  retro can act on, and removes them at the next pass. If nobody loaded it in
+  only lists entries already marked that way, in a machine-checkable form, and
+  they are removed at the next pass. If nobody loaded it in
   20 cycles it is not knowledge, it is sediment.
 
 An entry is never edited in place to say something different: change the

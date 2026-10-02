@@ -3,7 +3,7 @@
 **How to read this file:** load the tag index below, pick the tags that match
 your diff, read only those `###` entries — never the whole file.
 
-**Who writes here:** only the retro step; subagents propose, never append
+**Who writes here:** only the person who merges; subagents propose, never append
 (see [README.md](README.md)).
 
 ## Tag index
@@ -161,14 +161,14 @@ inside `runAll()` (feof() on null).
 `Symfony\Runtime\GenericRuntime::__construct()` calls `umask(0o000)` in debug, and `Workerman\Worker::daemonize()` calls `umask(0)` before forking workers, so setting `umask(0077)` at the top of `tests/App/index.php` (or before starting the daemon) is overwritten before the kernel writes `var/cache`/`var/log`. `tests/App/bootstrap.php` pins the umask for the PHPUnit process and calls `harden_test_var_tree()` **after** `workerman_start()` to chmod the daemon's tree (drop group/other bits on dirs, group/other write on files). See #778.
 
 ### "Address already in use" when running `composer test`
-<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999/9991" hits=0 status=promoted gate="docs/workflow.md step 7 note + docs/troubleshooting.md § Ports used by the test suite document 8888/9999/9991 and php tests/App/index.php stop" -->
+<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999/9991" hits=0 status=promoted gate="AGENTS.md + docs/troubleshooting.md § Ports used by the test suite document 8888/9999/9991 and php tests/App/index.php stop" -->
 
-Promoted — ports 8888/9999/9991 and `php tests/App/index.php stop` are documented in `docs/workflow.md` step 7 and `docs/troubleshooting.md` § "Ports used by the test suite".
+Promoted — ports 8888/9999/9991 and `php tests/App/index.php stop` are documented in `AGENTS.md` and `docs/troubleshooting.md` § "Ports used by the test suite".
 
 ### How the test suite works
-<!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=promoted gate="composer.json test scripts + docs/workflow.md step 7" -->
+<!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=promoted gate="composer.json test scripts + AGENTS.md" -->
 
-Promoted — the three scripts live in `composer.json`; ports 8888/9999/9991 and the daemon stop command in `docs/workflow.md` step 7 / `docs/troubleshooting.md`. Gotcha that survives here: on slow hosts (grpc/macOS) Composer's 300 s process timeout can kill `phpunit` mid-run — raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test`.
+Promoted — the three scripts live in `composer.json`; ports 8888/9999/9991 and the daemon stop command in `AGENTS.md` / `docs/troubleshooting.md`. Gotcha that survives here: on slow hosts (grpc/macOS) Composer's 300 s process timeout can kill `phpunit` mid-run — raise it with `COMPOSER_PROCESS_TIMEOUT=1800 composer test`.
 
 ### CI enforces an 80% line-coverage floor
 <!-- kb: id=FAQ-011 date=2026-08-08 tags=tests,coverage,ci trigger="adding logic that needs coverage" hits=0 status=promoted gate="composer.json coverage:check + tests/CoverageCiGateTest.php" -->
@@ -183,7 +183,7 @@ A fork helper that waits for a child-side readiness marker **inside the helper**
 ### `bin/` is inside linter scope in this repo
 <!-- kb: id=FAQ-031 date=2026-08-17 tags=lint,bin,tests trigger="reviewing or editing a file under bin/, or relying on 'bin/ is outside linter scope'" hits=0 status=promoted gate="phpstan.neon.dist paths + .php-cs-fixer.dist.php Finder both include bin/" -->
 
-Promoted — `phpstan.neon.dist` and `.php-cs-fixer.dist.php` both include `bin/`, so `composer lint` covers it; coverage excludes it (`phpunit.xml` `<source>` is `src/` only) (verified #592).
+Promoted — `phpstan.neon.dist` and `.php-cs-fixer.dist.php` both include `bin/`, so `bin/lint.sh` covers it; coverage excludes it (`phpunit.xml` `<source>` is `src/` only) (verified #592).
 
 ### Underscore header test fixtures need a literal `_` character
 <!-- kb: id=FAQ-012 date=2026-08-09 tags=tests,http,headers trigger="writing a fixture for the underscore-header drop path" hits=0 status=active -->
@@ -224,9 +224,9 @@ Master identification fails closed since 0.25.0 (#584): without the `.fingerprin
 ## GitHub CLI
 
 ### `gh issue list` returns at most 30 issues by default
-<!-- kb: id=FAQ-017 date=2026-08-08 tags=gh,triage trigger="listing or searching GitHub issues" hits=0 status=promoted gate="bin/pick-issue.php paginates; docs/workflow.md mandates --limit > 30" -->
+<!-- kb: id=FAQ-017 date=2026-08-08 tags=gh,triage trigger="listing or searching GitHub issues" hits=0 status=promoted gate="bin/pick-issue.sh paginates; docs/workflow.md step 7 mandates --limit 200" -->
 
-Promoted — `bin/pick-issue.php` paginates and `docs/workflow.md` step 1/14 mandate `--limit > 30` in every triage command.
+Promoted — `bin/pick-issue.sh` paginates and `docs/workflow.md` step 7 mandates `--limit 200` in every triage command.
 
 ## Long-running worker gotchas
 

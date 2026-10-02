@@ -5,7 +5,6 @@
 /phpunit.xml export-ignore
 /.php-cs-fixer.dist.php export-ignore
 /docs/superpowers export-ignore
-/docs/proof_of_work export-ignore
 /.pi export-ignore
 
 # Contributor-only files; keep runtime resources and user-facing documentation.
@@ -15,10 +14,9 @@
 /phpbench.json export-ignore
 /phpstan.neon.dist export-ignore
 /CONTRIBUTING.md export-ignore
+/AGENTS.md export-ignore
 /docs/workflow.md export-ignore
 /docs/release-workflow.md export-ignore
-/docs/process-changelog.md export-ignore
-/docs/process-notices.md export-ignore
 /docs/helpers export-ignore
 /Dockerfile export-ignore
 /.dockerignore export-ignore

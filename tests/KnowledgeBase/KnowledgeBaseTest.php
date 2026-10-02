@@ -208,11 +208,13 @@ final class KnowledgeBaseTest extends TestCase
         self::assertIsArray($composer['scripts'] ?? null);
 
         $scripts = $composer['scripts'];
-        self::assertIsArray($scripts['lint'] ?? null);
-        self::assertContains('php bin/kb-lint.php', $scripts['lint'], 'composer lint must run the knowledge-base linter');
+        self::assertSame(['bin/lint.sh'], $scripts['lint'] ?? null, 'composer lint must delegate to bin/lint.sh');
+        self::assertSame(['bin/lint.sh --fix'], $scripts['lint-fix'] ?? null);
 
-        self::assertIsArray($scripts['lint-fix'] ?? null);
-        self::assertContains('php bin/kb-lint.php --fix', $scripts['lint-fix']);
+        $lint = file_get_contents($this->projectDir . '/bin/lint.sh');
+        self::assertIsString($lint);
+        self::assertStringContainsString('php bin/kb-lint.php', $lint, 'bin/lint.sh must run the knowledge-base linter');
+        self::assertStringContainsString('php bin/kb-lint.php --fix', $lint);
 
         self::assertIsArray($scripts['kb-lint'] ?? null);
         self::assertContains('php bin/kb-lint.php', $scripts['kb-lint']);
@@ -231,25 +233,19 @@ final class KnowledgeBaseTest extends TestCase
         );
     }
 
-    public function testWorkflowDocumentsTheAgentMapAndTheSingleWriterRule(): void
+    public function testAgentsMdDocumentsTheAgentMapAndTheSingleWriterRule(): void
     {
-        $content = file_get_contents($this->projectDir . '/docs/workflow.md');
+        $content = file_get_contents($this->projectDir . '/AGENTS.md');
 
         self::assertIsString($content);
-        self::assertStringContainsString('## Agent Map', $content);
+        self::assertStringContainsString('## Agents', $content);
 
         foreach (self::PROJECT_AGENTS as $agent) {
             self::assertStringContainsString('`' . $agent . '`', $content, $agent . ' is missing from the agent map');
         }
 
-        // The map names roles, not a harness. It used to point at `.pi/agents/`,
-        // which welded the documented process to one specific tool.
-        self::assertStringNotContainsString(
-            '.pi/agents/',
-            $content,
-            'the agent map must name roles, not one harness\'s prompt directory',
-        );
         self::assertStringContainsString('review-critical` is mandatory', $content);
+        self::assertStringContainsString('Subagents do not edit `docs/helpers/`', $content);
         self::assertStringNotContainsString(
             'append learnings after finishing',
             $content,
@@ -262,7 +258,7 @@ final class KnowledgeBaseTest extends TestCase
         $content = file_get_contents($this->projectDir . '/docs/helpers/README.md');
 
         self::assertIsString($content);
-        self::assertStringContainsString('Only the retro step writes here', $content);
+        self::assertStringContainsString('Only the person who merges writes here', $content);
         self::assertStringContainsString('<!-- kb: id=', $content, 'the front-matter grammar must be documented');
         self::assertStringContainsString('## Decay', $content);
         self::assertStringContainsString('promoted', $content);

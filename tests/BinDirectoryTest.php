@@ -32,14 +32,13 @@ final class BinDirectoryTest extends TestCase
 
     /**
      * FAQ-015 is promoted against this test: the hook must run `composer lint`
-     * and a lint failure must actually block the push. It ran unconditionally
-     * before the proof-of-work gate was bolted on beside it, and it still does.
+     * (which calls `bin/lint.sh`) and a lint failure must actually block the push.
      */
     public function testThePrePushHookBlocksOnALintFailure(): void
     {
         $installer = file_get_contents($this->projectDir . '/bin/install-git-hook.php');
         $this->assertNotFalse($installer);
-        $this->assertStringContainsString('composer lint || exit 1', $installer);
+        $this->assertStringContainsString('LINT_SKIP_AUDIT=1 composer lint || exit 1', $installer);
     }
 
     public function testTheInstalledHookIsExecutableAndRunsLint(): void
@@ -56,7 +55,7 @@ final class BinDirectoryTest extends TestCase
         $hook = $sandbox . '/.git/hooks/pre-push';
         $this->assertFileExists($hook);
         $this->assertTrue(is_executable($hook), 'a pre-push hook git cannot execute is no hook at all');
-        $this->assertStringContainsString('composer lint || exit 1', (string) file_get_contents($hook));
+        $this->assertStringContainsString('LINT_SKIP_AUDIT=1 composer lint || exit 1', (string) file_get_contents($hook));
 
         foreach ([$hook, $sandbox . '/bin/install-git-hook.php'] as $file) {
             unlink($file);
@@ -65,17 +64,6 @@ final class BinDirectoryTest extends TestCase
         foreach ([$sandbox . '/.git/hooks', $sandbox . '/.git', $sandbox . '/bin', $sandbox] as $dir) {
             rmdir($dir);
         }
-    }
-
-    public function testGhBranchKnowsTheProcessType(): void
-    {
-        $script = file_get_contents($this->projectDir . '/bin/gh-branch');
-        $this->assertNotFalse($script);
-        $this->assertStringContainsString(
-            'TYPES="fix feat docs perf refactor chore test build ci process"',
-            $script,
-        );
-        $this->assertStringContainsString('*,process,*)              TYPE=process ;;', $script);
     }
 
     public function testWaitForPortsScriptExists(): void
@@ -222,5 +210,23 @@ final class BinDirectoryTest extends TestCase
         $content = file_get_contents($this->projectDir . '/README.md');
         $this->assertNotFalse($content);
         $this->assertStringContainsString('License-MIT', $content);
+    }
+
+    public function testNoTrackedDocMentionsTheRemovedProcessTooling(): void
+    {
+        $files = [];
+        exec('git -C ' . escapeshellarg($this->projectDir) . ' ls-files -- ' . escapeshellarg('*.md'), $files, $code);
+        $this->assertSame(0, $code, 'git ls-files must succeed');
+
+        foreach ($files as $file) {
+            if ($file === 'CHANGELOG.md') {
+                continue; // history legitimately names removed tools
+            }
+
+            $content = (string) file_get_contents($this->projectDir . '/' . $file);
+            foreach (['proof_of_work', 'pick-issue.php', 'gh-branch', 'findings-coder.md', 'findings-review.md', 'process-changelog', 'process-notices'] as $removed) {
+                $this->assertStringNotContainsString($removed, $content, $file . ' still mentions the removed ' . $removed);
+            }
+        }
     }
 }

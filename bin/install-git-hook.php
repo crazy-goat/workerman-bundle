@@ -3,26 +3,29 @@
 declare(strict_types=1);
 
 /**
- * Installs the pre-push hook (see bin/README.md and docs/workflow.md).
+ * Installs the pre-push hook (see bin/README.md and AGENTS.md).
  *
- * The hook runs `composer lint`, the canonical entry point (DEC-008), and
- * nothing else. The proof of work is four plain Markdown files a human reads
- * during review — there is nothing here for a script to verify, so there is
- * no gate to run.
+ * The hook runs `composer lint`, which calls `bin/lint.sh` (DEC-008), with
+ * LINT_SKIP_AUDIT=1: `composer audit` needs the network and is left to CI. The hard gate is `ci-ok` in CI.
  */
 $hookContent = <<<HOOK
     #!/bin/bash
     echo "Running pre-push lint checks..."
-    composer lint || exit 1
+    LINT_SKIP_AUDIT=1 composer lint || exit 1
 
     exit 0
     HOOK;
 
-$gitHookDir = __DIR__ . '/../.git/hooks';
+// `git rev-parse --git-path hooks` also works in a worktree, where `.git` is a file.
+$resolved = trim((string) shell_exec('cd ' . escapeshellarg(__DIR__ . '/..') . ' && git rev-parse --git-path hooks 2>/dev/null'));
+if ($resolved !== '' && $resolved[0] !== '/') {
+    $resolved = __DIR__ . '/../' . $resolved;
+}
+$gitHookDir = $resolved !== '' ? $resolved : __DIR__ . '/../.git/hooks';
 $prePushPath = $gitHookDir . '/pre-push';
 
 if (!is_dir($gitHookDir)) {
-    echo "Error: .git/hooks directory not found\n";
+    echo "Error: git hooks directory not found: {$gitHookDir}\n";
     exit(1);
 }
 

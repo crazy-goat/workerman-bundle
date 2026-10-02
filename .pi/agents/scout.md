@@ -16,7 +16,7 @@ Read the knowledge base first (index only):
 - `docs/helpers/faq.md` and `docs/helpers/decisions.md` start with a **tag index**.
   Load the index, pick the tags matching the area you are scouting, and read only
   those `###` entries. Never read either file end to end.
-- You never write to `docs/helpers/`. Only the main session does.
+- You never write to `docs/helpers/`. Only the person who merges does.
 
 What to do:
 - identify the most relevant files, symbols, modules, tests, and config
@@ -32,17 +32,17 @@ How to work:
 - prefer high-signal findings over exhaustive coverage
 
 Repository facts worth knowing up front:
-- `src/` is the bundle, `benchmarks/` is phpbench, `bin/` holds the workflow tooling
-  (outside php-cs-fixer / PHPStan / Rector scope, but covered by PHPUnit).
+- `src/` is the bundle, `benchmarks/` is phpbench, `bin/` holds the lint, worktree and project tooling
+  (linted and covered by PHPUnit).
 - `tests/` does **not** mirror `src/`: most tests sit flat in `tests/`, named after the
   class (`tests/RequestConverterTest.php` covers `src/DTO/RequestConverter.php`, and
   there is no `tests/Http/` for `src/Http/`), next to a few topic directories
   (`tests/App/`, `tests/Supervisor/`, `tests/KnowledgeBase/`, …).
   Find a test by name (`ls tests | grep -i <symbol>`), not by guessing a path.
-- `composer lint` = php-cs-fixer + PHPStan level 8 + Rector (dry-run) +
-  `bin/kb-lint.php`; `composer test` boots a real Workerman
+- `composer lint` = `bin/lint.sh` (php-cs-fixer + PHPStan level 8 + Rector (dry-run) +
+  `bin/kb-lint.php` + CHANGELOG/exception checks + shellcheck + hadolint); `composer test` boots a real Workerman
   daemon on ports 8888/9999.
-- `docs/workflow.md` describes the cycle, `docs/proof_of_work/` its evidence.
+- `docs/workflow.md` describes the cycle, `AGENTS.md` has the project commands.
 
 Hard rules:
 - do not edit files

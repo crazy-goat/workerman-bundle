@@ -15,13 +15,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
+
+      - name: Extract release notes from CHANGELOG.md
+        # Reads CHANGELOG.md from the tagged commit: merge the `## [X.Y.Z]` section before tagging.
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            /^## \[/ { found = (index($0, "[" v "]") > 0 || index($0, "[v" v "]") > 0); next }
+            found
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no non-empty section for ${version}"
+            exit 1
+          fi
+          # GitHub rejects release notes over 125000 characters.
+          python3 - "$GITHUB_REF_NAME" <<'PY'
+          import sys
+          limit = 120000
+          tag = sys.argv[1]
+          text = open('release-notes.md', encoding='utf-8').read()
+          if len(text) > limit:
+              tail = ("\n\n_The notes were shortened because of the GitHub size limit. "
+                      f"See [CHANGELOG.md](https://github.com/crazy-goat/workerman-bundle/blob/{tag}/CHANGELOG.md) "
+                      "for the full text._\n")
+              text = text[:limit - len(tail)]
+              text = text[:text.rfind('\n')] + tail
+              open('release-notes.md', 'w', encoding='utf-8').write(text)
+              print(f"::warning::Release notes truncated to {len(text)} characters")
+          PY
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
-        with:
-          generate_release_notes: true
-          draft: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            "${flags[@]}"

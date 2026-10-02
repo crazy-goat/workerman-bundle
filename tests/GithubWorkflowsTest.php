@@ -51,16 +51,16 @@ final class GithubWorkflowsTest extends TestCase
             $this->assertStringNotContainsString('composer update', $content);
             $this->assertStringNotContainsString('sed -i', $content);
             $this->assertMatchesRegularExpression(
-                '/run: composer install --no-interaction --prefer-dist.*run: composer (?:lint|bench)\b/s',
+                '/run: composer install --no-interaction --prefer-dist.*run: (?:bin\/lint\.sh|composer bench)\b/s',
                 $content,
                 'Locked dependencies must be installed before running tools',
             );
         }
     }
 
-    public function testBothTestJobsResolveFreshDependenciesAfterMatrixRewrite(): void
+    public function testTestsJobResolvesFreshDependenciesAfterMatrixRewrite(): void
     {
-        foreach (['tests', 'tests-scheduled'] as $job) {
+        foreach (['tests'] as $job) {
             $content = $this->jobContent($job);
             $this->assertSame(1, substr_count($content, "run: composer update --no-interaction --prefer-dist\n"));
             $this->assertStringNotContainsString('composer install', $content);
@@ -110,9 +110,9 @@ final class GithubWorkflowsTest extends TestCase
         );
 
         $this->assertMatchesRegularExpression(
-            '/^  group: \${{ github\.workflow }}-\${{ github\.ref }}$/m',
+            '/^  group: \${{ github\.workflow }}-\${{ github\.event\.pull_request\.number \|\| github\.sha }}$/m',
             $this->workflowContent,
-            'The group must be per-ref, or one PR would cancel another PR run',
+            'The group must be per pull request (or per commit), or one PR would cancel another PR run',
         );
     }
 
@@ -137,79 +137,63 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
-    public function testScheduledRunsTrimTheMatrixToASingleLeg(): void
+    public function testCodeJobsAreGatedOnTheChangesJob(): void
     {
-        $this->assertMatchesRegularExpression(
-            '/^  tests:\n    name: Tests\n    runs-on: ubuntu-latest\n    needs: \[lint, detect-changes\]\n    if: github\.event_name != \'schedule\' && needs\.detect-changes\.outputs\.docs-only != \'true\'/m',
-            $this->workflowContent,
-            'The nine-leg tests matrix must not run on the weekly schedule, and must skip on docs-only pull requests',
-        );
-
-        $this->assertMatchesRegularExpression(
-            '/^  tests-scheduled:\n    name: Tests \(scheduled\)/m',
-            $this->workflowContent,
-            'A single-leg tests job must run on the weekly schedule',
-        );
-
-        // The scheduled job must run exactly one matrix leg — capture its own
-        // block (up to the next job heading) and count the entries, so a
-        // regression adding more legs fails even though the job still exists.
-        $scheduled = '';
-        if (preg_match('/^  tests-scheduled:.*?(?=^  \w[\w-]*:$)/ms', $this->workflowContent, $m) === 1) {
-            $scheduled = $m[0];
+        foreach (['lint', 'tests', 'tests-root-permissions', 'benchmark'] as $job) {
+            $this->assertStringContainsString(
+                "if: needs.changes.outputs.code == 'true'",
+                $this->jobContent($job),
+                $job . ' must be skipped when only documentation changed',
+            );
         }
-        $this->assertNotSame('', $scheduled, 'The tests-scheduled job must be present');
-        $this->assertSame(
-            1,
-            preg_match_all('/^ {10}- php-version:/m', $scheduled),
-            'The scheduled run must execute exactly one matrix leg',
-        );
 
         $this->assertMatchesRegularExpression(
-            '/^  benchmark:\n    name: Benchmark\n    runs-on: ubuntu-latest\n    needs: \[lint, detect-changes\]\n    if: github\.event_name != \'schedule\' && needs\.detect-changes\.outputs\.docs-only != \'true\'/m',
+            '/^  tests:\n    name: Tests\n    runs-on: ubuntu-latest\n    needs: \[changes, lint\]\n/m',
             $this->workflowContent,
-            'The advisory benchmark must not run on the weekly schedule, and must skip on docs-only pull requests',
+            'The tests matrix must wait for the changes and lint jobs',
         );
     }
 
     /**
-     * Issue #619: a pull request that touches only documentation must not
-     * trigger the heavy jobs. A `detect-changes` job classifies the diff and
-     * exposes a `docs-only` output; `tests` and `benchmark` consume it. Lint
-     * still runs on every change (it is the only job that catches a broken
-     * workflow YAML), and the `ci` aggregator reports green for a docs-only
-     * PR instead of being skipped — so a required `ci` status check never
-     * stays pending.
+     * Issue #859: lint runs through bin/lint.sh only, so a CI run and a local run
+     * execute the same checks, and the shell tools are pinned.
      */
-    public function testDocsOnlyChangeSkipsHeavyJobsButKeepsLintAndCi(): void
+    public function testLintJobRunsOnlyTheLintScriptWithPinnedTools(): void
+    {
+        $content = $this->jobContent('lint');
+
+        $this->assertSame(1, substr_count($content, 'run: bin/lint.sh'));
+        $this->assertStringNotContainsString('composer lint', $content);
+        $this->assertStringContainsString('shellcheck/releases/download/v0.11.0/', $content);
+        $this->assertStringContainsString('hadolint/releases/download/v2.12.0/', $content);
+        $this->assertMatchesRegularExpression(
+            '/^env:\n  COMPOSER_AUTH: /m',
+            $this->workflowContent,
+            'COMPOSER_AUTH must be set at workflow level so every composer call is authenticated',
+        );
+    }
+
+    /**
+     * Documentation-only changes skip the heavy jobs. The reusable `changes` job
+     * classifies the diff with a deliberately narrow docs regex (tests read every
+     * Markdown file), and `docs` runs always. `ci-ok` treats skipped as green only
+     * when no code changed.
+     */
+    public function testDocsOnlyChangeSkipsHeavyJobsButKeepsCiOk(): void
     {
         $this->assertMatchesRegularExpression(
-            '/^  detect-changes:\n    name: Detect changes\n    runs-on: ubuntu-latest\n    needs: lint\n    outputs:\n      docs-only: \$\{\{ steps\.classify\.outputs\.docs-only \}\}/m',
+            '/^  changes:\n    name: Changes\n    uses: crazy-goat\/\.github\/\.github\/workflows\/changes\.yml@main\n    with:\n.*?docs-regex: /ms',
             $this->workflowContent,
-            'A detect-changes job must classify the diff and expose a docs-only output',
+        );
+        $this->assertMatchesRegularExpression(
+            '/^  docs:\n    name: Docs\n    uses: crazy-goat\/\.github\/\.github\/workflows\/docs-check\.yml@main$/m',
+            $this->workflowContent,
         );
 
-        // The classifier must treat Markdown and docs/** as documentation,
-        // and default non-pull-request events to docs-only=false so pushes,
-        // the schedule and manual dispatch keep running the full matrix.
-        $this->assertStringContainsString(
-            'docs/*|*.md|*.mdx',
-            $this->workflowContent,
-            'The classifier must recognise docs/**, *.md and *.mdx as documentation',
-        );
-        $this->assertStringContainsString(
-            'if [ "${{ github.event_name }}" != "pull_request" ]',
-            $this->workflowContent,
-            'Non-pull-request events must default to docs-only=false',
-        );
-
-        // The ci aggregator must treat an intentional docs-only skip as a
-        // green result, not a missing tests result.
-        $this->assertStringContainsString(
-            'Docs-only change: tests and benchmark intentionally skipped',
-            $this->workflowContent,
-            'The ci aggregator must report green when tests are skipped for a docs-only PR',
-        );
+        $ciOk = $this->jobContent('ci-ok');
+        $this->assertStringContainsString('if: always()', $ciOk);
+        $this->assertStringContainsString('needs: [changes, docs, lint, tests, tests-root-permissions]', $ciOk);
+        $this->assertStringContainsString('if [ "$CODE" = "true" ]', $ciOk);
     }
 
     /**
@@ -234,14 +218,9 @@ final class GithubWorkflowsTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'needs: [lint, tests, tests-root-permissions, benchmark, tests-scheduled, detect-changes]',
-            $this->workflowContent,
-            'The ci aggregator must require the root-only permission job',
-        );
-        $this->assertMatchesRegularExpression(
-            '/needs\.tests-root-permissions\.result \}\}" != "success"/',
-            $this->workflowContent,
-            'The ci aggregator must fail when the root-only permission job is not successful',
+            'needs: [changes, docs, lint, tests, tests-root-permissions]',
+            $this->jobContent('ci-ok'),
+            'The ci-ok aggregator must require the root-only permission job',
         );
     }
 
@@ -256,7 +235,7 @@ final class GithubWorkflowsTest extends TestCase
         $this->assertMatchesRegularExpression(
             '/^    permissions:\n      contents: read\n      issues: write$/m',
             $this->workflowContent,
-            'The ci job must hold issues: write for the issue opener',
+            'The ci-ok job must hold issues: write for the issue opener',
         );
 
         $this->assertStringContainsString(
