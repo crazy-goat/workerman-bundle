@@ -21,19 +21,21 @@ Read the knowledge base first (index only, never write):
 - `docs/helpers/decisions.md` carries the security policy consolidated by the
   #582–#586 review. Loosening any of it without an explicit documented reason is a
   **high** finding.
-- You do **not** append to `docs/helpers/`. Only the main session writes there — propose
+- You do **not** append to `docs/helpers/`. Only the person who merges writes there — propose
   candidate entries in your report instead.
 
-**Revisit earlier findings before looking for anything new.** Read
-`docs/proof_of_work/<NNNN>-<slug>/findings-review.md` and, for every finding an earlier
-round left open, state explicitly: still present / fixed / not a real finding — each
-with evidence from the current branch. Nothing is deleted from that file. Only then hunt
-for new issues. On round 1 the file does not exist yet — say so and go straight to
-hunting, that is not an error.
+**Revisit earlier points before looking for anything new.** Read `review.md` in the worktree
+root and, for every point an earlier round left open, state explicitly: **fixed**, **still
+present** or **not a real problem** — each with evidence from the current branch. Every
+point gets an answer, including nits; silence is not an answer. Only then hunt for new
+issues. On round 1 the file is empty — say so and go straight to hunting, that is not an
+error. A point first seen in round 2 or later escaped round 1: prefer asking for a test
+over only fixing the line.
 
-**Write two files** under `docs/proof_of_work/<NNNN>-<slug>/`: `review-<x>.md` (x = this
-round) with your full review, and `findings-review.md` (append if it exists) with one
-entry per finding — `file:line`, what is wrong, severity, what happened to it.
+**Write to two files** in the worktree root (both gitignored, never committed): new
+problems that are in scope go to `review.md`; new problems **outside** this issue's scope
+go to `findings.md` (role `review`). Each entry has `file:line`, what is wrong, severity and
+a suggested fix. No open points left means the review accepts.
 
 Review priorities:
 - subtle correctness issues and edge cases
@@ -48,11 +50,11 @@ Review priorities:
 - places where validation is missing compared with the risk of the change
 
 Repository gates (assume they ran; never accept weakening one):
-- `composer lint` = php-cs-fixer + PHPStan level 8 + Rector +
-  `bin/kb-lint.php`; `composer test` boots a real Workerman daemon on ports 8888/9999.
+- `composer lint` = `bin/lint.sh` (php-cs-fixer + PHPStan level 8 + Rector +
+  `bin/kb-lint.php` + CHANGELOG/exception checks + shellcheck + hadolint); `composer test` boots a real Workerman daemon on ports 8888/9999.
 - The 80% line-coverage floor lives only in `composer.json`'s `coverage:check`.
   Lowering a floor, disabling a rule or relaxing a gate to pass is a **high** finding.
-- `bin/` is outside every linter's scope — read it, do not trust CI for it.
+- `bin/` is linted, but shell scripts and `bin/*.php` logic still deserve a read.
 
 How to review:
 - inspect the diff, surrounding code, likely execution paths, and related tests or config
@@ -63,14 +65,13 @@ How to review:
 - if the change is sound, say so explicitly and list the high-risk areas you checked
 
 Hard rules:
-- the ONLY files you may create or modify are `review-<x>.md` and
-  `findings-review.md` under `docs/proof_of_work/<NNNN>-<slug>/`. Never edit source,
-  tests, configuration or `docs/helpers/` — you review the change, you do not make it
+- the ONLY files you may create or modify are `review.md` and `findings.md` in the
+  worktree root. Never edit source, tests, configuration or `docs/helpers/` — you review the change, you do not make it
 - do not pad the review with minor style remarks
 - do not report a concern unless you can explain the evidence and why it matters
 
 Output format:
-1. Earlier findings — one line each: still present / fixed / not real, with evidence
+1. Earlier points — one line each: still present / fixed / not real, with evidence
 2. Overall verdict
 3. New findings as `ID | file:line | description | severity` (high|medium|low|nit), each
    with evidence, impact, the smallest safe fix direction, and the check that would have caught it

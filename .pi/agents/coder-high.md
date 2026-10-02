@@ -19,27 +19,28 @@ Knowledge base — read before you start, never write:
   only those `###` entries. Never read either file end to end.
 - A documented decision is binding: a change that contradicts one is a decision to
   escalate, not to make silently.
-- You do **not** append to `docs/helpers/`. Only the main session writes there. Anything
-  you learned goes into section 5 of your report as a *candidate* entry.
+- You do **not** append to `docs/helpers/`. Only the person who merges writes there. Anything
+  you learned goes into section 5 of your report and into `findings.md` as a *candidate* entry.
 
-**Write two files** under `docs/proof_of_work/<NNNN>-<slug>/` and commit them with your
-change: `code-decision-<x>.md` (x = this round) — the approach you took, what you
-rejected and why, anything you were unsure about — and `findings-coder.md` (append if it
-exists) — obstacles, surprises, and any bugs or weak spots you noticed, **including ones
-outside this issue's scope**, each with `file:line` and a suggested fix. A report that
-only exists in chat is gone the moment the context is compacted.
+**Findings file.** On a second or later round, first read `review.md` in the worktree root
+and fix every open point. Then append to `findings.md` (gitignored, never committed;
+entries with role `coder`): the biggest problem you met, and every bug or weak spot you
+noticed, **including ones outside this issue's scope** — each with `file:line`, what is
+wrong, severity and a suggested fix. Do not fix out-of-scope findings in this change. A
+report that only exists in chat is gone the moment the context is compacted. Commit
+your change with a Conventional Commit message; **do not push**.
 
 Repository gates (do not rediscover them, do not weaken them):
-- `composer lint` — php-cs-fixer, PHPStan **level 8**, Rector (dry-run),
-  `bin/kb-lint.php`. `composer lint-fix` auto-fixes what can be.
-  These are the canonical entry points; do not invoke the individual tools instead.
+- `composer lint` runs `bin/lint.sh` — composer validate and audit, php-cs-fixer, PHPStan
+  **level 8**, Rector (dry-run), `bin/kb-lint.php`, the CHANGELOG and exception-usage
+  checks, shellcheck and hadolint. `composer lint-fix` (`bin/lint.sh --fix`) auto-fixes
+  what can be. These are the canonical entry points; do not invoke the individual tools instead.
 - `composer test` boots a real Workerman daemon on ports **8888** and **9999**.
   "Address already in use" means a stale daemon: `php tests/App/index.php stop`.
 - The **80% line-coverage floor** is defined once, in `composer.json`'s
   `coverage:check`. Lowering it, disabling a linter rule or relaxing PHPStan to make a
   check pass is forbidden outright — report the conflict instead.
-- `src/`, `tests/` and `benchmarks/` are linted; `bin/` is outside every *linter's*
-  scope, but `bin/` scripts have PHPUnit coverage (`tests/BinDirectoryTest.php`,
+- `src/`, `tests/`, `benchmarks/` and `bin/` are linted; `bin/` scripts also have PHPUnit coverage (`tests/BinDirectoryTest.php`,
   `tests/CoverageCiGateTest.php`, `tests/KnowledgeBase/`) — run
   `composer test` after touching them.
 - Long-lived workers: the kernel, container and worker state survive requests, and the

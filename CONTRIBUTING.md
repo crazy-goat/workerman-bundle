@@ -4,40 +4,29 @@ Thank you for your interest in contributing to this project!
 
 ## What Gates a Merge
 
-`master` carries **no GitHub branch protection** — this is a solo-maintainer
-project with a single collaborator, so there is nobody else to require a
-review from, and GitHub does not allow approving your own pull request
-anyway. What actually gates a merge is CI (the `ci` aggregator job) plus the
-maintainer choosing to merge; see `docs/process-notices.md` (N-13) for what
-that does and does not buy.
+`master` is protected by a ruleset: every change goes through a pull request, and the
+required status check is **`ci-ok`**. It aggregates the CI jobs:
 
-### Required Status Checks
+- **lint** - `bin/lint.sh`: PHP-CS-Fixer, PHPStan, Rector, the knowledge-base,
+  CHANGELOG and exception-usage checks, `shellcheck`, `hadolint`, `composer validate`
+  and `composer audit`
+- **tests** - PHPUnit across PHP (8.2-8.5) and Symfony (6.4-8.0) versions, plus the
+  root-only permission tests
+- **docs** - CHANGELOG shape, English-only Markdown, relative links
 
-CI must report green before a pull request is merged:
-
-- **Lint** - Code style validation using PHP-CS-Fixer, PHPStan, and Rector,
-  plus the knowledge-base linter (`bin/kb-lint.php`)
-- **Tests** - PHPUnit tests across multiple PHP (8.2-8.5) and Symfony (6.4-8.0) versions
-
-### Pull Request Requirements
-
-**Required:**
-- No approval count required (solo dev project)
-
-**Recommended:**
-- All conversations should be resolved before merging
-- Branch should be up to date with `master` before merging
+Pull requests that touch only licence or template files skip the heavy jobs. Merge is by squash. The whole
+process (issue, worktree, review, pull request, merge) is in
+[docs/workflow.md](docs/workflow.md); the project commands are in
+[AGENTS.md](AGENTS.md).
 
 ## Development Workflow
 
-This section is the short setup and pre-PR checklist. For the detailed
-issue-to-merge process, including branch naming, commit conventions and review
-rounds, see [docs/workflow.md](docs/workflow.md). Shared linting and CHANGELOG
-steps below summarize that companion rather than define a separate workflow.
+This section is the short setup and pre-PR checklist. For the issue-to-merge process
+see [docs/workflow.md](docs/workflow.md).
 
 ### Pre-Push Hook
 
-A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` before each push to catch issues early.
+A pre-push git hook is automatically installed via Composer's post-install scripts. It runs `composer lint` (which calls `bin/lint.sh`) before each push to catch issues early.
 
 See [`bin/README.md`](bin/README.md) for details on the hook script.
 
@@ -58,9 +47,10 @@ rm .git/hooks/pre-push
 
 ### Before Submitting a PR
 
-1. Run linting locally:
+1. Run linting locally (needs `shellcheck` and `hadolint` on the host):
    ```bash
-   composer lint
+   composer lint            # same as bin/lint.sh, check only
+   composer lint-fix        # same as bin/lint.sh --fix, then checks again
    ```
 
 2. Run tests locally:
@@ -182,15 +172,14 @@ docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
   workerman-bundle-test composer test
 ```
 
-Coverage check and lint run the same way:
+Coverage check runs the same way (lint needs `shellcheck` and `hadolint`, which are not in
+the image; run `bin/lint.sh` on the host):
 
 ```bash
 docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
   workerman-bundle-test composer test:coverage
 docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
   workerman-bundle-test composer coverage:check
-docker run --rm -v "$PWD":/app -v wmb-vendor:/app/vendor -v wmb-var:/app/var \
-  workerman-bundle-test composer lint
 ```
 
 A `bin/docker-test` helper wraps the bind-mount run, building the image on
@@ -200,7 +189,6 @@ first use:
 bin/docker-test                    # composer test
 bin/docker-test test:coverage      # composer test:coverage
 bin/docker-test coverage:check     # composer coverage:check
-bin/docker-test lint               # composer lint
 ```
 
 The test daemon binds ports **8888**, **9999** and **9991** inside the
@@ -258,12 +246,24 @@ hosts cap it per container with e.g. `--cpus`/`--memory` via a plain
 
 ### CI Configuration
 
-The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request, on every push to `master`, on a weekly schedule (Monday 05:23 UTC), and on demand via `workflow_dispatch`:
+The CI workflow (`.github/workflows/tests.yaml`) runs on every pull request, on every push
+to `master`, on a weekly schedule (Monday 05:23 UTC), and on demand via `workflow_dispatch`:
 
-- **Lint job**: Validates `composer.json`, runs the security audit (`composer audit`), and checks code style. The audit is the main value of the scheduled run: it catches advisories published after a merge and dependency drift in the unpinned Symfony ranges
-- **Tests job**: Runs PHPUnit tests across the supported PHP (8.2–8.5) and Symfony (6.4–8.0) version matrix; the PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in `composer.json` → `coverage:check`). Scheduled runs execute only the PHP 8.2 / Symfony 6.4 leg
-- **Benchmark job**: Runs the PHPBench suite in advisory mode (results are logged but do not block merge); skipped on scheduled runs
-- **CI job**: Aggregator that fails unless the Lint and Tests jobs succeeded (benchmark stays advisory); on a failing scheduled run it opens a "Scheduled CI run failed" issue (or comments on the existing one) so the failure is visible without manual monitoring. Superseded pull-request runs are cancelled, but a `master` run is never cancelled by a later one; see `docs/workflow.md` for the full CI layout
+- **changes** / **docs**: classify the diff and run the fast documentation checks. A change
+  that touches only files no test or linter reads (`LICENSE`, issue and PR templates) skips
+  the jobs below. The docs regex is narrow on purpose: PHPUnit checks every tracked
+  Markdown file (links, anchors, fences) and `bin/lint.sh` checks `CHANGELOG.md`
+- **lint**: runs only `bin/lint.sh`. The scheduled run catches advisories published after a
+  merge (`composer audit`) and dependency drift in the unpinned Symfony ranges
+- **tests**: PHPUnit across the supported PHP (8.2-8.5) and Symfony (6.4-8.0) matrix; the
+  PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in
+  `composer.json` -> `coverage:check`)
+- **tests-root-permissions**: the root-only `ConfigLoader` permission tests under `sudo`
+- **benchmark**: PHPBench, advisory (does not block merge)
+- **ci-ok**: the aggregator and the only required check; on a failing scheduled run it opens
+  a "Scheduled CI run failed" issue (or comments on the existing one)
+
+Superseded pull-request runs are cancelled, but a `master` run is never cancelled by a later one.
 
 ## Code Standards
 
