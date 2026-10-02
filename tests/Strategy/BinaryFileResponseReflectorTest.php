@@ -136,11 +136,15 @@ final class BinaryFileResponseReflectorTest extends TestCase
         $offsetProperty = $reflection->getProperty('offset');
         $offsetProperty->setValue($response, 10);
 
-        $this->assertSame(10, $reflector->getOffset($response));
-        $this->assertSame(10, $reflector->getOffset($response));
+        $first = $reflector->getOffset($response);
+        $second = $reflector->getOffset($response);
 
         // Verify a second instance also returns cached result
         $reflector2 = new BinaryFileResponseReflector();
-        $this->assertSame(10, $reflector2->getOffset($response));
+        $third = $reflector2->getOffset($response);
+
+        $this->assertSame(10, $first);
+        $this->assertSame(10, $second);
+        $this->assertSame(10, $third);
     }
 }
