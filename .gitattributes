@@ -1,53 +1,27 @@
 /.gitattributes export-ignore
-/.gitattributes export-ignore
-/.gitignore export-ignore
 /.gitignore export-ignore
 /.github export-ignore
-/.github export-ignore
-/tests export-ignore
 /tests export-ignore
 /phpunit.xml export-ignore
-/phpunit.xml export-ignore
-/.php-cs-fixer.dist.php export-ignore
 /.php-cs-fixer.dist.php export-ignore
 /docs/superpowers export-ignore
-/docs/superpowers export-ignore
-/.pi export-ignore
 /.pi export-ignore
 
-
-# Contributor-only files; keep runtime resources and user-facing documentation.
 # Contributor-only files; keep runtime resources and user-facing documentation.
 /benchmarks export-ignore
-/benchmarks export-ignore
-/e2e export-ignore
 /e2e export-ignore
 /rector.php export-ignore
-/rector.php export-ignore
-/phpbench.json export-ignore
 /phpbench.json export-ignore
 /phpstan.neon.dist export-ignore
-/phpstan.neon.dist export-ignore
-/CONTRIBUTING.md export-ignore
 /CONTRIBUTING.md export-ignore
 /AGENTS.md export-ignore
 /docs/workflow.md export-ignore
-/docs/workflow.md export-ignore
-/docs/release-workflow.md export-ignore
 /docs/release-workflow.md export-ignore
 /docs/helpers export-ignore
-/docs/helpers export-ignore
-/Dockerfile export-ignore
 /Dockerfile export-ignore
 /.dockerignore export-ignore
-/.dockerignore export-ignore
-/docker-entrypoint.sh export-ignore
 /docker-entrypoint.sh export-ignore
 
-
-# README.md links to bin/README.md; all executable tooling is development-only.
 # README.md links to bin/README.md; all executable tooling is development-only.
 /bin/* export-ignore
-/bin/* export-ignore
-/bin/README.md -export-ignore
 /bin/README.md -export-ignore
