@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `StreamedResponse` no longer loses data silently when the send buffer is full. The stream stops, a warning is logged and the connection is closed, so the client sees a broken body and not a body that looks complete. `StreamedResponseStrategy` takes an optional logger (#900)
 - The keep-alive and connection timeouts no longer close a connection that is still sending data, for example a big file download to a slow client. A connection with no sent bytes between two sweeps is still closed (#899)
 - `BinaryFileResponse` without a `Range` header now returns `200 OK` with no `Content-Range`, and a file of 2 MB or more is sent in full. Before, the Symfony length `-1` was passed to Workerman, which sent `206` and no body for big files (#902)
 - A server with `serve_files: true` and `middlewares` now serves static files. Before, `withMiddlewares()` removed the static layer and every file request got a 404. The static layer is now kept apart, so the call order does not matter (#898)

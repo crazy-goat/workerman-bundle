@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\RequestMethodAwareResponseConverterStrategyInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
@@ -16,6 +18,12 @@ use Workerman\Protocols\Http\Response as WorkermanResponse;
  * Streams content in chunks via ob_start callback, forwarding each flushed
  * chunk directly to $connection->send(). This avoids buffering the entire
  * response body in memory, which is critical for long-running event-loop workers.
+ *
+ * The chunks are written in one event-loop tick, so a slow client cannot drain
+ * the send buffer in between. When Workerman refuses a chunk because the send
+ * buffer is full (`maxSendBufferSize`, 1 MB by default), the stream is stopped
+ * and the connection is destroyed. The client then sees a broken chunked body
+ * instead of a body that looks complete (issue #900).
  */
 final readonly class StreamedResponseStrategy implements RequestMethodAwareResponseConverterStrategyInterface
 {
@@ -23,6 +31,7 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
 
     public function __construct(
         private int $chunkSize = 2048,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -48,8 +57,20 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
         $isHttp10 = $protocolVersion === '1.0';
         $sendChunkSize = max($this->chunkSize, self::MIN_CHUNK_SIZE);
 
+        $dropped = false;
+        // Sends data unless an earlier send was refused. Workerman returns false
+        // when it drops the data (full send buffer or closed connection).
+        $send = static function (string $data) use ($connection, &$dropped): void {
+            if ($dropped) {
+                return;
+            }
+            if ($connection->send($data, true) === false) {
+                $dropped = true;
+            }
+        };
+
         $head = $this->buildHeaderString($headers, $response->getStatusCode(), $protocolVersion, $shouldClose);
-        $connection->send($head, true);
+        $send($head);
 
         // HTTP/1.0 has no chunked transfer encoding; the body is streamed raw
         // and the connection is closed by HttpRequestHandler (the head carries
@@ -59,9 +80,9 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
             : dechex(strlen($chunk)) . "\r\n{$chunk}\r\n";
 
         $initialLevel = ob_get_level();
-        $obStarted = ob_start(function (string $chunk) use ($connection, $frame): string {
+        $obStarted = ob_start(static function (string $chunk) use ($send, $frame): string {
             if ($chunk !== '') {
-                $connection->send($frame($chunk), true);
+                $send($frame($chunk));
             }
 
             return '';
@@ -85,11 +106,16 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
         }
 
         if (!$isHttp10) {
-            $connection->send("0\r\n\r\n", true);
+            $send("0\r\n\r\n");
         }
 
         if ($connection->context instanceof \stdClass) {
             $connection->context->responseSentDirectly = true;
+        }
+
+        if ($dropped) {
+            $this->logger->warning('Streamed response was cut: the send buffer is full or the connection is closed. The connection is closed.');
+            $connection->destroy();
         }
 
         return new WorkermanResponse($response->getStatusCode(), $headers, '');
