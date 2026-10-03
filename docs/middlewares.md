@@ -42,6 +42,10 @@ The request is a `CrazyGoat\WorkermanBundle\Http\Request`.
 It extends the Workerman request.
 The response is a Workerman response, not a Symfony response.
 
+> **Note:** A middleware cannot change a streamed response (a Symfony `StreamedResponse`).
+> The server sends it while the controller layer runs, so it is already gone when `$next()` returns.
+> A header that you add to it is not sent.
+
 To change a request header, use `$request->setHeader($name, $value)`.
 The method changes the request itself.
 The old name `withHeader()` still works, but it is deprecated.
@@ -122,7 +126,7 @@ The constructor has three arguments:
 
 | Argument | Type | Default | What it does |
 |----------|------|---------|--------------|
-| `$rootDirectory` | string | required | The directory with the public files. It must exist, or the server does not start. |
+| `$rootDirectory` | string | required | The directory with the public files. It must exist. If it does not, the worker cannot start and no request is served. Look in the log. |
 | `$allowedExtensions` | list of strings | `[]` | Only files with these extensions are served. An empty list allows all extensions, except the blocked files. |
 | `$followSymlinks` | bool | `false` | When `false`, a file that you reach through a symbolic link is not served. |
 

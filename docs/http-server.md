@@ -11,6 +11,7 @@ The config keys are in the [configuration reference](configuration.md#servers).
 `listen` is required.
 A server without `listen` does not start.
 Use `http://` or `https://`, for example `http://0.0.0.0:80`.
+This page does not cover WebSocket listeners.
 
 For `https://` you also need `local_cert` and `local_pk`.
 The bundle checks both files before the start.
@@ -85,7 +86,10 @@ The server closes the connection after the response when:
 
 The response then has the header `Connection: close`.
 
-A timer looks at all connections about every quarter of the shortest timeout, but at least once per second.
+A timer looks at all connections.
+It runs every quarter of the shortest timeout that is not `0`, but not more than once per second.
+With the defaults it runs every 7 seconds.
+If both timeouts are `0`, there is no timer.
 It closes a connection that is idle for too long:
 
 - A connection that has not finished a request is closed after `connection_timeout`.
@@ -116,6 +120,11 @@ The server writes a warning to the log.
 So do not stream a very big body to a client that can be slow, or send it with a file response.
 
 If your code throws an error in the middle of a streamed response, the headers are already sent.
-The client cannot get a clean 500 answer any more.
-Today the server can write a second error response into the open body (issue #901).
-Catch errors inside the callback of the streamed response.
+The client cannot get a 500 answer any more.
+The server writes the error to the log and closes the connection.
+The client sees a body that has no valid end.
+An error before the first byte still gives a normal 500 answer.
+
+A middleware cannot change a streamed response.
+The server has already sent it when `$next()` returns.
+A header that you add then is not sent.
