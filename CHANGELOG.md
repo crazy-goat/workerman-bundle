@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docs fixes: `max_requests` examples use `requests: N`, the Doctrine example uses `SELECT 1` instead of `ping()`, the `memory` strategy text says `memory_get_usage()` instead of RSS, the first middleware is the outermost layer, both build commands need `phar.readonly=0`, `workerman:build:bin` lists `--phar-filename` and `--kernel-class`, and the fork text no longer claims zero per-request allocation (#880)
 - The README and the config reference now say that `listen` is required: a server without `listen` does not start (#879)
 - CI runs the shared `changes` and `docs` jobs, a `lint` job that only runs `bin/lint.sh`, test jobs gated on code changes and a `ci-ok` aggregator, which replaces the `ci` check (#859)
 - `release.yaml` builds the GitHub Release notes from the CHANGELOG section of the tag with `gh release create --verify-tag` instead of a third-party action (#859)
