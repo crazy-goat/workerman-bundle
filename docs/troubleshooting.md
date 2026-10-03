@@ -151,7 +151,7 @@ This also affects Doctrine's `EntityManager` which holds a reference to the conn
 
 PHP's opcache caches compiled PHP files in shared memory. In a long-running worker:
 
-1. **File-monitor reload vs. opcache** — When using `file_monitor` reload strategy, file changes are detected and the worker reloads. However, opcache's `validate_timestamps` setting controls whether PHP checks if files have changed on disk. If `opcache.validate_timestamps=0` (common in production for performance), the old compiled code runs even after a reload, and you must restart the server after deploying new code (see [Deployment](deployment.md#opcache)).
+1. **File-monitor reload vs. opcache** — When using `file_monitor` reload strategy, file changes are detected and the worker reloads. However, opcache's `validate_timestamps` setting controls whether PHP checks if files have changed on disk. If `opcache.validate_timestamps=0` (common in production for performance), the old compiled code runs even after a reload, and you must reload or restart the server after deploying new code (see [Deployment](deployment.md#opcache)).
 
 2. **Development workflow** — In dev mode with `file_monitor` active, you need `opcache.validate_timestamps=1` and `opcache.revalidate_freq=0` so that code changes are picked up immediately.
 
@@ -160,7 +160,7 @@ PHP's opcache caches compiled PHP files in shared memory. In a long-running work
 ### Detection
 
 - Code changes are not reflected after a reload (stale opcache)
-- After deploying new code, running `bin/console workerman:server reload` does not pick up the changes (see also [Deployment](deployment.md#opcache))
+- After deploying new code, running `bin/console workerman:server reload` does not pick up the changes
 - `opcache.status` shows a full shared memory pool
 
 ### Mitigation
@@ -173,8 +173,9 @@ PHP's opcache caches compiled PHP files in shared memory. In a long-running work
   opcache.memory_consumption=256
   ```
 - **Production** — If `opcache.validate_timestamps=0` for maximum performance:
-  - Use `bin/console workerman:server restart` after the deploy, not `reload`. A restart starts a new master process with a new OPcache. A `reload` keeps the old OPcache, so the new workers still run the old code.
-  - `opcache_reset()` in a separate deploy script does not help: it cannot reach the OPcache of the running server. Call it inside the server process only, for example from your own code.
+  - Run `bin/console workerman:server reload` after the deploy. On a reload, the master process invalidates every script in its OPcache (`Utils::clearOpcache()`), and the new workers use that cache. See [Deployment](deployment.md#opcache).
+  - Do not call `opcache_reset()` in a separate deploy script: it is another PHP process and cannot reach the OPcache of the running server.
+  - Or use `bin/console workerman:server restart` (which starts a completely new set of workers) instead of `reload`.
   - Or set `opcache.validate_timestamps=1` with `opcache.revalidate_freq=2` (check every 2 seconds — acceptable for most deployments).
 - **Monitor opcache memory** — Use `opcache_get_status()['memory_usage']['free_memory']` in a health-check endpoint or (for prometheus) expose it via the [symfony-opcache-metrics](https://github.com/ovrflo/symfony-opcache-metrics) bundle.
 - **Use the `always` reload strategy during an active deploy window** to guarantee every worker picks up fresh code.

@@ -50,17 +50,14 @@ opcache.enable_cli=1
 opcache.memory_consumption=256
 ```
 
-There are two safe ways to set `validate_timestamps`:
-
-- `opcache.validate_timestamps=1` with `opcache.revalidate_freq=2` (the PHP default).
-  PHP checks the files every 2 seconds.
-  A `reload` is enough to use new code.
-- `opcache.validate_timestamps=0` for the best speed.
-  PHP never looks at the files again.
-  After a deploy you must use `restart`, not `reload`.
+Both values of `opcache.validate_timestamps` work with `reload`.
+On a reload, the master process invalidates every script in its OPcache (`Utils::clearOpcache()`).
+The new workers are forked from the master and use that cache, so they read the new files.
+With `opcache.validate_timestamps=0`, PHP never looks at the files by itself.
+This is the fastest setting, and it is safe because of the invalidation on reload.
 
 A separate PHP process cannot reset the OPcache of the server.
-The cache of the server lives in the server's own process tree.
+The OPcache of the server lives in the server's own process tree.
 So `opcache_reset()` in a deploy script does nothing for the running workers.
 See [Troubleshooting](troubleshooting.md#opcache-caveats) for the symptoms.
 
@@ -101,9 +98,8 @@ What the important lines do:
   It runs as the same `User=`, so it finds the master with the PID file.
 - `KillSignal=SIGINT` is the signal that `workerman:server stop` sends to the master process.
   The master stops the workers and ends.
-  The default signal of systemd is `SIGTERM`.
-  The master also stops on `SIGTERM`, but there is an open report that an old master process can stay alive after it (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
-  So we use the same signal as `stop`.
+  The default signal of systemd is `SIGTERM`, which the master handles in the same way.
+  We use the same signal as `stop`.
 - `KillMode=mixed` sends the signal to the main process only.
   If something is still alive after `TimeoutStopSec`, systemd sends `SIGKILL` to all the processes of the unit.
 - `TimeoutStopSec` must be larger than `stop_timeout`.
@@ -134,8 +130,7 @@ So choose by what changed:
 
 | What changed | What to run |
 |--------------|-------------|
-| Only PHP code of the app, and `opcache.validate_timestamps=1` | `reload` |
-| PHP code, and `opcache.validate_timestamps=0` | `restart` |
+| Only PHP code of the app, changed in place | `reload` |
 | `workerman.yaml`, tasks, processes, listen addresses, or the number of workers | `restart` |
 | A new release directory with a symlink switch | `restart` |
 
@@ -143,7 +138,7 @@ With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`
 While `restart` runs, the server does not answer for a moment.
 See [Commands](commands.md#stop-restart-and-reload) for the signals and the wait times.
 
-A deploy script, as the deploy user:
+A deploy script. It runs as `root`, or as a user who may use `sudo` and `systemctl`:
 
 ```bash
 #!/bin/sh
@@ -157,6 +152,7 @@ cd "$RELEASE"
 composer install --no-dev --optimize-autoloader --no-interaction
 
 # 2. Give the runtime user the files it must write.
+mkdir -p "$RELEASE/var"
 chown -R www-data:www-data "$RELEASE/var"
 
 # 3. Warm up the cache AS THE RUNTIME USER.

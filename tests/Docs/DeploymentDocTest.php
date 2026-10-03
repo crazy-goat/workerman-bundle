@@ -58,11 +58,11 @@ final class DeploymentDocTest extends TestCase
         self::assertGreaterThan(DocsHelper::configLeaves()['stop_timeout']->getDefaultValue(), (int) $timeout[1][0]);
     }
 
-    public function testReloadAndRestartCommandsExist(): void
+    public function testReloadClearsTheOpcacheAsThePageSays(): void
     {
-        $commands = DocsHelper::read('docs/commands.md');
+        $page = DocsHelper::read(self::PAGE);
 
-        self::assertStringContainsString('| `reload` |', $commands);
-        self::assertStringContainsString('| `restart` |', $commands);
+        self::assertStringContainsString('`Utils::clearOpcache()`', $page);
+        self::assertStringContainsString('Utils::clearOpcache(...)', file_get_contents(DocsHelper::rootDir() . '/src/Runner.php') ?: '');
     }
 }
