@@ -274,39 +274,9 @@ See [docs/middlewares.md](docs/middlewares.md) for the interface, the order of t
 For the listen address, workers, timeouts and streamed responses, see [docs/http-server.md](docs/http-server.md).
 
 ## Scheduler
-Periodic tasks can be configured with attributes or with tags in configuration files.  
-The schedule string can be formatted in several ways:  
- - An integer to define the frequency as a number of seconds. Example: _60_
- - An ISO8601 datetime format. Example: _2023-08-01T01:00:00+08:00_
- - An ISO8601 duration format. Example: _PT1M_
- - A relative date format as supported by DateInterval. Example: _1 minute_
- - A cron expression. Example: _*/1 * * * *_
-
-> **Note:** You need to install the [dragonmantank/cron-expression](https://github.com/dragonmantank/cron-expression) package if you want to use cron expressions as schedule strings.
-
-Interval schedules (integer seconds, ISO 8601 durations, relative date strings) are **fixed-rate**: the task fires at multiples of the interval counted from the moment it was first scheduled. Per-run overhead (forking, dispatching, the task body itself) does not push the next run later — when a reschedule happens after the next slot has already passed (slow or lock-blocked run), the missed ticks are skipped and the task resumes on the next grid slot, so the cadence neither drifts nor produces a burst of catch-up executions. When a `jitter` is configured, the task keeps the same grid: jitter only decorates each grid slot with its random offset and no longer lets the schedule drift. Cron expressions are evaluated against wall-clock boundaries and self-correct in the same way. Sub-second intervals are honoured when given as a `DateInterval` with a fraction, e.g. `DateInterval::createFromDateString('500 ms')`: the delay is computed in fractional seconds instead of being truncated to whole seconds.
-
-```php
-<?php
-
-use CrazyGoat\WorkermanBundle\Attribute\AsTask;
-
-/**
- * Attribute parameters
- * name: Task name
- * schedule: Task schedule in any format
- * method: method to call, __invoke by default
- * jitter: Maximum jitter in seconds that adds a random time offset to the schedule. Use to prevent multiple tasks from running at the same time
- */
-#[AsTask(name: 'My scheduled task', schedule: '1 minute')]
-final class TaskService
-{
-    public function __invoke()
-    {
-        // ...
-    }
-}
-```
+Periodic tasks are configured with the `#[AsTask]` attribute or with the `workerman.task` tag.
+A schedule can be seconds, an ISO 8601 duration, a relative date, a date and time, or a cron expression.
+See [docs/scheduler.md](docs/scheduler.md) for the schedule formats, the fixed-rate rule, jitter, locks and errors.
 
 ## Supervisor
 Supervisor can be configured with attributes or with tags in configuration files.  

@@ -84,7 +84,7 @@ Common blocking operations:
 
 ### Mitigation
 
-- **Do not use `sleep()`, `usleep()`, or `time_nanosleep()` in request handlers.** Use Workerman's `Timer::add()` or the bundle's [scheduler](../README.md#scheduler) for periodic work.
+- **Do not use `sleep()`, `usleep()`, or `time_nanosleep()` in request handlers.** Use Workerman's `Timer::add()` or the bundle's [scheduler](scheduler.md) for periodic work.
 - **Use non-blocking HTTP clients** such as `React\Http\Browser` or Guzzle with the `curl` handler in parallel mode.
 - **Offload slow operations** to a separate worker process running as a [supervised process](../README.md#supervisor).
 - **Increase the number of worker processes** (`processes: N`) so that other workers can handle requests while one is blocked. This treats the symptom, not the cause — still aim to fix blocking calls.

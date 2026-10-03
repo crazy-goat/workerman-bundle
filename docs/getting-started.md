@@ -151,4 +151,5 @@ You can also put a reverse proxy, such as nginx or Caddy, in front of the server
 - [Troubleshooting](troubleshooting.md): problems of long-running workers.
 - [PHAR and binary packaging](build-packaging.md): ship your application as one file.
 - [HTTP server](http-server.md) and [middlewares](middlewares.md): listen, workers, limits, static files.
-- [README](../README.md): reload strategies, scheduler and supervisor.
+- [Scheduler](scheduler.md): run your code on a plan.
+- [README](../README.md): supervisor.
