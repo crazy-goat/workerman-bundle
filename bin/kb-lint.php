@@ -248,6 +248,7 @@ function parseFile(string $relative, string $absolute): array
     $errors = [];
     $index = null;
     $firstSection = null;
+    $staleHeading = null;
     $inFence = false;
     $indexStart = null;
     $current = null;
@@ -311,6 +312,10 @@ function parseFile(string $relative, string $absolute): array
             $firstSection = $number;
         }
 
+        if ($staleHeading === null && trim($matches[2]) === 'Tag index') {
+            $staleHeading = $number;
+        }
+
         $current = null;
         unset($currentBody);
         $currentBody = null;
@@ -367,6 +372,7 @@ function parseFile(string $relative, string $absolute): array
         'lines' => $lineCount,
         'index' => $index,
         'first_section' => $firstSection,
+        'index_heading' => $staleHeading,
     ];
 }
 
@@ -760,7 +766,17 @@ function main(array $options): int
             );
         }
 
-        if ($parsed['index'] === null) {
+        if ($parsed['index'] === null && $parsed['index_heading'] !== null) {
+            // --fix would splice a second heading next to this one, and the file would
+            // then lint clean (#838). Ask for a manual repair instead.
+            $errors[] = sprintf(
+                '%s:%d: a "Tag index" heading but no index markers (add %s / %s below it, or remove the heading, then run --fix)',
+                $relative,
+                $parsed['index_heading'],
+                INDEX_START,
+                INDEX_END,
+            );
+        } elseif ($parsed['index'] === null) {
             if ($options['fix']) {
                 writeIndex($absolute, $parsed['entries'], null, $parsed['first_section']);
                 $warnings[] = sprintf('%s: tag index created', $relative);

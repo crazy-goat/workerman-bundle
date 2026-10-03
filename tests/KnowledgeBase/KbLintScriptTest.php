@@ -197,6 +197,35 @@ final class KbLintScriptTest extends TestCase
         self::assertSame(0, $this->kbLint()['code']);
     }
 
+    public function testFixDoesNotAddASecondTagIndexHeadingWhenOnlyTheMarkersAreMissing(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $stripped = str_replace(["<!-- kb-index:start -->\n", "<!-- kb-index:end -->\n"], '', $this->read(self::FAQ));
+        $this->write(self::FAQ, $stripped);
+        self::assertSame(1, substr_count($stripped, '## Tag index'), 'the fixture must keep the heading');
+
+        $plain = $this->kbLint();
+        self::assertSame(1, $plain['code'], $plain['out']);
+        self::assertStringContainsString('"Tag index" heading but no index markers', $plain['err']);
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(1, $fixed['code'], '--fix must refuse instead of splicing a second heading');
+        self::assertStringContainsString('"Tag index" heading but no index markers', $fixed['err']);
+        self::assertSame($stripped, $this->read(self::FAQ), '--fix must leave the file untouched');
+    }
+
+    public function testATagIndexHeadingInsideACodeFenceIsNotAStaleHeading(): void
+    {
+        $this->writeValidKnowledgeBase();
+        $faq = $this->read(self::FAQ);
+        $without = preg_replace('/## Tag index\n\n<!-- kb-index:start -->\n.*?<!-- kb-index:end -->\n\n/s', '', $faq) ?? '';
+        $this->write(self::FAQ, str_replace('## Section', "```markdown\n## Tag index\n```\n\n## Section", $without));
+
+        $fixed = $this->kbLint('--fix');
+        self::assertSame(0, $fixed['code'], $fixed['err']);
+        self::assertStringContainsString('tag index created', $fixed['out']);
+    }
+
     public function testFixNormalizesAStrippedTrailingNewline(): void
     {
         $this->writeValidKnowledgeBase();
