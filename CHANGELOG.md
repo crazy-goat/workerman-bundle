@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `docs/troubleshooting.md` no longer says that `opcache_reset()` in a deploy script helps: a separate PHP process cannot reach the OPcache of the running server. Use `reload` (the master clears its OPcache) or `restart` (#888)
+- `docs/troubleshooting.md` no longer says that `opcache_reset()` in a deploy script helps: a separate PHP process cannot reach the OPcache of the running server. Use `reload` (the master clears its OPcache) or `restart`. `docs/security.md` now tells to change the owner of the whole cache directory, not of one file (#888)
 - A `StaticFilesMiddleware` service whose root directory does not exist now stops `start` with one clear error and a non-zero exit code, also with `-d`. The master process checks the directory before it starts the workers. Before, every worker stopped and was restarted again and again while `start -d` said `Start success.`. The check is skipped for a path with an `%env()%` value and in a PHAR (#965)
 - A private middleware service no longer stops every worker at start. The services from `servers[].middlewares` are made public by the compiler pass, so `public: true` is not needed. A middleware ID that does not exist now fails at container build time with a clear message, not in a restart loop of the workers (#964)
 - A slow request body on the second or a later request of a keep-alive connection is closed after `connection_timeout`, not after `keepalive_timeout`. The sweeper sees the first bytes of the new request in the receive buffer and starts the request timer (#907)

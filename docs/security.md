@@ -514,10 +514,10 @@ runtime user:
 sudo -u <runtime-user> bin/console cache:warmup
 ```
 
-or re-own the cache file after warm-up:
+or re-own the cache directory after warm-up (the `workerman` directory has mode 0700, so the file alone is not enough):
 
 ```bash
-chown <runtime-user> var/cache/<env>/workerman/config.cache.php
+chown -R <runtime-user> var/cache/<env>
 ```
 
 If neither is possible in your deployment (managed build systems, sudoless

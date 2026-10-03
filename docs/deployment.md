@@ -134,8 +134,8 @@ So choose by what changed:
 
 | What changed | What to run |
 |--------------|-------------|
-| Only PHP code of the app, changed in place | `reload` |
-| `workerman.yaml`, services, tasks, processes, listen addresses, or the number of workers, changed in place | `cache:clear` as the runtime user, then `restart` |
+| Only the code inside methods, changed in place | `reload` |
+| `workerman.yaml`, services, constructor arguments, routes, `#[AsTask]` or `#[AsProcess]` attributes, listen addresses, or the number of workers, changed in place | `cache:clear` as the runtime user, then `restart` |
 | A new release directory with a symlink switch | `restart` (the new release must have its own warm cache) |
 
 With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`.
@@ -193,13 +193,13 @@ The fix is one of these:
 - **Warm up as the runtime user** (best):
 
   ```bash
-  sudo -u www-data bin/console cache:warmup
+  sudo -u www-data APP_ENV=prod php bin/console cache:warmup
   ```
 
-- **Change the owner after the warm-up**:
+- **Change the owner of the whole cache after the warm-up** (the `workerman` directory has mode 0700, so the file alone is not enough):
 
   ```bash
-  chown www-data var/cache/prod/workerman/config.cache.php
+  chown -R www-data:www-data var/cache
   ```
 
 The same rule applies to every split between the deploy user and the runtime user: CI jobs, deploy scripts and `sudo`.
