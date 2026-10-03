@@ -85,11 +85,18 @@ final class SchedulerDocTest extends TestCase
             self::assertIsArray($parsed);
             foreach ($parsed['services'] as $definition) {
                 foreach ($definition['tags'] as $tag) {
-                    self::assertSame('workerman.task', $tag['name']);
-                    self::assertSame([], array_diff(array_keys($tag), ['name', 'schedule', 'method', 'jitter']));
-                    self::assertTrue(is_int($tag['schedule']) || is_string($tag['schedule']));
-                    self::assertIsInt($tag['jitter'] ?? 0);
-                    self::assertNotSame('', (string) TriggerFactory::create($tag['schedule'], $tag['jitter'] ?? 0));
+                    // The second form is `{ workerman.task: { attributes } }`; in the first form `name` is the tag name.
+                    $attributes = $tag['workerman.task'] ?? $tag;
+                    self::assertTrue(isset($tag['workerman.task']) || ($tag['name'] ?? null) === 'workerman.task');
+                    unset($attributes['name']);
+                    if (isset($tag['workerman.task'])) {
+                        self::assertContains('name', array_keys($tag['workerman.task']));
+                    }
+
+                    self::assertSame([], array_diff(array_keys($attributes), ['schedule', 'method', 'jitter']));
+                    self::assertTrue(is_int($attributes['schedule']) || is_string($attributes['schedule']));
+                    self::assertIsInt($attributes['jitter'] ?? 0);
+                    self::assertNotSame('', (string) TriggerFactory::create($attributes['schedule'], $attributes['jitter'] ?? 0));
                 }
             }
         }

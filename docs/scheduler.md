@@ -6,7 +6,7 @@ You do not need a system crontab.
 
 The scheduler is one extra process named `[Scheduler]`.
 There is only one scheduler process.
-It starts with `workerman:server start`.
+It starts with `workerman:server start`, but only if at least one service has the `workerman.task` tag.
 
 ## Make a task
 
@@ -55,11 +55,20 @@ services:
       - { name: workerman.task, schedule: '1 hour', method: run, jitter: 30 }
 ```
 
-In YAML, the key `name` is the name of the tag, so you cannot set the task name there.
-The task name is the service ID.
-Set `name` with the `#[AsTask]` attribute if you want another name.
+To set the task name in YAML, use the second form of a tag.
+The tag name is the key, and the attributes are the value:
 
-Write `jitter` as a number, not as a string.
+```yaml
+services:
+  App\Task\CleanOldFiles:
+    tags:
+      - workerman.task: { name: 'Clean old files', schedule: '1 hour' }
+```
+
+In the first form, `name` is the name of the tag, so it cannot be the task name.
+Then the task name is the service ID.
+
+Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goat/workerman-bundle/issues/970)).
 
 ## Schedule formats
 
@@ -76,14 +85,14 @@ Notes:
 - A date and time runs one time only. If the moment is in the past, the task never runs.
 - A cron expression needs the package `dragonmantank/cron-expression`. Install it with `composer require dragonmantank/cron-expression`. Without it, the text is read as a relative date, and it is most likely not valid.
 - Cron uses the PHP default time zone of the server. Set it with `date.timezone` in `php.ini` or with `date_default_timezone_set()`. An ISO 8601 date and time has its own offset.
-- In PHP code, you can also give a `DateInterval` with a fraction, for example `DateInterval::createFromDateString('500 ms')`. This is not possible in `#[AsTask]`, because attributes take only text and numbers.
 
 ## Fixed-rate runs
 
 Interval schedules are fixed-rate.
 Integer, ISO 8601 duration and relative date are interval schedules.
 The task runs at fixed times.
-The first run sets the times.
+The times start when the scheduler process starts.
+A reload or a restart starts them again.
 A slow run does not move the next run.
 If a run is very slow, the scheduler skips the missed times.
 It does not run them later.
@@ -98,8 +107,11 @@ The scheduler waits for the time at second 120.
 The scheduler adds a delay from 0 to `jitter` seconds to every run.
 Use it when many tasks have the same schedule and should not all start at the same moment.
 
-With an interval schedule, jitter does not move the fixed times.
-Only the start of each run is delayed.
+With an interval schedule, the delay is part of the stored time of the run.
+The next time is counted from it.
+So the delays add up, and each run is on average `jitter / 2` seconds later than the run before.
+This is a known problem: [#970](https://github.com/crazy-goat/workerman-bundle/issues/969).
+With a cron schedule, the times do not move.
 
 ## One run is one child process
 
@@ -160,7 +172,8 @@ final class AlertOnTaskError
 }
 ```
 
-After a failed task, the child exits with code 1.
+A task that throws an exception is reported with `TaskErrorEvent`, and the child still exits with code 0.
+The child exits with code 1 only when the task cannot start, for example when the method does not exist or a listener throws.
 The scheduler logs a child that exits with a code other than 0 or that is killed by a signal.
 
 If the `grpc` extension is loaded, the child ends with `SIGKILL` and does not run destructors.
@@ -208,7 +221,7 @@ A task with jitter, in YAML:
 services:
   App\Task\SyncPrices:
     tags:
-      - { name: workerman.task, schedule: 300, jitter: 60 }
+      - { name: workerman.task, schedule: '*/5 * * * *', jitter: 60 }
 ```
 
 This task runs every 5 minutes. Each run starts up to 60 seconds late.
