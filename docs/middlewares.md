@@ -127,7 +127,7 @@ The constructor has three arguments:
 
 | Argument | Type | Default | What it does |
 |----------|------|---------|--------------|
-| `$rootDirectory` | string | required | The directory with the public files. It must exist. If it does not, the worker cannot start and no request is served. Look in the log. |
+| `$rootDirectory` | string | required | The directory with the public files. It must exist when the server starts. If it does not, `start` and `restart` stop with one error message and a non-zero exit code. The check is skipped for a path with an `%env()%` value and in a PHAR. |
 | `$allowedExtensions` | list of strings | `[]` | Only files with these extensions are served. An empty list allows all extensions, except the blocked files. |
 | `$followSymlinks` | bool | `false` | When `false`, a file that you reach through a symbolic link is not served. |
 

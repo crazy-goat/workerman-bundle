@@ -40,9 +40,18 @@ readonly class Runner implements RunnerInterface
         $this->warmUpCache($configLoader);
 
         $config = $configLoader->getWorkermanConfig();
+        if ($this->firstMissingStaticRoot($config) !== null && $this->kernelFactory->isDebug()) {
+            // The root directory list comes from the container. The config cache is only
+            // checked against workerman.yaml, so it may be old: build it once again.
+            $this->warmUpCache($configLoader, true);
+            $configLoader = $this->createConfigLoader();
+            $config = $configLoader->getWorkermanConfig();
+        }
+
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
+        $this->checkStaticRoots($config);
         $this->applyWorkermanConfig($config);
         $this->warnAboutGrpcExtension();
         $this->createWorkers($config, $schedulerConfig, $processConfig);
@@ -75,9 +84,9 @@ readonly class Runner implements RunnerInterface
      *
      * @throws \RuntimeException on fork failure, timeout, or unexpected child status
      */
-    private function warmUpCache(ConfigLoader $configLoader): void
+    private function warmUpCache(ConfigLoader $configLoader, bool $force = false): void
     {
-        if ($configLoader->isFresh()) {
+        if (!$force && $configLoader->isFresh()) {
             return;
         }
 
@@ -157,6 +166,56 @@ readonly class Runner implements RunnerInterface
                 \pcntl_wexitstatus($status),
             ));
         }
+    }
+
+    /**
+     * Stop with one clear error when the root directory of a StaticFilesMiddleware
+     * does not exist. Else every worker would throw in the middleware constructor
+     * and be restarted again and again (issue #965). The directories come from the
+     * compiler pass. Only start and restart are checked: stop, reload, status and
+     * connections must work when the directory is gone. In PHAR mode the paths are
+     * resolved at runtime, so they are skipped.
+     *
+     * @param mixed[] $config
+     *
+     * @throws \RuntimeException when a root directory does not exist
+     */
+    private function checkStaticRoots(array $config): void
+    {
+        $missing = $this->firstMissingStaticRoot($config);
+        if ($missing !== null) {
+            throw new \RuntimeException(\sprintf('The root directory "%s" of the static files middleware does not exist.', $missing));
+        }
+    }
+
+    /**
+     * @param mixed[] $config
+     */
+    private function firstMissingStaticRoot(array $config): ?string
+    {
+        if ($this->kernelFactory->isPhar() || !$this->isStartOrRestart()) {
+            return null;
+        }
+
+        $roots = $config['static_roots'] ?? [];
+        foreach (\is_array($roots) ? $roots : [] as $root) {
+            if (\is_string($root) && !\is_dir($root)) {
+                return $root;
+            }
+        }
+
+        return null;
+    }
+
+    private function isStartOrRestart(): bool
+    {
+        foreach (Worker::getArgv() as $value) {
+            if (\in_array($value, ['start', 'restart', 'stop', 'reload', 'status', 'connections'], true)) {
+                return $value === 'start' || $value === 'restart';
+            }
+        }
+
+        return false;
     }
 
     /**
