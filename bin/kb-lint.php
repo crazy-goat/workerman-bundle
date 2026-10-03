@@ -237,7 +237,8 @@ function indexFootprint(array $lines, array $index): int
  *     errors: list<string>,
  *     lines: int,
  *     index: ?array{start: int, end: int, body: list<string>, footprint: int},
- *     first_section: ?int
+ *     first_section: ?int,
+ *     index_heading: ?int
  * }
  */
 function parseFile(string $relative, string $absolute): array
