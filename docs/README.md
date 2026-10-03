@@ -17,6 +17,7 @@ This directory contains documentation for the WorkermanBundle.
 - [supervisor.md](supervisor.md) — `#[AsProcess]`, the `workerman.process` tag, restarts and errors
 - [events.md](events.md) — Task and process events, built-in listeners, an error listener example
 - [extending.md](extending.md) — Tags, response strategies and where to find the other extension points
+- [deployment.md](deployment.md) — systemd unit, deploy script, user and group, OPcache, config cache owner
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations

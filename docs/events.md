@@ -24,6 +24,7 @@ See [Scheduler](scheduler.md) and [Supervisor](supervisor.md) for how tasks and 
 
 The start event is sent after the service is created and just before your method is called.
 The error event is sent when your method throws any `Throwable`.
+It is also sent when the configured method does not exist on the service.
 The exception is caught and not thrown again.
 
 - For a task, the child process still ends with exit code 0.

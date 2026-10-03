@@ -527,6 +527,8 @@ downgrade](#guard-downgrade-explicit-opt-out) below.
 
 ### Containerised deployments (Docker)
 
+The step-by-step guide for the runtime user is in [Deployment](deployment.md#config-cache-and-the-runtime-user).
+
 The most common way to trip the ownership check is the standard Docker
 layout where the cache is warmed at image build time and the server runs
 as a different user:
