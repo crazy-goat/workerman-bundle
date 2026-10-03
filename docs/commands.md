@@ -40,7 +40,7 @@ These are the options:
 | `-g`, `--grace` | `stop`, `restart`, `reload` | Makes the action graceful. Workers finish their current work first. |
 
 The `-d` option has no effect on `stop` and `reload`.
-The `-g` option has no effect on `start`.
+On its own, the `-g` option has no effect on `start`.
 
 Do not use `-d` and `-g` in the same command.
 Workerman reads only the first one of them.

@@ -227,8 +227,8 @@ module shutdown entirely.
   Logging directly before termination is unaffected (it is synchronous).
 - **Stop/reload on grpc hosts:** prefer *non-graceful* `stop` / `reload`
   (SIGINT/SIGUSR1). Workerman's SIGKILL-after-`stop_timeout` fallback is
-  only armed for non-graceful stops, so `stop --graceful` / `reload
-  --graceful` (SIGQUIT/SIGUSR2) can hang on grpc hosts when the master has
+  only armed for non-graceful stops, so `stop --grace` / `reload
+  --grace` (SIGQUIT/SIGUSR2) can hang on grpc hosts when the master has
   to wait for children stuck in `grpc_shutdown`.
 - **Zombie master after a hung daemonize intermediate:** when the
   intermediate hangs in `grpc_shutdown()` it never reaps the SIGINTed
