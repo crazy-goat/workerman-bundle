@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/configuration.md` lists every config key with its default and every environment variable; the README config tables moved there, and `docs/build-packaging.md` links to it (#881)
+- Doc tests in `tests/Docs/`: every config key and its default must be in `docs/configuration.md`, every environment variable that the bundle reads must be in its table, and every YAML example with a `workerman:` root must pass the config tree (#881)
+- Dev dependency `symfony/yaml`, used by the YAML example test (#881)
 - `bin/lint.sh` runs every linter in one place (composer validate and audit, PHP-CS-Fixer, PHPStan level 8, Rector, `bin/kb-lint.php`, the CHANGELOG and exception-usage checks, `shellcheck` on all tracked shell scripts and `hadolint` on the Dockerfile) and `composer lint` / `composer lint-fix` now call it (#859)
 - `AGENTS.md`, `docs/release-workflow.md`, `.github/dependabot.yml` and `.github/pull_request_template.md` from the crazy-goat repository standard (#859)
 - `bin/worktree-setup.sh` prepares a fresh worktree (#859)
@@ -16,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The getting started guide says that a worker reloads after 800 to 1000 requests and that the memory limit counts PHP memory (`memory_get_usage()`) (#881)
+- The `build` example in `docs/build-packaging.md` writes the kernel class as `App\Kernel` in single quotes; the old `App\\Kernel` was wrong in YAML (#881)
 - Docs fixes: `max_requests` examples use `requests: N`, the Doctrine example uses `SELECT 1` instead of `ping()`, the `memory` strategy text says `memory_get_usage()` instead of RSS, the first middleware is the outermost layer, both build commands need `phar.readonly=0`, `workerman:build:bin` lists `--phar-filename` and `--kernel-class`, and the fork text no longer claims zero per-request allocation (#880)
 - The README and the config reference now say that `listen` is required: a server without `listen` does not start (#879)
 - CI runs the shared `changes` and `docs` jobs, a `lint` job that only runs `bin/lint.sh`, test jobs gated on code changes and a `ci-ok` aggregator, which replaces the `ci` check (#859)

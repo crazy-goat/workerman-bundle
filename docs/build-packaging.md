@@ -28,53 +28,26 @@ php -d phar.readonly=0 bin/console workerman:build:bin
 
 ## Configuration
 
+All `build` keys, with their defaults, are in [configuration.md](configuration.md#build).
+`runtime_dir` is in [configuration.md](configuration.md#top-level-keys).
+
+Example:
+
 ```yaml
 # config/packages/workerman.yaml
 workerman:
-    # Writable runtime directory (defaults to project_dir).
-    # In PHAR mode, automatically set to directory containing the PHAR.
-    # Runtime directories are created with restrictive permissions (0700)
-    # to protect process-control artifacts on multi-user systems.
-    runtime_dir: '%kernel.project_dir%'
-
-    build:
-        # Output directory for built artifacts
-        build_dir: '%kernel.project_dir%/build'
-
-        # Your Symfony Kernel class
-        kernel_class: 'App\\Kernel'
-
-        # Output file names
-        phar_filename: 'app.phar'
-        bin_filename: 'app.bin'
-
-        # PHP version for phpmicro.sfx (default: current version)
-        bin_php_version: 8.3
-
-        # PHPMicro SFX source (priority: sfx-file CLI > sfx.file > sfx-url > sfx.url > default)
-        sfx:
-            url: null        # Custom download URL
-            file: null       # Local path to phpmicro.sfx
-            sha256: null     # SHA-256 hex digest for checksum verification (strongly recommended)
-            allow_insecure: false  # Disable TLS peer verification (off by default; use only for local mirrors)
-
-        # Files excluded from the PHAR
-        exclude_patterns:
-            - '/\.git/'
-            - '/tests/'
-            - '/var/'
-
-        exclude_files:
-            - '.env'
-            - '.env.local'
-
-        # Custom php.ini directives for the standalone binary (BIN mode only)
-        custom_ini: |
-            opcache.enable=1
-            opcache.enable_cli=1
-            opcache.jit=1255
-            memory_limit=256M
+  build:
+    build_dir: '%kernel.project_dir%/build'
+    kernel_class: 'App\Kernel'
+    phar_filename: 'app.phar'
+    bin_filename: 'app.bin'
+    exclude_patterns:
+      - '/\.git/'
+    exclude_files:
+      - '.env.local'
 ```
+
+The SFX source is chosen in this order: `--sfx-file`, `build.sfx.file`, `--sfx-url`, `build.sfx.url`, the default URL.
 
 ### `build.sfx.sha256`
 

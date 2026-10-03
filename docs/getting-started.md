@@ -81,8 +81,8 @@ What the config does:
 
 - `servers` lists your servers. Each server has a `name` and a `listen` address.
 - In `dev`, `file_monitor` reloads the workers when you change a `*.php` or `*.yaml` file in `src/` or `config/`.
-- In `prod`, a worker reloads after about 1000 requests.
-  It also reloads when it uses more than 128 MB of memory (134217728 bytes).
+- In `prod`, a worker reloads after 800 to 1000 requests.
+  It also reloads when it uses more than 128 MB of PHP memory (134217728 bytes, measured with `memory_get_usage()`).
 - A worker is a child process that handles requests.
 - Do not use `file_monitor` in `prod`. It costs CPU time.
 
@@ -145,6 +145,7 @@ You can also put a reverse proxy, such as nginx or Caddy, in front of the server
 
 ## Next steps
 
+- [Configuration](configuration.md): every config key and environment variable.
 - [Security](security.md): trusted hosts, TLS and static files.
 - [Troubleshooting](troubleshooting.md): problems of long-running workers.
 - [PHAR and binary packaging](build-packaging.md): ship your application as one file.
