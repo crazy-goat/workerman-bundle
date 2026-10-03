@@ -40,7 +40,7 @@ final class SupervisorDocTest extends TestCase
     {
         $page = DocsHelper::read(self::PAGE);
 
-        foreach (['workerman.process', ProcessStartEvent::class, ProcessErrorEvent::class, '`process`', 'finished unexpectedly'] as $needle) {
+        foreach (['workerman.process', ProcessStartEvent::class, ProcessErrorEvent::class, '`process`', 'finished unexpectedly', 'stop_timeout'] as $needle) {
             self::assertStringContainsString($needle, $page);
         }
     }

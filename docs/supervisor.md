@@ -71,7 +71,7 @@ Write `processes` as a number, not as a string.
 ## What happens when the method ends
 
 Every process runs your method one time, in the worker.
-The method is expected to run for ever.
+The method is expected to run forever.
 If it returns, the bundle writes the log line `Process "<name>" (service: <id>::<method>) finished unexpectedly`.
 Then the process exits with code 1, and Workerman starts a new process at once.
 There is no pause and no limit on the number of restarts.
@@ -101,9 +101,18 @@ It writes the error to the Monolog channel `process`.
 
 ## Stop and reload
 
-`workerman:server stop` and `workerman:server reload` stop the process.
-If the process does not end after `stop_timeout` seconds, the master kills it.
+Your method runs inside the start of the worker and does not return.
+So the worker cannot react to the stop and reload signals.
+After `workerman:server stop` or `workerman:server reload`, the master kills the process with `SIGKILL` when `stop_timeout` seconds are over.
+The default is 2 seconds.
+Destructors and shutdown functions do not run.
 After a reload, the process starts again.
+
+Do not use the graceful option `-g` when you have supervised processes.
+A graceful stop does not kill the process, so the process never ends.
+See [#911](https://github.com/crazy-goat/workerman-bundle/issues/911).
+
+Save the state of your work often, because the process can be killed at any time.
 The supervisor does not use the [reload strategies](reload-strategies.md).
 
 ## gRPC and SIGKILL
