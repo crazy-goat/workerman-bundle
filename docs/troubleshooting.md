@@ -239,6 +239,21 @@ module shutdown entirely.
   dead. The hung intermediate itself is still not reaped/killed on
   non-Linux; clean it up by hand if it accumulates.
 
+## Big StreamedResponse Bodies Are Cut
+
+### The problem
+
+A `StreamedResponse` writes its chunks in one event-loop tick. The client cannot read in between, so the send buffer of the connection fills up. When more than about 1 MB is waiting (`maxSendBufferSize`), Workerman drops the next chunk.
+
+### Detection
+
+The bundle logs a warning, `Streamed response was cut`, and closes the connection. The client sees a broken chunked body (the last chunk `0\r\n\r\n` is missing).
+
+### Mitigation
+
+- Do not stream big bodies with `StreamedResponse`. Use `BinaryFileResponse` for files. It sends the file in pieces and waits for the client.
+- Make the response smaller, or serve the big file from a reverse proxy or a CDN.
+
 ## Ports used by the test suite
 
 `composer test` boots a real Workerman daemon that binds **127.0.0.1:8888**,

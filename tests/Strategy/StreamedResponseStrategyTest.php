@@ -6,9 +6,11 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
+use Workerman\Events\Select;
 
 final class StreamedResponseStrategyTest extends TestCase
 {
@@ -486,5 +488,86 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertStringStartsWith('HTTP/1.1 200 OK', $sendCalls[0]['data']);
         $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
         $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data'], 'HTTP/1.1 HEAD close reply must echo Connection: close');
+    }
+
+    /**
+     * Issue #900: Workerman send() returns false and drops the data when the send
+     * buffer is full. The stream must stop and the connection must be destroyed.
+     */
+    public function testConvertStopsAndDestroysConnectionWhenSendIsRefused(): void
+    {
+        $context = new \stdClass();
+        $this->connection->context = $context;
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(2))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): bool {
+                $sendCalls[] = $data;
+
+                return count($sendCalls) === 1;
+            });
+        $this->connection->expects($this->once())->method('destroy');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        $strategy = new StreamedResponseStrategy(1, $logger);
+
+        $streamedResponse = new StreamedResponse(function (): void {
+            foreach (['a', 'b', 'c'] as $part) {
+                echo $part;
+                ob_flush();
+                flush();
+            }
+        });
+
+        $strategy->convert($streamedResponse, [], $this->connection, '1.1');
+
+        $this->assertCount(2, $sendCalls, 'No data is sent after the first refused chunk, not even the terminator');
+        $this->assertStringNotContainsString("0\r\n\r\n", implode('', $sendCalls));
+        $this->assertTrue($context->responseSentDirectly);
+    }
+
+    public function testConvertDoesNotDestroyConnectionWhenAllSendsSucceed(): void
+    {
+        $this->connection->context = new \stdClass();
+        $this->connection->method('send')->willReturn(true);
+        $this->connection->expects($this->never())->method('destroy');
+
+        $strategy = new StreamedResponseStrategy();
+        $strategy->convert(new StreamedResponse(static function (): void {
+            echo 'ok';
+        }), [], $this->connection, '1.1');
+    }
+
+    public function testBigStreamToStalledClientDestroysRealConnection(): void
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+        $this->assertNotFalse($pair);
+        [$serverSocket, $peer] = $pair;
+
+        $connection = new TcpConnection(new Select(), $serverSocket, '127.0.0.1:12345');
+        $connection->context = new \stdClass();
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        try {
+            // 8 MB in 8 KB lines. The client never reads, so the 1 MB send buffer fills up.
+            $streamedResponse = new StreamedResponse(static function (): void {
+                for ($i = 0; $i < 1024; ++$i) {
+                    echo str_repeat('x', 8192);
+                    flush();
+                }
+            });
+
+            (new StreamedResponseStrategy(8192, $logger))->convert($streamedResponse, [], $connection, '1.1');
+
+            $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
+        } finally {
+            @fclose($peer);
+        }
     }
 }
