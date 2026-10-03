@@ -24,7 +24,7 @@ Some packages and extensions are optional:
 |----------|-------------------|
 | `ext-event` | A faster event loop. |
 | `ext-inotify` | Fast file monitoring. Without it, the bundle checks files on a timer. |
-| `ext-zip` | Needed by `workerman:build:bin`. |
+| `ext-zip` | Needed by `workerman:build:bin` to unpack a downloaded SFX archive. |
 | `dragonmantank/cron-expression` | Cron schedules for tasks. |
 
 ## Install
@@ -80,7 +80,7 @@ when@prod:
 What the config does:
 
 - `servers` lists your servers. Each server has a `name` and a `listen` address.
-- In `dev`, `file_monitor` reloads the workers when you change a file in `src/` or `config/`.
+- In `dev`, `file_monitor` reloads the workers when you change a `*.php` or `*.yaml` file in `src/` or `config/`.
 - In `prod`, a worker reloads after about 1000 requests.
   It also reloads when it uses more than 128 MB of memory (134217728 bytes).
 - A worker is a child process that handles requests.
@@ -89,7 +89,7 @@ What the config does:
 > **Note:** `listen` is required. If you leave it out, the server does not start.
 > You get an error: `Unsupported listen scheme`.
 
-The `listen` value starts with a scheme: `http://`, `https://`, `ws://` or `wss://`.
+The `listen` value starts with a scheme.
 Use `http://` to start.
 An `https://` listener also needs `local_cert` and `local_pk`.
 See [SSL certificate and key validation](security.md#ssl-certificate-and-key-validation).
