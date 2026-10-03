@@ -1135,9 +1135,13 @@ final class ServerWorkerTest extends TestCase
             $this->startBigFileDownload($connection);
             $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
 
-            // A slow client: it reads a little every 0.2 s, so the connection makes progress.
+            // A slow client: it reads 256 KB every 0.2 s, so the connection makes progress.
+            // It reads in several calls because one fread() returns 8 KB at most, and a
+            // Linux unix socket becomes writable again only after most of its buffer is free.
             $eventLoop->repeat(0.2, static function () use ($peer): void {
-                fread($peer, 65536);
+                for ($i = 0; $i < 32; ++$i) {
+                    fread($peer, 8192);
+                }
             });
 
             $this->runEventLoopFor($eventLoop, 3.5);
