@@ -127,6 +127,7 @@ $ bin/console config:dump-reference workerman
 services:
   workerman.middleware.static_files:
     class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    public: true
     arguments:
       $rootDirectory: '%kernel.project_dir%/public'
 

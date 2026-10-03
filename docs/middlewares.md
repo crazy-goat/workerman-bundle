@@ -55,12 +55,15 @@ Read [Middleware header re-injection](security.md#middleware-header-re-injection
 ## Register a middleware
 
 First, make the class a service.
+The service must be public: the server gets it from the container by its ID.
+A private service is removed from the container, and the worker cannot start.
 Then write its service ID in the `middlewares` list of a server.
 
 ```yaml
 # config/services.yaml
 services:
-  App\Middleware\MyMiddleware: ~
+  App\Middleware\MyMiddleware:
+    public: true
 ```
 
 ```yaml
@@ -107,6 +110,7 @@ It replaces the deprecated `serve_files` and `root_dir` options.
 services:
   workerman.middleware.static_files:
     class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    public: true
     arguments:
       $rootDirectory: '%kernel.project_dir%/public'
 ```

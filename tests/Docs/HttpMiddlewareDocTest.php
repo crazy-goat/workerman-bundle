@@ -90,4 +90,32 @@ final class HttpMiddlewareDocTest extends TestCase
             self::assertStringContainsString($key, $page, sprintf('%s does not mention `%s`.', self::HTTP_SERVER, $key));
         }
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function pageProvider(): iterable
+    {
+        foreach (DocsHelper::userPages() as $page) {
+            yield $page => [$page];
+        }
+    }
+
+    /**
+     * The server reads a middleware from the container by its ID, so the service must be public.
+     */
+    #[DataProvider('pageProvider')]
+    public function testMiddlewareServiceExamplesArePublic(string $page): void
+    {
+        preg_match_all('/```yaml\n(.*?)```/s', DocsHelper::read($page), $matches);
+
+        $this->addToAssertionCount(1);
+        foreach ($matches[1] as $block) {
+            if (!str_contains($block, 'services:') || !preg_match('/Middleware\b/', $block)) {
+                continue;
+            }
+
+            self::assertStringContainsString('public: true', $block, sprintf("%s has a middleware service example that is not public:\n%s", $page, $block));
+        }
+    }
 }
