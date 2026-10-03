@@ -251,8 +251,19 @@ CMD ["bin/console", "workerman:server", "start"]
 ```
 
 Add a `.dockerignore` with `var/`, `vendor/` and `.git`, so the image does not carry your local files.
-The server in the application listens on `http://0.0.0.0:8080` (see [HTTP server](http-server.md)).
-Inside a container it must listen on `0.0.0.0`, not on `127.0.0.1`.
+The application config of this image is:
+
+```yaml
+# config/packages/workerman.yaml
+workerman:
+  stop_timeout: 10
+  servers:
+    - name: web
+      listen: http://0.0.0.0:8080
+      processes: 2
+```
+
+Inside a container the server must listen on `0.0.0.0`, not on `127.0.0.1` (see [HTTP server](http-server.md)).
 
 Why the file looks like this:
 
@@ -262,7 +273,9 @@ Why the file looks like this:
 - `USER www-data` comes before `cache:warmup`.
   So `www-data` owns `var/cache/prod/workerman/config.cache.php`, and the server accepts it (see [the config cache](#config-cache-and-the-runtime-user)).
   The container ran as `uid=33(www-data)`, and the cache files had the owner `33`.
-- If you must warm up as `root`, use `RUN bin/console cache:warmup && chown -R www-data:www-data var/cache` and put `USER www-data` after it.
+- If you must warm up as `root`, remove the `USER www-data` line before `RUN composer install`, add `&& chown -R www-data:www-data var` at the end of that `RUN`, and put `USER www-data` after it.
+  Change the owner of the whole `var` directory: the server must also write `var/run` and `var/log`.
+  This variant was built and run too: it was healthy.
 - `pcntl` is the only extension that you must add: the image has `posix`, and `sockets`, `event` and `opcache` are optional.
   `ext-event` needs `libevent-dev` and `libssl-dev` to build.
   `ext-inotify` is only for `file_monitor` in `dev`, so leave it out of a production image.
@@ -272,7 +285,7 @@ Why the file looks like this:
   Do not use `-d`: the container would stop at once.
 - There is no `STOPSIGNAL` line.
   Docker sends `SIGTERM`, and the master stops on `SIGTERM` like on `SIGINT` (see [stop time](#stop-time-and-graceful-stop)).
-- The health check uses PHP, because the `php` images have no `curl`.
+- The health check uses PHP, so you need no extra tool in the image.
 
 ### Docker Compose
 

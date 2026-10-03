@@ -91,18 +91,27 @@ final class DeploymentDocTest extends TestCase
 
     public function testYamlExamplesParseAndGracePeriodsAreLongerThanStopTimeout(): void
     {
-        self::assertSame(2, preg_match_all('/```yaml\n(.*?)```/s', DocsHelper::read(self::PAGE), $blocks));
+        self::assertSame(3, preg_match_all('/```yaml\n(.*?)```/s', DocsHelper::read(self::PAGE), $blocks));
 
-        $compose = Yaml::parse($blocks[1][0]);
+        $config = Yaml::parse($blocks[1][0]);
+        self::assertIsArray($config);
+        self::assertArrayHasKey('stop_timeout', $config['workerman']);
+        self::assertArrayHasKey('processes', $config['workerman']['servers'][0]);
+        self::assertStringStartsWith('http://0.0.0.0:', $config['workerman']['servers'][0]['listen']);
+        $stopTimeout = $config['workerman']['stop_timeout'];
+        self::assertGreaterThan(DocsHelper::configLeaves()['stop_timeout']->getDefaultValue(), $stopTimeout);
+
+        $compose = Yaml::parse($blocks[1][1]);
         self::assertIsArray($compose);
         self::assertSame('15s', $compose['services']['app']['stop_grace_period']);
+        self::assertGreaterThan($stopTimeout, (int) $compose['services']['app']['stop_grace_period']);
 
-        $deployment = Yaml::parse($blocks[1][1]);
+        $deployment = Yaml::parse($blocks[1][2]);
         self::assertIsArray($deployment);
         self::assertSame('Deployment', $deployment['kind']);
-        self::assertSame(20, $deployment['spec']['template']['spec']['terminationGracePeriodSeconds']);
-        // The examples use stop_timeout 10 (see the text of the page), larger than the default of 2.
-        self::assertStringContainsString('(here 20 and 10)', DocsHelper::read(self::PAGE));
+        $grace = $deployment['spec']['template']['spec']['terminationGracePeriodSeconds'];
+        self::assertGreaterThan($stopTimeout, $grace);
+        self::assertStringContainsString(sprintf('(here %d and %d)', $grace, $stopTimeout), DocsHelper::read(self::PAGE));
     }
 
     public function testGrpcVariableAndLogRulesAreOnThePage(): void
