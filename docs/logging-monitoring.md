@@ -16,13 +16,14 @@ There are four places:
 
 The paths `log_file` and `stdout_file` are in the [configuration reference](configuration.md#top-level-keys).
 By default they are in `var/log/` of your project.
-The directory has mode 0700 and belongs to the runtime user.
+If the directory does not exist, the bundle makes it with mode 0700.
+Its owner is the user that starts the server.
 
 For Docker and Kubernetes, read [Logs in a container](deployment.md#logs-in-a-container).
 
 ## The Workerman log
 
-Each line has the time, the process ID and the message:
+Each line has the time, the process ID and the message (a warning at the start has only the time):
 
 ```text
 2026-10-03 18:12:00 pid:11 Workerman[console] reloading
@@ -41,10 +42,10 @@ Each line has the time, the process ID and the message:
 In the foreground, the server writes the same lines to the console.
 In daemon mode (`start -d`), it writes only to the file.
 
-Workerman cuts the file by itself when it gets bigger than 10 MB.
-It keeps the second half.
+Workerman 5.1.4 and newer cut the file by itself when it gets bigger than 10 MB.
+They keep the second half.
 You cannot change this size in the bundle config.
-So the file does not grow without end.
+Older versions of Workerman 5 never cut the file, so rotate it.
 
 A process that fails again and again writes many lines.
 In our test, a process that threw an error at once wrote 2 MB in 30 seconds.
@@ -143,8 +144,8 @@ You can also set `error_log` in `php.ini`.
 
 ## Log rotation
 
-Workerman opens the log file for each line and adds to the end.
-So you can rotate the file while the server runs.
+Workerman opens `workerman.log` for each line and adds to the end.
+So you can rotate this file while the server runs.
 We tested this by hand:
 
 - After `mv workerman.log workerman.log.1`, the next line made a new `workerman.log`.
@@ -154,7 +155,7 @@ This is a `logrotate` config that uses the second way.
 Put it in `/etc/logrotate.d/myapp`:
 
 ```text
-/var/www/myapp/shared/var/log/*.log {
+/var/www/myapp/current/var/log/*.log {
     weekly
     rotate 8
     compress
@@ -166,8 +167,12 @@ Put it in `/etc/logrotate.d/myapp`:
 
 - `copytruncate` copies the file and then empties it.
   A line that is written between the two steps can be lost.
-- The log directory has mode 0700, but `logrotate` runs as `root` and can read it.
-- Workerman already cuts `workerman.log` at 10 MB, so you only need rotation to keep old lines.
+- The path follows the [deploy script](deployment.md#deploy-script): each release has its own `var/log`, so old releases keep their own logs.
+  Use a shared directory with `log_file` and `stdout_file` if you want one place.
+- `logrotate` runs as `root`, so the mode of the directory does not matter.
+- Use `copytruncate` for `stdout_file` and for Monolog stream handlers.
+  They keep the file open, so after `mv` they would still write to the moved file.
+- Workerman 5.1.4 and newer cut `workerman.log` at 10 MB, so there you only need rotation to keep old lines.
 - For the Monolog files, you can also use the Monolog handler type `rotating_file`.
 
 We did not run `logrotate` itself.

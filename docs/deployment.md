@@ -325,7 +325,7 @@ services:
 In the foreground, the server writes each log line to stdout.
 `docker logs` and `kubectl logs` show it, so you do not need a log file.
 By default the server also writes the same lines to `var/log/workerman.log` inside the container.
-The file does not grow without end: Workerman cuts it when it gets too big.
+Workerman 5.1.4 and newer cut it when it gets too big (see [Logging and monitoring](logging-monitoring.md#the-workerman-log)).
 
 Do not set `log_file` to `/dev/stderr` or `php://stderr`.
 Both give a PHP warning on every log line (see [issue 985](https://github.com/crazy-goat/workerman-bundle/issues/985)).
