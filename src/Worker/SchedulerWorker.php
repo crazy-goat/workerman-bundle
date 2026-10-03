@@ -168,26 +168,33 @@ final class SchedulerWorker
         $currentDate = $now ?? new \DateTimeImmutable();
         $key = $service->toString();
 
-        $nextRunDate = $trigger->getNextRunDate($this->nextRunDates[$key] ?? $currentDate);
-        if (!($nextRunDate instanceof \DateTimeImmutable)) {
-            return;
-        }
-
         // Jitter only decorates the schedule: unwrap it so the underlying
-        // periodical grid is detected and rebased on its scheduled targets.
+        // periodical grid is detected and rebased on its planned times.
+        $jitterTriggers = [];
         $scheduleTrigger = $trigger;
         while ($scheduleTrigger instanceof JitterTrigger) {
+            $jitterTriggers[] = $scheduleTrigger;
             $scheduleTrigger = $scheduleTrigger->innerTrigger();
         }
 
         if ($scheduleTrigger instanceof PeriodicalTrigger) {
-            while ($nextRunDate <= $currentDate) {
-                $nextRunDate = $trigger->getNextRunDate($nextRunDate);
-                if (!($nextRunDate instanceof \DateTimeImmutable)) {
-                    return;
-                }
+            // The stored grid time has no jitter, so the jitter never adds up.
+            $nextRunDate = $scheduleTrigger->getNextRunDate($this->nextRunDates[$key] ?? $currentDate);
+            while ($nextRunDate instanceof \DateTimeImmutable && $nextRunDate <= $currentDate) {
+                $nextRunDate = $scheduleTrigger->getNextRunDate($nextRunDate);
+            }
+            if (!($nextRunDate instanceof \DateTimeImmutable)) {
+                return;
             }
             $this->nextRunDates[$key] = $nextRunDate;
+            foreach ($jitterTriggers as $jitterTrigger) {
+                $nextRunDate = $jitterTrigger->applyJitter($nextRunDate);
+            }
+        } else {
+            $nextRunDate = $trigger->getNextRunDate($currentDate);
+            if (!($nextRunDate instanceof \DateTimeImmutable)) {
+                return;
+            }
         }
 
         $interval = (float) $nextRunDate->format('U.u') - (float) $currentDate->format('U.u');
