@@ -12,6 +12,8 @@ use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
 use CrazyGoat\WorkermanBundle\Supervisor\ProcessHandler;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -40,10 +42,12 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $tasks = array_map(fn(array $a): array => $a[0], $tasksTagged);
         $processes = array_map(fn(array $a): array => $a[0], $processesTagged);
 
-        $container
-            ->getDefinition('workerman.config_loader')
+        $configLoader = $container->getDefinition('workerman.config_loader');
+        $configLoader
             ->addMethodCall('setProcessConfig', [$processes])
             ->addMethodCall('setSchedulerConfig', [$tasks]);
+
+        $this->makeMiddlewaresPublic($container, $configLoader);
 
         $container
             ->register('workerman.task_locator', ServiceLocator::class)
@@ -98,6 +102,40 @@ final class WorkermanCompilerPass implements CompilerPassInterface
                 new Reference('workerman.process_locator'),
                 new Reference(EventDispatcherInterface::class),
             ]);
+    }
+
+    /**
+     * The server reads each middleware from the container by its ID at worker
+     * start. A private service is removed from the compiled container, so the
+     * worker would stop and be restarted again and again (issue #964). Make
+     * the services from servers[].middlewares public, and fail at container
+     * build time when one of them does not exist.
+     */
+    private function makeMiddlewaresPublic(ContainerBuilder $container, Definition $configLoader): void
+    {
+        foreach ($configLoader->getMethodCalls() as [$method, $arguments]) {
+            if ($method !== 'setWorkermanConfig' || !is_array($arguments[0] ?? null)) {
+                continue;
+            }
+
+            $servers = $arguments[0]['servers'] ?? [];
+            foreach (is_array($servers) ? $servers : [] as $server) {
+                $middlewares = is_array($server) ? ($server['middlewares'] ?? []) : [];
+                foreach (is_array($middlewares) ? $middlewares : [] as $id) {
+                    if (!is_string($id)) {
+                        continue;
+                    }
+
+                    if ($container->hasAlias($id)) {
+                        $container->getAlias($id)->setPublic(true);
+                    } elseif ($container->hasDefinition($id)) {
+                        $container->getDefinition($id)->setPublic(true);
+                    } else {
+                        throw new InvalidArgumentException(sprintf('The middleware service "%s" from "workerman.servers[].middlewares" does not exist.', $id));
+                    }
+                }
+            }
+        }
     }
 
     /**

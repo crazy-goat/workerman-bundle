@@ -162,7 +162,6 @@ To restrict which file types are served, configure an explicit extension allowli
 services:
     workerman.middleware.static_files:
         class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
-        public: true
         arguments:
             $rootDirectory: '%kernel.project_dir%/public'
             $allowedExtensions:
@@ -207,7 +206,6 @@ To restore the previous behaviour and allow symlinks to be followed, set `$follo
 services:
     workerman.middleware.static_files:
         class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
-        public: true
         arguments:
             $rootDirectory: '%kernel.project_dir%/public'
             $followSymlinks: true
