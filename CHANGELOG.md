@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The test class `FailingUnlinkStreamWrapper` declares the `$context` property, so the suite no longer prints 4 dynamic-property deprecations on PHP 8.2 and newer (#812)
 - `bin/kb-lint.php --fix` no longer adds a second `## Tag index` heading when the heading is there but the index markers are missing. Lint and `--fix` now report an error with the line number, and `--fix` writes no index until the markers are added or the heading is removed (#838)
 - A running request is no longer cut by `stop` or `reload` on the Select loop (no `ext-event`). Symfony Console turns on `pcntl_async_signals(true)` and the workers inherited it, so the stop signal ran in the middle of the request and `stop_timeout` did not help. The master now turns async signals off before it starts, and the scheduler registers `SIGCHLD` through the event loop. A supervised process or a task child now ends on a stop signal only when the event loop handles it (#987)
 - `bin/install-git-hook.php` now fails with a message and exit code 1 when `chmod()` of the pre-push hook fails, and no longer prints success. A test covers the failure, a linked worktree and `core.hooksPath`. `CONTRIBUTING.md` says how the hooks folder is found (#829)
