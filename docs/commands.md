@@ -39,8 +39,12 @@ These are the options:
 | `-d`, `--daemon` | `start`, `restart` | Runs the server in the background (daemon mode). |
 | `-g`, `--grace` | `stop`, `restart`, `reload` | Makes the action graceful. Workers finish their current work first. |
 
+The `-d` option has no effect on `stop` and `reload`.
 The `-g` option has no effect on `start`.
-The `-d` option has no effect on the other actions.
+
+Do not use `-d` and `-g` in the same command.
+Workerman reads only the first one of them.
+For example, `restart -g -d` does not run in daemon mode.
 
 Examples:
 
@@ -67,7 +71,7 @@ APP_RUNTIME='CrazyGoat\WorkermanBundle\Runtime' php public/index.php start
 
 `stop`, `restart` and `reload` send a signal to the master process.
 The command looks for the master process in the `pid_file`.
-If no server runs, `stop` and `reload` print an error and exit with a failure code.
+If no server runs, `stop`, `reload`, `status` and `connections` print an error and exit with a failure code.
 `restart` does not fail in this case: it only starts the server.
 
 | Action | Plain | With `-g` |
@@ -86,7 +90,7 @@ See [Configuration](configuration.md#top-level-keys).
 
 The `status` action asks the master process to write a status file.
 Then it prints the content.
-It waits as long as the `status_timeout` setting.
+It waits as long as the `status_timeout` setting (5 seconds by default).
 If no data arrives in time, it prints the warning `No status data available.`
 
 ### connections
@@ -108,7 +112,7 @@ PID      Worker          CID       Trans   Protocol        ipv4   ipv6   Recv-Q 
 | `PID` | The process ID of the worker that handles the connection. |
 | `Worker` | The name of the worker process. It is cut to 14 characters. |
 | `CID` | The connection ID that Workerman gives to the connection. |
-| `Trans` | The transport protocol: `tcp`, `udp` or `ssl`. |
+| `Trans` | The transport protocol: `tcp` or `ssl`. |
 | `Protocol` | The application protocol, for example `Http`. If there is none, you see the transport name. A name longer than 15 characters is cut to 13 characters plus `..`. |
 | `ipv4` | `1` if the connection uses IPv4, otherwise `0`. |
 | `ipv6` | `1` if the connection uses IPv6, otherwise `0`. |
