@@ -329,7 +329,16 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             $clientError = $this->isClientError($e);
             $this->logThrowable($e, $clientError);
             try {
-                $this->sendResponse($connection, $this->buildErrorResponse($clientError), $request);
+                if ($connection->context instanceof \stdClass && isset($connection->context->responseSentDirectly)) {
+                    // The head is already sent (for example a streamed body
+                    // that failed in the middle). A second response would
+                    // land inside the open body. The body has no valid end,
+                    // so close the connection (issue #901).
+                    unset($connection->context->responseSentDirectly);
+                    $connection->close();
+                } else {
+                    $this->sendResponse($connection, $this->buildErrorResponse($clientError), $request);
+                }
             } catch (\Throwable $sendError) {
                 // Best-effort: if even the error-response send fails, log
                 // and close. We must not let the throwable escape __invoke()
