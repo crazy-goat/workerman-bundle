@@ -130,7 +130,7 @@ So choose by what changed:
 
 | What changed | What to run |
 |--------------|-------------|
-| Only PHP code of the app, changed in place | `reload` |
+| Only PHP code of the app, changed in place (in `prod`, run `cache:warmup` as the runtime user first) | `reload` |
 | `workerman.yaml`, tasks, processes, listen addresses, or the number of workers | `restart` |
 | A new release directory with a symlink switch | `restart` |
 
