@@ -251,8 +251,9 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && bin/console cache:warmup
 
 EXPOSE 8080
+# With trusted_hosts, send a Host header from the list (here example.com).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health") === "ok" ? 0 : 1);'
+    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health", false, stream_context_create(["http" => ["header" => "Host: example.com"]])) === "ok" ? 0 : 1);'
 
 CMD ["bin/console", "workerman:server", "start"]
 ```
@@ -317,6 +318,7 @@ services:
   The warm config cache stays in the image.
   Your application may need more writable directories, for example for Symfony cache pools.
 - The `HEALTHCHECK` of the image is used by Compose: the service showed `healthy` after the start.
+- If you set `trusted_hosts`, a check without a `Host` header gets status 400 and the container turns `unhealthy`. So the `HEALTHCHECK` above sends a `Host` from your list. Without `trusted_hosts` you can drop the header. See [Logging and monitoring](logging-monitoring.md#a-health-check).
 
 ## Logs in a container
 

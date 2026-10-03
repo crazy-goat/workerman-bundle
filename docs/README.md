@@ -19,6 +19,7 @@ This directory contains documentation for the WorkermanBundle.
 - [extending.md](extending.md) — Tags, response strategies and where to find the other extension points
 - [deployment.md](deployment.md) — systemd unit, deploy script, user and group, OPcache, config cache owner, Docker, Kubernetes, logs and stop time
 - [reverse-proxy.md](reverse-proxy.md) — nginx and Caddy, trusted proxies, trusted hosts, HTTPS and HTTP/2, limits and keep-alive
+- [logging-monitoring.md](logging-monitoring.md) — where logs go, Monolog, log rotation, the status command, health checks
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations
