@@ -19,7 +19,7 @@ final class IsolatedPhpTest extends TestCase
         yield 'both shared' => [['pcntl', 'posix'], ['pcntl', 'posix'], []];
         yield 'pcntl built in, posix shared' => [['posix'], ['pcntl', 'posix'], ['pcntl']];
         yield 'not loaded at all is not forced' => [[], [], []];
-        yield 'grpc is never added' => [['pcntl'], ['pcntl', 'posix', 'grpc'], ['posix']];
+        yield 'extensions that are not required are ignored' => [['pcntl'], ['pcntl', 'posix', 'grpc'], ['posix']];
     }
 
     /**
