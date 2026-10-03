@@ -236,7 +236,7 @@ The HTTP server exposes configurable timeouts to protect against slowloris-style
 
 ### connection_timeout
 
-The maximum time (in seconds) to wait for a complete request (headers + body) on a newly established connection. If the client does not send the complete request within this window, the connection is closed. This prevents slow-read attacks where an attacker sends headers or body data byte-by-byte.
+The maximum time (in seconds) to wait for a complete request (headers + body) on a newly established connection. The same limit applies to the second and later requests on a keep-alive connection: the time counts from the moment the sweeper sees the first bytes of the new request. If the client does not send the complete request within this window, the connection is closed. This prevents slow-read attacks where an attacker sends headers or body data byte-by-byte.
 
 Default: `120` seconds. Timeout checks run from a shared worker-level sweeper, so a connection may remain open until the next sweep (at most approximately one quarter of the smallest configured timeout, with a minimum one-second interval). Because activity is tracked at whole-second granularity, a connection may also be closed up to about one second *before* its exact timeout. Set to `0` to disable the timeout entirely: the sweeper is not armed and incomplete requests are never closed by the bundle (not recommended — removes slowloris protection).
 
