@@ -244,6 +244,8 @@ Default: `120` seconds. Timeout checks run from a shared worker-level sweeper, s
 
 The maximum idle time (in seconds) to keep a keep-alive connection open after the previous request has been fully processed. If no new request arrives within this window, the connection is closed. This prevents idle connections from consuming worker capacity indefinitely.
 
+While a response is still being sent (for example a big file to a slow client), the timeout counts the time with no sent bytes, not the total time. A client that reads a few bytes between two sweeps keeps the connection open.
+
 Default: `30` seconds. As with `connection_timeout`, enforcement uses the shared sweeper's interval rather than a dedicated timer for each connection. Set to `0` to disable the timeout: idle keep-alive connections are then never closed by the bundle.
 
 ### body_size_cap (per-server)
@@ -280,6 +282,7 @@ workerman:
 
 - **connection_timeout protects against slowloris**: Without this timeout, an attacker can open many connections and send data extremely slowly, holding each worker process indefinitely. Setting this to a reasonable value (e.g., 30-120 seconds) limits the window of exposure.
 - **keepalive_timeout limits idle connections**: Long-lived idle keep-alive connections reduce the number of available worker slots. A short keepalive timeout (e.g., 15-30 seconds) frees capacity quickly.
+- **The timeouts do not limit a slow reader of a big response**: while bytes keep moving, the connection stays open and the server keeps the file handle and the send buffer. Use a reverse proxy to set a minimum download speed if you need one.
 - **body_size_cap for defense-in-depth**: Even with a global `max_package_size`, setting tighter per-server limits on endpoints that expect small payloads (e.g., API endpoints) provides an additional layer of protection against oversized payloads.
 - **Timeouts share one worker-level sweeper**: enforcement runs from a single persistent timer per worker, not per-connection timers, so individual connection events never add or remove timers. A slowloris attack on one connection affects other connections only through the shared sweep interval derived from the smallest configured timeout.
 

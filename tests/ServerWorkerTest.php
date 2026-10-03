@@ -21,6 +21,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Events\Select;
+use Workerman\Protocols\Http;
 use Workerman\Timer;
 use Workerman\Worker;
 
@@ -1131,7 +1132,7 @@ final class ServerWorkerTest extends TestCase
 
             $onConnect($connection);
             $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
-            $connection->send(str_repeat('x', 8 * 1024 * 1024), true);
+            $this->startBigFileDownload($connection);
             $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
 
             // A slow client: it reads a little every 0.2 s, so the connection makes progress.
@@ -1164,7 +1165,7 @@ final class ServerWorkerTest extends TestCase
 
             $onConnect($connection);
             $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
-            $connection->send(str_repeat('x', 8 * 1024 * 1024), true);
+            $this->startBigFileDownload($connection);
             $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
 
             // The client never reads: no byte moves, so the timeout still applies.
@@ -1268,6 +1269,19 @@ final class ServerWorkerTest extends TestCase
         }
 
         return null;
+    }
+
+    /**
+     * Sends a 6 MB file the way a BinaryFileResponse does: Http::encode() streams a
+     * file of 2 MB or more with sendStream(), so the data is not all queued at once.
+     */
+    private function startBigFileDownload(TcpConnection $connection): void
+    {
+        $file = $this->tempDir . '/big_download.bin';
+        file_put_contents($file, str_repeat('x', 6 * 1024 * 1024));
+
+        $response = (new \Workerman\Protocols\Http\Response(200))->withFile($file);
+        Http::encode($response, $connection);
     }
 
     private function createStartedWorkerForTimerTests(string $name, int $connectionTimeout, int $keepaliveTimeout, Select $eventLoop): Worker
