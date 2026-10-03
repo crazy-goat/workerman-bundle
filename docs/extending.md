@@ -39,7 +39,7 @@ The bundle has already read the headers for you, and they are in `$headers`.
 `Content-Length`, `Accept-Ranges` and `Transfer-Encoding` are removed.
 They belong to the transport, and Workerman sets them.
 The one exception is a `HEAD` request: there the `Content-Length` of your application is kept in `$headers`.
-Then your strategy must send it in a response without a body, or remove it, because Workerman adds its own `Content-Length` to a response.
+Remove it in your strategy, because Workerman always adds its own `Content-Length` to a response.
 
 If your strategy must know the request method, implement `RequestMethodAwareResponseConverterStrategyInterface` instead.
 Its `convert()` method has two more arguments: `string $requestMethod = 'GET'` and `bool $shouldClose = false`.
