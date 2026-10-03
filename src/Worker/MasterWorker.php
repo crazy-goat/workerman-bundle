@@ -27,6 +27,22 @@ use Workerman\Worker;
 final class MasterWorker extends Worker
 {
     /**
+     * Turn async signals off before the master and the workers start.
+     *
+     * Symfony Console turns on `pcntl_async_signals(true)` and the forked
+     * workers inherit it. A stop or reload signal then runs the Workerman
+     * handler in the middle of a request and cuts it, so `stop_timeout` does
+     * not help (issue #987). Plain Workerman never turns async signals on:
+     * the event loop handles the signal after the request.
+     */
+    public static function runAll(): void
+    {
+        pcntl_async_signals(false);
+
+        parent::runAll();
+    }
+
+    /**
      * Write the master PID, then record its fingerprint.
      *
      * `parent::saveMasterPid()` persists the real master PID (this is the
