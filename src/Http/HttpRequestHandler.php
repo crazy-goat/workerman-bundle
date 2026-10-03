@@ -67,6 +67,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     private array $middlewares = [];
     /** @var array<string, mixed> */
     private array $staticFileConfig = [];
+    private ?StaticFilesMiddleware $staticFilesMiddleware = null;
 
     /**
      * Pre-composed middleware dispatch pipeline.
@@ -103,12 +104,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         if ($rootDirectory === null) {
             return $this;
         }
-        // Appended last intentionally: the static layer is the innermost
-        // pipeline layer, so user middleware runs first and may short-circuit,
-        // authenticate or decorate static-file responses (DEC-022, issue #730).
-        // Do not hoist it outward without superseding that decision.
+        // Kept apart from the user middleware and added last in getPipeline():
+        // the static layer is the innermost pipeline layer, so user middleware
+        // runs first and may short-circuit, authenticate or decorate
+        // static-file responses (DEC-022, issue #730). Do not hoist it outward
+        // without superseding that decision. A separate property makes the
+        // result independent of the order of withMiddlewares() and
+        // withRootDirectory() (issue #898).
         $allowedExtensions = $this->staticFileConfig['allowed_extensions'] ?? [];
-        $this->middlewares[] = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
+        $this->staticFilesMiddleware = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
         $this->pipeline = null; // invalidate cached pipeline
 
         return $this;
@@ -142,6 +146,9 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         // Capture the middleware array in registration order (first
         // registered = first executed). The dispatcher walks it by index.
         $middlewares = $this->middlewares;
+        if ($this->staticFilesMiddleware instanceof StaticFilesMiddleware) {
+            $middlewares[] = $this->staticFilesMiddleware;
+        }
 
         $this->pipeline = fn(Request $request, callable $controller): Http\Response
             => (new MiddlewareDispatcher($middlewares, $controller))($request);
