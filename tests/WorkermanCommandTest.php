@@ -65,7 +65,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
         // Server should be down.
         try {
-            $client->request('GET', 'http://127.0.0.1:8888/response_test', []);
+            $client->request('GET', 'http://127.0.0.1:8888/response_test');
             self::fail('Expected connection to fail after stop');
         } catch (ConnectException) {
         }
