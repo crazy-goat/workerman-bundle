@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `bin/check-coverage.php` now needs the threshold argument. Without it, or with a value that is not a number from 0 to 100, it prints the usage and exits with code 2, so a caller that forgets the threshold can no longer pass the gate by accident. `composer coverage:check` already passes `80.0` (#839)
 - Docs: the `StaticFilesMiddleware` example in `UPGRADE.md` has `public: true` (#884)
 - Docs: the README says what `processes` defaults to: the number of CPUs times 2, and the container CPU limit is respected (#960)
 - Docs: a middleware service must be `public: true`, because the server reads it from the container by its ID; the examples in the README, `docs/security.md` and `docs/middlewares.md` now say so (#883)
