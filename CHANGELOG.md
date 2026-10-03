@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/logging-monitoring.md` tells where each log goes (Workerman log, stdout file, Monolog, task and process channels), how to rotate the files, how to read `status`, and how to make a health check. The Docker `HEALTHCHECK` in `docs/deployment.md` now sends a `Host` header, so it also works with `trusted_hosts`. `LoggingMonitoringDocTest` checks the config keys, the YAML examples and the links (#891)
 - `docs/reverse-proxy.md` has a tested nginx config and Caddyfile, the Symfony trusted proxies and `trusted_hosts` rules, HTTPS and HTTP/2 at the proxy, the body size, timeout and keep-alive limits, and how to check the setup. `ReverseProxyDocTest` checks the config keys, the nginx block and the YAML examples (#890)
 - `docs/deployment.md` says that a running request can be cut about 1 second after a stop (we saw it without the `event` extension), so it does not get `stop_timeout` seconds. `TimeoutStopSec` and the platform stop time must be at least `stop_timeout` plus 3 seconds, and `systemctl reload` returns before the new workers are up (#984)
 - `docs/extending.md` says that the response strategy API is public and that a break gets a note in `UPGRADE.md` and the CHANGELOG (#878)

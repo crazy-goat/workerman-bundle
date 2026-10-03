@@ -251,8 +251,9 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && bin/console cache:warmup
 
 EXPOSE 8080
+# With trusted_hosts, send a Host header from the list (here example.com).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health") === "ok" ? 0 : 1);'
+    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health", false, stream_context_create(["http" => ["header" => "Host: example.com"]])) === "ok" ? 0 : 1);'
 
 CMD ["bin/console", "workerman:server", "start"]
 ```
@@ -317,13 +318,14 @@ services:
   The warm config cache stays in the image.
   Your application may need more writable directories, for example for Symfony cache pools.
 - The `HEALTHCHECK` of the image is used by Compose: the service showed `healthy` after the start.
+- If you set `trusted_hosts`, a check without a `Host` header gets status 400 and the container turns `unhealthy`. So the `HEALTHCHECK` above sends a `Host` from your list. Without `trusted_hosts` you can drop the header. See [Logging and monitoring](logging-monitoring.md#a-health-check).
 
 ## Logs in a container
 
 In the foreground, the server writes each log line to stdout.
 `docker logs` and `kubectl logs` show it, so you do not need a log file.
 By default the server also writes the same lines to `var/log/workerman.log` inside the container.
-The file does not grow without end: Workerman cuts it when it gets too big.
+Workerman 5.1.4 and newer cut it when it gets too big (see [Logging and monitoring](logging-monitoring.md#the-workerman-log)).
 
 Do not set `log_file` to `/dev/stderr` or `php://stderr`.
 Both give a PHP warning on every log line (see [issue 985](https://github.com/crazy-goat/workerman-bundle/issues/985)).
