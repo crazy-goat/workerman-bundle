@@ -34,5 +34,9 @@ if (file_put_contents($prePushPath, $hookContent . "\n") === false) {
     exit(1);
 }
 
-chmod($prePushPath, 0o755);
+if (!@chmod($prePushPath, 0o755)) {
+    echo "Error: Failed to make the pre-push hook executable (chmod): {$prePushPath}\n";
+    exit(1);
+}
+
 echo "Git pre-push hook installed successfully\n";
