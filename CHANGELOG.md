@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/reverse-proxy.md` has a tested nginx config and Caddyfile, the Symfony trusted proxies and `trusted_hosts` rules, HTTPS and HTTP/2 at the proxy, the body size, timeout and keep-alive limits, and how to check the setup. `ReverseProxyDocTest` checks the config keys, the nginx block and the YAML examples (#890)
 - `docs/deployment.md` says that a running request can be cut about 1 second after a stop (we saw it without the `event` extension), so it does not get `stop_timeout` seconds. `TimeoutStopSec` and the platform stop time must be at least `stop_timeout` plus 3 seconds, and `systemctl reload` returns before the new workers are up (#984)
 - `docs/extending.md` says that the response strategy API is public and that a break gets a note in `UPGRADE.md` and the CHANGELOG (#878)
 - `docs/deployment.md` has a tested Dockerfile (build, run, health check, stop with a request in flight), a Compose file, a Kubernetes example, and the rules for logs in a container, the stop time and gRPC. The Dockerfile examples of `docs/security.md` moved there. `DeploymentDocTest` checks the Dockerfile order, the YAML examples and the grace periods (#889)
