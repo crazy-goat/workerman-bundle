@@ -50,10 +50,16 @@ final class CommandReferenceDocTest extends TestCase
 
         self::assertStringContainsString('`' . $name . '`', $page, sprintf('%s does not mention the command `%s`.', self::PAGE, $name));
 
+        // Look for the options only in the section of the command: some options exist on more than one command.
+        $start = strpos($page, '## `' . $name . '`');
+        self::assertIsInt($start, sprintf('%s has no section for `%s`.', self::PAGE, $name));
+        $end = strpos($page, "\n## ", $start + 1);
+        $section = $end === false ? substr($page, $start) : substr($page, $start, $end - $start);
+
         foreach ($options as $option) {
             self::assertStringContainsString(
                 '`--' . $option,
-                $page,
+                $section,
                 sprintf('%s does not mention the option `--%s` of `%s`.', self::PAGE, $option, $name),
             );
         }

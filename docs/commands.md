@@ -65,9 +65,10 @@ APP_RUNTIME='CrazyGoat\WorkermanBundle\Runtime' php public/index.php start
 
 ### stop, restart and reload
 
-All three actions send a signal to the master process.
+`stop`, `restart` and `reload` send a signal to the master process.
 The command looks for the master process in the `pid_file`.
-If no server runs, the command prints an error and exits with a failure code.
+If no server runs, `stop` and `reload` print an error and exit with a failure code.
+`restart` does not fail in this case: it only starts the server.
 
 | Action | Plain | With `-g` |
 |--------|-------|-----------|
@@ -75,8 +76,10 @@ If no server runs, the command prints an error and exits with a failure code.
 | `reload` | `SIGUSR1` | `SIGUSR2` |
 
 `stop` and `restart` wait for the master process to end.
-The wait time is the `stop_timeout` setting.
-If the master process does not end in time, `stop` prints an error and exits with a failure code.
+The wait time is the `stop_timeout` setting plus 3 seconds.
+With `-g`, it is three times `stop_timeout` plus 3 seconds.
+With the default `stop_timeout` of 2, this is 5 seconds, or 9 seconds with `-g`.
+If the master process does not end in time, `stop` and `restart` print an error and exit with a failure code.
 See [Configuration](configuration.md#top-level-keys).
 
 ### status
@@ -123,7 +126,7 @@ PID      Worker          CID       Trans   Protocol        ipv4   ipv6   Recv-Q 
 > **Note:** For better performance, Workerman recommends the `php-event` extension.
 
 > **Note:** If the `grpc` extension is loaded, set `GRPC_ENABLE_FORK_SUPPORT=1` before you start the server.
-> See [Configuration](configuration.md#environment-variables) and [Troubleshooting](troubleshooting.md#grpc-extension-and-fork-safety).
+> See [grpc/grpc#31241](https://github.com/grpc/grpc/issues/31241), [Configuration](configuration.md#environment-variables) and [Troubleshooting](troubleshooting.md#grpc-extension-and-fork-safety).
 
 ## Reload from your code
 
@@ -143,9 +146,14 @@ Utils::reload(reloadAllWorkers: true);
 
 `Utils::reload()` sends `SIGUSR1`.
 With the default, it signals the current process.
-With `reloadAllWorkers: true`, it signals the parent process, which reloads all workers.
-It does the same as `bin/console workerman:server reload`.
-You can call it from controllers, services, scheduled tasks and deploy hooks.
+With `reloadAllWorkers: true`, it signals the parent process.
+In a worker, for example in a controller or a service, the parent is the master process.
+Then it does the same as `bin/console workerman:server reload`.
+
+In a scheduled task, the parent is the scheduler worker, not the master process.
+Do not call it from a separate command, for example a deploy script.
+The parent would be your shell or CI runner, and `SIGUSR1` would stop it.
+In a deploy script, run `bin/console workerman:server reload` instead.
 
 It needs the `pcntl` and `posix` PHP extensions.
 The Workerman runtime always has them.
@@ -184,12 +192,13 @@ php -d phar.readonly=0 bin/console workerman:build:bin [options]
 | `--filename=NAME` | `build.bin_filename` | The name of the binary. |
 | `--phar-filename=NAME` | `build.phar_filename` | The name of the PHAR file that the build makes on the way. |
 | `--kernel-class=CLASS` | `build.kernel_class` | The kernel class for the PHAR stub. |
-| `--sfx-file=PATH` | none | The path of a local `phpmicro.sfx` file. |
-| `--sfx-url=URL` | none | The URL to download `phpmicro.sfx` from. |
+| `--sfx-file=PATH` | `build.sfx.file` | The path of a local `phpmicro.sfx` file. |
+| `--sfx-url=URL` | `build.sfx.url`, then `https://download.workerman.net/php/php<version>.micro.sfx` | The URL to download `phpmicro.sfx` from. |
 | `--sfx-checksum=HASH` | `build.sfx.sha256` | The expected SHA-256 of the SFX file, in hex. |
-| `--php-version=VER` | none | The PHP version of the static binary, for example `8.3`. |
-| `--insecure` | off | Turns off TLS peer verification for the download. Not recommended. |
+| `--php-version=VER` | `build.bin_php_version`, then the current PHP version | The PHP version of the static binary, for example `8.3`. It chooses the default download URL. |
+| `--insecure` | `build.sfx.allow_insecure` (`false`) | Turns off TLS peer verification for the download. Not recommended. |
 | `--unsafe-no-checksum` | off | Skips the SHA-256 check. Not recommended. |
 
-Without a checksum, the build fails, unless you pass `--unsafe-no-checksum`.
+If the build downloads the SFX file and has no checksum, it fails, unless you pass `--unsafe-no-checksum`.
+A local SFX file needs no checksum.
 For the checksum, the SFX source order and the security notes, see [Build and packaging](build-packaging.md).
