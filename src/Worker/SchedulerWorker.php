@@ -98,9 +98,6 @@ final class SchedulerWorker
     }
 
     /**
-     * Reap terminated child processes and log non-zero exits or signal kills.
-     */
-    /**
      * Register the handler through the event loop. Async signals are off
      * (see MasterWorker::runAll), and only Select calls pcntl_signal_dispatch(),
      * so a plain pcntl_signal() would never run on the Event loop (issue #987).
@@ -110,6 +107,9 @@ final class SchedulerWorker
         $this->worker::$globalEvent?->onSignal(SIGCHLD, $this->handleSigchld(...));
     }
 
+    /**
+     * Reap terminated child processes and log non-zero exits or signal kills.
+     */
     private function handleSigchld(): void
     {
         while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
