@@ -42,7 +42,7 @@ The system then spreads new connections between the workers.
 The default is `false`: the workers share one socket.
 
 When a worker is too big or too old, it is restarted.
-Read the reload strategies in the [reload strategies](reload-strategies.md).
+Read about this in [reload strategies](reload-strategies.md).
 
 ## The way of a request
 

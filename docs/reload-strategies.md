@@ -94,10 +94,10 @@ workerman:
 
 A separate process watches your files.
 When a file changes, it reloads all workers.
-It waits a short time first, so one save that changes many files gives one reload.
 Use it in `dev` only.
 
 With the `inotify` PHP extension, the watch is fast and cheap.
+It waits a short time (a third of a second) after a change, so one save that changes many files gives one reload.
 Without it, the process looks at the files every `polling_interval` seconds.
 This can use much CPU and disk in a big project.
 Install `php-inotify` for a big project.
@@ -108,6 +108,13 @@ Without `inotify`, `max_files_per_tick` is the most directory entries that one c
 
 The worker reloads after each request.
 Each request gets a clean worker, but every request pays the start time of the kernel.
+
+```yaml
+workerman:
+  reload_strategy:
+    always:
+      active: true
+```
 
 ## Write your own strategy
 

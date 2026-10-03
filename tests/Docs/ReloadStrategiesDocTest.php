@@ -54,7 +54,7 @@ final class ReloadStrategiesDocTest extends TestCase
                 continue;
             }
 
-            self::assertStringContainsString($key, $section, sprintf('The section `%s` of %s does not mention `%s`.', $strategy, self::PAGE, $key));
+            self::assertStringContainsString('`' . $key . '`', $section, sprintf('The section `%s` of %s does not mention `%s`.', $strategy, self::PAGE, $key));
         }
     }
 
