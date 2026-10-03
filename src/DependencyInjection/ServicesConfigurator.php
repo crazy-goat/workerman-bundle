@@ -279,6 +279,7 @@ final readonly class ServicesConfigurator
             ->addTag('workerman.response_converter.strategy', ['priority' => 50])
             ->setArguments([
                 $container->getParameter('workerman.response_chunk_size'),
+                new Reference('logger'),
             ])
         ;
 
