@@ -79,13 +79,15 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
 
         $file = $response->getFile();
         $offset = $this->reflector->getOffset($response);
-        $maxlen = $this->reflector->getMaxlen($response);
+        // Symfony uses maxlen -1 for "to the end of the file". Workerman has no such
+        // value: it uses 0 and treats any other non-zero length as a range (issue #902).
+        $maxlen = max(0, $this->reflector->getMaxlen($response) ?? 0);
         $deleteFileAfterSend = $this->reflector->getDeleteFileAfterSend($response);
 
         if ($deleteFileAfterSend === true) {
             $filePath = $file->getPathname();
 
-            $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen ?? 0);
+            $workermanResponse->withFile($filePath, $offset ?? 0, $maxlen);
             $this->scheduleFileCleanup($filePath, $connection);
 
             return $workermanResponse;
@@ -94,7 +96,7 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         $workermanResponse->withFile(
             $file->getPathname(),
             $offset ?? 0,
-            $maxlen ?? 0,
+            $maxlen,
         );
 
         return $workermanResponse;

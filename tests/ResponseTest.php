@@ -63,8 +63,8 @@ final class ResponseTest extends KernelTestCase
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file');
 
-        // Workerman may return 206 for range requests or 200 for normal requests
-        $this->assertTrue(in_array($response->getStatusCode(), [200, 206], true));
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertFalse($response->hasHeader('Content-Range'));
         $this->assertStringContainsString('Test file download content', (string) $response->getBody());
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
         $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
@@ -111,14 +111,69 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
 
+    /**
+     * Issue #902: a file of 2 MB or more was sent as 206 with no body.
+     */
+    public function testBigBinaryFileResponseIsSentInFull(): void
+    {
+        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertFalse($response->hasHeader('Content-Range'));
+        $this->assertSame('3145728', $response->getHeaderLine('Content-Length'));
+        $this->assertSame(str_repeat('0123456789abcdef', 196608), (string) $response->getBody());
+    }
+
+    public function testBigBinaryFileResponseWithClosedRange(): void
+    {
+        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
+            'headers' => ['Range' => 'bytes=16-47'],
+        ]);
+
+        $this->assertSame(206, $response->getStatusCode());
+        $this->assertSame('bytes 16-47/3145728', $response->getHeaderLine('Content-Range'));
+        $this->assertSame('0123456789abcdef0123456789abcdef', (string) $response->getBody());
+    }
+
+    public function testBigBinaryFileResponseWithOpenRange(): void
+    {
+        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
+            'headers' => ['Range' => 'bytes=100-'],
+        ]);
+
+        $this->assertSame(206, $response->getStatusCode());
+        $this->assertSame('bytes 100-3145727/3145728', $response->getHeaderLine('Content-Range'));
+        $this->assertSame(3145628, strlen((string) $response->getBody()));
+    }
+
+    public function testBinaryFileResponseWithOpenRange(): void
+    {
+        $client = new Client(['http_errors' => false]);
+
+        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
+            'headers' => ['Range' => 'bytes=5-'],
+        ]);
+
+        $this->assertSame(206, $response->getStatusCode());
+        $this->assertSame(
+            substr((string) file_get_contents(__DIR__ . '/Fixtures/test_download.txt'), 5),
+            (string) $response->getBody(),
+        );
+    }
+
     public function testBinaryFileResponseWithDeleteAfterSend(): void
     {
         $client = new Client(['http_errors' => false]);
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_delete');
 
-        // withFile() handles range requests, may return 206
-        $this->assertContains($response->getStatusCode(), [200, 206]);
+        $this->assertSame(200, $response->getStatusCode());
         $this->assertStringContainsString('Delete me after download!', (string) $response->getBody());
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
         // File should be deleted after download (handled by strategy)
