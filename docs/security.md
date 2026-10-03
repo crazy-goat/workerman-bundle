@@ -514,10 +514,10 @@ runtime user:
 sudo -u <runtime-user> bin/console cache:warmup
 ```
 
-or re-own the cache file after warm-up:
+or re-own the cache directory after warm-up (the `workerman` directory has mode 0700, so the file alone is not enough):
 
 ```bash
-chown <runtime-user> var/cache/<env>/workerman/config.cache.php
+chown -R <runtime-user> var/cache/<env>
 ```
 
 If neither is possible in your deployment (managed build systems, sudoless
@@ -526,6 +526,8 @@ cache), the bundle offers an explicit, documented downgrade: see [Guard
 downgrade](#guard-downgrade-explicit-opt-out) below.
 
 ### Containerised deployments (Docker)
+
+The step-by-step guide for the runtime user is in [Deployment](deployment.md#config-cache-and-the-runtime-user).
 
 The most common way to trip the ownership check is the standard Docker
 layout where the cache is warmed at image build time and the server runs
@@ -547,31 +549,8 @@ is owned by UID 0. When the container later starts the server as `www-data`,
 aborts with a `RuntimeException` before any worker forks — the whole start
 sequence dies.
 
-**Warm up with the runtime user** (recommended):
-
-```dockerfile
-FROM php:8.3-cli
-COPY --chown=www-data:www-data . /app
-WORKDIR /app
-USER www-data
-RUN bin/console cache:warmup
-CMD ["bin/console", "workerman:server", "start"]
-```
-
-(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
-write `var/cache` during warm-up — a plain `COPY . /app` would create
-root-owned files that `www-data` cannot overwrite.)
-
-**Or re-own the cache file after warm-up:**
-
-```dockerfile
-FROM php:8.3-cli
-COPY . /app
-WORKDIR /app
-RUN bin/console cache:warmup && chown -R www-data var/cache
-USER www-data
-CMD ["bin/console", "workerman:server", "start"]
-```
+The fix is to warm up as the runtime user, or to change the owner of the whole `var` directory after the warm-up.
+A tested Dockerfile is in [Deployment](deployment.md#docker).
 
 The same applies to any deploy-user/runtime-user split: deploy scripts, CI
 runs and `sudo` invocations must either run the warm-up as the runtime user

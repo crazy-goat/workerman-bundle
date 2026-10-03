@@ -184,74 +184,20 @@ All commands and options are in [docs/commands.md](docs/commands.md).
 ### Config cache and runtime user
 
 Since 0.25.0 the bundle refuses to load a configuration cache file that is not
-**owned by the process that loads it**: the cache file
-(`{cacheDir}/workerman/config.cache.php`, in Symfony's kernel cache directory,
-e.g. `var/cache/prod`) is a PHP file that is `require`d at boot, so a file
-replaced by another user would be owned by that user. The check is enforced
-in the launcher process, before any worker forks — an ownership mismatch
-aborts `workerman:server start` with a `RuntimeException`, not a warning. See
-[Config Cache File Protection](docs/security.md#config-cache-file-protection)
-for the full threat model.
+**owned by the process that loads it**. An owner mismatch stops
+`workerman:server start` with a `RuntimeException`. The most common case is a
+cache warmed up as `root` in a Docker build, with a server that runs as a
+non-root user.
 
-> **Note:** Deployments that explicitly trust the cache directory but cannot
-> change who warms it (managed build systems, sudoless image builders, frozen
-> base images) can opt out with the documented env var
-> `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`, which downgrades the refusals to
-> warnings. This is a **security downgrade** — the cache file is executed
-> PHP — and must not be enabled for directories untrusted users can write.
-> Strict mode remains the default. See
-> [Guard downgrade](docs/security.md#guard-downgrade-explicit-opt-out).
+Warm up the cache as the runtime user, or change the owner after the warm-up.
+The full guide, with the error message, is in
+[Deployment](docs/deployment.md#config-cache-and-the-runtime-user), and a tested Dockerfile is in [Docker](docs/deployment.md#docker). The threat model is in
+[Config Cache File Protection](docs/security.md#config-cache-file-protection).
+If you cannot change who warms the cache, see
+[Guard downgrade](docs/security.md#guard-downgrade-explicit-opt-out).
 
-> **Note:** This is the upgrade-relevant change in 0.25.0. The most common
-> containerised layout trips it: the cache is warmed at image build time
-> (as `root`), the server runs as a non-root user.
-
-> **Note:** 0.25.0 also hardens master-process identification for
-> `stop` / `reload` / `status`: with a server started by an older version
-> still running, those commands may report "Cannot verify master process
-> \<pid\>" (the PID is alive but its identity cannot be confirmed) or
-> "Workerman is not running" (no pid file or the process is dead).
-> Stop the server before upgrading — see
-> [Upgrading to 0.25](UPGRADE.md#upgrading-to-025).
-
-The error message names both UIDs and suggests the fix:
-
-```
-The configuration cache file "/app/var/cache/prod/workerman/config.cache.php" is owned by uid 0,
-not by the current process user (uid 33). The file may have been replaced by another user.
-Ensure the cache is written by the same user that loads it (e.g., warm up with the runtime
-user, or chown the cache to that user).
-```
-
-**Warm up with the runtime user** (recommended):
-
-```dockerfile
-FROM php:8.3-cli
-COPY --chown=www-data:www-data . /app
-WORKDIR /app
-USER www-data
-RUN bin/console cache:warmup
-CMD ["bin/console", "workerman:server", "start"]
-```
-
-(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
-write `var/cache` during warm-up — a plain `COPY . /app` creates root-owned
-files that `www-data` cannot overwrite.)
-
-**Or re-own the cache file after warm-up**:
-
-```dockerfile
-FROM php:8.3-cli
-COPY . /app
-WORKDIR /app
-RUN bin/console cache:warmup && chown -R www-data var/cache
-USER www-data
-CMD ["bin/console", "workerman:server", "start"]
-```
-
-The same applies to any deploy-user/runtime-user split (deploy scripts, CI
-runs, `sudo`): the user that warms the cache must be the user that starts
-`workerman:server`, or the cache must be re-owned by that user in between.
+Stop a server that was started by an older version before you upgrade to 0.25:
+see [Upgrading to 0.25](UPGRADE.md#upgrading-to-025).
 
 ### Manage the server
 
