@@ -54,7 +54,7 @@ Scheduler and supervisor processes do not use these strategies.
 The worker reloads after a request that threw an error, because a service can be in a bad state after an error.
 Only errors of the main request count.
 An error that is in `allowed_exceptions` does not reload the worker.
-By default these are the Symfony `HttpExceptionInterface` (for example a 404 page) and some serializer errors.
+By default these are the Symfony `HttpExceptionInterface` (for example a 404 page) and all Symfony Serializer errors.
 See the default list in the [configuration reference](configuration.md#reload_strategy).
 
 ## max_requests
@@ -62,7 +62,7 @@ See the default list in the [configuration reference](configuration.md#reload_st
 The worker reloads after about `requests` requests.
 With `dispersion`, each worker picks its own number between `requests` minus `dispersion` percent and `requests`.
 Then the workers do not all reload at the same time.
-With `requests: 1000` and `dispersion: 20`, a worker reloads after 800 to 1000 requests.
+With `requests: 1000` and `dispersion: 20`, a worker reloads after about 800 to 1000 requests.
 Use `dispersion: 0` for the same number in every worker.
 
 ## memory
@@ -93,6 +93,8 @@ workerman:
 ## file_monitor
 
 A separate process watches your files.
+The process starts only in debug mode (`APP_DEBUG=1`).
+It is off in a PHAR file. There the server writes a log line, and you must use `restart` to load new code.
 When a file changes, it reloads all workers.
 Use it in `dev` only.
 

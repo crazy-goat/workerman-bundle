@@ -91,7 +91,7 @@ workerman:
 | `reload_strategy.max_requests.active` | bool | `false` | Reload the worker after N requests. This helps against memory leaks. |
 | `reload_strategy.max_requests.requests` | int | `1000` | The number of requests after which the worker reloads. |
 | `reload_strategy.max_requests.dispersion` | int, percent | `20` | Makes the workers reload at different times. With 1000 requests and 20 percent, a worker reloads after 800 to 1000 requests. |
-| `reload_strategy.file_monitor.active` | bool | `false` | Reload all workers when a file changes. Use it in `dev` only. |
+| `reload_strategy.file_monitor.active` | bool | `false` | Reload all workers when a file changes. Use it in `dev` only. It works only in debug mode and not in a PHAR file. |
 | `reload_strategy.file_monitor.source_dir` | list of paths | `%kernel.project_dir%/src`, `%kernel.project_dir%/config` | The directories to watch. |
 | `reload_strategy.file_monitor.file_pattern` | list of patterns | `*.php`, `*.yaml` | The files to watch inside `source_dir`. |
 | `reload_strategy.file_monitor.polling_interval` | int, seconds, minimum 1 | `3` | The time between two checks. It is used only without `ext-inotify`. |
