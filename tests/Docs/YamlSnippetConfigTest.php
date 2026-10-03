@@ -15,12 +15,6 @@ use Symfony\Component\Config\Definition\Processor;
  */
 final class YamlSnippetConfigTest extends TestCase
 {
-    public static function tearDownAfterClass(): void
-    {
-        // Leave the garbage collector as it was: RebootStrategyTest counts collected cycles.
-        gc_collect_cycles();
-    }
-
     /**
      * @return iterable<string, array{string, string}>
      */

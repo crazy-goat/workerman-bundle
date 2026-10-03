@@ -25,12 +25,6 @@ final class EnvVarDocTest extends TestCase
 
     private const IGNORED_PREFIXES = ['HTTP_', 'REQUEST_', 'REMOTE_', 'SERVER_', 'CONTENT_', 'SCRIPT_', 'PATH_', 'QUERY_'];
 
-    public static function tearDownAfterClass(): void
-    {
-        // Leave the garbage collector as it was: RebootStrategyTest counts collected cycles.
-        gc_collect_cycles();
-    }
-
     /**
      * @return iterable<string, array{string}>
      */

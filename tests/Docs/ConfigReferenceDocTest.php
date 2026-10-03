@@ -16,12 +16,6 @@ final class ConfigReferenceDocTest extends TestCase
 {
     private const PAGE = 'docs/configuration.md';
 
-    public static function tearDownAfterClass(): void
-    {
-        // Leave the garbage collector as it was: RebootStrategyTest counts collected cycles.
-        gc_collect_cycles();
-    }
-
     /**
      * @return iterable<string, array{string}>
      */
