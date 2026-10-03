@@ -160,6 +160,7 @@ Both events have `getTaskName()` and `getServiceClass()`.
 The bundle has a listener for `TaskErrorEvent`.
 It writes the error to the Monolog channel `task`.
 You can add your own listener, for example to send an alert.
+See [Events](events.md) for details.
 
 ```php
 <?php
