@@ -66,7 +66,7 @@ curl -sL "https://download.workerman.net/php/php8.3.micro.sfx" | sha256sum
 php -d phar.readonly=0 bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted.sfx | cut -d' ' -f1)"
 ```
 
-Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
+Cross-reference: the `build.sfx` node in `src/DependencyInjection/ConfigurationTreeBuilder.php`.
 
 ### `--unsafe-no-checksum`
 
@@ -97,7 +97,7 @@ Security implications when enabled:
   HTTPS → HTTP downgrades and non-HTTP(S) redirect targets are blocked in both modes
 - Always pair with `build.sfx.sha256` to verify the binary after download
 
-Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:310-313`.
+Cross-reference: the `build.sfx` node in `src/DependencyInjection/ConfigurationTreeBuilder.php`.
 
 ## Security
 
