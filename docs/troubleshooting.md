@@ -114,10 +114,9 @@ This also affects Doctrine's `EntityManager` which holds a reference to the conn
         active: true
         requests: 500
   ```
-- **Check the connection before each request.** Run `SELECT 1` in a `try`/`catch`. If it fails, call `close()`. Doctrine then opens a new connection on the next query. The middleware below does this.
 - **Use `idle_connection_ttl`.** DoctrineBundle has this option for long-running processes. It closes connections that were idle for too long. Check the DoctrineBundle docs for your version.
 - **Set `wait_timeout` appropriately** on your MySQL server (at least higher than your `max_requests` × average request duration).
-  - **Use a middleware** that calls `EntityManager::clear()` and reconnects if the connection is closed:
+- **Check the connection before each request with a middleware.** It runs `SELECT 1` in a `try`/`catch`. If the query fails, it calls `close()`. Doctrine then opens a new connection on the next query:
   ```php
   use CrazyGoat\WorkermanBundle\Http\Request;
   use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
