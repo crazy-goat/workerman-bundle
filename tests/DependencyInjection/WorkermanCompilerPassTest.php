@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -104,6 +105,49 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->expectExceptionMessage('"missing_middleware"');
 
         $this->compilerPass->process($this->container);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function recordedStaticRoots(): array
+    {
+        foreach ($this->container->getDefinition('workerman.config_loader')->getMethodCalls() as [$method, $arguments]) {
+            if ($method === 'setWorkermanConfig') {
+                return $arguments[0]['static_roots'];
+            }
+        }
+
+        $this->fail('setWorkermanConfig call not found');
+    }
+
+    public function testStaticRootDirectoryIsRecordedForTheStartCheck(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware', 'named_middleware']]]]);
+        $this->container->setParameter('app.public_dir', '/does/not/exist/public');
+        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['%app.public_dir%']);
+        $this->container->register('named_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['$rootDirectory' => __DIR__]);
+
+        // A missing directory does not fail the container build.
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame(['/does/not/exist/public', __DIR__], $this->recordedStaticRoots());
+    }
+
+    public function testStaticRootDirectoryFromEnvVarOrPharIsNotRecorded(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['env_middleware', 'phar_middleware', 'other']]]]);
+        $this->container->register('env_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['%env(APP_DIR)%/public']);
+        $this->container->register('phar_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['phar:///app.phar/public']);
+        $this->container->register('other', \stdClass::class);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame([], $this->recordedStaticRoots());
     }
 
     public function testHandlesNoTaggedServices(): void

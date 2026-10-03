@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
@@ -47,7 +48,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->addMethodCall('setProcessConfig', [$processes])
             ->addMethodCall('setSchedulerConfig', [$tasks]);
 
-        $this->makeMiddlewaresPublic($container, $configLoader);
+        $this->prepareMiddlewares($container, $configLoader);
 
         $container
             ->register('workerman.task_locator', ServiceLocator::class)
@@ -109,14 +110,19 @@ final class WorkermanCompilerPass implements CompilerPassInterface
      * start. A private service is removed from the compiled container, so the
      * worker would stop and be restarted again and again (issue #964). Make
      * the services from servers[].middlewares public, and fail at container
-     * build time when one of them does not exist.
+     * build time when one of them does not exist. Also record the root
+     * directories of the StaticFilesMiddleware services as `static_roots`
+     * in the config, for the check at server start (issue #965).
      */
-    private function makeMiddlewaresPublic(ContainerBuilder $container, Definition $configLoader): void
+    private function prepareMiddlewares(ContainerBuilder $container, Definition $configLoader): void
     {
-        foreach ($configLoader->getMethodCalls() as [$method, $arguments]) {
+        $calls = $configLoader->getMethodCalls();
+        foreach ($calls as $index => [$method, $arguments]) {
             if ($method !== 'setWorkermanConfig' || !is_array($arguments[0] ?? null)) {
                 continue;
             }
+
+            $staticRoots = [];
 
             $servers = $arguments[0]['servers'] ?? [];
             foreach (is_array($servers) ? $servers : [] as $server) {
@@ -128,14 +134,57 @@ final class WorkermanCompilerPass implements CompilerPassInterface
 
                     if ($container->hasAlias($id)) {
                         $container->getAlias($id)->setPublic(true);
+                        $staticRoots[] = $this->staticRoot($container, (string) $container->getAlias($id));
                     } elseif ($container->hasDefinition($id)) {
                         $container->getDefinition($id)->setPublic(true);
+                        $staticRoots[] = $this->staticRoot($container, $id);
                     } else {
                         throw new InvalidArgumentException(sprintf('The middleware service "%s" from "workerman.servers[].middlewares" does not exist.', $id));
                     }
                 }
             }
+
+            $arguments[0]['static_roots'] = array_values(array_unique(array_filter($staticRoots)));
+            $calls[$index] = [$method, $arguments];
         }
+
+        $configLoader->setMethodCalls($calls);
+    }
+
+    /**
+     * StaticFilesMiddleware throws in its constructor when the root directory
+     * is missing. That happens at worker start, so the workers would restart
+     * again and again (issue #965). Return the root directory so that the
+     * master process can check it before it forks the workers. The container
+     * build does not check it: the directory may not exist yet there.
+     */
+    private function staticRoot(ContainerBuilder $container, string $id): ?string
+    {
+        if (!$container->hasDefinition($id)) {
+            return null;
+        }
+
+        $definition = $container->getDefinition($id);
+        if ($definition->getClass() !== StaticFilesMiddleware::class) {
+            return null;
+        }
+
+        $arguments = $definition->getArguments();
+        $root = $arguments['$rootDirectory'] ?? $arguments[0] ?? null;
+        if (!is_string($root)) {
+            return null;
+        }
+
+        $root = $container->getParameterBag()->resolveValue($root);
+        if (!is_string($root)) {
+            return null;
+        }
+
+        // The value of an env var is known only at runtime.
+        $usedEnvs = [];
+        $container->resolveEnvPlaceholders($root, null, $usedEnvs);
+
+        return $usedEnvs === [] && !str_starts_with($root, 'phar://') ? $root : null;
     }
 
     /**

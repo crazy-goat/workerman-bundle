@@ -389,6 +389,84 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testMissingStaticRootDirectoryStopsTheStart(): void
+    {
+        $command = Worker::$command;
+        Worker::$command = 'start -d';
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('"/does/not/exist/public"');
+
+            $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => [__DIR__, '/does/not/exist/public']]);
+        } finally {
+            Worker::$command = $command;
+        }
+    }
+
+    public function testMissingStaticRootDirectoryStopsTheRestart(): void
+    {
+        $command = Worker::$command;
+        Worker::$command = 'restart';
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->expectException(\RuntimeException::class);
+
+            $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => ['/does/not/exist/public']]);
+        } finally {
+            Worker::$command = $command;
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function commandsThatMustNotCheckStaticRootsProvider(): iterable
+    {
+        yield 'stop' => ['stop'];
+        yield 'reload' => ['reload'];
+        yield 'status' => ['status'];
+        yield 'connections' => ['connections'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('commandsThatMustNotCheckStaticRootsProvider')]
+    public function testMissingStaticRootDirectoryDoesNotBlockOtherCommands(string $workermanCommand): void
+    {
+        $command = Worker::$command;
+        Worker::$command = $workermanCommand;
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => ['/does/not/exist/public']]);
+
+            $this->addToAssertionCount(1);
+        } finally {
+            Worker::$command = $command;
+        }
+    }
+
+    public function testExistingStaticRootDirectoryAndMissingKeyAreAccepted(): void
+    {
+        $command = Worker::$command;
+        Worker::$command = 'start';
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => [__DIR__]]);
+            $this->invokeRunnerMethod($runner, 'checkStaticRoots', []);
+
+            $this->addToAssertionCount(1);
+        } finally {
+            Worker::$command = $command;
+        }
+    }
+
     public function testApplyWorkermanConfigThrowsOnMkdirFailure(): void
     {
         $saved = $this->saveWorkerState();
