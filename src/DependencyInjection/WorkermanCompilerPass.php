@@ -40,7 +40,10 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         ksort($processesTagged);
         ksort($rebootStrategies);
 
-        $tasks = array_map(fn(array $a): array => $a[0], $tasksTagged);
+        $tasks = [];
+        foreach ($tasksTagged as $id => $attributes) {
+            $tasks[$id] = $this->normalizeTaskTag((string) $id, $attributes[0]);
+        }
         $processes = array_map(fn(array $a): array => $a[0], $processesTagged);
 
         $configLoader = $container->getDefinition('workerman.config_loader');
@@ -103,6 +106,31 @@ final class WorkermanCompilerPass implements CompilerPassInterface
                 new Reference('workerman.process_locator'),
                 new Reference(EventDispatcherInterface::class),
             ]);
+    }
+
+    /**
+     * The jitter must be a whole number of seconds. A numeric string such as
+     * '30' (from YAML) is cast to int; anything else fails at container build
+     * time with a clear message (issue #970).
+     *
+     * @param array<string, mixed> $tag
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeTaskTag(string $id, array $tag): array
+    {
+        $jitter = $tag['jitter'] ?? null;
+        if ($jitter === null || is_int($jitter)) {
+            return $tag;
+        }
+
+        if (is_string($jitter) && preg_match('/^\d+$/', $jitter) === 1) {
+            $tag['jitter'] = (int) $jitter;
+
+            return $tag;
+        }
+
+        throw new InvalidArgumentException(sprintf('The "jitter" of the task "%s" must be a whole number of seconds, got %s.', $id, get_debug_type($jitter) . ' ' . var_export($jitter, true)));
     }
 
     /**

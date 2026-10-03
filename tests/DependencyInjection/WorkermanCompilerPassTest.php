@@ -150,6 +150,54 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertSame([], $this->recordedStaticRoots());
     }
 
+    /**
+     * @return iterable<string, array{mixed}>
+     */
+    public static function invalidJitterProvider(): iterable
+    {
+        yield 'text' => ['abc'];
+        yield 'decimal string' => ['1.5'];
+        yield 'negative string' => ['-3'];
+        yield 'float' => [1.5];
+        yield 'bool' => [true];
+    }
+
+    public function testNumericStringJitterIsCastToIntAtContainerBuild(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+        $this->container->register('task.a', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '1 second', 'jitter' => '30']);
+        $this->container->register('task.b', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '1 second', 'jitter' => 5]);
+        $this->container->register('task.c', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '1 second']);
+
+        $this->compilerPass->process($this->container);
+
+        $config = [];
+        foreach ($this->container->getDefinition('workerman.config_loader')->getMethodCalls() as [$method, $arguments]) {
+            if ($method === 'setSchedulerConfig') {
+                $config = $arguments[0];
+            }
+        }
+        $this->assertSame(30, $config['task.a']['jitter']);
+        $this->assertSame(5, $config['task.b']['jitter']);
+        $this->assertArrayNotHasKey('jitter', $config['task.c']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidJitterProvider')]
+    public function testInvalidJitterFailsAtContainerBuild(mixed $jitter): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+        $this->container->register('task.bad', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '1 second', 'jitter' => $jitter]);
+
+        $this->expectException(\Symfony\Component\DependencyInjection\Exception\InvalidArgumentException::class);
+        $this->expectExceptionMessage('"jitter" of the task "task.bad"');
+
+        $this->compilerPass->process($this->container);
+    }
+
     public function testHandlesNoTaggedServices(): void
     {
         $this->container->register('workerman.config_loader', \stdClass::class);

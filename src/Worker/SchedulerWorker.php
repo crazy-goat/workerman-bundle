@@ -47,29 +47,54 @@ final class SchedulerWorker
             $handler = $kernel->getContainer()->get('workerman.task_handler');
             assert($handler instanceof TaskHandler);
 
-            foreach ($schedulerConfig as $serviceId => $serviceConfig) {
-                assert(is_array($serviceConfig));
-                $taskName = empty($serviceConfig['name']) ? $serviceId : $serviceConfig['name'];
-
-                if (empty($serviceConfig['schedule'])) {
-                    $this->worker->log(sprintf('%s Task "%s" skipped. Trigger has not been set', $this->worker->name, $taskName));
-                    continue;
-                }
-
-                try {
-                    $trigger = TriggerFactory::create($serviceConfig['schedule'], $serviceConfig['jitter'] ?? 0);
-                } catch (\InvalidArgumentException $e) {
-                    $this->worker->log(sprintf('%s Task "%s" skipped. Trigger "%s" is incorrect: %s', $this->worker->name, $taskName, $serviceConfig['schedule'], $e->getMessage()));
-                    continue;
-                }
-
-                $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
-                $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
-                $service = new ServiceMethod($serviceId, $method);
-                $this->deleteTaskPid($service);
-                $this->scheduleCallback($trigger, $service, $taskName, $handler);
-            }
+            $this->scheduleTasks($schedulerConfig, $handler);
         };
+    }
+
+    /**
+     * Schedule every task. A task that cannot be set up is skipped with a log
+     * line, so one bad task never stops the other tasks (issue #970).
+     *
+     * @param mixed[] $schedulerConfig
+     */
+    private function scheduleTasks(array $schedulerConfig, TaskHandler $handler): void
+    {
+        foreach ($schedulerConfig as $serviceId => $serviceConfig) {
+            assert(is_array($serviceConfig));
+            $taskName = empty($serviceConfig['name']) ? $serviceId : $serviceConfig['name'];
+
+            try {
+                $this->scheduleTask((string) $serviceId, $serviceConfig, (string) $taskName, $handler);
+            } catch (\Throwable $e) {
+                $this->worker->log(sprintf('%s Task "%s" skipped. %s: %s', $this->worker->name, $taskName, $e::class, $e->getMessage()));
+            }
+        }
+    }
+
+    /**
+     * @param mixed[] $serviceConfig
+     */
+    private function scheduleTask(string $serviceId, array $serviceConfig, string $taskName, TaskHandler $handler): void
+    {
+        if (empty($serviceConfig['schedule'])) {
+            $this->worker->log(sprintf('%s Task "%s" skipped. Trigger has not been set', $this->worker->name, $taskName));
+
+            return;
+        }
+
+        try {
+            $trigger = TriggerFactory::create($serviceConfig['schedule'], $serviceConfig['jitter'] ?? 0);
+        } catch (\InvalidArgumentException $e) {
+            $this->worker->log(sprintf('%s Task "%s" skipped. Trigger "%s" is incorrect: %s', $this->worker->name, $taskName, $serviceConfig['schedule'], $e->getMessage()));
+
+            return;
+        }
+
+        $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
+        $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
+        $service = new ServiceMethod($serviceId, $method);
+        $this->deleteTaskPid($service);
+        $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
     /**

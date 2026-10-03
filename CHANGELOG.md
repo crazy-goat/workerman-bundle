@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A string `jitter` in a task tag (for example `'30'` in YAML) no longer stops the scheduler with a `TypeError`, so that no task runs. A numeric string is cast to a number. Any other value fails at container build with a clear message. A task that cannot be set up is skipped with a log line and the other tasks still run (#970)
 - A `StaticFilesMiddleware` service whose root directory does not exist now stops `start` with one clear error and a non-zero exit code, also with `-d`. The master process checks the directory before it starts the workers. Before, every worker stopped and was restarted again and again while `start -d` said `Start success.`. The check is skipped for a path with an `%env()%` value and in a PHAR (#965)
 - A private middleware service no longer stops every worker at start. The services from `servers[].middlewares` are made public by the compiler pass, so `public: true` is not needed. A middleware ID that does not exist now fails at container build time with a clear message, not in a restart loop of the workers (#964)
 - A slow request body on the second or a later request of a keep-alive connection is closed after `connection_timeout`, not after `keepalive_timeout`. The sweeper sees the first bytes of the new request in the receive buffer and starts the request timer (#907)
