@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The default number of workers respects the container CPU limit (cgroup v2 `cpu.max` and cgroup v1 `cpu.cfs_quota_us`) and does not use more than the CPUs of the host. On macOS it uses logical CPUs (`hw.logicalcpu`), not physical cores. `Utils::cpuCount()` takes an optional cgroup root for tests. In a container with a CPU limit the default is now lower; set `processes` to keep the old count (#912)
 - An error inside a `StreamedResponse` callback after the head was sent no longer writes a second `500` response into the open body. The error is logged and the connection is closed (#901)
 - `StreamedResponse` no longer loses data silently when the send buffer is full. The stream stops, a warning is logged and the connection is closed, so the client sees a broken body and not a body that looks complete. `StreamedResponseStrategy` takes an optional logger (#900)
 - The keep-alive and connection timeouts no longer close a connection that is still sending data, for example a big file download to a slow client. A connection with no sent bytes between two sweeps is still closed (#899)
