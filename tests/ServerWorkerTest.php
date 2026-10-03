@@ -21,6 +21,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Connection\TcpConnection;
 use Workerman\Events\Select;
+use Workerman\Protocols\Http;
 use Workerman\Timer;
 use Workerman\Worker;
 
@@ -1110,6 +1111,78 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
+    /**
+     * Issue #899: a download that takes longer than keepalive_timeout, but keeps
+     * sending data, must not be closed.
+     */
+    public function testKeepaliveTimeoutDoesNotCloseConnectionThatKeepsSending(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-sending', 5, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+        stream_set_blocking($peer, false);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $this->startBigFileDownload($connection);
+            $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
+
+            // A slow client: it reads 256 KB every 0.2 s, so the connection makes progress.
+            // It reads in several calls because one fread() returns 8 KB at most, and a
+            // Linux unix socket becomes writable again only after most of its buffer is free.
+            $eventLoop->repeat(0.2, static function () use ($peer): void {
+                for ($i = 0; $i < 32; ++$i) {
+                    fread($peer, 8192);
+                }
+            });
+
+            $this->runEventLoopFor($eventLoop, 3.5);
+
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testKeepaliveTimeoutClosesConnectionWhoseSendIsStalled(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-stalled', 5, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $this->startBigFileDownload($connection);
+            $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
+
+            // The client never reads: no byte moves, so the timeout still applies.
+            $this->runEventLoopFor($eventLoop, 3.5);
+
+            // close() with unsent data leaves the connection in CLOSING until the buffer is flushed.
+            $this->assertContains($connection->getStatus(), [TcpConnection::STATUS_CLOSING, TcpConnection::STATUS_CLOSED]);
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
     public function testKeepaliveTimeoutZeroKeepsOnlySweeperTimer(): void
     {
         $eventLoop = new Select();
@@ -1200,6 +1273,19 @@ final class ServerWorkerTest extends TestCase
         }
 
         return null;
+    }
+
+    /**
+     * Sends a 6 MB file the way a BinaryFileResponse does: Http::encode() streams a
+     * file of 2 MB or more with sendStream(), so the data is not all queued at once.
+     */
+    private function startBigFileDownload(TcpConnection $connection): void
+    {
+        $file = $this->tempDir . '/big_download.bin';
+        file_put_contents($file, str_repeat('x', 6 * 1024 * 1024));
+
+        $response = (new \Workerman\Protocols\Http\Response(200))->withFile($file);
+        Http::encode($response, $connection);
     }
 
     private function createStartedWorkerForTimerTests(string $name, int $connectionTimeout, int $keepaliveTimeout, Select $eventLoop): Worker
