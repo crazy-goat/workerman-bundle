@@ -43,6 +43,7 @@ readonly class Runner implements RunnerInterface
         $schedulerConfig = $configLoader->getSchedulerConfig();
         $processConfig = $configLoader->getProcessConfig();
 
+        $this->checkStaticRoots($config);
         $this->applyWorkermanConfig($config);
         $this->warnAboutGrpcExtension();
         $this->createWorkers($config, $schedulerConfig, $processConfig);
@@ -156,6 +157,30 @@ readonly class Runner implements RunnerInterface
                 'Cache warmup failed in forked process (exit code %d)',
                 \pcntl_wexitstatus($status),
             ));
+        }
+    }
+
+    /**
+     * Stop with one clear error when the root directory of a StaticFilesMiddleware
+     * does not exist. Else every worker would throw in the middleware constructor
+     * and be restarted again and again (issue #965). The directories come from the
+     * compiler pass. In PHAR mode the paths are resolved at runtime, so they are skipped.
+     *
+     * @param mixed[] $config
+     *
+     * @throws \RuntimeException when a root directory does not exist
+     */
+    private function checkStaticRoots(array $config): void
+    {
+        if ($this->kernelFactory->isPhar()) {
+            return;
+        }
+
+        $roots = $config['static_roots'] ?? [];
+        foreach (\is_array($roots) ? $roots : [] as $root) {
+            if (\is_string($root) && !\is_dir($root)) {
+                throw new \RuntimeException(\sprintf('The root directory "%s" of the static files middleware does not exist.', $root));
+            }
         }
     }
 

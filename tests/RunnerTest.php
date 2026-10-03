@@ -389,6 +389,28 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testMissingStaticRootDirectoryStopsTheStart(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('"/does/not/exist/public"');
+
+        $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => [__DIR__, '/does/not/exist/public']]);
+    }
+
+    public function testExistingStaticRootDirectoryAndMissingKeyAreAccepted(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+        $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => [__DIR__]]);
+        $this->invokeRunnerMethod($runner, 'checkStaticRoots', []);
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testApplyWorkermanConfigThrowsOnMkdirFailure(): void
     {
         $saved = $this->saveWorkerState();

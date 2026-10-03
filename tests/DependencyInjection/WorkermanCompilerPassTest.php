@@ -107,39 +107,47 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->compilerPass->process($this->container);
     }
 
-    public function testMissingStaticRootDirectoryFailsAtContainerBuild(): void
+    /**
+     * @return list<string>
+     */
+    private function recordedStaticRoots(): array
     {
-        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
+        foreach ($this->container->getDefinition('workerman.config_loader')->getMethodCalls() as [$method, $arguments]) {
+            if ($method === 'setWorkermanConfig') {
+                return $arguments[0]['static_roots'];
+            }
+        }
+
+        $this->fail('setWorkermanConfig call not found');
+    }
+
+    public function testStaticRootDirectoryIsRecordedForTheStartCheck(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware', 'named_middleware']]]]);
         $this->container->setParameter('app.public_dir', '/does/not/exist/public');
         $this->container->register('static_middleware', StaticFilesMiddleware::class)
             ->setArguments(['%app.public_dir%']);
-
-        $this->expectException(\Symfony\Component\DependencyInjection\Exception\InvalidArgumentException::class);
-        $this->expectExceptionMessage('/does/not/exist/public');
-
-        $this->compilerPass->process($this->container);
-    }
-
-    public function testExistingStaticRootDirectoryIsAccepted(): void
-    {
-        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
-        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+        $this->container->register('named_middleware', StaticFilesMiddleware::class)
             ->setArguments(['$rootDirectory' => __DIR__]);
 
+        // A missing directory does not fail the container build.
         $this->compilerPass->process($this->container);
 
-        $this->assertTrue($this->container->getDefinition('static_middleware')->isPublic());
+        $this->assertSame(['/does/not/exist/public', __DIR__], $this->recordedStaticRoots());
     }
 
-    public function testStaticRootDirectoryFromEnvVarIsNotChecked(): void
+    public function testStaticRootDirectoryFromEnvVarOrPharIsNotRecorded(): void
     {
-        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
-        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['env_middleware', 'phar_middleware', 'other']]]]);
+        $this->container->register('env_middleware', StaticFilesMiddleware::class)
             ->setArguments(['%env(APP_DIR)%/public']);
+        $this->container->register('phar_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['phar:///app.phar/public']);
+        $this->container->register('other', \stdClass::class);
 
         $this->compilerPass->process($this->container);
 
-        $this->assertTrue($this->container->getDefinition('static_middleware')->isPublic());
+        $this->assertSame([], $this->recordedStaticRoots());
     }
 
     public function testHandlesNoTaggedServices(): void
