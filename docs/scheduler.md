@@ -74,7 +74,7 @@ Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goa
 
 | Format | Example | Meaning |
 |---|---|---|
-| Integer | `60` | Every 60 seconds. |
+| Integer | `60` | Every 60 seconds. Only in YAML, as a number without quotes. |
 | ISO 8601 duration | `PT1M` | Every minute. |
 | Relative date | `1 minute` | Every minute. It is read by PHP `DateInterval`. |
 | ISO 8601 date and time | `2023-08-01T01:00:00+08:00` | One time, at this moment. |
@@ -82,6 +82,7 @@ Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goa
 
 Notes:
 
+- In `#[AsTask]` the schedule is always a string, and the text `'60'` is not accepted ([#971](https://github.com/crazy-goat/workerman-bundle/issues/971)). Write `'60 seconds'` or `'PT60S'` instead.
 - A date and time runs one time only. If the moment is in the past, the task never runs.
 - A cron expression needs the package `dragonmantank/cron-expression`. Install it with `composer require dragonmantank/cron-expression`. Without it, the text is read as a relative date, and it is most likely not valid.
 - Cron uses the PHP default time zone of the server. Set it with `date.timezone` in `php.ini` or with `date_default_timezone_set()`. An ISO 8601 date and time has its own offset.
@@ -97,9 +98,10 @@ A slow run does not move the next run.
 If a run is very slow, the scheduler skips the missed times.
 It does not run them later.
 
-Example: the schedule is `60` and a run needs 90 seconds.
-The next run at second 60 was missed, so it is skipped.
-The scheduler waits for the time at second 120.
+Example: the schedule is `60 seconds` and a run needs 90 seconds.
+The run at second 60 starts.
+The run at second 120 is skipped, because the lock is still taken (see below).
+The next run is at second 180.
 
 ## Jitter
 

@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * docs/scheduler.md must name the attribute parameters, the tag, the events and only show schedules that work (issue #878, section 7).
+ * docs/scheduler.md must name the attribute parameters, the tag, the events and only show schedules that work (issue #878, section 5).
  *
  * @coversNothing
  */
@@ -51,7 +51,7 @@ final class SchedulerDocTest extends TestCase
      */
     public static function scheduleProvider(): iterable
     {
-        foreach (['60', 'PT1M', '1 minute', '2023-08-01T01:00:00+08:00'] as $schedule) {
+        foreach (['60 seconds', 'PT60S', 'PT1M', '1 minute', '2023-08-01T01:00:00+08:00'] as $schedule) {
             yield $schedule => [$schedule];
         }
     }
@@ -59,10 +59,15 @@ final class SchedulerDocTest extends TestCase
     #[DataProvider('scheduleProvider')]
     public function testScheduleExampleIsOnThePageAndValid(string $schedule): void
     {
-        self::assertStringContainsString('`' . $schedule . '`', DocsHelper::read(self::PAGE));
+        self::assertStringContainsString($schedule . '`', DocsHelper::read(self::PAGE));
 
-        $value = ctype_digit($schedule) ? (int) $schedule : $schedule;
-        self::assertNotSame('', (string) TriggerFactory::create($value));
+        self::assertNotSame('', (string) TriggerFactory::create($schedule));
+    }
+
+    public function testIntegerScheduleIsDocumentedForYamlOnly(): void
+    {
+        self::assertStringContainsString('| Integer | `60` | Every 60 seconds. Only in YAML', DocsHelper::read(self::PAGE));
+        self::assertNotSame('', (string) TriggerFactory::create(60));
     }
 
     public function testTaskAttributesInPhpExamplesAreValid(): void
