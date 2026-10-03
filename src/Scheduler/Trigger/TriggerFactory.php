@@ -13,7 +13,7 @@ final class TriggerFactory
      *
      * Supported frequency formats:
      *
-     *  * An integer to define the frequency as a number of seconds;
+     *  * An integer, or a string of only digits such as '60', to define the frequency as a number of seconds;
      *  * An ISO8601 datetime format;
      *  * An ISO8601 duration format;
      *  * A relative date format as supported by \DateInterval;
@@ -29,6 +29,11 @@ final class TriggerFactory
      */
     public static function create(string|int|\DateInterval|\DateTimeImmutable $expression, int $jitter = 0): TriggerInterface
     {
+        // #[AsTask] and quoted YAML values always give a string.
+        if (is_string($expression) && preg_match('/^\d+$/', $expression) === 1) {
+            $expression = (int) $expression;
+        }
+
         if (is_string($expression)) {
             $dateTime = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $expression);
             if ($dateTime instanceof \DateTimeImmutable) {
