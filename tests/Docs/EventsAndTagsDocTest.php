@@ -52,12 +52,23 @@ final class EventsAndTagsDocTest extends TestCase
         }
     }
 
-    public function testTagsAreInTheExtensionTable(): void
+    public function testEveryBundleTagIsInTheExtensionTable(): void
     {
         $page = DocsHelper::read('docs/extending.md');
+        $tags = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(DocsHelper::rootDir() . '/src', \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file instanceof \SplFileInfo && $file->getExtension() === 'php') {
+                $source = file_get_contents($file->getPathname());
+                self::assertIsString($source);
+                preg_match_all("/(?:addTag|findTaggedServiceIds)\\('(workerman\\.[a-z_.]+)'/", $source, $matches);
+                array_push($tags, ...$matches[1]);
+            }
+        }
 
-        foreach (['workerman.task', 'workerman.process', 'workerman.reboot_strategy', 'workerman.response_converter.strategy'] as $tag) {
-            self::assertStringContainsString('`' . $tag . '`', $page);
+        $tags = array_unique($tags);
+        self::assertGreaterThanOrEqual(4, count($tags));
+        foreach ($tags as $tag) {
+            self::assertStringContainsString('`' . $tag . '`', $page, sprintf('docs/extending.md does not name the tag %s.', $tag));
         }
     }
 
@@ -66,9 +77,10 @@ final class EventsAndTagsDocTest extends TestCase
         $source = DocsHelper::read('src/DependencyInjection/ServicesConfigurator.php');
         $page = DocsHelper::read('docs/extending.md');
 
-        self::assertSame(3, preg_match_all("/response_converter\\.strategy', \\['priority' => (\\d+)\\]/", $source, $matches));
-        foreach ($matches[1] as $priority) {
-            self::assertStringContainsString('| `' . $priority . '` |', $page);
+        self::assertSame(3, preg_match_all("/register\\('workerman\\.(\\w+)_response_strategy'.*?'priority' => (\\d+)\\]/s", $source, $matches));
+        $classes = ['binary_file' => 'BinaryFileResponseStrategy', 'streamed' => 'StreamedResponseStrategy', 'default' => 'DefaultResponseStrategy'];
+        foreach ($matches[1] as $index => $id) {
+            self::assertStringContainsString('| `' . $classes[$id] . '` | `' . $matches[2][$index] . '` |', $page);
         }
     }
 

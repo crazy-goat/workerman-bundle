@@ -98,7 +98,7 @@ Both events have `getProcessName()` and `getServiceClass()`.
 
 The bundle has a listener for `ProcessErrorEvent`.
 It writes the error to the Monolog channel `process`.
-See [Events](events.md) for details and for the case when the service cannot be created.
+See [Events](events.md) for details.
 
 ## Stop and reload
 

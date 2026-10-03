@@ -38,6 +38,8 @@ It has two methods:
 The bundle has already read the headers for you, and they are in `$headers`.
 `Content-Length`, `Accept-Ranges` and `Transfer-Encoding` are removed.
 They belong to the transport, and Workerman sets them.
+The one exception is a `HEAD` request: there the `Content-Length` of your application is kept in `$headers`.
+Then your strategy must send it in a response without a body, or remove it, because Workerman adds its own `Content-Length` to a response.
 
 If your strategy must know the request method, implement `RequestMethodAwareResponseConverterStrategyInterface` instead.
 Its `convert()` method has two more arguments: `string $requestMethod = 'GET'` and `bool $shouldClose = false`.
@@ -64,6 +66,9 @@ final class CsvResponseStrategy implements ResponseConverterStrategyInterface
 
     public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
+        // A HEAD request keeps the Content-Length of the application. Workerman sets its own.
+        unset($headers['Content-Length']);
+
         return new WorkermanResponse($response->getStatusCode(), $headers, (string) $response->getContent());
     }
 }
@@ -89,7 +94,6 @@ So give your strategy a priority above `0`, or it may never be asked.
 Use a priority above `100` if your strategy must go before the file strategy.
 If no strategy supports a response, the bundle throws `NoResponseStrategyException`.
 
-## Is this a public API?
+## Changes to these interfaces
 
-Yes. The two strategy interfaces and the tags in the table above are part of the public API.
-Changes that break your code are written down in [UPGRADE.md](../UPGRADE.md).
+A change that breaks your strategy is written down in [UPGRADE.md](../UPGRADE.md).

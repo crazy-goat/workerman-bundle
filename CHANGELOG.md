@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `docs/events.md` lists the four task and process events, when each is sent and the built-in log listeners; `docs/extending.md` lists the tags and explains how to write a response strategy and its priority. `EventsAndTagsDocTest` checks the events, the methods and the tags, and that the strategy examples are valid (#887)
+- `docs/events.md` lists the four task and process events, when each is sent and the built-in log listeners; `docs/extending.md` lists the tags and explains how to write a response strategy and its priority. `EventsAndTagsDocTest` checks the events, the methods and the tags, and that the YAML examples parse (#887)
 - `docs/supervisor.md` explains `#[AsProcess]`, the `workerman.process` tag, what happens when a process method ends and the `process` log channel; the README text moved there. `SupervisorDocTest` checks the attribute parameters and the YAML examples (#886)
 - `docs/scheduler.md` explains `#[AsTask]`, the `workerman.task` tag, every schedule format, the fixed-rate rule, jitter, the run lock and task errors; the README text moved there. `SchedulerDocTest` checks the attribute parameters, the schedule examples and the YAML examples (#885)
 - `docs/reload-strategies.md` explains every reload strategy and how to write your own; the README text and the table in `docs/troubleshooting.md` moved there. `ReloadStrategiesDocTest` checks that every strategy and every `reload_strategy` key is on the page (#884)
