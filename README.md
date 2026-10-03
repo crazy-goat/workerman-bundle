@@ -163,73 +163,8 @@ when@dev:
 
 ## Configuration reference
 
-All top-level `workerman` configuration options:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `runtime_dir` | `string` | `%kernel.project_dir%` | Writable directory for cache, logs, and PID files. In PHAR/BIN mode the default is the directory containing the PHAR/BIN file (the archive cannot be written to at runtime), and subdirectories are created with 0700 permissions. Override via the `WORKERMAN_RUNTIME_DIR` env var. See [build-packaging.md](docs/build-packaging.md#writable-paths). |
-| `user` | `string\|null` | `null` (current user) | Unix user of processes. |
-| `group` | `string\|null` | `null` (current group) | Unix group of processes. |
-| `stop_timeout` | `int` | `2` | Max seconds of child process work before force kill. |
-| `cache_warmup_timeout` | `int` | `30` | Max seconds to wait for cache warmup in forked process. Can be overridden with `WORKERMAN_CACHE_WARMUP_TIMEOUT` env var. |
-| `status_timeout` | `int` | `5` | Max seconds to wait for status file generation after sending SIGIOT. |
-| `pid_file` | `string` | `%kernel.project_dir%/var/run/workerman.pid` | File to store master process PID. |
-| `log_file` | `string` | `%kernel.project_dir%/var/log/workerman.log` | Log file. |
-| `stdout_file` | `string` | `%kernel.project_dir%/var/log/workerman.stdout.log` | File to write all output (echo, var_dump, etc.) to when running as daemon. |
-| `max_package_size` | `int` | `10485760` (10 MB) | Maximum accepted package size in bytes. |
-| `connection_timeout` | `int` | `120` | Max seconds to wait for a complete request before closing the connection (slowloris protection). `0` disables the timeout. See [security.md](docs/security.md). |
-| `keepalive_timeout` | `int` | `30` | Max idle seconds for keep-alive connections before closing. `0` disables the timeout. See [security.md](docs/security.md). |
-| `response_chunk_size` | `int` | `2048` | Streamed response chunk size in bytes. |
-| `trusted_hosts` | `string[]` | `[]` | List of regex patterns for trusted hostnames. Requests with a non-matching `Host` header are rejected with `SuspiciousOperationException`. See [security.md](docs/security.md). |
-| `servers` | `array` | `[]` | List of server definitions — one entry per worker group and listening socket. See [servers[] options](#servers-options). |
-| `reload_strategy` | `array` | see [reload_strategy options](#reload_strategy-options) | Worker reload strategy configuration. See [reload_strategy options](#reload_strategy-options). |
-| `build` | `array` | see [build-packaging.md](docs/build-packaging.md#configuration) | PHAR and standalone binary build configuration (`build_dir`, `kernel_class`, `phar_filename`, `bin_filename`, `bin_php_version`, `sfx.*`, `exclude_patterns`, `exclude_files`, `custom_ini`). See [docs/build-packaging.md](docs/build-packaging.md#configuration). |
-
-### servers[] options
-
-Each entry of `servers` is a server definition:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `name` | `string` | *(required)* | Server process name. |
-| `listen` | `string\|null` | `null` | Listen address. Supported schemes: `http://`, `https://`, `ws://`, `wss://`. `https://` and `wss://` additionally require `local_cert` and `local_pk`. `listen` is required: if you omit it, the server does not start. |
-| `local_cert` | `string\|null` | `null` | Path to the SSL certificate file (PEM). Required for `https://` and `wss://`. Symlinked paths are rejected — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation). |
-| `local_pk` | `string\|null` | `null` | Path to the SSL private key file (PEM). Required for `https://` and `wss://`. Symlinked paths are rejected — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation). |
-| `processes` | `int\|null` | `null` (CPU cores × 2) | Number of worker processes for this server. |
-| `reuse_port` | `bool` | `false` | Enable `SO_REUSEPORT` on the listening socket so multiple processes can bind the same port. |
-| `body_size_cap` | `int\|null` | `null` | Per-server maximum request body size in bytes. Overrides the global `max_package_size` for this server. See [security.md](docs/security.md#body_size_cap-per-server). |
-| `middlewares` | `string[]` | `[]` | Service IDs of middlewares applied to every request on this server. See [Middlewares](#middlewares). |
-| `static_files` | `array` | `[]` | Static file serving configuration. **Caveat:** the `allowed_extensions` sub-key below only takes effect with the deprecated `serve_files`/`root_dir` path — it is silently ignored by a `StaticFilesMiddleware` registered as a service, which is exactly the setup recommended below. See [docs/security.md](docs/security.md#static-files-protection). |
-| `serve_files` | `bool` | `false` | **Deprecated (0.9.3)** Serve files from `root_dir`. Use `StaticFilesMiddleware` instead — see [Static files middleware](#static-files-middleware). |
-| `root_dir` | `string\|null` | `null` | **Deprecated (0.9.3)** Root directory served when `serve_files` is `true`. Use `StaticFilesMiddleware` instead — see [Static files middleware](#static-files-middleware). |
-
-The deprecated `serve_files`/`root_dir` path reads one sub-key from `static_files`:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `allowed_extensions` | `string[]` | `[]` | List of allowed file extensions without leading dot (e.g. `css`, `js`, `png`). When set, only files with these extensions are served. Only consulted on the deprecated `serve_files`/`root_dir` path; a service-registered `StaticFilesMiddleware` reads its allowlist from the `$allowedExtensions` constructor argument instead — setting this key does nothing for middleware users. |
-
-### reload_strategy options
-
-`reload_strategy` configures five worker restart strategies. All strategies can be combined; each has an `active` switch:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `exception.active` | `bool` | `true` | Reload the worker each time an exception is thrown during request handling. |
-| `exception.allowed_exceptions` | `string[]` | `['Symfony\Component\HttpKernel\Exception\HttpExceptionInterface', 'Symfony\Component\Serializer\Exception\ExceptionInterface']` | Exception class names (fully qualified) that do not trigger a reload. |
-| `max_requests.active` | `bool` | `false` | Reload the worker on every N requests to prevent memory leaks. |
-| `max_requests.requests` | `int` | `1000` | Maximum number of requests after which the worker is reloaded. |
-| `max_requests.dispersion` | `int` | `20` | Percentage dispersion of `requests` to prevent all workers from restarting simultaneously (1000 requests and 20% dispersion restart between 800 and 1000). |
-| `file_monitor.active` | `bool` | `false` | Reload all workers each time code changes. |
-| `file_monitor.source_dir` | `string[]` | `['%kernel.project_dir%/src', '%kernel.project_dir%/config']` | Source directories monitored for changes. |
-| `file_monitor.file_pattern` | `string[]` | `['*.php', '*.yaml']` | File patterns monitored inside `source_dir`. |
-| `file_monitor.polling_interval` | `int` | `3` | Seconds between polling sweeps when `ext-inotify` is unavailable. Must be ≥ 1. |
-| `file_monitor.max_files_per_tick` | `int` | `500` | Maximum directory entries inspected per polling tick when `ext-inotify` is unavailable. Must be ≥ 1. |
-| `always.active` | `bool` | `false` | Reload the worker after each request. |
-| `memory.active` | `bool` | `false` | Reload the worker when memory usage reaches a threshold. |
-| `memory.limit` | `int` | `134217728` (128 MB) | Memory threshold (`memory_get_usage()`, not real usage) after which the worker is reloaded. |
-| `memory.gc_limit` | `int` | `100663296` (96 MB) | Memory usage after which `gc_collect_cycles()` is attempted to free memory. |
-| `memory.gc_cooldown` | `int` | `60` | Minimum seconds between garbage collection attempts. |
+Every config key and every environment variable is in [docs/configuration.md](docs/configuration.md).
+To see the keys with their defaults, run `bin/console config:dump-reference workerman`.
 
 ### Start application
 
