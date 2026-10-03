@@ -11,7 +11,6 @@ use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\Config\Definition\Loader\DefinitionFileLoader;
 use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\Config\Definition\PrototypedArrayNode;
-use Symfony\Component\Config\Definition\VariableNode;
 use Symfony\Component\Config\FileLocator;
 
 /**
@@ -73,9 +72,9 @@ final class DocsHelper
 
     /**
      * Every leaf of the config tree, keyed by its path (for example `reload_strategy.memory.gc_limit`).
-     * A list of servers is written `servers[]`.
+     * A list of servers is written `servers[]`. A list of plain values is a leaf too.
      *
-     * @return array<string, VariableNode>
+     * @return array<string, NodeInterface>
      */
     public static function configLeaves(): array
     {
@@ -86,7 +85,7 @@ final class DocsHelper
     }
 
     /**
-     * @param array<string, VariableNode> $leaves
+     * @param array<string, NodeInterface> $leaves
      */
     private static function collectLeaves(NodeInterface $node, string $path, array &$leaves): void
     {
@@ -103,13 +102,11 @@ final class DocsHelper
             return;
         }
 
-        if ($node instanceof VariableNode) {
-            $leaves[$path] = $node;
-        }
+        $leaves[$path] = $node;
     }
 
     /**
-     * @param array<string, VariableNode> $leaves
+     * @param array<string, NodeInterface> $leaves
      */
     private static function collectChildren(ArrayNode $node, string $path, array &$leaves): void
     {
@@ -123,7 +120,7 @@ final class DocsHelper
      *
      * @return list<string>
      */
-    public static function defaultTokens(VariableNode $node): array
+    public static function defaultTokens(NodeInterface $node): array
     {
         if (!$node->hasDefaultValue()) {
             return [];

@@ -6,7 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Config\Definition\VariableNode;
 
 /**
  * Every config key must be in docs/configuration.md, with its default (issue #878, section 5).
@@ -33,11 +32,16 @@ final class ConfigReferenceDocTest extends TestCase
         }
     }
 
+    public function testListKeysAreChecked(): void
+    {
+        self::assertArrayHasKey('trusted_hosts', DocsHelper::configLeaves());
+        self::assertArrayHasKey('servers[].middlewares', DocsHelper::configLeaves());
+    }
+
     #[DataProvider('leafProvider')]
     public function testKeyIsDocumentedWithItsDefault(string $path): void
     {
         $leaf = DocsHelper::configLeaves()[$path];
-        self::assertInstanceOf(VariableNode::class, $leaf);
 
         $row = $this->findRow($path);
         self::assertNotNull($row, sprintf('%s has no table row for `%s`.', self::PAGE, $path));

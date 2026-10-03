@@ -27,7 +27,7 @@ bin/console config:dump-reference workerman
 | `pid_file` | string, not empty | `%kernel.project_dir%/var/run/workerman.pid` | The file that holds the PID of the master process. |
 | `log_file` | string, not empty | `%kernel.project_dir%/var/log/workerman.log` | The Workerman log file. |
 | `stdout_file` | string, not empty | `%kernel.project_dir%/var/log/workerman.stdout.log` | The file that gets all output (`echo`, `var_dump`) when the server runs as a daemon. |
-| `max_package_size` | int, bytes | `10485760` (10 MB) | The maximum size of one request. A server can set a lower limit with `body_size_cap`. See [security.md](security.md#body_size_cap-per-server). |
+| `max_package_size` | int, bytes | `10485760` (10 MB) | The maximum size of one request. A server can replace it with its own `body_size_cap`, which can be lower or higher. See [security.md](security.md#body_size_cap-per-server). |
 | `connection_timeout` | int, seconds, minimum 0 | `120` | The maximum time to wait for a complete request. It protects against slowloris attacks. `0` turns it off. |
 | `keepalive_timeout` | int, seconds, minimum 0 | `30` | The maximum time an idle keep-alive connection stays open. `0` turns it off. |
 | `response_chunk_size` | int, bytes | `2048` | The chunk size of streamed responses. |
@@ -54,7 +54,7 @@ workerman:
 | Key | Type | Default | What it does |
 |-----|------|---------|--------------|
 | `servers[].name` | string | required | The name of the server process. It must not be empty. |
-| `servers[].listen` | string | `null` | The listen address, for example `http://0.0.0.0:80`. It is required: if you leave it out, the server does not start. It starts with a scheme. Use `http://` or `https://`. |
+| `servers[].listen` | string or null | `null` | The listen address, for example `http://0.0.0.0:80`. It is required: if you leave it out, the server does not start. It starts with a scheme. Use `http://` or `https://`. |
 | `servers[].local_cert` | string or null | `null` | The path to the certificate file (PEM). `https://` needs it. The bundle rejects symbolic links. See [security.md](security.md#ssl-certificate-and-key-validation). |
 | `servers[].local_pk` | string or null | `null` | The path to the private key file (PEM). `https://` needs it. The bundle rejects symbolic links. |
 | `servers[].processes` | int or null | `null` | The number of workers of this server. `null` means the number of CPU cores times 2. |
@@ -138,8 +138,9 @@ See [security.md](security.md#static-files-protection).
 ## Environment variables
 
 The bundle reads these variables.
-For most of them, the bundle looks in `$_SERVER` first, then in `$_ENV`, then in `getenv()`.
+Each variable is read from different places.
 The "Read from" column shows the exact places.
+Only `WORKERMAN_CACHE_WARMUP_TIMEOUT` and `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` look in `$_SERVER`, then `$_ENV`, then `getenv()`.
 
 | Name | Default | What it does | Read from |
 |------|---------|--------------|-----------|
