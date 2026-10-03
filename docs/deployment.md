@@ -109,7 +109,7 @@ What the important lines do:
   If systemd waits less, it kills the whole unit (`Result=timeout`, `status=9/KILL`).
   We saw this with `stop_timeout: 15` and `TimeoutStopSec=10`.
   The value 10 is fine for a `stop_timeout` of 2 to 7.
-  Running requests do not get `stop_timeout` seconds: see [Stop time and graceful stop](#stop-time-and-graceful-stop).
+  A running request is not guaranteed `stop_timeout` seconds: see [Stop time and graceful stop](#stop-time-and-graceful-stop).
 - `Restart=always` starts the server again when it ends for any reason, for example a crash.
   `systemctl stop` does not trigger a restart.
   But a `bin/console workerman:server stop` that you run by hand does: use `systemctl stop` instead.
@@ -343,10 +343,10 @@ We ran a route that works for 5 seconds, and stopped the container with `docker 
 | Setup | What happened |
 |-------|---------------|
 | `stop_timeout: 10`, `event` extension loaded | The request ended with status 200 after 5 seconds. The container stopped after 4 seconds. |
-| `stop_timeout: 10`, no `event` extension | The request was cut 1 second after the stop. The client got an empty reply. |
+| `stop_timeout: 10`, no `event` extension | The request was cut 1 second after the stop. The client got an empty reply. We built this image from the same Dockerfile without the `event` line. |
 | `stop_timeout: 2` (the default), `event` extension loaded | The request was cut after 2 seconds. The client got an empty reply. |
 
-A test on a Linux host with systemd gave the same cut about 1 second after `systemctl stop`, also with a long `stop_timeout`.
+A test on a Linux host with systemd gave the same cut about 1 second after `systemctl stop`.
 So do not trust that a running request ends on a stop or restart.
 Plan for failed requests, and let the client or the load balancer retry safe requests.
 If you can, take the server out of the load balancer before you stop it.
