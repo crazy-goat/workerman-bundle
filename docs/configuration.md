@@ -149,12 +149,13 @@ Only `WORKERMAN_CACHE_WARMUP_TIMEOUT` and `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` 
 | `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` | not set | `1`, `true`, `on` or `yes` turns the owner check of the config cache into a warning. This lowers security. Any other value keeps the strict check. See [security.md](security.md). | `$_SERVER`, `$_ENV`, `getenv()` |
 | `GRPC_ENABLE_FORK_SUPPORT` | not set | It must be `1` or `true` when `ext-grpc` is loaded. Otherwise the server logs a warning. See [troubleshooting.md](troubleshooting.md). | `$_ENV`, `getenv()` |
 | `APP_CACHE_DIR` | not set | The base cache directory. The bundle adds the environment name to it. | `$_SERVER` |
-| `APP_LOG_DIR` | set by the PHAR stub | The log directory in PHAR mode. The stub sets it to `<runtime dir>/var/log`. | set by the stub |
+| `APP_LOG_DIR` | not set | The log directory of Symfony. The PHAR stub tries to set it to `<runtime dir>/var/log`, but see the note below. | `$_SERVER` |
 | `APP_RUNTIME` | not set | Set it to `CrazyGoat\WorkermanBundle\Runtime` to start the server through `public/index.php`. The PHAR stub sets it for you. | Symfony Runtime |
 | `APP_ENV` | the environment of the build (PHAR) | The Symfony environment. | `$_SERVER` |
 | `APP_DEBUG` | `false` (PHAR) | The Symfony debug mode. | `$_SERVER` |
 
-> **Note:** In PHAR mode, the stub sets `APP_CACHE_DIR` in `$_ENV`, but the bundle reads `$_SERVER`.
+> **Note:** In PHAR mode, the stub sets `APP_CACHE_DIR` and `APP_LOG_DIR` in `$_ENV`, but Symfony and the bundle read `$_SERVER`.
+> So the two values have no effect.
 > This is a known bug: see [issue 916](https://github.com/crazy-goat/workerman-bundle/issues/916).
 
 ## Full examples

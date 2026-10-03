@@ -17,7 +17,7 @@ final class EnvVarDocTest extends TestCase
     private const PAGE = 'docs/configuration.md';
 
     /**
-     * Upper-case names that are not settings of the bundle: server and CGI variables.
+     * Upper-case names that are not settings of the bundle: HTTP method names.
      */
     private const IGNORED = [
         'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT',

@@ -28,7 +28,7 @@ final class YamlSnippetConfigTest extends TestCase
     {
         foreach (DocsHelper::userPages() as $page) {
             foreach (DocsHelper::yamlBlocks(DocsHelper::read($page)) as $index => $yaml) {
-                if (!preg_match('/^(?:when@\w+:\n\s+)?workerman:/m', $yaml)) {
+                if (!preg_match('/^\s*workerman:/m', $yaml)) {
                     continue;
                 }
 

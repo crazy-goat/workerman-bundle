@@ -52,13 +52,28 @@ final class ConfigReferenceDocTest extends TestCase
             return;
         }
 
+        $defaultCell = $this->defaultCell($row);
         foreach (DocsHelper::defaultTokens($leaf) as $token) {
             self::assertStringContainsString(
-                $token,
-                $row,
-                sprintf('The row of `%s` in %s does not show the default value "%s".', $path, self::PAGE, $token),
+                '`' . $token . '`',
+                $defaultCell,
+                sprintf('The default column of `%s` in %s does not show `%s`.', $path, self::PAGE, $token),
             );
         }
+    }
+
+    public function testDefaultMustBeInTheDefaultColumnAsCodeSpan(): void
+    {
+        $row = '| `a.b` | int | `1000` | Reloads after 100 requests and 10 percent. |';
+
+        self::assertSame(' `1000` ', $this->defaultCell($row));
+        self::assertStringNotContainsString('`100`', $this->defaultCell($row));
+        self::assertStringNotContainsString('`10`', $this->defaultCell($row));
+    }
+
+    private function defaultCell(string $row): string
+    {
+        return explode('|', $row)[3] ?? '';
     }
 
     private function findRow(string $path): ?string
