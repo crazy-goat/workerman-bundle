@@ -14,6 +14,7 @@ This directory contains documentation for the WorkermanBundle.
 - [middlewares.md](middlewares.md) — Write and register middlewares, order, static files and their headers
 - [reload-strategies.md](reload-strategies.md) — When a worker is replaced: exception, max_requests, memory, file_monitor, always and your own
 - [scheduler.md](scheduler.md) — `#[AsTask]`, the `workerman.task` tag, schedule formats, fixed-rate runs, jitter, locks and errors
+- [supervisor.md](supervisor.md) — `#[AsProcess]`, the `workerman.process` tag, restarts and errors
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations
