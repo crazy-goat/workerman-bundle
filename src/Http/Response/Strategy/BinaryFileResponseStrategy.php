@@ -207,7 +207,9 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
      * Schedule file deletion using onBufferDrain (fires when the send buffer
      * is empty — i.e. the file has been fully sent) with an onClose fallback
      * for early disconnects. Both callbacks self-remove after firing so they
-     * do not persist across keep-alive requests.
+     * do not persist across keep-alive requests. HttpRequestHandler normally
+     * deletes the file earlier, right after the send (FileCleanupState::release(),
+     * issue #906); these callbacks are the fallback.
      */
     private function scheduleFileCleanup(string $filePath, TcpConnection $connection): void
     {
@@ -231,14 +233,7 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
 
             $logger = $this->logger;
             $cleanup = static function () use ($state, $logger): void {
-                foreach ($state->pending as $pendingPath) {
-                    if (is_file($pendingPath) && !unlink($pendingPath)) {
-                        $logger->warning('Failed to delete temporary file after send', [
-                            'path' => $pendingPath,
-                            'error' => error_get_last()['message'] ?? 'Unknown error',
-                        ]);
-                    }
-                }
+                $state->deletePending($logger);
             };
 
             // Both handlers capture the shared state object instead of each
@@ -293,6 +288,12 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
                     unset($conn->context->pendingCleanup);
                 }
             };
+
+            // Weak references: the state must not hold the handlers, or the
+            // state and the handlers would form a cycle (issue #573).
+            // FileCleanupState::release() uses them to detach our handlers.
+            $state->drainHandler = \WeakReference::create($connection->onBufferDrain);
+            $state->closeHandler = \WeakReference::create($connection->onClose);
         }
 
         $state->pending[] = $filePath;
