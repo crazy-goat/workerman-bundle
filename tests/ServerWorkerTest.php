@@ -1110,6 +1110,74 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
+    /**
+     * Issue #899: a download that takes longer than keepalive_timeout, but keeps
+     * sending data, must not be closed.
+     */
+    public function testKeepaliveTimeoutDoesNotCloseConnectionThatKeepsSending(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-sending', 5, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+        stream_set_blocking($peer, false);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $connection->send(str_repeat('x', 8 * 1024 * 1024), true);
+            $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
+
+            // A slow client: it reads a little every 0.2 s, so the connection makes progress.
+            $eventLoop->repeat(0.2, static function () use ($peer): void {
+                fread($peer, 65536);
+            });
+
+            $this->runEventLoopFor($eventLoop, 3.5);
+
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testKeepaliveTimeoutClosesConnectionWhoseSendIsStalled(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-keepalive-stalled', 5, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $onMessage = $worker->onMessage;
+            $this->assertNotNull($onConnect);
+            $this->assertNotNull($onMessage);
+
+            $onConnect($connection);
+            $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+            $connection->send(str_repeat('x', 8 * 1024 * 1024), true);
+            $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
+
+            // The client never reads: no byte moves, so the timeout still applies.
+            $this->runEventLoopFor($eventLoop, 3.5);
+
+            // close() with unsent data leaves the connection in CLOSING until the buffer is flushed.
+            $this->assertContains($connection->getStatus(), [TcpConnection::STATUS_CLOSING, TcpConnection::STATUS_CLOSED]);
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
     public function testKeepaliveTimeoutZeroKeepsOnlySweeperTimer(): void
     {
         $eventLoop = new Select();
