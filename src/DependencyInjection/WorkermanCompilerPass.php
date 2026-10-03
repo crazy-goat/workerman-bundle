@@ -48,7 +48,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->addMethodCall('setProcessConfig', [$processes])
             ->addMethodCall('setSchedulerConfig', [$tasks]);
 
-        $this->makeMiddlewaresPublic($container, $configLoader);
+        $this->prepareMiddlewares($container, $configLoader);
 
         $container
             ->register('workerman.task_locator', ServiceLocator::class)
@@ -110,9 +110,11 @@ final class WorkermanCompilerPass implements CompilerPassInterface
      * start. A private service is removed from the compiled container, so the
      * worker would stop and be restarted again and again (issue #964). Make
      * the services from servers[].middlewares public, and fail at container
-     * build time when one of them does not exist.
+     * build time when one of them does not exist. Also record the root
+     * directories of the StaticFilesMiddleware services as `static_roots`
+     * in the config, for the check at server start (issue #965).
      */
-    private function makeMiddlewaresPublic(ContainerBuilder $container, Definition $configLoader): void
+    private function prepareMiddlewares(ContainerBuilder $container, Definition $configLoader): void
     {
         $calls = $configLoader->getMethodCalls();
         foreach ($calls as $index => [$method, $arguments]) {
