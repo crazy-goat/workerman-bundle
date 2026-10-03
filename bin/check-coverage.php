@@ -6,19 +6,29 @@ declare(strict_types=1);
  * Parses a PHPUnit Clover coverage file and exits non-zero if total line
  * coverage is below the requested threshold.
  *
- * Usage: php bin/check-coverage.php <clover.xml> [threshold-percent]
+ * Usage: php bin/check-coverage.php <clover.xml> <threshold-percent>
+ *
+ * The threshold is required: a default would disable the gate for a caller
+ * that forgets it. It must be a number from 0 to 100.
  */
 
 $argc = $_SERVER['argc'] ?? 0;
 $argv = $_SERVER['argv'] ?? [];
 
-if ($argc < 2) {
-    fwrite(STDERR, "Usage: php bin/check-coverage.php <clover.xml> [threshold-percent]\n");
+$usage = "Usage: php bin/check-coverage.php <clover.xml> <threshold-percent>\n";
+
+if ($argc < 3) {
+    fwrite(STDERR, $usage);
     exit(2);
 }
 
 $cloverFile = $argv[1];
-$thresholdPercent = isset($argv[2]) ? (float) $argv[2] : 0.0;
+if (!is_numeric($argv[2]) || (float) $argv[2] < 0.0 || (float) $argv[2] > 100.0) {
+    fwrite(STDERR, sprintf("Invalid threshold: %s (use a number from 0 to 100)\n%s", $argv[2], $usage));
+    exit(2);
+}
+
+$thresholdPercent = (float) $argv[2];
 
 if (!is_readable($cloverFile)) {
     fwrite(STDERR, sprintf("Coverage file not readable: %s\n", $cloverFile));
