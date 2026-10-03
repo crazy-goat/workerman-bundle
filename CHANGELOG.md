@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `docs/proof_of_work/`, `docs/process-changelog.md`, `docs/process-notices.md`, `bin/pick-issue.php` and `bin/gh-branch`; their role is taken by the shared workflow scripts (#859)
 
+### Fixed
+
+- A server with `serve_files: true` and `middlewares` now serves static files. Before, `withMiddlewares()` removed the static layer and every file request got a 404. The static layer is now kept apart, so the call order does not matter (#898)
+
 ## [0.29.0] - 2026-09-29
 
 ### Added

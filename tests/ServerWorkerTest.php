@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidMiddlewareException;
+use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
+use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
+use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -692,6 +697,63 @@ final class ServerWorkerTest extends TestCase
         $onWorkerStart = $worker->onWorkerStart;
         $this->assertNotNull($onWorkerStart);
         $onWorkerStart($worker);
+    }
+
+    public function testServeFilesWorksTogetherWithMiddlewares(): void
+    {
+        $middleware = $this->createMock(MiddlewareInterface::class);
+        $middleware->method('__invoke')->willReturnCallback(
+            static fn(Request $request, callable $next): \Workerman\Protocols\Http\Response => $next($request),
+        );
+
+        $kernel = $this->createMock(KernelInterface::class);
+        $controller = new SymfonyController(
+            $kernel,
+            new ResponseConverter([new DefaultResponseStrategy()]),
+        );
+        $handler = new HttpRequestHandler($controller, $this->createMock(RebootStrategyInterface::class));
+
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->willReturnMap([
+            ['workerman.http_request_handler', $handler],
+            ['app.middleware.pass', $middleware],
+        ]);
+        $kernel->method('getContainer')->willReturn($container);
+
+        new ServerWorker(
+            new KernelFactory(fn(): KernelInterface => $kernel, []),
+            null,
+            null,
+            [
+                'name' => 'ows-static-and-middleware',
+                'listen' => 'http://127.0.0.1:8097',
+                'serve_files' => true,
+                'root_dir' => __DIR__ . '/data',
+                'middlewares' => ['app.middleware.pass'],
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] ows-static-and-middleware');
+        $this->assertNotNull($worker);
+        $onWorkerStart = $worker->onWorkerStart;
+        $this->assertNotNull($onWorkerStart);
+        $onWorkerStart($worker);
+
+        $sent = [];
+        $connection = $this->createMock(TcpConnection::class);
+        $connection->method('send')->willReturnCallback(
+            static function (mixed $data) use (&$sent): bool {
+                $sent[] = (string) $data;
+
+                return true;
+            },
+        );
+
+        $handler($connection, new Request("GET /readme.txt HTTP/1.1\r\nHost: test\r\n\r\n"));
+
+        $output = implode('', $sent);
+        $this->assertStringContainsString('200 OK', $output);
+        $this->assertStringContainsString('Test for serve files option', $output);
     }
 
     public function testOnConnectSetsBodySizeCap(): void
