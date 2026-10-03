@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests for ProcessTerminator's two termination modes.
  *
- * Runs in isolated PHP processes (proc_open with `php -n` + posix) so the
+ * Runs in isolated PHP processes (proc_open with `php -n`, see IsolatedPhp) so the
  * grpc extension — whose shutdown handler deadlocks in forked children —
  * cannot interfere with the fork under test. Mirror of RunnerTest.
  */
@@ -52,14 +52,9 @@ final class ProcessTerminatorTest extends TestCase
             2 => ['pipe', 'w'],
         ];
 
-        $extensionDir = ini_get('extension_dir');
-
         $process = proc_open(
             [
-                PHP_BINARY,
-                '-n',
-                '-d', 'extension_dir=' . $extensionDir,
-                '-d', 'extension=posix',
+                ...IsolatedPhp::command(),
                 self::TERMINATOR_SCRIPT,
                 $mode,
                 (string) $code,

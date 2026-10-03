@@ -182,8 +182,9 @@ final class SchedulerWorkerSigchldTest extends TestCase
      *
      * Uses `php -n` (no php.ini) to prevent the grpc extension from loading.
      * The grpc extension's shutdown handler deadlocks in forked child processes,
-     * making exit() hang indefinitely. Only the posix extension is loaded
-     * explicitly (pcntl is statically compiled).
+     * making exit() hang indefinitely. The pcntl and posix
+     * extensions are loaded explicitly when this PHP needs a shared module for them
+     * (see IsolatedPhp, #823).
      */
     private function runIsolatedTest(string $testName): void
     {
@@ -195,14 +196,9 @@ final class SchedulerWorkerSigchldTest extends TestCase
             2 => ['pipe', 'w'],  // stderr
         ];
 
-        $extensionDir = ini_get('extension_dir');
-
         $process = proc_open(
             [
-                PHP_BINARY,
-                '-n',
-                '-d', 'extension_dir=' . $extensionDir,
-                '-d', 'extension=posix',
+                ...IsolatedPhp::command(),
                 self::RUNNER_SCRIPT,
                 $testName,
             ],

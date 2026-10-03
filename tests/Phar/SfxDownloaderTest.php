@@ -1271,6 +1271,13 @@ final class FailingUnlinkStreamWrapper
 
     private static string $baseDir = '';
 
+    /**
+     * Set by PHP's stream layer on every wrapper instance; declared so PHP 8.2+ does not report a dynamic property.
+     *
+     * @var resource|null
+     */
+    public $context;
+
     /** @var resource|null */
     private $handle;
 

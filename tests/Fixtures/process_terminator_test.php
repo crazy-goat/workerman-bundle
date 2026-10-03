@@ -3,7 +3,7 @@
 /**
  * Standalone test runner for ProcessTerminator.
  *
- * Runs outside the PHPUnit process (via `php -n` + posix extension) to avoid
+ * Runs outside the PHPUnit process (via `php -n`, see tests/IsolatedPhp.php) to avoid
  * inheriting the grpc extension: its shutdown handler deadlocks in forked
  * children, which is exactly the behavior under test.
  *
