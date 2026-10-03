@@ -190,8 +190,8 @@ cache warmed up as `root` in a Docker build, with a server that runs as a
 non-root user.
 
 Warm up the cache as the runtime user, or change the owner after the warm-up.
-The full guide, with the error message and Dockerfile examples, is in
-[Deployment](docs/deployment.md#config-cache-and-the-runtime-user). The threat model is in
+The full guide, with the error message, is in
+[Deployment](docs/deployment.md#config-cache-and-the-runtime-user), and a tested Dockerfile is in [Docker](docs/deployment.md#docker). The threat model is in
 [Config Cache File Protection](docs/security.md#config-cache-file-protection).
 If you cannot change who warms the cache, see
 [Guard downgrade](docs/security.md#guard-downgrade-explicit-opt-out).
