@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
@@ -128,14 +129,47 @@ final class WorkermanCompilerPass implements CompilerPassInterface
 
                     if ($container->hasAlias($id)) {
                         $container->getAlias($id)->setPublic(true);
+                        $this->assertStaticRootExists($container, (string) $container->getAlias($id));
                     } elseif ($container->hasDefinition($id)) {
                         $container->getDefinition($id)->setPublic(true);
+                        $this->assertStaticRootExists($container, $id);
                     } else {
                         throw new InvalidArgumentException(sprintf('The middleware service "%s" from "workerman.servers[].middlewares" does not exist.', $id));
                     }
                 }
             }
         }
+    }
+
+    /**
+     * StaticFilesMiddleware throws in its constructor when the root directory
+     * is missing. That happens at worker start, so the workers would restart
+     * again and again (issue #965). Fail at container build time instead,
+     * with one clear message.
+     */
+    private function assertStaticRootExists(ContainerBuilder $container, string $id): void
+    {
+        if (!$container->hasDefinition($id)) {
+            return;
+        }
+
+        $definition = $container->getDefinition($id);
+        if ($definition->getClass() !== StaticFilesMiddleware::class) {
+            return;
+        }
+
+        $arguments = $definition->getArguments();
+        $root = $arguments['$rootDirectory'] ?? $arguments[0] ?? null;
+        if (is_string($root)) {
+            $root = $container->getParameterBag()->resolveValue($root);
+        }
+
+        // Phar paths and values that are not plain strings are checked by the middleware itself.
+        if (!is_string($root) || str_starts_with($root, 'phar://') || is_dir($root)) {
+            return;
+        }
+
+        throw new InvalidArgumentException(sprintf('The root directory "%s" of the static files middleware "%s" does not exist.', $root, $id));
     }
 
     /**

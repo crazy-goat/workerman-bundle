@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
+use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -104,6 +105,30 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->expectExceptionMessage('"missing_middleware"');
 
         $this->compilerPass->process($this->container);
+    }
+
+    public function testMissingStaticRootDirectoryFailsAtContainerBuild(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
+        $this->container->setParameter('app.public_dir', '/does/not/exist/public');
+        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['%app.public_dir%']);
+
+        $this->expectException(\Symfony\Component\DependencyInjection\Exception\InvalidArgumentException::class);
+        $this->expectExceptionMessage('/does/not/exist/public');
+
+        $this->compilerPass->process($this->container);
+    }
+
+    public function testExistingStaticRootDirectoryIsAccepted(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
+        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['$rootDirectory' => __DIR__]);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertTrue($this->container->getDefinition('static_middleware')->isPublic());
     }
 
     public function testHandlesNoTaggedServices(): void
