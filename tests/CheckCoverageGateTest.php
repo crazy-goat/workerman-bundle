@@ -102,6 +102,43 @@ final class CheckCoverageGateTest extends TestCase
         self::assertStringContainsString('No aggregate <metrics> element found', $output['stderr']);
     }
 
+    public function testMissingThresholdIsAUsageError(): void
+    {
+        $output = $this->runCommand(sprintf('php %s %s', escapeshellarg(__DIR__ . '/../bin/check-coverage.php'), escapeshellarg($this->fixture)));
+
+        self::assertSame(2, $output['status'], 'A missing threshold must not disable the gate');
+        self::assertStringContainsString('Usage:', $output['stderr']);
+        self::assertStringNotContainsString('OK', $output['stdout']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidThresholds(): iterable
+    {
+        yield 'text' => ['abc'];
+        yield 'empty' => [''];
+        yield 'negative' => ['-5'];
+        yield 'above 100' => ['150'];
+        yield 'not a number' => ['NAN'];
+        yield 'text after digits' => ['80abc'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidThresholds')]
+    public function testInvalidThresholdIsAUsageError(string $threshold): void
+    {
+        $output = $this->runCommand(sprintf(
+            'php %s %s %s',
+            escapeshellarg(__DIR__ . '/../bin/check-coverage.php'),
+            escapeshellarg($this->fixture),
+            escapeshellarg($threshold),
+        ));
+
+        self::assertSame(2, $output['status']);
+        self::assertStringContainsString('Usage:', $output['stderr']);
+        self::assertStringNotContainsString('Coverage:', $output['stdout']);
+    }
+
     /**
      * @return array{stdout: string, stderr: string, status: int}
      */
@@ -124,6 +161,14 @@ final class CheckCoverageGateTest extends TestCase
             escapeshellarg($thresholdArg),
         );
 
+        return $this->runCommand($command);
+    }
+
+    /**
+     * @return array{stdout: string, stderr: string, status: int}
+     */
+    private function runCommand(string $command): array
+    {
         $stdout = $stderr = '';
         $status = 0;
         $pipes = [];

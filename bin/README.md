@@ -40,7 +40,9 @@ git push --no-verify
 ### `check-coverage.php`
 
 Parses a PHPUnit Clover XML file and exits non-zero when total line coverage
-is below a threshold. Used by `composer coverage:check`.
+is below a threshold. Usage: `php bin/check-coverage.php <clover.xml> <threshold-percent>`.
+The threshold is required (a number from 0 to 100); without it the script exits 2 and
+never passes. Used by `composer coverage:check`.
 
 ### `check-changelog.php`
 
