@@ -162,6 +162,14 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $root = $arguments['$rootDirectory'] ?? $arguments[0] ?? null;
         if (is_string($root)) {
             $root = $container->getParameterBag()->resolveValue($root);
+            // The value of an env var is known only at runtime.
+            if (is_string($root)) {
+                $usedEnvs = [];
+                $container->resolveEnvPlaceholders($root, null, $usedEnvs);
+                if ($usedEnvs !== []) {
+                    return;
+                }
+            }
         }
 
         // Phar paths and values that are not plain strings are checked by the middleware itself.

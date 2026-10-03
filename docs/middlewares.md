@@ -55,7 +55,7 @@ Read [Middleware header re-injection](security.md#middleware-header-re-injection
 ## Register a middleware
 
 First, make the class a service.
-The service can be private. The bundle makes the services from the `middlewares` lists public at container build time. If a service ID does not exist, the container build fails with a clear message.
+The service can be private. The bundle makes the services from the `middlewares` lists public at container build time. If a service ID does not exist, the container build fails with a clear message. The same happens when the root directory of a `StaticFilesMiddleware` service does not exist, unless the path uses an `%env()%` value.
 Then write its service ID in the `middlewares` list of a server.
 
 ```yaml

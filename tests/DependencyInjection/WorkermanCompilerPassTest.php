@@ -131,6 +131,17 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertTrue($this->container->getDefinition('static_middleware')->isPublic());
     }
 
+    public function testStaticRootDirectoryFromEnvVarIsNotChecked(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['static_middleware']]]]);
+        $this->container->register('static_middleware', StaticFilesMiddleware::class)
+            ->setArguments(['%env(APP_DIR)%/public']);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertTrue($this->container->getDefinition('static_middleware')->isPublic());
+    }
+
     public function testHandlesNoTaggedServices(): void
     {
         $this->container->register('workerman.config_loader', \stdClass::class);
