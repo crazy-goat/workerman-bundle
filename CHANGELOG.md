@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. 200 runs of `60` seconds with a jitter of up to 60 seconds took more than 17000 seconds instead of 12000 (#969)
+- The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. Before, 200 runs of a `60` seconds schedule with a jitter of up to 30 seconds were about 3000 seconds late. A `jitter` that is not smaller than the interval can still skip a run (#969)
 - A schedule that is a string of only digits, such as `#[AsTask(schedule: '60')]` or a quoted YAML `schedule: '60'`, is read as a number of seconds, like the number `60`. Before, the task was skipped with an "Unknown or bad format" error (#971)
 - A string `jitter` in a task tag (for example `'30'` in YAML) no longer stops the scheduler with a `TypeError`, so that no task runs. A numeric string is cast to a number. Any other value fails at container build with a clear message. A task that cannot be set up is skipped with a log line and the other tasks still run (#970)
 - A `StaticFilesMiddleware` service whose root directory does not exist now stops `start` with one clear error and a non-zero exit code, also with `-d`. The master process checks the directory before it starts the workers. Before, every worker stopped and was restarted again and again while `start -d` said `Start success.`. The check is skipped for a path with an `%env()%` value and in a PHAR (#965)

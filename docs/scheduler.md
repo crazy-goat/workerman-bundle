@@ -113,6 +113,8 @@ Use it when many tasks have the same schedule and should not all start at the sa
 With an interval schedule, the delay is only added to the start of one run.
 The next run is counted from the planned time, not from the time with the delay.
 So the delays do not add up, and the runs keep the rhythm of the interval.
+Keep `jitter` smaller than the interval.
+If a run starts at or after the next planned time, that planned time counts as missed and is skipped (see the fixed-rate rule above).
 With a cron schedule, the times do not move.
 
 ## One run is one child process
