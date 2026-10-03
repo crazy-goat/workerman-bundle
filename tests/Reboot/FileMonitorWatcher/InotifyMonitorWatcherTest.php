@@ -764,7 +764,8 @@ $watcher->start();
 echo "START_RETURNED";
 PHP;
         $process = new \Symfony\Component\Process\Process([
-            PHP_BINARY, '-n', '-r', $code, \dirname(__DIR__, 3) . '/vendor/autoload.php',
+            ...\CrazyGoat\WorkermanBundle\Test\IsolatedPhp::command(),
+            '-r', $code, \dirname(__DIR__, 3) . '/vendor/autoload.php',
         ]);
         $process->run();
 
