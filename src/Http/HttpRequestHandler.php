@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Http;
 
 use CrazyGoat\WorkermanBundle\Exception\ClientInputExceptionInterface;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\FileCleanupState;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
@@ -182,6 +184,15 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         }
 
         $connection->send(Http::encode($response, $connection), true);
+
+        // The file of a deleteFileAfterSend response is now read or open, so
+        // it can go. Waiting for the buffer to drain or the connection to
+        // close would keep it on disk on a keep-alive connection (issue #906).
+        if ($connection->context instanceof \stdClass
+            && ($connection->context->pendingCleanup ?? null) instanceof FileCleanupState
+        ) {
+            $connection->context->pendingCleanup->release($connection, $this->logger ?? new NullLogger());
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
@@ -1250,6 +1251,63 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertNotEmpty($connection->sentData, 'A 500 response must be sent, not silent worker death');
         $this->assertStringContainsString('500', $connection->sentData[0], 'Server fault must yield 500');
         $this->assertStringContainsString('Internal Server Error', $connection->sentData[0]);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function deleteFileAfterSendSizeProvider(): array
+    {
+        return [
+            'small file' => [25],
+            'file of 3 MB (streamed by Workerman)' => [3 * 1024 * 1024],
+        ];
+    }
+
+    /**
+     * @dataProvider deleteFileAfterSendSizeProvider
+     */
+    public function testDeleteFileAfterSendFileIsDeletedWhileConnectionStaysOpen(int $size): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'wmb-906-');
+        $this->assertNotFalse($path);
+        file_put_contents($path, str_repeat('x', $size));
+
+        $connection = new MockTcpConnection();
+        $connection->context = new \stdClass();
+        $originalOnClose = static function (): void {
+        };
+        $connection->onClose = $originalOnClose;
+        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\n\r\n");
+
+        $this->handler->withMiddlewares(new class ($path, $connection) implements MiddlewareInterface {
+            public function __construct(private readonly string $path, private readonly MockTcpConnection $connection)
+            {
+            }
+
+            public function __invoke(Request $request, callable $next): WorkermanResponse
+            {
+                $symfonyResponse = new \Symfony\Component\HttpFoundation\BinaryFileResponse($this->path);
+                $symfonyResponse->deleteFileAfterSend(true);
+
+                return (new BinaryFileResponseStrategy())->convert($symfonyResponse, [], $this->connection, '1.1');
+            }
+        });
+
+        try {
+            ($this->handler)($connection, $request);
+
+            $this->assertFileDoesNotExist($path, 'The file must be deleted after the send, not when the connection closes');
+            $this->assertFalse($connection->closed, 'The connection stays open');
+            $this->assertGreaterThanOrEqual($size, strlen(implode('', $connection->sentData)), 'The whole file must be sent');
+            $this->assertFalse(isset($connection->context->pendingCleanup), 'The cleanup state must not stay on a keep-alive connection');
+
+            $this->assertSame($originalOnClose, $connection->onClose, 'Our onClose handler is gone and the old one is back');
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
     }
 
     public function testErrorAfterResponseHeadWasSentClosesConnectionWithoutSecondResponse(): void
