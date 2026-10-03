@@ -129,7 +129,8 @@ If the lock is not free, the last run is still going.
 Then the scheduler skips this run and plans the next one.
 So two runs of the same task never work at the same time.
 
-The scheduler does not use the [reload strategies](reload-strategies.md).
+The scheduler does not check the [reload strategies](reload-strategies.md) `exception`, `max_requests`, `memory` and `always`.
+But `workerman:server reload` and a `file_monitor` reload restart it, and then the fixed times start again.
 
 ## Bad or missing schedule
 
@@ -177,7 +178,7 @@ final class AlertOnTaskError
 A task that throws an exception is reported with `TaskErrorEvent`, and the child still exits with code 0.
 A method that does not exist is reported in the same way, with `TaskErrorEvent`.
 The child exits with code 1 only when the service cannot be loaded or an event listener throws.
-The scheduler logs a child that exits with a code other than 0 or that is killed by a signal.
+The scheduler logs a child that exits with a code other than 0 or that is killed by a signal (`SIGKILL` is not logged when the `grpc` extension is loaded).
 
 If the `grpc` extension is loaded, the child ends with `SIGKILL` and does not run destructors.
 See [Troubleshooting](troubleshooting.md#grpc-extension-and-fork-safety).
