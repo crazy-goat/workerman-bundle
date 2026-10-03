@@ -169,7 +169,8 @@ Put it in `/etc/logrotate.d/myapp`:
   A line that is written between the two steps can be lost.
 - The path follows the [deploy script](deployment.md#deploy-script): each release has its own `var/log`, so old releases keep their own logs.
   Use a shared directory with `log_file` and `stdout_file` if you want one place.
-- `logrotate` runs as `root`, so the mode of the directory does not matter.
+- With mode 0700, `logrotate` can rotate the files.
+  If the directory is group-writable, `logrotate` refuses to rotate. Then add `su www-data www-data` to the block.
 - Use `copytruncate` for `stdout_file` and for Monolog stream handlers.
   They keep the file open, so after `mv` they would still write to the moved file.
 - Workerman 5.1.4 and newer cut `workerman.log` at 10 MB, so there you only need rotation to keep old lines.
