@@ -530,6 +530,32 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertTrue($context->responseSentDirectly);
     }
 
+    public function testFlagIsSetAfterHeadWhenCallbackThrows(): void
+    {
+        $context = new \stdClass();
+        $this->connection->context = $context;
+        $this->connection->method('send')->willReturn(true);
+
+        $strategy = new StreamedResponseStrategy(1);
+
+        $streamedResponse = new StreamedResponse(function (): never {
+            echo 'first';
+            ob_flush();
+            flush();
+
+            throw new \RuntimeException('callback boom');
+        });
+
+        try {
+            $strategy->convert($streamedResponse, [], $this->connection, '1.1');
+            $this->fail('The exception must reach the caller');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('callback boom', $e->getMessage());
+        }
+
+        $this->assertTrue($context->responseSentDirectly, 'The head is sent, so no error response may follow');
+    }
+
     public function testConvertDoesNotDestroyConnectionWhenAllSendsSucceed(): void
     {
         $this->connection->context = new \stdClass();

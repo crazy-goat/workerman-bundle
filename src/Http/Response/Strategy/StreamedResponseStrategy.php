@@ -72,6 +72,13 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
         $head = $this->buildHeaderString($headers, $response->getStatusCode(), $protocolVersion, $shouldClose);
         $send($head);
 
+        // From here the response is on the wire. If the callback throws,
+        // HttpRequestHandler sees this flag and does not write a second
+        // response into the open body (issue #901).
+        if ($connection->context instanceof \stdClass) {
+            $connection->context->responseSentDirectly = true;
+        }
+
         // HTTP/1.0 has no chunked transfer encoding; the body is streamed raw
         // and the connection is closed by HttpRequestHandler (the head carries
         // Connection: close). For HTTP/1.1 each flushed chunk is hex-framed.

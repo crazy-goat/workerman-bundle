@@ -1252,6 +1252,38 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString('Internal Server Error', $connection->sentData[0]);
     }
 
+    public function testErrorAfterResponseHeadWasSentClosesConnectionWithoutSecondResponse(): void
+    {
+        // A streamed response sends its head and some body, then fails.
+        // The handler must not write a 500 into the open body (issue #901).
+        $connection = new MockTcpConnection();
+        $context = new \stdClass();
+        $connection->context = $context;
+        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\n\r\n");
+
+        $this->handler->withMiddlewares(new class ($connection, $context) implements MiddlewareInterface {
+            public function __construct(private readonly MockTcpConnection $connection, private readonly \stdClass $context)
+            {
+            }
+
+            public function __invoke(Request $request, callable $next): WorkermanResponse
+            {
+                $this->connection->send("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", true);
+                $this->connection->send("5\r\nhello\r\n", true);
+                $this->context->responseSentDirectly = true;
+
+                throw new \RuntimeException('callback boom');
+            }
+        });
+
+        ($this->handler)($connection, $request);
+
+        $this->assertCount(2, $connection->sentData, 'No second response may be sent');
+        $this->assertStringNotContainsString('500', implode('', $connection->sentData));
+        $this->assertTrue($connection->closed, 'The connection must be closed');
+        $this->assertFalse(isset($context->responseSentDirectly), 'The flag must not leak to the next request');
+    }
+
     public function testMiddlewareThrowingInvalidArgumentExceptionIsServerFaultNotClientError(): void
     {
         // Major finding from review: a middleware that throws
