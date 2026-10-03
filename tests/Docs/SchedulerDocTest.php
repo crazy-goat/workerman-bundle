@@ -51,7 +51,7 @@ final class SchedulerDocTest extends TestCase
      */
     public static function scheduleProvider(): iterable
     {
-        foreach (['60 seconds', 'PT60S', 'PT1M', '1 minute', '2023-08-01T01:00:00+08:00'] as $schedule) {
+        foreach (['60 seconds', 'PT1M', '1 minute', '2023-08-01T01:00:00+08:00'] as $schedule) {
             yield $schedule => [$schedule];
         }
     }
@@ -64,10 +64,11 @@ final class SchedulerDocTest extends TestCase
         self::assertNotSame('', (string) TriggerFactory::create($schedule));
     }
 
-    public function testIntegerScheduleIsDocumentedForYamlOnly(): void
+    public function testIntegerScheduleIsDocumentedAsNumberAndText(): void
     {
-        self::assertStringContainsString('| Integer | `60` | Every 60 seconds. Only in YAML', DocsHelper::read(self::PAGE));
+        self::assertStringContainsString('| Integer | `60` or `\'60\'` | Every 60 seconds.', DocsHelper::read(self::PAGE));
         self::assertNotSame('', (string) TriggerFactory::create(60));
+        self::assertSame((string) TriggerFactory::create(60), (string) TriggerFactory::create('60'));
     }
 
     public function testTaskAttributesInPhpExamplesAreValid(): void

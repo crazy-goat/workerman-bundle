@@ -68,13 +68,15 @@ services:
 In the first form, `name` is the name of the tag, so it cannot be the task name.
 Then the task name is the service ID.
 
-Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goat/workerman-bundle/issues/970)).
+`jitter` must be a whole number of seconds. A numeric string such as `'30'` is cast to a number. Any other value (for example `'abc'` or `1.5`) stops the container build with an error that names the service.
+
+If a task cannot be set up when the scheduler starts, the scheduler writes a `skipped` line to the log and goes on with the other tasks.
 
 ## Schedule formats
 
 | Format | Example | Meaning |
 |---|---|---|
-| Integer | `60` | Every 60 seconds. Only in YAML, as a number without quotes. |
+| Integer | `60` or `'60'` | Every 60 seconds. A string of only digits is read as seconds too, so `#[AsTask(schedule: '60')]` works. |
 | ISO 8601 duration | `PT1M` | Every minute. |
 | Relative date | `1 minute` | Every minute. It is read by PHP `DateInterval`. |
 | ISO 8601 date and time | `2023-08-01T01:00:00+08:00` | One time, at this moment. |
@@ -82,7 +84,6 @@ Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goa
 
 Notes:
 
-- In `#[AsTask]` the schedule is always a string, and the text `'60'` is not accepted ([#971](https://github.com/crazy-goat/workerman-bundle/issues/971)). Write `'60 seconds'` or `'PT60S'` instead.
 - A date and time runs one time only. If the moment is in the past, the task never runs.
 - A cron expression needs the package `dragonmantank/cron-expression`. Install it with `composer require dragonmantank/cron-expression`. Without it, the text is read as a relative date, and it is most likely not valid.
 - Cron uses the PHP default time zone of the server. Set it with `date.timezone` in `php.ini` or with `date_default_timezone_set()`. An ISO 8601 date and time has its own offset.

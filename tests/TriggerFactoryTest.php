@@ -23,6 +23,22 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
+    public function testNumericStringIsReadAsSeconds(): void
+    {
+        $trigger = TriggerFactory::create('60');
+
+        $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
+        $this->assertSame((string) TriggerFactory::create(60), (string) $trigger);
+
+        $now = new \DateTimeImmutable('2026-01-01 00:00:00');
+        $this->assertEquals($now->modify('+60 seconds'), $trigger->getNextRunDate($now));
+    }
+
+    public function testNumericStringWithJitterIsReadAsSeconds(): void
+    {
+        $this->assertInstanceOf(JitterTrigger::class, TriggerFactory::create('60', 5));
+    }
+
     public function testCreateFromIso8601DateTime(): void
     {
         $trigger = TriggerFactory::create('2024-12-25T10:00:00+00:00');
