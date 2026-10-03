@@ -13,6 +13,7 @@
 /rector.php export-ignore
 /phpbench.json export-ignore
 /phpstan.neon.dist export-ignore
+/phpstan-stubs export-ignore
 /CONTRIBUTING.md export-ignore
 /AGENTS.md export-ignore
 /docs/workflow.md export-ignore

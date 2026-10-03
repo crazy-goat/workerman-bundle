@@ -747,6 +747,32 @@ final class InotifyMonitorWatcherTest extends TestCase
         }
     }
 
+    public function testFailedInitializationIsSafeEvenWhenLoggingFails(): void
+    {
+        $code = <<<'PHP'
+function inotify_init() { trigger_error('inotify init failed', E_USER_WARNING); return false; }
+require $argv[1];
+Workerman\Worker::$outputStream = fopen('php://stdout', 'w');
+Workerman\Worker::$logFile = '/nonexistent/inotify-test/workerman.log';
+Workerman\Worker::$globalEvent = new Workerman\Events\Select();
+set_error_handler(static function ($severity, $message, $file, $line) {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+$reflection = new ReflectionClass(CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\InotifyMonitorWatcher::class);
+$watcher = $reflection->newInstanceWithoutConstructor();
+$watcher->start();
+echo "START_RETURNED";
+PHP;
+        $process = new \Symfony\Component\Process\Process([
+            ...\CrazyGoat\WorkermanBundle\Test\IsolatedPhp::command(),
+            '-r', $code, \dirname(__DIR__, 3) . '/vendor/autoload.php',
+        ]);
+        $process->run();
+
+        self::assertSame(0, $process->getExitCode(), $process->getErrorOutput() . $process->getOutput());
+        self::assertStringContainsString('START_RETURNED', $process->getOutput());
+    }
+
     /**
      * @requires extension inotify
      */

@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `InotifyMonitorWatcher::start()` no longer throws a `TypeError` when `inotify_init()` fails (for example when `max_user_instances` is used up). It writes one log line and does not watch files, like when the inotify extension is missing (#836)
 - `WorkermanCommandTest::testStopAndStartViaCli` uses an HTTP client with `connect_timeout` and `timeout`, and waits for the first 200 after the restart with the bounded reload probe. A stalled response now fails the test instead of hanging the suite. Two tests pin the options (#830)
 - The isolated PHP subprocesses of the tests (`php -n`) now load `pcntl` and `posix` only when they are shared modules in the current PHP. Before, they failed with `pcntl_fork()` undefined on the official Docker PHP images, where pcntl is shared and posix is built in. The new helper `tests/IsolatedPhp.php` is tested for static and shared arrangements (#823)
 - The tests `PharBuilderTest` and `UtilsTest` no longer use `GLOB_BRACE`, which does not exist in Alpine (musl) PHP builds and throws an error there. `PortableTestCodeTest` fails if it comes back (#813)
