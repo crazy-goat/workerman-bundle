@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The isolated PHP subprocesses of the tests (`php -n`) now load `pcntl` and `posix` only when they are shared modules in the current PHP. Before, they failed with `pcntl_fork()` undefined on the official Docker PHP images, where pcntl is shared and posix is built in. The new helper `tests/IsolatedPhp.php` is tested for static and shared arrangements (#823)
 - The tests `PharBuilderTest` and `UtilsTest` no longer use `GLOB_BRACE`, which does not exist in Alpine (musl) PHP builds and throws an error there. `PortableTestCodeTest` fails if it comes back (#813)
 - The test class `FailingUnlinkStreamWrapper` declares the `$context` property, so the suite no longer prints 4 dynamic-property deprecations on PHP 8.2 and newer (#812)
 - `bin/kb-lint.php --fix` no longer adds a second `## Tag index` heading when the heading is there but the index markers are missing. Lint and `--fix` now report an error with the line number, and `--fix` writes no index until the markers are added or the heading is removed (#838)

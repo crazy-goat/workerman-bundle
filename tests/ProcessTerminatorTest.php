@@ -52,14 +52,9 @@ final class ProcessTerminatorTest extends TestCase
             2 => ['pipe', 'w'],
         ];
 
-        $extensionDir = ini_get('extension_dir');
-
         $process = proc_open(
             [
-                PHP_BINARY,
-                '-n',
-                '-d', 'extension_dir=' . $extensionDir,
-                '-d', 'extension=posix',
+                ...IsolatedPhp::command(),
                 self::TERMINATOR_SCRIPT,
                 $mode,
                 (string) $code,
