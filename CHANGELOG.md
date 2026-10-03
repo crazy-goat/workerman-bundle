@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `docs/reverse-proxy.md` has a tested nginx config and Caddyfile, the Symfony trusted proxies and `trusted_hosts` rules, HTTPS and HTTP/2 at the proxy, the body size, timeout and keep-alive limits, and how to check the setup. `ReverseProxyDocTest` checks the config keys, the nginx block and the YAML examples (#890)
+- `docs/deployment.md` says that a running request can be cut about 1 second after a stop (we saw it without the `event` extension), so it does not get `stop_timeout` seconds. `TimeoutStopSec` and the platform stop time must be at least `stop_timeout` plus 3 seconds, and `systemctl reload` returns before the new workers are up (#984)
 - `docs/extending.md` says that the response strategy API is public and that a break gets a note in `UPGRADE.md` and the CHANGELOG (#878)
 - `docs/deployment.md` has a tested Dockerfile (build, run, health check, stop with a request in flight), a Compose file, a Kubernetes example, and the rules for logs in a container, the stop time and gRPC. The Dockerfile examples of `docs/security.md` moved there. `DeploymentDocTest` checks the Dockerfile order, the YAML examples and the grace periods (#889)
 - `docs/deployment.md` explains the host requirements, the user and group, OPcache, a systemd unit, a deploy script (`reload` or `restart`) and the config cache owner; the README text moved there. `docs/events.md` says that the error event is also sent when the configured method does not exist. `DeploymentDocTest` checks the config keys, the environment variables, the `stop_timeout` default and the unit file (#888)
@@ -50,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. Before, 200 runs of a `60` seconds schedule with a jitter of up to 30 seconds were about 3000 seconds late. A `jitter` that is not smaller than the interval can still skip a run (#969)
 - `docs/troubleshooting.md` no longer says that `opcache_reset()` in a deploy script helps: a separate PHP process cannot reach the OPcache of the running server. Use `reload` (the master clears its OPcache) or `restart`. `docs/security.md` now tells to change the owner of the whole cache directory, not of one file (#888)
 - A schedule that is a string of only digits, such as `#[AsTask(schedule: '60')]` or a quoted YAML `schedule: '60'`, is read as a number of seconds, like the number `60`. Before, the task was skipped with an "Unknown or bad format" error (#971)
 - A string `jitter` in a task tag (for example `'30'` in YAML) no longer stops the scheduler with a `TypeError`, so that no task runs. A numeric string is cast to a number. Any other value fails at container build with a clear message. A task that cannot be set up is skipped with a log line and the other tasks still run (#970)

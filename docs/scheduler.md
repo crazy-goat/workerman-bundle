@@ -110,10 +110,11 @@ The next run is at second 180.
 The scheduler adds a delay from 0 to `jitter` seconds to every run.
 Use it when many tasks have the same schedule and should not all start at the same moment.
 
-With an interval schedule, the delay is part of the stored time of the run.
-The next time is counted from it.
-So the delays add up, and the gap between two runs is on average the interval plus `jitter / 2` seconds.
-This is a known problem: [#969](https://github.com/crazy-goat/workerman-bundle/issues/969).
+With an interval schedule, the delay is only added to the start of one run.
+The next run is counted from the planned time, not from the time with the delay.
+So the delays do not add up, and the runs keep the rhythm of the interval.
+Keep `jitter` smaller than the interval.
+If a run starts at or after the next planned time, that planned time counts as missed and is skipped (see the fixed-rate rule above).
 With a cron schedule, the times do not move.
 
 ## One run is one child process
