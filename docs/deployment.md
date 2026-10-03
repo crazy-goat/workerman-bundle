@@ -10,6 +10,7 @@ It covers the user, OPcache, the unit file, the deploy script, the Dockerfile, t
 - OPcache is set on purpose (see [OPcache](#opcache)).
 - A systemd unit starts the server in the foreground (see [the unit](#systemd-unit)).
 - The deploy script warms up the cache as the runtime user, then restarts or reloads the server (see [deploy script](#deploy-script)).
+- If you use nginx or Caddy in front of the server, see [Reverse proxy](reverse-proxy.md).
 - In Docker, the image warms up the cache as the runtime user (see [Docker](#docker)).
 - The stop time is longer than your longest request (see [stop time](#stop-time-and-graceful-stop)).
 

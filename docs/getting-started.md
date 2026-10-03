@@ -141,7 +141,7 @@ To use a port below 1024, such as `80` or `443`, you need one of these:
 
 In production, set `user` and `group` in the config.
 The server then drops its rights after it opens the port.
-You can also put a reverse proxy, such as nginx or Caddy, in front of the server.
+You can also put a reverse proxy, such as nginx or Caddy, in front of the server. See [Reverse proxy](reverse-proxy.md).
 
 ## Next steps
 

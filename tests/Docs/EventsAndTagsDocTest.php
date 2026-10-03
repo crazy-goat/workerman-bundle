@@ -95,6 +95,14 @@ final class EventsAndTagsDocTest extends TestCase
         }
     }
 
+    public function testResponseStrategyApiIsPublic(): void
+    {
+        self::assertStringContainsString(
+            'The response strategy API is public.',
+            DocsHelper::read('docs/extending.md'),
+        );
+    }
+
     public function testYamlExamplesParse(): void
     {
         $page = DocsHelper::read('docs/extending.md');
