@@ -691,17 +691,64 @@ final class SchedulerWorkerTest extends TestCase
 
         $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
 
-        // First run: grid origin 12:00:00 -> target 12:01:00, jitter +1 s -> 12:01:01.
+        // First run: grid origin 12:00:00 -> target 12:01:00, jitter +1 s -> fires 12:01:01.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
-        // 45 s late: target 12:01:01 + 60 s, jitter +1 s -> 12:02:02; from-now
-        // would fire ~61 s later, the fixed-rate grid fires it 17 s later.
+        // 45 s late: the grid slot is 12:02:00 (no jitter inside), jitter +1 s
+        // -> fires 12:02:01; from-now would fire ~61 s later, the grid 16 s later.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
-        // 50 s late: target 12:02:02 + 60 s, jitter +0 s -> 12:03:02; fires 12 s later.
+        // 50 s late: the grid slot is 12:03:00, jitter +0 s -> fires 10 s later.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
 
         // From-now semantics would give roughly [61.0, 61.0, 60.0]; fixed-rate
         // keeps the delays shrinking onto the grid.
-        $this->assertSame([61.0, 17.0, 12.0], $capturedDelays);
+        $this->assertSame([61.0, 16.0, 10.0], $capturedDelays);
+    }
+
+    /**
+     * The jitter must not add up (issue #969): the stored grid time has no
+     * jitter, so after many runs the grid is still exactly interval * runs.
+     */
+    public function testJitterDoesNotAddUpOnIntervalSchedule(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $capturedDelays = [];
+        $eventMock->method('delay')
+            ->willReturnCallback(function (float $delay) use (&$capturedDelays): int {
+                $capturedDelays[] = $delay;
+
+                return 1;
+            });
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        $trigger = new JitterTrigger(
+            new PeriodicalTrigger(60),
+            30,
+            new \Random\Randomizer(new \Random\Engine\Mt19937(42)),
+        );
+        $service = new ServiceMethod('jitter_sum_service', '__invoke');
+        $handler = new TaskHandler(
+            $this->createMock(\Psr\Container\ContainerInterface::class),
+            $this->createMock(EventDispatcherInterface::class),
+        );
+
+        $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
+
+        $start = new \DateTimeImmutable('2024-01-15 12:00:00');
+        $now = $start;
+        for ($i = 1; $i <= 200; ++$i) {
+            $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, $now);
+            // The task fires on time: the next call comes at the fire time.
+            $now = $now->modify(sprintf('+%d seconds', (int) round($capturedDelays[$i - 1])));
+        }
+
+        // The jitter (at most 30 s) is below the interval, so no slot is skipped.
+        $grid = new \ReflectionProperty(SchedulerWorker::class, 'nextRunDates');
+        $this->assertCount(200, $capturedDelays);
+        $this->assertSame(
+            $start->modify('+12000 seconds')->getTimestamp(),
+            $grid->getValue($scheduler)[$service->toString()]->getTimestamp(),
+        );
     }
 
     /**
