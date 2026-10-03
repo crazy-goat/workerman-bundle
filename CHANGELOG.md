@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A slow request body on the second or a later request of a keep-alive connection is closed after `connection_timeout`, not after `keepalive_timeout`. The sweeper sees the first bytes of the new request in the receive buffer and starts the request timer (#907)
 - A `BinaryFileResponse` with `deleteFileAfterSend(true)` is deleted right after the response is sent, also for files of 2 MB or more and on a keep-alive connection. Before, a small file stayed on disk until the connection closed, and a big file too, because Workerman replaced the cleanup callback. The `onBufferDrain` and `onClose` callbacks stay as a fallback (#906)
 - The default number of workers respects the container CPU limit (cgroup v2 `cpu.max` and cgroup v1 `cpu.cfs_quota_us`) and does not use more than the CPUs of the host. On macOS it uses logical CPUs (`hw.logicalcpu`), not physical cores. `Utils::cpuCount()` takes an optional cgroup root for tests. In a container with a CPU limit the default is now lower; set `processes` to keep the old count (#912)
 - An error inside a `StreamedResponse` callback after the head was sent no longer writes a second `500` response into the open body. The error is logged and the connection is closed (#901)
