@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/deployment.md` has a tested Dockerfile (build, run, health check, stop with a request in flight), a Compose file, a Kubernetes example, and the rules for logs in a container, the stop time and gRPC. The Dockerfile examples of `docs/security.md` moved there. `DeploymentDocTest` checks the Dockerfile order, the YAML examples and the grace periods (#889)
 - `docs/deployment.md` explains the host requirements, the user and group, OPcache, a systemd unit, a deploy script (`reload` or `restart`) and the config cache owner; the README text moved there. `docs/events.md` says that the error event is also sent when the configured method does not exist. `DeploymentDocTest` checks the config keys, the environment variables, the `stop_timeout` default and the unit file (#888)
 - `docs/events.md` lists the four task and process events, when each is sent and the built-in log listeners; `docs/extending.md` lists the tags and explains how to write a response strategy and its priority. `EventsAndTagsDocTest` checks the events, the methods and the tags, and that the YAML examples parse (#887)
 - `docs/supervisor.md` explains `#[AsProcess]`, the `workerman.process` tag, what happens when a process method ends and the `process` log channel; the README text moved there. `SupervisorDocTest` checks the attribute parameters and the YAML examples (#886)

@@ -1,8 +1,7 @@
 # Deployment
 
-This page shows how to run the bundle on a Linux server with systemd.
-It covers the user, OPcache, the unit file and the deploy script.
-For Docker, see the [Config cache](#config-cache-and-the-runtime-user) section for the user rules that also apply there.
+This page shows how to run the bundle in production: on a Linux server with systemd, in Docker and in Kubernetes.
+It covers the user, OPcache, the unit file, the deploy script, the Dockerfile, the logs and the stop time.
 
 ## Checklist
 
@@ -11,6 +10,8 @@ For Docker, see the [Config cache](#config-cache-and-the-runtime-user) section f
 - OPcache is set on purpose (see [OPcache](#opcache)).
 - A systemd unit starts the server in the foreground (see [the unit](#systemd-unit)).
 - The deploy script warms up the cache as the runtime user, then restarts or reloads the server (see [deploy script](#deploy-script)).
+- In Docker, the image warms up the cache as the runtime user (see [Docker](#docker)).
+- The stop time is longer than your longest request (see [stop time](#stop-time-and-graceful-stop)).
 
 ## Requirements on the host
 
@@ -207,33 +208,197 @@ The user who warms up the cache must be the user who starts the server.
 Or you change the owner in between.
 
 In Docker the most common mistake is a warm-up as `root` in the build, and a server that runs as `www-data`.
-This works:
-
-```dockerfile
-FROM php:8.3-cli
-COPY --chown=www-data:www-data . /app
-WORKDIR /app
-USER www-data
-RUN bin/console cache:warmup
-CMD ["bin/console", "workerman:server", "start"]
-```
-
-`COPY --chown` makes `www-data` the owner of `/app`.
-So the runtime user can write `var/cache` in the warm-up.
-A plain `COPY . /app` makes files of `root`, and `www-data` cannot write to them.
-
-This version changes the owner after the warm-up:
-
-```dockerfile
-FROM php:8.3-cli
-COPY . /app
-WORKDIR /app
-RUN bin/console cache:warmup && chown -R www-data var/cache
-USER www-data
-CMD ["bin/console", "workerman:server", "start"]
-```
+The [Docker](#docker) section has an image that does it right.
 
 If you really cannot do either, you can set `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1`.
 This turns the refusal into a warning, and it lowers security: the file is PHP code that runs.
 Do not use it when other users can write to the cache directory.
 The threat model and the other checks (world-writable directory, group-writable directory) are in [Security](security.md#config-cache-file-protection).
+
+## Docker
+
+This Dockerfile was built and run for real with a Symfony 7 skeleton application and this bundle (version 0.29).
+The application has a `/health` route that answers `ok`.
+
+```dockerfile
+FROM php:8.3-cli
+
+# pcntl is required. sockets and event are optional.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libevent-dev libssl-dev unzip \
+    && docker-php-ext-install pcntl sockets opcache \
+    && pecl install event \
+    && docker-php-ext-enable --ini-name z-event.ini event \
+    && rm -rf /var/lib/apt/lists/* /tmp/pear
+
+RUN printf 'opcache.enable_cli=1\nopcache.memory_consumption=256\n' > "$PHP_INI_DIR/conf.d/zz-opcache.ini"
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+COPY --chown=www-data:www-data . /app
+WORKDIR /app
+USER www-data
+
+ENV APP_ENV=prod
+RUN composer install --no-dev --optimize-autoloader --no-interaction \
+    && bin/console cache:warmup
+
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health") === "ok" ? 0 : 1);'
+
+CMD ["bin/console", "workerman:server", "start"]
+```
+
+Add a `.dockerignore` with `var/`, `vendor/` and `.git`, so the image does not carry your local files.
+The server in the application listens on `http://0.0.0.0:8080` (see [HTTP server](http-server.md)).
+Inside a container it must listen on `0.0.0.0`, not on `127.0.0.1`.
+
+Why the file looks like this:
+
+- `COPY --chown=www-data:www-data . /app` comes **before** `WORKDIR /app`.
+  The `COPY` creates `/app` with the right owner.
+  If `WORKDIR /app` comes first, Docker creates `/app` as `root`, and the build fails: `composer install` cannot create `/app/vendor`.
+- `USER www-data` comes before `cache:warmup`.
+  So `www-data` owns `var/cache/prod/workerman/config.cache.php`, and the server accepts it (see [the config cache](#config-cache-and-the-runtime-user)).
+  The container ran as `uid=33(www-data)`, and the cache files had the owner `33`.
+- If you must warm up as `root`, use `RUN bin/console cache:warmup && chown -R www-data:www-data var/cache` and put `USER www-data` after it.
+- `pcntl` is the only extension that you must add: the image has `posix`, and `sockets`, `event` and `opcache` are optional.
+  `ext-event` needs `libevent-dev` and `libssl-dev` to build.
+  `ext-inotify` is only for `file_monitor` in `dev`, so leave it out of a production image.
+- `opcache.enable_cli=1` is needed because the workers are CLI processes (see [OPcache](#opcache)).
+  An image is never changed in place, so you can also set `opcache.validate_timestamps=0`.
+- The server starts in the foreground, which is what a container needs.
+  Do not use `-d`: the container would stop at once.
+- There is no `STOPSIGNAL` line.
+  Docker sends `SIGTERM`, and the master stops on `SIGTERM` like on `SIGINT` (see [stop time](#stop-time-and-graceful-stop)).
+- The health check uses PHP, because the `php` images have no `curl`.
+
+### Docker Compose
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/var/run:uid=33,gid=33
+      - /app/var/log:uid=33,gid=33
+```
+
+- `stop_grace_period` must be larger than `stop_timeout`.
+- With `read_only: true`, the server needs a writable `var/run` (PID file and status file) and `var/log` (log file).
+  The `tmpfs` lines give them to uid 33, which is `www-data`.
+  The warm config cache stays in the image.
+  Your application may need more writable directories, for example for Symfony cache pools.
+- The `HEALTHCHECK` of the image is used by Compose: the service showed `healthy` after the start.
+
+## Logs in a container
+
+In the foreground, the server writes each log line to stdout.
+`docker logs` and `kubectl logs` show it, so you do not need a log file.
+By default the server also writes the same lines to `var/log/workerman.log` inside the container.
+The file does not grow without end: Workerman cuts it when it gets too big.
+
+Do not set `log_file` to `/dev/stderr` or `php://stderr`.
+Both give a PHP warning on every log line (see [issue 985](https://github.com/crazy-goat/workerman-bundle/issues/985)).
+The `stdout_file` key is only used in daemon mode (see [Configuration](configuration.md#top-level-keys)).
+
+The warnings at the start (for example the one about the `grpc` extension) are written to the log file only.
+So do not point `log_file` to `/dev/null` if you want to see them.
+
+## Stop time and graceful stop
+
+Docker and Kubernetes stop a container with `SIGTERM`.
+The master handles `SIGTERM` like `SIGINT`: a fast stop.
+After `stop_timeout` seconds, it kills the workers that still work.
+We ran a route that works for 5 seconds, and stopped the container with `docker stop`:
+
+| `stop_timeout` | What happened |
+|----------------|---------------|
+| `10` | The request ended with status 200 after 5 seconds. The container stopped after 4 seconds. |
+| `2` (the default) | The request was cut after 2 seconds. The client got an empty reply. |
+
+So set `stop_timeout` to more than your longest request.
+Then set the stop time of the platform to a bit more than `stop_timeout`:
+
+- Docker: `docker stop -t` or `stop_grace_period` in Compose.
+- Kubernetes: `terminationGracePeriodSeconds`.
+
+If the platform stops earlier, it sends `SIGKILL` and the requests are cut.
+A real graceful stop with `SIGTERM` is an open request (see [issue 910](https://github.com/crazy-goat/workerman-bundle/issues/910)).
+
+## Kubernetes
+
+This example was **not** run on a real cluster.
+The rules in it come from the code and from the Docker tests above.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: app
+          image: registry.example.com/myapp:1.0.0
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "1"
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+```
+
+- Kubernetes sends `SIGTERM` and waits `terminationGracePeriodSeconds`.
+  Keep it larger than `stop_timeout` (here 20 and 10).
+- The `/health` route is yours: the bundle has no health route.
+  Make it cheap, and do not call a database in the liveness probe.
+- The readiness probe keeps a pod out of the service until the server answers.
+- The number of workers: if you leave `processes` empty, the server uses the CPU **limit** of the container (cgroup v2 or v1), times 2, not the CPUs of the node (see [Configuration](configuration.md#servers)).
+  Here the limit is 2 CPUs, so the server starts 4 workers.
+  Set `processes` yourself if you want a fixed number.
+- A memory limit kills a pod that grows too much.
+  Use the `memory` and `max_requests` [reload strategies](reload-strategies.md) so that workers restart before that.
+- Update a release with a new image tag.
+  A rolling update replaces the pods, so you do not use `reload` or `restart` inside a pod.
+
+## gRPC in a container
+
+If the image has the `grpc` extension, set the variable in the image:
+
+```dockerfile
+ENV GRPC_ENABLE_FORK_SUPPORT=1
+```
+
+The server reads it from `$_ENV` or `getenv()`, and warns at the start when it is missing.
+See [Troubleshooting](troubleshooting.md#grpc-extension-and-fork-safety) for the reason.

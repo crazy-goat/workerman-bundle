@@ -549,31 +549,8 @@ is owned by UID 0. When the container later starts the server as `www-data`,
 aborts with a `RuntimeException` before any worker forks — the whole start
 sequence dies.
 
-**Warm up with the runtime user** (recommended):
-
-```dockerfile
-FROM php:8.3-cli
-COPY --chown=www-data:www-data . /app
-WORKDIR /app
-USER www-data
-RUN bin/console cache:warmup
-CMD ["bin/console", "workerman:server", "start"]
-```
-
-(`COPY --chown` makes `www-data` the owner of `/app`, so the runtime user can
-write `var/cache` during warm-up — a plain `COPY . /app` would create
-root-owned files that `www-data` cannot overwrite.)
-
-**Or re-own the cache file after warm-up:**
-
-```dockerfile
-FROM php:8.3-cli
-COPY . /app
-WORKDIR /app
-RUN bin/console cache:warmup && chown -R www-data var/cache
-USER www-data
-CMD ["bin/console", "workerman:server", "start"]
-```
+The fix is to warm up as the runtime user, or to change the owner of `var/cache` after the warm-up.
+A tested Dockerfile is in [Deployment](deployment.md#docker).
 
 The same applies to any deploy-user/runtime-user split: deploy scripts, CI
 runs and `sudo` invocations must either run the warm-up as the runtime user
