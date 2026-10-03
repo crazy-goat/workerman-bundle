@@ -68,7 +68,9 @@ services:
 In the first form, `name` is the name of the tag, so it cannot be the task name.
 Then the task name is the service ID.
 
-Write `jitter` as a number, not as a string ([#970](https://github.com/crazy-goat/workerman-bundle/issues/970)).
+`jitter` must be a whole number of seconds. A numeric string such as `'30'` is cast to a number. Any other value (for example `'abc'` or `1.5`) stops the container build with an error that names the service.
+
+If a task cannot be set up when the scheduler starts, the scheduler writes a `skipped` line to the log and goes on with the other tasks.
 
 ## Schedule formats
 
