@@ -671,7 +671,23 @@ final class SchedulerWorkerTest extends TestCase
         Worker::$globalEvent = $eventMock;
 
         $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
-        (new \ReflectionMethod(SchedulerWorker::class, 'installSigchldHandler'))->invoke($scheduler);
+        $worker = (new \ReflectionProperty(SchedulerWorker::class, 'worker'))->getValue($scheduler);
+        $this->assertInstanceOf(Worker::class, $worker);
+        $this->assertIsCallable($worker->onWorkerStart);
+
+        $savedOutputStream = Worker::$outputStream;
+        $savedLogFile = Worker::$logFile;
+        $tempStream = fopen('php://memory', 'r+');
+        $this->assertNotFalse($tempStream);
+        Worker::$outputStream = $tempStream;
+        Worker::$logFile = '/dev/null';
+
+        try {
+            ($worker->onWorkerStart)($worker);
+        } finally {
+            Worker::$outputStream = $savedOutputStream;
+            Worker::$logFile = $savedLogFile;
+        }
     }
 
     /**
