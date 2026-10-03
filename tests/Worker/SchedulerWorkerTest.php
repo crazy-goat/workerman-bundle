@@ -658,6 +658,23 @@ final class SchedulerWorkerTest extends TestCase
     }
 
     /**
+     * Async signals are off (issue #987), so SIGCHLD must be registered
+     * through the event loop. A plain pcntl_signal() would not run on the
+     * Event loop, which never calls pcntl_signal_dispatch().
+     */
+    public function testSigchldIsRegisteredThroughTheEventLoop(): void
+    {
+        $eventMock = $this->createMock(EventInterface::class);
+        $eventMock->expects($this->once())
+            ->method('onSignal')
+            ->with(SIGCHLD, $this->callback(is_callable(...)));
+        Worker::$globalEvent = $eventMock;
+
+        $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
+        (new \ReflectionMethod(SchedulerWorker::class, 'installSigchldHandler'))->invoke($scheduler);
+    }
+
+    /**
      * A JitterTrigger-wrapped PeriodicalTrigger must hold the same
      * fixed-rate grid (issue #565): the random jitter decorates each run
      * about its grid slot, but the schedule is still rebased on the

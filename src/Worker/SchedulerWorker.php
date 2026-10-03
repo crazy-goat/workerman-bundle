@@ -40,7 +40,7 @@ final class SchedulerWorker
         $this->worker->onWorkerStart = function () use ($kernelFactory, $schedulerConfig): void {
             $this->worker->log($this->worker->name . ' started');
 
-            pcntl_signal(SIGCHLD, $this->handleSigchld(...));
+            $this->installSigchldHandler();
 
             $kernel = $kernelFactory->createKernel();
             $kernel->boot();
@@ -100,6 +100,16 @@ final class SchedulerWorker
     /**
      * Reap terminated child processes and log non-zero exits or signal kills.
      */
+    /**
+     * Register the handler through the event loop. Async signals are off
+     * (see MasterWorker::runAll), and only Select calls pcntl_signal_dispatch(),
+     * so a plain pcntl_signal() would never run on the Event loop (issue #987).
+     */
+    private function installSigchldHandler(): void
+    {
+        $this->worker::$globalEvent?->onSignal(SIGCHLD, $this->handleSigchld(...));
+    }
+
     private function handleSigchld(): void
     {
         while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
