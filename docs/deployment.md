@@ -103,10 +103,13 @@ What the important lines do:
   We use the same signal as `stop`.
 - `KillMode=mixed` sends the signal to the main process only.
   If something is still alive after `TimeoutStopSec`, systemd sends `SIGKILL` to all the processes of the unit.
-- `TimeoutStopSec` must be larger than `stop_timeout`.
-  After the signal, the master gives the workers `stop_timeout` seconds (default 2) and then kills them.
-  If systemd waits less than that, it kills the workers while they still finish.
-  The value 10 is fine for a `stop_timeout` of 2 to 5.
+- `TimeoutStopSec` must be at least `stop_timeout` plus 3 seconds, like the wait of the `stop` command.
+  The `stop_timeout` (default 2) is only the time before the master kills a worker that does not end.
+  The master itself can end about 1 second after that.
+  If systemd waits less, it kills the whole unit (`Result=timeout`, `status=9/KILL`).
+  We saw this with `stop_timeout: 15` and `TimeoutStopSec=10`.
+  The value 10 is fine for a `stop_timeout` of 2 to 7.
+  Running requests do not get `stop_timeout` seconds: see [Stop time and graceful stop](#stop-time-and-graceful-stop).
 - `Restart=always` starts the server again when it ends for any reason, for example a crash.
   `systemctl stop` does not trigger a restart.
   But a `bin/console workerman:server stop` that you run by hand does: use `systemctl stop` instead.
@@ -140,7 +143,10 @@ So choose by what changed:
 | A new release directory with a symlink switch | `restart` (the new release must have its own warm cache) |
 
 With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`.
-While `restart` runs, the server does not answer for a moment.
+`systemctl reload` only sends the signal and returns at once.
+The new workers are not up yet, so do not test the new code right after it.
+While `restart` runs, requests that are running fail and the server does not answer for a moment.
+The client gets an empty reply (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
 See [Commands](commands.md#stop-restart-and-reload) for the signals and the wait times.
 
 A deploy script. It runs as `root`, or as a user who may use `sudo` and `systemctl`:
@@ -304,7 +310,7 @@ services:
       - /app/var/log:uid=33,gid=33
 ```
 
-- `stop_grace_period` must be larger than `stop_timeout`.
+- `stop_grace_period` must be at least `stop_timeout` plus 3 seconds.
 - With `read_only: true`, the server needs a writable `var/run` (PID file and status file) and `var/log` (log file).
   The `tmpfs` lines give them to uid 33, which is `www-data`.
   The warm config cache stays in the image.
@@ -329,22 +335,29 @@ So do not point `log_file` to `/dev/null` if you want to see them.
 
 Docker and Kubernetes stop a container with `SIGTERM`.
 The master handles `SIGTERM` like `SIGINT`: a fast stop.
-After `stop_timeout` seconds, it kills the workers that still work.
-We ran a route that works for 5 seconds, and stopped the container with `docker stop`:
+About 1 second after the signal, the master tells the workers to stop.
+`stop_timeout` is only the time after which the master kills a worker that does not end.
+It is not a time that running requests are guaranteed to get.
+We ran a route that works for 5 seconds, and stopped the container with `docker stop` 1 second after the request began:
 
-| `stop_timeout` | What happened |
-|----------------|---------------|
-| `10` | The request ended with status 200 after 5 seconds. The container stopped after 4 seconds. |
-| `2` (the default) | The request was cut after 2 seconds. The client got an empty reply. |
+| Setup | What happened |
+|-------|---------------|
+| `stop_timeout: 10`, `event` extension loaded | The request ended with status 200 after 5 seconds. The container stopped after 4 seconds. |
+| `stop_timeout: 10`, no `event` extension | The request was cut 1 second after the stop. The client got an empty reply. |
+| `stop_timeout: 2` (the default), `event` extension loaded | The request was cut after 2 seconds. The client got an empty reply. |
 
-So set `stop_timeout` to more than your longest request.
-Then set the stop time of the platform to a bit more than `stop_timeout`:
+A test on a Linux host with systemd gave the same cut about 1 second after `systemctl stop`, also with a long `stop_timeout`.
+So do not trust that a running request ends on a stop or restart.
+Plan for failed requests, and let the client or the load balancer retry safe requests.
+If you can, take the server out of the load balancer before you stop it.
+Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
 
 - Docker: `docker stop -t` or `stop_grace_period` in Compose.
 - Kubernetes: `terminationGracePeriodSeconds`.
 
 If the platform stops earlier, it sends `SIGKILL` and the requests are cut.
 A real graceful stop with `SIGTERM` is an open request (see [issue 910](https://github.com/crazy-goat/workerman-bundle/issues/910)).
+A stop that does not end is a separate open problem (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
 
 ## Kubernetes
 
@@ -393,7 +406,7 @@ spec:
 ```
 
 - Kubernetes sends `SIGTERM` and waits `terminationGracePeriodSeconds`.
-  Keep it larger than `stop_timeout` (here 20 and 10).
+  Keep it at least 3 seconds larger than `stop_timeout` (here 20 and 10).
 - The `/health` route is yours: the bundle has no health route.
   Make it cheap, and do not call a database in the liveness probe.
 - The readiness probe keeps a pod out of the service until the server answers.

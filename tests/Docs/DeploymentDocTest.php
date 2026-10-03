@@ -32,7 +32,7 @@ final class DeploymentDocTest extends TestCase
         $leaf = DocsHelper::configLeaves()['stop_timeout'];
 
         self::assertSame(2, $leaf->getDefaultValue());
-        self::assertStringContainsString('`stop_timeout` seconds (default 2)', DocsHelper::read(self::PAGE));
+        self::assertStringContainsString('`stop_timeout` (default 2)', DocsHelper::read(self::PAGE));
     }
 
     public function testEnvVarAndSignalsAreNamed(): void
@@ -56,7 +56,8 @@ final class DeploymentDocTest extends TestCase
         self::assertStringContainsString('KillSignal=SIGINT', $unit);
         self::assertStringContainsString('Restart=always', $unit);
         self::assertSame(1, preg_match_all('/^TimeoutStopSec=(\d+)$/m', $unit, $timeout));
-        self::assertGreaterThan(DocsHelper::configLeaves()['stop_timeout']->getDefaultValue(), (int) $timeout[1][0]);
+        self::assertGreaterThanOrEqual(DocsHelper::configLeaves()['stop_timeout']->getDefaultValue() + 3, (int) $timeout[1][0]);
+        self::assertStringContainsString('`TimeoutStopSec` must be at least `stop_timeout` plus 3 seconds', $page);
     }
 
     public function testReloadClearsTheOpcacheAsThePageSays(): void
@@ -104,13 +105,13 @@ final class DeploymentDocTest extends TestCase
         $compose = Yaml::parse($blocks[1][1]);
         self::assertIsArray($compose);
         self::assertSame('15s', $compose['services']['app']['stop_grace_period']);
-        self::assertGreaterThan($stopTimeout, (int) $compose['services']['app']['stop_grace_period']);
+        self::assertGreaterThanOrEqual($stopTimeout + 3, (int) $compose['services']['app']['stop_grace_period']);
 
         $deployment = Yaml::parse($blocks[1][2]);
         self::assertIsArray($deployment);
         self::assertSame('Deployment', $deployment['kind']);
         $grace = $deployment['spec']['template']['spec']['terminationGracePeriodSeconds'];
-        self::assertGreaterThan($stopTimeout, $grace);
+        self::assertGreaterThanOrEqual($stopTimeout + 3, $grace);
         self::assertStringContainsString(sprintf('(here %d and %d)', $grace, $stopTimeout), DocsHelper::read(self::PAGE));
     }
 

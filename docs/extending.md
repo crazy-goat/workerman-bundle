@@ -96,4 +96,5 @@ If no strategy supports a response, the bundle throws `NoResponseStrategyExcepti
 
 ## Changes to these interfaces
 
-A change that breaks your strategy is written down in [UPGRADE.md](../UPGRADE.md).
+The response strategy API is public.
+A change that breaks custom strategies gets a note in [UPGRADE.md](../UPGRADE.md) and the [CHANGELOG](../CHANGELOG.md).
