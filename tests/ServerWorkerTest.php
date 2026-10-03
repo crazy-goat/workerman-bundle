@@ -1183,6 +1183,77 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
+    /**
+     * Issue #907: a slow body of the second request on a keep-alive connection gets
+     * connection_timeout, not keepalive_timeout.
+     */
+    public function testSlowSecondRequestGetsConnectionTimeoutNotKeepaliveTimeout(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-slow-second-request', 5, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+        $connection->protocol = Http::class;
+
+        try {
+            $this->startSlowSecondRequest($worker, $connection, $peer, $eventLoop);
+
+            // keepalive_timeout is 1 s. The upload is still slow after 2.5 s, but connection_timeout is 5 s.
+            $this->runEventLoopFor($eventLoop, 2.5);
+
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    public function testSlowSecondRequestIsClosedAfterConnectionTimeout(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-slow-second-request-stalled', 2, 1, $eventLoop);
+
+        [$connection, $peer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($connection, $worker);
+        $connection->protocol = Http::class;
+
+        try {
+            $this->startSlowSecondRequest($worker, $connection, $peer, $eventLoop);
+
+            // The body never ends, so connection_timeout (2 s) closes the connection.
+            $this->runEventLoopFor($eventLoop, 4.5);
+
+            $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
+        } finally {
+            Timer::delAll();
+            @fclose($peer);
+        }
+    }
+
+    /**
+     * Completes a first request, then starts a second request with a body that is
+     * never completed: the peer sends 1 KB of a 100 KB body every 0.3 s.
+     *
+     * @param resource $peer
+     */
+    private function startSlowSecondRequest(Worker $worker, TcpConnection $connection, $peer, Select $eventLoop): void
+    {
+        $onConnect = $worker->onConnect;
+        $onMessage = $worker->onMessage;
+        $this->assertNotNull($onConnect);
+        $this->assertNotNull($onMessage);
+
+        $onConnect($connection);
+        $onMessage($connection, new Request("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+
+        $head = "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 102400\r\n\r\n";
+        $eventLoop->repeat(0.3, static function () use ($peer, &$head): void {
+            @fwrite($peer, $head . str_repeat('x', 1024));
+            $head = '';
+        });
+    }
+
     public function testKeepaliveTimeoutZeroKeepsOnlySweeperTimer(): void
     {
         $eventLoop = new Select();

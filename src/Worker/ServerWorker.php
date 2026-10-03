@@ -131,6 +131,14 @@ final readonly class ServerWorker
                             continue;
                         }
 
+                        // Bytes of the next request wait in the receive buffer: a new request has
+                        // started on this keep-alive connection. It gets connection_timeout from now
+                        // on, like the first request, and not keepalive_timeout (issue #907).
+                        if (($connection->context->requestCompleted ?? false) === true && $connection->getRecvBufferQueueSize() > 0) {
+                            $connection->context->requestCompleted = false;
+                            $connection->context->lastActivity = $now;
+                        }
+
                         $lastActivity = $connection->context->lastActivity ?? null;
                         $requestCompleted = $connection->context->requestCompleted ?? false;
                         if (!is_int($lastActivity)) {
