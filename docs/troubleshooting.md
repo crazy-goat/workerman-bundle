@@ -33,7 +33,7 @@ Commonly affected services:
     reload_strategy:
       max_requests:
         active: true
-        max_requests: 1000
+        requests: 1000
   ```
   See [reload strategies](../README.md#reload-strategies) for details.
 
@@ -112,18 +112,10 @@ This also affects Doctrine's `EntityManager` which holds a reference to the conn
     reload_strategy:
       max_requests:
         active: true
-        max_requests: 500
+        requests: 500
   ```
-- **Configure Doctrine to reconnect automatically** — Doctrine's `ping` middleware can test the connection before executing a query. In `config/packages/doctrine.yaml`:
-  ```yaml
-  doctrine:
-    dbal:
-      options:
-        # Disable the stale-connection check that prevents reconnect
-        x.use_savepoints: false
-      # Or catch the exception and reconnect manually
-  ```
-  A more robust approach is to register an event listener that calls `EntityManager::getConnection()->ping()` before each request.
+- **Check the connection before each request.** Run `SELECT 1` in a `try`/`catch`. If it fails, call `close()`. Doctrine then opens a new connection on the next query. The middleware below does this.
+- **Use `idle_connection_ttl`.** DoctrineBundle has this option for long-running processes. It closes connections that were idle for too long. Check the DoctrineBundle docs for your version.
 - **Set `wait_timeout` appropriately** on your MySQL server (at least higher than your `max_requests` × average request duration).
   - **Use a middleware** that calls `EntityManager::clear()` and reconnects if the connection is closed:
   ```php
@@ -141,9 +133,12 @@ This also affects Doctrine's `EntityManager` which holds a reference to the conn
       public function __invoke(Request $request, callable $next): Response
       {
           $connection = $this->entityManager->getConnection();
-          if (!$connection->ping()) {
+
+          try {
+              $connection->executeQuery('SELECT 1');
+          } catch (\Throwable) {
+              // The connection is stale. Close it. Doctrine reconnects on the next query.
               $connection->close();
-              $connection->connect();
           }
 
           return $next($request);
@@ -275,6 +270,6 @@ Consider which restart strategy matches your deployment model:
 | [`max_requests`](../README.md#reload-strategies) | Safety net for memory leaks, stale connections, state pollution | Every N requests |
 | [`file_monitor`](../README.md#reload-strategies) | Development: pick up code changes without restarting | On file change |
 | [`always`](../README.md#reload-strategies) | Highest isolation — every request gets a fresh worker | Every request |
-| [`memory`](../README.md#reload-strategies) | Stop runaway memory before OOM | When RSS exceeds limit |
+| [`memory`](../README.md#reload-strategies) | Stop runaway memory before OOM | When PHP memory (`memory_get_usage()`) exceeds the limit |
 
 Combine multiple strategies. For example, production typically runs `exception` + `max_requests` + `memory`.

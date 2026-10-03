@@ -28,7 +28,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 ### Features
 
-1. **Middleware system** — composable request/response pipeline with `MiddlewareInterface`, `MiddlewareDispatchInterface`, `StaticFilesMiddleware` (ETag, Last-Modified, 304 support, blocked extensions, dot-file blocking, symlink control, path traversal protection, LRU realpath cache with TTL, PHAR-aware path resolution), `SymfonyController` (kernel boot, request conversion, response, termination, service resetter), and a zero per-request allocation pipeline built once and cached.
+1. **Middleware system** — composable request/response pipeline with `MiddlewareInterface`, `MiddlewareDispatchInterface`, `StaticFilesMiddleware` (ETag, Last-Modified, 304 support, blocked extensions, dot-file blocking, symlink control, path traversal protection, LRU realpath cache with TTL, PHAR-aware path resolution), `SymfonyController` (kernel boot, request conversion, response, termination, service resetter), and a pipeline that is built once and cached. Each request uses one dispatcher object and one controller closure.
 
 2. **Console commands** — full server lifecycle management via `ServerManager`: `workerman:server start/stop/restart/reload/status/connections`, plus `workerman:build:phar` and `workerman:build:bin` for packaging.
 
@@ -54,7 +54,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 13. **File upload validation** — structural validation of uploaded files with clear error messages. Upstream has no validation.
 
-14. **Extended `Request` class** — adds `setHeader()` / `withHeader()` methods to Workerman's Request, required by the middleware system.
+14. **Extended `Request` class** — adds the `setHeader()` method to Workerman's Request, required by the middleware system. `withHeader()` is a deprecated alias (since 0.23.0, removed in 1.0).
 
 15. **`ListenScheme` enum** — type-safe HTTP/HTTPS/WS/WSS scheme parsing. Upstream uses inline `str_starts_with()` checks.
 
@@ -518,7 +518,7 @@ The `StaticFilesMiddleware` resolves requests against the configured root direct
 
 ### Execution order
 
-Middlewares are executed in registration order (first registered, first executed). This means the first middleware in the `middlewares` list wraps the innermost layer. Using onion model terminology:
+Middlewares run in the order of the `middlewares` list. The first middleware is the outermost layer. It sees the request first and the response last. The last middleware is the innermost layer. It is next to the Symfony controller. In onion model terms:
 
 ```
 Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response

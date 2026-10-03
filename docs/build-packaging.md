@@ -8,7 +8,7 @@ WorkermanBundle supports packaging your entire Symfony application into a single
 
 ```bash
 # Build a PHAR archive (requires PHP on target system)
-php bin/console workerman:build:phar
+php -d phar.readonly=0 bin/console workerman:build:phar
 
 # Run from the PHAR
 php app.phar workerman:server start -d
@@ -20,7 +20,7 @@ php app.phar doctrine:migrations:migrate
 
 ```bash
 # Build a self-contained binary (no PHP required on target)
-php bin/console workerman:build:bin
+php -d phar.readonly=0 bin/console workerman:build:bin
 
 # Run from the binary
 ./app.bin workerman:server start -d
@@ -90,7 +90,7 @@ The `--sfx-checksum` CLI option overrides this config value when provided.
 # Obtain the checksum for a specific PHP version
 curl -sL "https://download.workerman.net/php/php8.3.micro.sfx" | sha256sum
 # After obtaining a trusted copy, use its checksum in a subsequent build:
-php bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted.sfx | cut -d' ' -f1)"
+php -d phar.readonly=0 bin/console workerman:build:bin --sfx-checksum="$(sha256sum /path/to/trusted.sfx | cut -d' ' -f1)"
 ```
 
 Cross-reference: `src/DependencyInjection/ConfigurationTreeBuilder.php:306-309`.
@@ -107,7 +107,7 @@ is configured.
 
 ```bash
 # Warning: skips checksum verification
-php bin/console workerman:build:bin --unsafe-no-checksum
+php -d phar.readonly=0 bin/console workerman:build:bin --unsafe-no-checksum
 ```
 
 ### `build.sfx.allow_insecure`
@@ -211,7 +211,7 @@ The runtime directory defaults to the directory containing the PHAR/BIN file, an
 
 - **No file monitor reload** — code updates require a restart (files are frozen inside the archive)
 - **`.env` file must be external** — place it next to the PHAR/BIN file
-- **phar.readonly must be Off** — set `phar.readonly=0` in php.ini during build
+- **phar.readonly must be Off** — both build commands fail otherwise. Pass `-d phar.readonly=0` to PHP, or set `phar.readonly=0` in php.ini during build
 - **BIN builds are architecture-specific** — Linux x86_64 by default
 - **User uploads must not go into PHAR** — configure upload paths outside the archive
 
@@ -220,7 +220,7 @@ The runtime directory defaults to the directory containing the PHAR/BIN file, an
 ### `workerman:build:phar`
 
 ```bash
-php bin/console workerman:build:phar [options]
+php -d phar.readonly=0 bin/console workerman:build:phar [options]
 
 Options:
   -o, --output-dir=DIR       Output directory (default: config build.build_dir)
@@ -232,11 +232,13 @@ Options:
 ### `workerman:build:bin`
 
 ```bash
-php bin/console workerman:build:bin [options]
+php -d phar.readonly=0 bin/console workerman:build:bin [options]
 
 Options:
-  -o, --output-dir=DIR         Output directory
+  -o, --output-dir=DIR         Output directory (default: config build.build_dir)
       --filename=NAME          Output filename (default: config build.bin_filename)
+      --phar-filename=NAME     Name of the intermediate PHAR file (default: config build.phar_filename)
+      --kernel-class=CLASS     Kernel class to use in the PHAR stub (default: config build.kernel_class)
       --sfx-file=PATH          Local path to phpmicro.sfx
       --sfx-url=URL            URL to download phpmicro.sfx
       --sfx-checksum=HASH      Expected SHA-256 hex digest (mandatory unless --unsafe-no-checksum)
