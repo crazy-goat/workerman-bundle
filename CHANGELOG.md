@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bin/lint.sh` runs every linter in one place (composer validate and audit, PHP-CS-Fixer, PHPStan level 8, Rector, `bin/kb-lint.php`, the CHANGELOG and exception-usage checks, `shellcheck` on all tracked shell scripts and `hadolint` on the Dockerfile) and `composer lint` / `composer lint-fix` now call it (#859)
 - `AGENTS.md`, `docs/release-workflow.md`, `.github/dependabot.yml` and `.github/pull_request_template.md` from the crazy-goat repository standard (#859)
 - `bin/worktree-setup.sh` prepares a fresh worktree (#859)
+- `docs/getting-started.md` with the requirements, install steps, a minimal config with `when@dev` and `when@prod` blocks, and the first start; the README has a short Requirements list (#879)
 
 ### Changed
 
+- The README and the config reference now say that `listen` is required: a server without `listen` does not start (#879)
 - CI runs the shared `changes` and `docs` jobs, a `lint` job that only runs `bin/lint.sh`, test jobs gated on code changes and a `ci-ok` aggregator, which replaces the `ci` check (#859)
 - `release.yaml` builds the GitHub Release notes from the CHANGELOG section of the tag with `gh release create --verify-tag` instead of a third-party action (#859)
 - `bin/pick-issue.sh`, `bin/worktree.sh`, `bin/worktree-done.sh` and `docs/workflow.md` are the shared copies from crazy-goat/.github; the coder and review agents talk through the gitignored `findings.md` and `review.md` (#859)
