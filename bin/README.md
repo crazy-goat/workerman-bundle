@@ -158,6 +158,7 @@ php bin/kb-lint.php --root=/path/to/checkout
 | a front-matter value contains `-->` (it would terminate the comment early and leak the tail into the rendered page) | error |
 | the tag index between `<!-- kb-index:start -->` / `<!-- kb-index:end -->` matches the entries | error (fixed by `--fix`) |
 | more than one tag index block in a file | error |
+| a `Tag index` heading without the index markers (`--fix` does not write an index here; add the markers or remove the heading) | error |
 | a file is over the 300-line budget — the generated index, its `## Tag index` heading and the blank lines around it do not count | warning |
 | near-duplicate entries | warning |
 | `stale` entries (0 hits in 20 cycles) | listed |
