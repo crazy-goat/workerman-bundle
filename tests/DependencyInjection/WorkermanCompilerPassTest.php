@@ -66,6 +66,46 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertArrayHasKey('process.service', $processLocatorArgs[0]);
     }
 
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function registerConfigLoaderWithConfig(array $config): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class)
+            ->addMethodCall('setWorkermanConfig', [$config]);
+    }
+
+    public function testMiddlewareServicesFromServerConfigBecomePublic(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [
+            ['name' => 'a', 'middlewares' => ['first_middleware', 'aliased_middleware']],
+            ['name' => 'b', 'middlewares' => ['second_middleware']],
+            ['name' => 'c'],
+        ]]);
+        $this->container->register('first_middleware', \stdClass::class)->setPublic(false);
+        $this->container->register('second_middleware', \stdClass::class)->setPublic(false);
+        $this->container->register('real_middleware', \stdClass::class)->setPublic(false);
+        $this->container->setAlias('aliased_middleware', 'real_middleware')->setPublic(false);
+        $this->container->register('other_service', \stdClass::class)->setPublic(false);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertTrue($this->container->getDefinition('first_middleware')->isPublic());
+        $this->assertTrue($this->container->getDefinition('second_middleware')->isPublic());
+        $this->assertTrue($this->container->getAlias('aliased_middleware')->isPublic());
+        $this->assertFalse($this->container->getDefinition('other_service')->isPublic(), 'Only configured middlewares become public');
+    }
+
+    public function testUnknownMiddlewareServiceFailsAtContainerBuild(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [['name' => 'a', 'middlewares' => ['missing_middleware']]]]);
+
+        $this->expectException(\Symfony\Component\DependencyInjection\Exception\InvalidArgumentException::class);
+        $this->expectExceptionMessage('"missing_middleware"');
+
+        $this->compilerPass->process($this->container);
+    }
+
     public function testHandlesNoTaggedServices(): void
     {
         $this->container->register('workerman.config_loader', \stdClass::class);

@@ -103,16 +103,16 @@ final class HttpMiddlewareDocTest extends TestCase
     }
 
     /**
-     * The server reads a middleware from the container by its ID, so the service must be public.
+     * The middleware service examples must be valid service definitions. They do not need `public: true`: the bundle makes the services public itself (issue #964).
      */
     #[DataProvider('pageProvider')]
-    public function testMiddlewareServiceExamplesArePublic(string $page): void
+    public function testMiddlewareServiceExamplesAreValidServices(string $page): void
     {
         preg_match_all('/```yaml\n(.*?)```/s', DocsHelper::read($page), $matches);
 
         $this->addToAssertionCount(1);
         foreach ($matches[1] as $block) {
-            if (!str_contains($block, 'services:') || !preg_match('/Middleware\\b/', $block)) {
+            if (!str_contains($block, 'services:') || !preg_match('/Middleware\b/', $block)) {
                 continue;
             }
 
@@ -121,8 +121,7 @@ final class HttpMiddlewareDocTest extends TestCase
             $services = $parsed['services'] ?? [];
             self::assertIsArray($services);
             foreach ($services as $id => $definition) {
-                self::assertIsArray($definition, sprintf('%s: the service %s has no definition.', $page, $id));
-                self::assertTrue($definition['public'] ?? false, sprintf('%s: the middleware service %s is not public.', $page, $id));
+                self::assertTrue($definition === null || is_array($definition), sprintf('%s: the service %s has no valid definition.', $page, $id));
             }
         }
     }
