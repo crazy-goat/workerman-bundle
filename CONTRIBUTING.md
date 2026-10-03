@@ -42,8 +42,10 @@ php bin/install-git-hook.php
 
 **To remove the hook**:
 ```bash
-rm .git/hooks/pre-push
+rm "$(git rev-parse --git-path hooks)/pre-push"
 ```
+
+The installer asks git where the hooks folder is (`git rev-parse --git-path hooks`). So it also works in a linked worktree, and it follows `core.hooksPath` if you set it.
 
 ### Before Submitting a PR
 
