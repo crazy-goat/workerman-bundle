@@ -30,7 +30,8 @@ workerman:
 ## Workers
 
 `processes` is the number of workers of the server.
-If you leave it out, the bundle starts the number of CPU cores times 2.
+If you leave it out, the bundle starts the number of CPUs times 2.
+In a container it uses the CPU limit, not the CPUs of the host.
 Each worker has its own Symfony kernel.
 The kernel is booted once, when the worker starts.
 It is reused for all requests of this worker.

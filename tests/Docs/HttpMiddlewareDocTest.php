@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * The facts of docs/middlewares.md and docs/http-server.md must match the code (issue #878, section 5).
@@ -111,11 +112,18 @@ final class HttpMiddlewareDocTest extends TestCase
 
         $this->addToAssertionCount(1);
         foreach ($matches[1] as $block) {
-            if (!str_contains($block, 'services:') || !preg_match('/Middleware\b/', $block)) {
+            if (!str_contains($block, 'services:') || !preg_match('/Middleware\\b/', $block)) {
                 continue;
             }
 
-            self::assertStringContainsString('public: true', $block, sprintf("%s has a middleware service example that is not public:\n%s", $page, $block));
+            $parsed = Yaml::parse($block);
+            self::assertIsArray($parsed);
+            $services = $parsed['services'] ?? [];
+            self::assertIsArray($services);
+            foreach ($services as $id => $definition) {
+                self::assertIsArray($definition, sprintf('%s: the service %s has no definition.', $page, $id));
+                self::assertTrue($definition['public'] ?? false, sprintf('%s: the middleware service %s is not public.', $page, $id));
+            }
         }
     }
 }
