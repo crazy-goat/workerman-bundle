@@ -98,6 +98,7 @@ Both events have `getProcessName()` and `getServiceClass()`.
 
 The bundle has a listener for `ProcessErrorEvent`.
 It writes the error to the Monolog channel `process`.
+See [Events](events.md) for details.
 
 ## Stop and reload
 
@@ -108,8 +109,8 @@ The default is 2 seconds.
 Destructors and shutdown functions do not run.
 After a reload, the process starts again.
 
-Do not use the graceful option `-g` when you have supervised processes.
-A graceful stop does not kill the process, so the process never ends.
+Do not use the graceful option `-g` with `stop` or `reload` when you have supervised processes.
+A graceful stop or reload does not kill the process, so the process never ends.
 See [#911](https://github.com/crazy-goat/workerman-bundle/issues/911).
 
 Save the state of your work often, because the process can be killed at any time.
