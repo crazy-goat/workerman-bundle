@@ -134,7 +134,7 @@ final class UtilsTest extends TestCase
     protected function tearDown(): void
     {
         foreach ($this->roots as $root) {
-            foreach (glob($root . '/{,cpu/}*', GLOB_BRACE) ?: [] as $file) {
+            foreach ([...(glob($root . '/*') ?: []), ...(glob($root . '/cpu/*') ?: [])] as $file) {
                 if (is_file($file)) {
                     unlink($file);
                 }
