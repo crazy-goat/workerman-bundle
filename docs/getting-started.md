@@ -153,3 +153,4 @@ You can also put a reverse proxy, such as nginx or Caddy, in front of the server
 - [HTTP server](http-server.md) and [middlewares](middlewares.md): listen, workers, limits, static files.
 - [Scheduler](scheduler.md): run your code on a plan.
 - [Supervisor](supervisor.md): run your own long-running processes.
+- [Events](events.md) and [extending the bundle](extending.md): listen to task errors, add tags and response strategies.
