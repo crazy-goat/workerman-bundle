@@ -127,6 +127,7 @@ $ bin/console config:dump-reference workerman
 services:
   workerman.middleware.static_files:
     class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    public: true
     arguments:
       $rootDirectory: '%kernel.project_dir%/public'
 
@@ -309,93 +310,11 @@ final class TestRebootStrategy implements RebootStrategyInterface
 
 ## Middlewares
 
-Middlewares allow you to intercept and process requests before they reach the Symfony controller, or modify responses before they are sent to the client.
-
-A middleware is any service implementing `CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface`:
-
-```php
-<?php
-
-use CrazyGoat\WorkermanBundle\Http\Request;
-use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
-use Workerman\Protocols\Http\Response;
-
-final readonly class MyMiddleware implements MiddlewareInterface
-{
-    public function __invoke(Request $request, callable $next): Response
-    {
-        // Pre-processing: inspect or modify the request
-        if ($request->header('X-Custom') === null) {
-            return new Response(400);
-        }
-
-        $response = $next($request);
-
-        // Post-processing: inspect or modify the response
-        $response->header('X-Processed-By', 'MyMiddleware');
-        return $response;
-    }
-}
-```
-
-### Registering middlewares
-
-Register your middleware as a service in the Symfony container, then reference its service ID under `workerman.servers[].middlewares`:
-
-```yaml
-# config/services.yaml
-services:
-  App\Middleware\MyMiddleware: ~
-```
-
-```yaml
-# config/packages/workerman.yaml
-workerman:
-  servers:
-    - name: 'Symfony webserver'
-      listen: http://127.0.0.1:8080
-      processes: 4
-      middlewares:
-        - App\Middleware\MyMiddleware
-```
-
-### Static files middleware
-
-The deprecated `serve_files` and `root_dir` server options are replaced by the `StaticFilesMiddleware`. To serve static files from a public directory, register the middleware with the root directory path:
-
-```yaml
-# config/services.yaml
-services:
-  workerman.middleware.static_files:
-    class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
-    arguments:
-      $rootDirectory: '%kernel.project_dir%/public'
-```
-
-```yaml
-# config/packages/workerman.yaml
-workerman:
-  servers:
-    - name: 'Symfony webserver'
-      listen: http://127.0.0.1:8080
-      processes: 4
-      middlewares:
-        - workerman.middleware.static_files
-```
-
-The `StaticFilesMiddleware` resolves requests against the configured root directory, serves matching files directly, and passes through to the next handler for non-file requests. Directory traversal attacks are prevented by ensuring the resolved path stays within the root directory.
-
-> **Note:** The middleware's hardening is configured via constructor arguments — `$allowedExtensions` for the extension allowlist and `$followSymlinks` for symlink handling. The `static_files` server key (including `allowed_extensions`) only applies to the deprecated `serve_files`/`root_dir` path and has **no effect** on a service-registered middleware. See [Security: Static Files Protection](docs/security.md#static-files-protection).
-
-### Execution order
-
-Middlewares run in the order of the `middlewares` list. The first middleware is the outermost layer. It sees the request first and the response last. The last middleware is the innermost layer. It is next to the Symfony controller. In onion model terms:
-
-```
-Request → Middleware 1 → Middleware 2 → ... → Symfony controller → ... → Middleware 2 → Middleware 1 → Response
-```
-
-This allows outer middlewares to handle cross-cutting concerns (authentication, logging, rate limiting) before inner middlewares or the Symfony controller processes the request.
+Middlewares run before the Symfony controller and after it.
+A middleware implements `CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface` and is listed under `workerman.servers[].middlewares`.
+The bundle has a `StaticFilesMiddleware` for static files.
+See [docs/middlewares.md](docs/middlewares.md) for the interface, the order of the layers and the static file headers.
+For the listen address, workers, timeouts and streamed responses, see [docs/http-server.md](docs/http-server.md).
 
 ## Scheduler
 Periodic tasks can be configured with attributes or with tags in configuration files.  
