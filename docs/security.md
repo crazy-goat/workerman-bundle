@@ -106,7 +106,7 @@ Because `setHeader()` mutates the request **after** the bundle's own header sani
 
 ### When this matters
 
-- **Reverse-proxy deployments** where the application sits behind nginx, HAProxy, or a cloud load balancer and uses `X-Forwarded-*` to reconstruct the client IP / scheme / host.
+- **Reverse-proxy deployments** where the application sits behind nginx, HAProxy, or a cloud load balancer and uses `X-Forwarded-*` to reconstruct the client IP / scheme / host. See [Reverse proxy](reverse-proxy.md#trusted-proxies) for the settings.
 - **Multi-tenant middleware pipelines** where third-party middleware is loaded dynamically and may not be fully audited.
 - **Authentication and rate-limiting middleware** that branches on `X-Forwarded-For` to identify clients — a spoofed value here can bypass IP-based rate limits or impersonate other tenants.
 
