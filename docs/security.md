@@ -549,7 +549,7 @@ is owned by UID 0. When the container later starts the server as `www-data`,
 aborts with a `RuntimeException` before any worker forks — the whole start
 sequence dies.
 
-The fix is to warm up as the runtime user, or to change the owner of `var/cache` after the warm-up.
+The fix is to warm up as the runtime user, or to change the owner of the whole `var` directory after the warm-up.
 A tested Dockerfile is in [Deployment](deployment.md#docker).
 
 The same applies to any deploy-user/runtime-user split: deploy scripts, CI
