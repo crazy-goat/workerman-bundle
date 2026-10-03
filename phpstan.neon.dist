@@ -1,6 +1,8 @@
 parameters:
 	level: 8
 	treatPhpDocTypesAsCertain: false
+	scanFiles:
+		- phpstan-stubs/inotify.stub
 	paths:
 		- src
 		- tests

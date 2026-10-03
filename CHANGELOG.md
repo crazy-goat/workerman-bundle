@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `InotifyMonitorWatcher::start()` no longer throws a `TypeError` when `inotify_init()` fails (for example when `max_user_instances` is used up). It writes one log line and does not watch files, like when the inotify extension is missing (#836)
 - A running request is no longer cut by `stop` or `reload` on the Select loop (no `ext-event`). Symfony Console turns on `pcntl_async_signals(true)` and the workers inherited it, so the stop signal ran in the middle of the request and `stop_timeout` did not help. The master now turns async signals off before it starts, and the scheduler registers `SIGCHLD` through the event loop. A supervised process or a task child now ends on a stop signal only when the event loop handles it (#987)
 - `bin/install-git-hook.php` now fails with a message and exit code 1 when `chmod()` of the pre-push hook fails, and no longer prints success. A test covers the failure, a linked worktree and `core.hooksPath`. `CONTRIBUTING.md` says how the hooks folder is found (#829)
 - The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. Before, 200 runs of a `60` seconds schedule with a jitter of up to 30 seconds were about 3000 seconds late. A `jitter` that is not smaller than the interval can still skip a run (#969)

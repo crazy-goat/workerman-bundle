@@ -749,6 +749,63 @@ final class InotifyMonitorWatcherTest extends TestCase
 
     /**
      * @requires extension inotify
+     *
+     * When inotify_init() fails (no free inotify instance), start() must log
+     * one line and do nothing else, not throw a TypeError (issue #836).
+     */
+    public function testStartLogsAndDoesNothingWhenInotifyInitFails(): void
+    {
+        $tmpDir = $this->createTempDir();
+        $logFile = $tmpDir . '/workerman.log';
+        $originalLogFile = Worker::$logFile;
+        $originalOutputStream = Worker::$outputStream;
+        $testStream = \fopen('php://temp', 'w+');
+        if ($testStream === false) {
+            self::fail('Unable to open temp stream for test');
+        }
+        Worker::$outputStream = $testStream;
+        Worker::$logFile = $logFile;
+
+        // Use up every inotify instance of this user (max_user_instances).
+        $instances = [];
+        try {
+            for ($i = 0; $i < 10000; ++$i) {
+                $instance = @\inotify_init();
+                if ($instance === false) {
+                    break;
+                }
+                $instances[] = $instance;
+            }
+            if ($instance === false) {
+                $eventLoop = $this->createMock(EventInterface::class);
+                $eventLoop->expects($this->never())->method('onReadable');
+                $eventLoop->expects($this->never())->method('delay');
+                Worker::$globalEvent = $eventLoop;
+
+                $watcher = $this->createWatcherWithSourceDir($this->createMock(Worker::class), $tmpDir);
+                $watcher->start();
+
+                $this->assertStringContainsString(
+                    'InotifyMonitorWatcher: inotify_init() failed',
+                    (string) \file_get_contents($logFile),
+                );
+                $this->assertSame([], $this->getPrivateProperty($watcher, 'pathByWd'));
+
+                return;
+            }
+        } finally {
+            foreach ($instances as $instance) {
+                \fclose($instance);
+            }
+            Worker::$outputStream = $originalOutputStream;
+            Worker::$logFile = $originalLogFile;
+        }
+
+        $this->markTestSkipped('inotify_init() did not fail after 10000 instances');
+    }
+
+    /**
+     * @requires extension inotify
      */
     public function testFailedAddWatchWritesNoMapsAndLogsWarningOnce(): void
     {

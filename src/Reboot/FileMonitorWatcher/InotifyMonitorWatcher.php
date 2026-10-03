@@ -24,7 +24,19 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
     public function start(): void
     {
         if (function_exists('inotify_init') && Worker::$globalEvent instanceof EventInterface) {
-            $this->fd = \inotify_init();
+            $fd = @\inotify_init();
+            if ($fd === false) {
+                // No free inotify instance (max_user_instances) or file descriptor.
+                // Degrade like the no-extension case: no file watching, no crash.
+                Worker::log(
+                    'InotifyMonitorWatcher: inotify_init() failed, files are not watched; '
+                    . 'check /proc/sys/fs/inotify/max_user_instances and the open files limit',
+                );
+
+                return;
+            }
+
+            $this->fd = $fd;
             stream_set_blocking($this->fd, false);
 
             // Phase 1: Watch only top-level directories for instant startup.
