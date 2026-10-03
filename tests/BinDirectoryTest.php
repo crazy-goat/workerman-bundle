@@ -66,6 +66,74 @@ final class BinDirectoryTest extends TestCase
         }
     }
 
+    public function testTheInstallerFailsLoudlyWhenChmodFails(): void
+    {
+        if (\function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $this->markTestSkipped('root can always chmod');
+        }
+
+        if (!is_writable('/dev/null')) {
+            $this->markTestSkipped('needs a writable /dev/null that the user does not own');
+        }
+
+        $sandbox = $this->makeSandbox();
+        // The write goes through the link and works, but the user does not own /dev/null, so chmod() fails.
+        $this->assertTrue(symlink('/dev/null', $sandbox . '/.git/hooks/pre-push'));
+
+        $output = [];
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($sandbox . '/bin/install-git-hook.php') . ' 2>&1', $output, $code);
+
+        $this->assertSame(1, $code, implode("\n", $output));
+        $this->assertStringNotContainsString('installed successfully', implode("\n", $output));
+        $this->assertStringContainsString('chmod', implode("\n", $output));
+
+        $this->removeSandbox($sandbox);
+    }
+
+    public function testTheInstallerWorksInALinkedWorktreeAndWithCoreHooksPath(): void
+    {
+        $sandbox = $this->makeSandbox();
+        $git = 'git -C ' . escapeshellarg($sandbox) . ' ';
+        exec($git . 'init -q 2>&1 && ' . $git . '-c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init 2>&1 && ' . $git . 'worktree add -q ' . escapeshellarg($sandbox . '-wt') . ' 2>&1', $gitOutput, $gitCode);
+        $this->assertSame(0, $gitCode, implode("\n", $gitOutput));
+
+        // A linked worktree: `.git` is a file there.
+        mkdir($sandbox . '-wt/bin', 0o775, true);
+        copy($sandbox . '/bin/install-git-hook.php', $sandbox . '-wt/bin/install-git-hook.php');
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($sandbox . '-wt/bin/install-git-hook.php') . ' 2>&1', $output, $code);
+        $this->assertSame(0, $code, implode("\n", $output));
+        $this->assertFileExists($sandbox . '/.git/hooks/pre-push');
+        $this->assertTrue(is_executable($sandbox . '/.git/hooks/pre-push'));
+        unlink($sandbox . '/.git/hooks/pre-push');
+
+        // core.hooksPath: the hook goes there, not into .git/hooks.
+        $hooksPath = $sandbox . '/custom-hooks';
+        mkdir($hooksPath);
+        exec($git . 'config core.hooksPath ' . escapeshellarg($hooksPath) . ' 2>&1');
+        $output = [];
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($sandbox . '/bin/install-git-hook.php') . ' 2>&1', $output, $code);
+        $this->assertSame(0, $code, implode("\n", $output));
+        $this->assertTrue(is_executable($hooksPath . '/pre-push'));
+        $this->assertFileDoesNotExist($sandbox . '/.git/hooks/pre-push');
+
+        exec('rm -rf ' . escapeshellarg($sandbox) . ' ' . escapeshellarg($sandbox . '-wt'));
+    }
+
+    private function makeSandbox(): string
+    {
+        $sandbox = sys_get_temp_dir() . '/hook-test-' . bin2hex(random_bytes(6));
+        $this->assertTrue(mkdir($sandbox . '/bin', 0o775, true));
+        $this->assertTrue(mkdir($sandbox . '/.git/hooks', 0o775, true));
+        $this->assertNotFalse(copy($this->projectDir . '/bin/install-git-hook.php', $sandbox . '/bin/install-git-hook.php'));
+
+        return $sandbox;
+    }
+
+    private function removeSandbox(string $sandbox): void
+    {
+        exec('rm -rf ' . escapeshellarg($sandbox));
+    }
+
     public function testWaitForPortsScriptExists(): void
     {
         $this->assertFileExists($this->projectDir . '/bin/wait-for-ports.php');

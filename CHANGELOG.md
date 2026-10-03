@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `bin/install-git-hook.php` now fails with a message and exit code 1 when `chmod()` of the pre-push hook fails, and no longer prints success. A test covers the failure, a linked worktree and `core.hooksPath`. `CONTRIBUTING.md` says how the hooks folder is found (#829)
 - The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. Before, 200 runs of a `60` seconds schedule with a jitter of up to 30 seconds were about 3000 seconds late. A `jitter` that is not smaller than the interval can still skip a run (#969)
 - `docs/troubleshooting.md` no longer says that `opcache_reset()` in a deploy script helps: a separate PHP process cannot reach the OPcache of the running server. Use `reload` (the master clears its OPcache) or `restart`. `docs/security.md` now tells to change the owner of the whole cache directory, not of one file (#888)
 - A schedule that is a string of only digits, such as `#[AsTask(schedule: '60')]` or a quoted YAML `schedule: '60'`, is read as a number of seconds, like the number `60`. Before, the task was skipped with an "Unknown or bad format" error (#971)
