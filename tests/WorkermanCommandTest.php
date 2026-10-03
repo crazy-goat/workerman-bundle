@@ -22,6 +22,9 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class WorkermanCommandTest extends KernelTestCase
 {
+    /** A stalled response must fail the test, not hang the suite (#830). */
+    private const BOUNDED_OPTIONS = ['http_errors' => false, 'connect_timeout' => 0.2, 'timeout' => 1];
+
     public function testInvalidAction(): void
     {
         $tester = $this->createCommandTester();
@@ -50,7 +53,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
     public function testStopAndStartViaCli(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = $this->createBoundedClient();
 
         // Server is running (started by bootstrap.php) — verify HTTP works.
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
@@ -62,7 +65,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
         // Server should be down.
         try {
-            $client->request('GET', 'http://127.0.0.1:8888/response_test', ['timeout' => 1]);
+            $client->request('GET', 'http://127.0.0.1:8888/response_test', []);
             self::fail('Expected connection to fail after stop');
         } catch (ConnectException) {
         }
@@ -80,6 +83,9 @@ final class WorkermanCommandTest extends KernelTestCase
 
         self::assertTrue($this->waitForPortUp(8888, 10), 'Server port 8888 should be back up after restart');
 
+        // The port is open before every worker is ready, so wait for the first 200 with bounded probes.
+        $this->assertHttpReadyAfterReload($client);
+
         // Server should be back up.
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
         self::assertSame(200, $response->getStatusCode());
@@ -95,7 +101,7 @@ final class WorkermanCommandTest extends KernelTestCase
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
 
         // The listening socket can stay up while workers are restarting.
-        $this->assertHttpReadyAfterReload(new Client());
+        $this->assertHttpReadyAfterReload($this->createBoundedClient());
     }
 
     public function testReloadHttpReadinessRetriesTransientTransportFailures(): void
@@ -162,16 +168,43 @@ final class WorkermanCommandTest extends KernelTestCase
         }
     }
 
+    public function testTheHttpClientOfTheCliTestsIsBounded(): void
+    {
+        $handler = new MockHandler([new Response(200)]);
+
+        $this->createBoundedClient($handler)->request('GET', 'http://127.0.0.1:8888/response_test');
+
+        self::assertSame(1, $handler->getLastOptions()['timeout']);
+        self::assertSame(0.2, $handler->getLastOptions()['connect_timeout']);
+        self::assertFalse($handler->getLastOptions()['http_errors']);
+    }
+
+    public function testNoClientOfThisFileIsCreatedWithoutTimeouts(): void
+    {
+        $source = (string) file_get_contents(__FILE__);
+
+        self::assertGreaterThan(0, preg_match_all('/new Client\(([^;]*);/', $source, $matches));
+        foreach ($matches[1] as $arguments) {
+            self::assertTrue(
+                str_contains($arguments, "'handler'") || str_contains($arguments, 'self::BOUNDED_OPTIONS'),
+                'A real client needs connect_timeout and timeout (#830): use createBoundedClient() instead of: ' . $arguments,
+            );
+        }
+    }
+
+    private function createBoundedClient(?MockHandler $handler = null): Client
+    {
+        return new Client(self::BOUNDED_OPTIONS + ($handler instanceof MockHandler ? ['handler' => HandlerStack::create($handler)] : []));
+    }
+
     private function assertHttpReadyAfterReload(Client $client, int $timeoutSeconds = 5): void
     {
         $lastError = 'none';
         $ready = Wait::until(static function () use ($client, &$lastError): bool {
             try {
                 $response = $client->request('GET', 'http://127.0.0.1:8888/response_test', [
-                    'http_errors' => false,
+                    ...self::BOUNDED_OPTIONS,
                     'allow_redirects' => false,
-                    'connect_timeout' => 0.2,
-                    'timeout' => 1,
                 ]);
             } catch (NetworkException $exception) {
                 // Guzzle 8 transport failures without a response: connect failure, timeout,
