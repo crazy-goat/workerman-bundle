@@ -12,6 +12,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class UtilsTest extends TestCase
 {
+    /** @var list<string> */
+    private array $roots = [];
+
     public function testIsWindows(): void
     {
         $expected = \DIRECTORY_SEPARATOR !== '/';
@@ -52,6 +55,94 @@ final class UtilsTest extends TestCase
         }
 
         $this->assertSame(1, Utils::cpuCount());
+    }
+
+    /**
+     * @return array<string, array{string, string, ?int}>
+     */
+    public static function cgroupV2Provider(): array
+    {
+        return [
+            'one cpu' => ['100000 100000', 'v2', 1],
+            'two and a half cpus round up' => ['250000 100000', 'v2', 3],
+            'less than one cpu is one' => ['50000 100000', 'v2', 1],
+            'max means no limit' => ['max 100000', 'v2', null],
+            'broken content means no limit' => ['abc', 'v2', null],
+            'v1 one cpu' => ['100000 100000', 'v1', 1],
+            'v1 four cpus' => ['400000 100000', 'v1', 4],
+            'v1 minus one means no limit' => ['-1 100000', 'v1', null],
+            'v1 zero period means no limit' => ['100000 0', 'v1', null],
+        ];
+    }
+
+    /**
+     * @dataProvider cgroupV2Provider
+     */
+    public function testCgroupCpuLimitReadsFakeFiles(string $content, string $version, ?int $expected): void
+    {
+        $root = $this->makeFakeCgroup();
+
+        if ($version === 'v2') {
+            file_put_contents($root . '/cpu.max', $content);
+        } else {
+            [$quota, $period] = explode(' ', $content);
+            mkdir($root . '/cpu');
+            file_put_contents($root . '/cpu/cpu.cfs_quota_us', $quota . "\n");
+            file_put_contents($root . '/cpu/cpu.cfs_period_us', $period . "\n");
+        }
+
+        $this->assertSame($expected, Utils::cgroupCpuLimit($root));
+    }
+
+    public function testCgroupCpuLimitIsNullWhenFilesAreMissing(): void
+    {
+        $this->assertNull(Utils::cgroupCpuLimit($this->makeFakeCgroup()));
+        $this->assertNull(Utils::cgroupCpuLimit('/this/path/does/not/exist'));
+    }
+
+    /**
+     * @requires OS Linux
+     */
+    public function testCpuCountIsLimitedByCgroupQuota(): void
+    {
+        $root = $this->makeFakeCgroup();
+        file_put_contents($root . '/cpu.max', '100000 100000');
+
+        $this->assertSame(1, Utils::cpuCount($root));
+    }
+
+    /**
+     * @requires OS Linux
+     */
+    public function testCpuCountIgnoresQuotaAboveRealCpuCount(): void
+    {
+        $root = $this->makeFakeCgroup();
+        file_put_contents($root . '/cpu.max', '100000000 100000');
+
+        $this->assertSame(Utils::cpuCount($this->makeFakeCgroup()), Utils::cpuCount($root));
+    }
+
+    private function makeFakeCgroup(): string
+    {
+        $root = sys_get_temp_dir() . '/wmb-cgroup-' . bin2hex(random_bytes(6));
+        mkdir($root);
+        $this->roots[] = $root;
+
+        return $root;
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->roots as $root) {
+            foreach (glob($root . '/{,cpu/}*', GLOB_BRACE) ?: [] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            @rmdir($root . '/cpu');
+            @rmdir($root);
+        }
+        $this->roots = [];
     }
 
     public function testClearOpcacheDoesNotThrow(): void
