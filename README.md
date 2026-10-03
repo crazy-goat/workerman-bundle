@@ -83,7 +83,21 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 - **PSR-7 pipeline**: `WorkermanHttpMessageFactory`, `psr/http-factory`, `psr/http-message`, `symfony/psr-http-message-bridge` dependencies — replaced by direct Workerman→Symfony conversion.
 
+## Requirements
+
+- PHP 8.2 or newer.
+- `ext-pcntl` and `ext-posix`.
+- Symfony 6.4, 7 or 8.
+- Workerman 5.
+- Linux or macOS. Windows is not supported.
+
+Optional: `ext-event`, `ext-inotify`, `ext-zip` and `dragonmantank/cron-expression`.
+See [Getting started](docs/getting-started.md#requirements) for what each one does.
+
 ## Getting started
+
+The short version is below. The full guide is [docs/getting-started.md](docs/getting-started.md).
+
 ### Install composer packages
 ```bash
 composer require crazy-goat/workerman-bundle
@@ -102,7 +116,7 @@ return [
 ```
 
 ### Configure the bundle
-A minimal configuration might look like this.  
+A minimal configuration might look like this.
 For all available options with documentation, see the command output.
 ```bash
 $ bin/console config:dump-reference workerman
@@ -129,22 +143,22 @@ workerman:
     exception:
       active: true
 
-    file_monitor:
-      active: true
-      source_dir: ['%kernel.project_dir%/src']
-      file_pattern: ['*.php', '*.yaml']
-      # Polling fallback (used only without ext-inotify):
-      polling_interval: 3
-      max_files_per_tick: 500
+when@dev:
+  workerman:
+    reload_strategy:
+      file_monitor:
+        active: true
+        source_dir: ['%kernel.project_dir%/src']
+        file_pattern: ['*.php', '*.yaml']
+        # Polling fallback (used only without ext-inotify):
+        polling_interval: 3
+        max_files_per_tick: 500
 ```
 
 > **Note:** The example above binds an unprivileged port (`8080`) so it works without `sudo`.
->
-> To bind a port below 1024 (e.g. `80` or `443`) you must run the process as **root** or grant the `CAP_NET_BIND_SERVICE` capability on Linux.
->
-> In production, consider using the `user` and `group` config keys to drop privileges after binding, or front it with a reverse proxy (e.g. nginx, Caddy).
+> See [Ports below 1024](docs/getting-started.md#ports-below-1024) for ports such as `80` or `443`.
 
-> **Note:** `listen` is effectively required. Omitting it creates a worker that does not accept connections — no traffic reaches your application.
+> **Note:** `listen` is required. If you leave it out, the server does not start and you get an `Unsupported listen scheme` error.
 > Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL). `https://` and `wss://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
 
 ## Configuration reference
@@ -178,7 +192,7 @@ Each entry of `servers` is a server definition:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `name` | `string` | *(required)* | Server process name. |
-| `listen` | `string\|null` | `null` | Listen address. Supported schemes: `http://`, `https://`, `ws://`, `wss://`. `https://` and `wss://` additionally require `local_cert` and `local_pk`. Omitting `listen` creates a worker that does not accept connections. |
+| `listen` | `string\|null` | `null` | Listen address. Supported schemes: `http://`, `https://`, `ws://`, `wss://`. `https://` and `wss://` additionally require `local_cert` and `local_pk`. `listen` is required: if you omit it, the server does not start. |
 | `local_cert` | `string\|null` | `null` | Path to the SSL certificate file (PEM). Required for `https://` and `wss://`. Symlinked paths are rejected — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation). |
 | `local_pk` | `string\|null` | `null` | Path to the SSL private key file (PEM). Required for `https://` and `wss://`. Symlinked paths are rejected — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation). |
 | `processes` | `int\|null` | `null` (CPU cores × 2) | Number of worker processes for this server. |

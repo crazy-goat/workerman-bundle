@@ -7,6 +7,7 @@ This directory contains documentation for the WorkermanBundle.
 ### User-facing (included in Composer dist archives)
 
 - [README.md](README.md) — This documentation index
+- [getting-started.md](getting-started.md) — Requirements, install, minimal config and first start
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations
