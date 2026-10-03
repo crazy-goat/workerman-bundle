@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A running request is no longer cut by `stop` or `reload` on the Select loop (no `ext-event`). Symfony Console turns on `pcntl_async_signals(true)` and the workers inherited it, so the stop signal ran in the middle of the request and `stop_timeout` did not help. The master now turns async signals off before it starts (#987)
 - The jitter of an interval schedule no longer adds up: the next run is counted from the planned time, not from the time with the jitter. Before, 200 runs of a `60` seconds schedule with a jitter of up to 30 seconds were about 3000 seconds late. A `jitter` that is not smaller than the interval can still skip a run (#969)
 - `docs/troubleshooting.md` no longer says that `opcache_reset()` in a deploy script helps: a separate PHP process cannot reach the OPcache of the running server. Use `reload` (the master clears its OPcache) or `restart`. `docs/security.md` now tells to change the owner of the whole cache directory, not of one file (#888)
 - A schedule that is a string of only digits, such as `#[AsTask(schedule: '60')]` or a quoted YAML `schedule: '60'`, is read as a number of seconds, like the number `60`. Before, the task was skipped with an "Unknown or bad format" error (#971)
