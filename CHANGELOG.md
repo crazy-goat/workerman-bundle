@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/commands.md` lists `workerman:server` with all actions and options, the `connections` columns, `Utils::reload()` and both build commands; `CommandReferenceDocTest` checks that every command, long option and server action is in it (#882)
 - `docs/configuration.md` lists every config key with its default and every environment variable; the README config tables moved there, and `docs/build-packaging.md` links to it (#881)
 - Doc tests in `tests/Docs/`: every config key and its default must be in `docs/configuration.md`, every environment variable that the bundle reads must be in its table, and every YAML example with a `workerman:` root must pass the config tree (#881)
 - Dev dependency `symfony/yaml`, used by the YAML example test (#881)
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The command text moved from the README and `docs/build-packaging.md` to `docs/commands.md`; the old places link to it. `docs/commands.md` says that `-g` has no effect on `start` (#882)
 - The getting started guide says that a worker reloads after 800 to 1000 requests and that the memory limit counts PHP memory (`memory_get_usage()`) (#881)
 - The `build` example in `docs/build-packaging.md` writes the kernel class as `App\Kernel` in single quotes; the old `App\\Kernel` was wrong in YAML (#881)
 - Docs fixes: `max_requests` examples use `requests: N`, the Doctrine example uses `SELECT 1` instead of `ping()`, the `memory` strategy text says `memory_get_usage()` instead of RSS, the first middleware is the outermost layer, both build commands need `phar.readonly=0`, `workerman:build:bin` lists `--phar-filename` and `--kernel-class`, and the fork text no longer claims zero per-request allocation (#880)

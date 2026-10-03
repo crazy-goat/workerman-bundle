@@ -146,7 +146,8 @@ You can also put a reverse proxy, such as nginx or Caddy, in front of the server
 ## Next steps
 
 - [Configuration](configuration.md): every config key and environment variable.
+- [Commands](commands.md): every console command with its options.
 - [Security](security.md): trusted hosts, TLS and static files.
 - [Troubleshooting](troubleshooting.md): problems of long-running workers.
 - [PHAR and binary packaging](build-packaging.md): ship your application as one file.
-- [README](../README.md): the full config reference, commands, middlewares, scheduler and supervisor.
+- [README](../README.md): middlewares, reload strategies, scheduler and supervisor.

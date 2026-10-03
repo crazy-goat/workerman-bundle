@@ -190,35 +190,7 @@ The runtime directory defaults to the directory containing the PHAR/BIN file, an
 
 ## Commands
 
-### `workerman:build:phar`
-
-```bash
-php -d phar.readonly=0 bin/console workerman:build:phar [options]
-
-Options:
-  -o, --output-dir=DIR       Output directory (default: config build.build_dir)
-      --filename=NAME        Output filename (default: config build.phar_filename)
-      --kernel-class=CLASS   Kernel class to use in the PHAR stub (default: config build.kernel_class)
-      --include-tests        Include tests/ directory in the PHAR (for testing only)
-```
-
-### `workerman:build:bin`
-
-```bash
-php -d phar.readonly=0 bin/console workerman:build:bin [options]
-
-Options:
-  -o, --output-dir=DIR         Output directory (default: config build.build_dir)
-      --filename=NAME          Output filename (default: config build.bin_filename)
-      --phar-filename=NAME     Name of the intermediate PHAR file (default: config build.phar_filename)
-      --kernel-class=CLASS     Kernel class to use in the PHAR stub (default: config build.kernel_class)
-      --sfx-file=PATH          Local path to phpmicro.sfx
-      --sfx-url=URL            URL to download phpmicro.sfx
-      --sfx-checksum=HASH      Expected SHA-256 hex digest (mandatory unless --unsafe-no-checksum)
-      --php-version=VER        PHP version for static binary (e.g., 8.3)
-      --insecure               Disable TLS peer verification (not recommended)
-      --unsafe-no-checksum     Skip SHA-256 verification (not recommended)
-```
+All options of `workerman:build:phar` and `workerman:build:bin` are in [Commands](commands.md#workermanbuildphar).
 
 ## References
 
