@@ -50,7 +50,8 @@
         "phpstan/phpstan": "2.2.16",
         "phpunit/phpunit": "^10.4",
         "rector/rector": "2.6.2",
-        "symfony/framework-bundle": "^6.4|^7.0|^8.0"
+        "symfony/framework-bundle": "^6.4|^7.0|^8.0",
+        "symfony/yaml": "^6.4|^7.0|^8.0"
     },
     "suggest": {
         "ext-event": "For better performance",

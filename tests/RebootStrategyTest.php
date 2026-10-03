@@ -291,6 +291,10 @@ final class RebootStrategyTest extends TestCase
     {
         gc_collect_cycles();
 
+        // The automatic GC must not collect the cycles before the scheduler runs.
+        $gcWasEnabled = gc_enabled();
+        gc_disable();
+
         $garbage = [];
         for ($i = 0; $i < 10000; ++$i) {
             $a = new \stdClass();
@@ -308,6 +312,10 @@ final class RebootStrategyTest extends TestCase
 
         $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1, 60, $scheduler);
         $strategy->shouldReboot();
+
+        if ($gcWasEnabled) {
+            gc_enable();
+        }
 
         $this->assertGreaterThan(0, $collected, 'gc_collect_cycles() should collect cyclic garbage');
     }
