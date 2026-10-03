@@ -119,8 +119,8 @@ server {
     root /var/www/myapp/public;
     client_max_body_size 10m;
 
-    # Never serve dotfiles from nginx.
-    location ~ (^|/)\. {
+    # Never serve dotfiles from nginx, but keep /.well-known/ for certificate renewal.
+    location ~ /\.(?!well-known/) {
         deny all;
     }
 
@@ -162,6 +162,7 @@ What the directives do:
   Without this rule, `try_files` finds the file and nginx sends its source code.
   We saw this in a test.
 - `deny all` for dotfiles keeps `.env` and similar files private.
+  The `(?!well-known/)` part keeps `/.well-known/` open, which tools like certbot need.
 
 With `root` set to `public/`, nginx sends a file when it exists, and the server handles all other URLs.
 You can also serve files with the [static files middleware](middlewares.md) and use no `root` in nginx.
@@ -185,7 +186,6 @@ It ignores the values that a client sends, unless you list the client in the Cad
 We sent `X-Forwarded-For: 6.6.6.6` from outside, and the app still saw the real client address.
 Caddy does not send `X-Forwarded-Port`.
 Symfony then reads the port from the `Host` header, which is right when the client uses the port of the URL.
-
 
 ## HTTPS and HTTP/2
 
@@ -215,7 +215,7 @@ The smallest one wins.
 - A body bigger than `client_max_body_size` gets status 413 from nginx.
   We sent 11 MB with a limit of 10 MB, and got 413.
   We sent 2 MB through the same nginx, and the server got all 2 MB.
-  Set `client_max_body_size` to the size that your app needs, and not above `max_package_size`.
+  Set `client_max_body_size` to the size that your app needs, and not above `body_size_cap` of the server (or `max_package_size` when it is not set).
   See [body_size_cap](security.md#body_size_cap-per-server).
 - If the server needs longer than `proxy_read_timeout` to answer, nginx closes the request and the client gets status 504.
   Raise it for a slow route, or move the work into a [task](scheduler.md) or a [process](supervisor.md).

@@ -50,7 +50,7 @@ final class ReverseProxyDocTest extends TestCase
             self::assertStringContainsString($needle, $nginx);
         }
         self::assertStringContainsString('location ~ \.php$ {', $nginx);
-        self::assertStringContainsString('location ~ (^|/)\. {', $nginx);
+        self::assertStringContainsString('location ~ /\.(?!well-known/) {', $nginx);
         self::assertStringNotContainsString('$proxy_add_x_forwarded_for;', $nginx);
     }
 
