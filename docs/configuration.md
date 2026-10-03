@@ -57,7 +57,7 @@ workerman:
 | `servers[].listen` | string or null | `null` | The listen address, for example `http://0.0.0.0:80`. It is required: if you leave it out, the server does not start. It starts with a scheme. Use `http://` or `https://`. |
 | `servers[].local_cert` | string or null | `null` | The path to the certificate file (PEM). `https://` needs it. The bundle rejects symbolic links. See [security.md](security.md#ssl-certificate-and-key-validation). |
 | `servers[].local_pk` | string or null | `null` | The path to the private key file (PEM). `https://` needs it. The bundle rejects symbolic links. |
-| `servers[].processes` | int or null | `null` | The number of workers of this server. `null` means the number of CPU cores times 2. |
+| `servers[].processes` | int or null | `null` | The number of workers of this server. `null` means the number of CPUs times 2. In a container the CPU limit is used (cgroup v2 or v1), not the CPUs of the host. |
 | `servers[].reuse_port` | bool | `false` | Turns on `SO_REUSEPORT`. Many processes can then use the same port. |
 | `servers[].body_size_cap` | int or null, bytes, minimum 1 | `null` | The maximum request size of this server. `null` means the global `max_package_size`. |
 | `servers[].middlewares` | list of service IDs | `[]` | The middlewares of this server. The first one is the outermost. See [Middlewares](../README.md#middlewares). |

@@ -16,7 +16,16 @@ final class Utils
     {
     }
 
-    public static function cpuCount(): int
+    /**
+     * The number of CPUs this process may use.
+     *
+     * On Linux the container CPU limit (cgroup v2 or v1) is respected: the
+     * result is never more than the limit, rounded up. On macOS the number of
+     * logical CPUs is used.
+     *
+     * @param string $cgroupRoot Root of the cgroup file system. Tests pass a fake directory.
+     */
+    public static function cpuCount(string $cgroupRoot = '/sys/fs/cgroup'): int
     {
         // Windows does not support the number of processes setting.
         if (self::isWindows()) {
@@ -27,9 +36,8 @@ final class Utils
             return 1;
         }
 
-        $command = \strtolower(\PHP_OS) === 'darwin'
-            ? 'sysctl -n machdep.cpu.core_count'
-            : 'nproc';
+        $isDarwin = \strtolower(\PHP_OS) === 'darwin';
+        $command = $isDarwin ? 'sysctl -n hw.logicalcpu' : 'nproc';
 
         $result = shell_exec($command);
 
@@ -39,8 +47,74 @@ final class Utils
         }
 
         $count = (int) \trim($result);
+        $count = $count > 0 ? $count : 1;
 
-        return $count > 0 ? $count : 1;
+        if (!$isDarwin) {
+            $limit = self::cgroupCpuLimit($cgroupRoot);
+            if ($limit !== null) {
+                $count = \min($count, $limit);
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * The CPU limit of the container, rounded up, or null when there is no limit.
+     *
+     * Reads cgroup v2 (cpu.max) first, then cgroup v1 (cpu.cfs_quota_us and
+     * cpu.cfs_period_us). Missing or broken files mean no limit.
+     *
+     * @internal
+     */
+    public static function cgroupCpuLimit(string $cgroupRoot = '/sys/fs/cgroup'): ?int
+    {
+        $v2 = self::readCgroupFile($cgroupRoot . '/cpu.max');
+        if ($v2 !== null) {
+            $parts = \preg_split('/\s+/', $v2);
+            if ($parts === false || !isset($parts[0], $parts[1])) {
+                return null;
+            }
+
+            return self::quotaToCpus($parts[0], $parts[1]);
+        }
+
+        foreach (['cpu', 'cpu,cpuacct'] as $controller) {
+            $quota = self::readCgroupFile("{$cgroupRoot}/{$controller}/cpu.cfs_quota_us");
+            $period = self::readCgroupFile("{$cgroupRoot}/{$controller}/cpu.cfs_period_us");
+            if ($quota !== null && $period !== null) {
+                return self::quotaToCpus($quota, $period);
+            }
+        }
+
+        return null;
+    }
+
+    private static function quotaToCpus(string $quota, string $period): ?int
+    {
+        // "max" (v2) and "-1" (v1) mean no limit.
+        if (!\ctype_digit($quota) || !\ctype_digit($period)) {
+            return null;
+        }
+
+        $quotaValue = (int) $quota;
+        $periodValue = (int) $period;
+        if ($quotaValue <= 0 || $periodValue <= 0) {
+            return null;
+        }
+
+        return \max(1, (int) \ceil($quotaValue / $periodValue));
+    }
+
+    private static function readCgroupFile(string $path): ?string
+    {
+        if (!\is_readable($path)) {
+            return null;
+        }
+
+        $content = @\file_get_contents($path);
+
+        return $content === false ? null : \trim($content);
     }
 
     public static function isWindows(): bool
