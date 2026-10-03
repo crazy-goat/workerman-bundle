@@ -109,8 +109,8 @@ Use it when many tasks have the same schedule and should not all start at the sa
 
 With an interval schedule, the delay is part of the stored time of the run.
 The next time is counted from it.
-So the delays add up, and each run is on average `jitter / 2` seconds later than the run before.
-This is a known problem: [#970](https://github.com/crazy-goat/workerman-bundle/issues/969).
+So the delays add up, and the gap between two runs is on average the interval plus `jitter / 2` seconds.
+This is a known problem: [#969](https://github.com/crazy-goat/workerman-bundle/issues/969).
 With a cron schedule, the times do not move.
 
 ## One run is one child process
@@ -173,7 +173,8 @@ final class AlertOnTaskError
 ```
 
 A task that throws an exception is reported with `TaskErrorEvent`, and the child still exits with code 0.
-The child exits with code 1 only when the task cannot start, for example when the method does not exist or a listener throws.
+A method that does not exist is reported in the same way, with `TaskErrorEvent`.
+The child exits with code 1 only when the service cannot be loaded or an event listener throws.
 The scheduler logs a child that exits with a code other than 0 or that is killed by a signal.
 
 If the `grpc` extension is loaded, the child ends with `SIGKILL` and does not run destructors.
