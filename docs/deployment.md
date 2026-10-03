@@ -145,8 +145,8 @@ So choose by what changed:
 With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`.
 `systemctl reload` only sends the signal and returns at once.
 The new workers are not up yet, so do not test the new code right after it.
-While `restart` runs, requests that are running fail and the server does not answer for a moment.
-The client gets an empty reply (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
+While `restart` runs, the server does not answer for a moment.
+Requests that are running can fail: the client gets an empty reply (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
 See [Commands](commands.md#stop-restart-and-reload) for the signals and the wait times.
 
 A deploy script. It runs as `root`, or as a user who may use `sudo` and `systemctl`:
@@ -347,7 +347,8 @@ We ran a route that works for 5 seconds, and stopped the container with `docker 
 | `stop_timeout: 2` (the default), `event` extension loaded | The request was cut after 2 seconds. The client got an empty reply. |
 
 A test on a Linux host with systemd gave the same cut about 1 second after `systemctl stop`.
-So do not trust that a running request ends on a stop or restart.
+The cause is a known bug: Symfony Console turns on async signals, so the stop signal runs inside the request (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)).
+Until it is fixed, do not trust that a running request ends on a stop or restart.
 Plan for failed requests, and let the client or the load balancer retry safe requests.
 If you can, take the server out of the load balancer before you stop it.
 Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
