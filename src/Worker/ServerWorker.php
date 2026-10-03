@@ -119,6 +119,18 @@ final readonly class ServerWorker
                             continue;
                         }
 
+                        // A connection that is still sending data (a big file download) is
+                        // active as long as bytes keep moving. A stalled client has no
+                        // progress and is closed by the timeout as before (issue #899).
+                        $isSending = ($connection->context->streamSending ?? false) === true
+                            || $connection->getSendBufferQueueSize() > 0;
+                        if ($isSending && $connection->bytesWritten !== ($connection->context->lastBytesWritten ?? null)) {
+                            $connection->context->lastBytesWritten = $connection->bytesWritten;
+                            $connection->context->lastActivity = $now;
+
+                            continue;
+                        }
+
                         $lastActivity = $connection->context->lastActivity ?? null;
                         $requestCompleted = $connection->context->requestCompleted ?? false;
                         if (!is_int($lastActivity)) {
