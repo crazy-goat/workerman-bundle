@@ -221,6 +221,7 @@ symlinks:
 ```yaml
 services:
     CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware:
+        public: true
         arguments:
             $followSymlinks: true
 ```

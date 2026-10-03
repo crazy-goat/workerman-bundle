@@ -12,6 +12,7 @@ This directory contains documentation for the WorkermanBundle.
 - [commands.md](commands.md) — Every console command with its options
 - [http-server.md](http-server.md) — Listen address, workers, limits, keep-alive and streamed responses
 - [middlewares.md](middlewares.md) — Write and register middlewares, order, static files and their headers
+- [reload-strategies.md](reload-strategies.md) — When a worker is replaced: exception, max_requests, memory, file_monitor, always and your own
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations
