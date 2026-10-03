@@ -159,6 +159,8 @@ when@dev:
 > **Note:** The example above binds an unprivileged port (`8080`) so it works without `sudo`.
 > See [Ports below 1024](docs/getting-started.md#ports-below-1024) for ports such as `80` or `443`.
 
+> **Note:** `processes` is the number of workers of a server. If you leave it out, the default is the number of CPUs times 2. In a container the CPU limit is used, not the CPUs of the host. See [docs/configuration.md](docs/configuration.md#servers).
+
 > **Note:** `listen` is required. If you leave it out, the server does not start and you get an `Unsupported listen scheme` error.
 > Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL). `https://` and `wss://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
 
@@ -257,56 +259,11 @@ You can stop, restart, reload and inspect the server with `bin/console workerman
 See [docs/commands.md](docs/commands.md) for all actions, options, the `connections` output and `Utils::reload()`.
 
 ## Reload strategies
-Because of the asynchronous nature of the server, the workers reuse loaded resources on each request. This means that in some cases we need to restart workers.  
-For example, after an exception is thrown, to prevent services from being in an unrecoverable state. Or every time you change the code in the IDE.  
-There are a few restart strategies that are implemented and can be enabled or disabled depending on the environment.
 
- - **exception**  
-   Reload worker each time an exception is thrown during the request handling.
- - **max_requests**  
-   Reload worker on every Nth request to prevent memory leaks.
- - **file_monitor**  
-   Reload all workers each time you change the files.
- - **always**  
-   Reload worker after each request.
- - **memory**  
-   Reload worker when memory usage reaches a certain threshold. Four options are available:
-   `active` (default: `false`) toggles the strategy, `limit` (default: `134217728` — 128 MB) is the memory threshold in bytes that triggers a worker reload, `gc_limit` (default: `100663296` — 96 MB) attempts `gc_collect_cycles()` to free memory before the reload check, and `gc_cooldown` (default: `60`) is the minimum interval in seconds between two collection attempts. Memory is measured with `memory_get_usage()` (emalloc accounting), not `memory_get_usage(true)` (real usage): emalloc accounting drops as soon as collectable cycles are freed, whereas the allocator arena behind real usage does not shrink from `gc_collect_cycles()` — with real usage the post-collection re-check could never avoid a reload. When the worker is at risk of reloading (already above `limit`), the collection runs synchronously so the reload verdict is based on the post-collection reading; otherwise it is deferred to the next event-loop tick to keep the request path short. A collection blocked by the cooldown leaves the reload verdict on the current memory reading.
-
-   ```yaml
-   workerman:
-     reload_strategy:
-       memory:
-         active: true
-         limit: 268435456       # 256 MB
-         gc_limit: 201326592    # 192 MB
-         gc_cooldown: 180       # at least 3 minutes between collection attempts
-   ```
- 
-> **Note:** It is highly recommended to install the `php-inotify` extension for file monitoring. Without it, monitoring will work in polling mode, which can be very CPU and disk intensive for large projects.
-
-See all available options for each strategy in the command output.
-```bash
-$ bin/console config:dump-reference workerman reload_strategy
-```
-
-### Implement your own reload strategies
-You can create a reload strategy with your own logic by implementing the RebootStrategyInterface and adding the `workerman.reboot_strategy` tag to the service.
-```php
-<?php
-
-use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
-use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
-
-#[AutoconfigureTag('workerman.reboot_strategy')]
-final class TestRebootStrategy implements RebootStrategyInterface
-{
-    public function shouldReboot(): bool
-    {
-        return true;
-    }
-}
-```
+A worker keeps the Symfony kernel between requests, so it must be replaced sometimes.
+Reload strategies decide when: after an exception, after N requests, at a memory limit, after a file change or after each request.
+You can also write your own strategy.
+See [docs/reload-strategies.md](docs/reload-strategies.md).
 
 ## Middlewares
 

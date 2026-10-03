@@ -35,7 +35,7 @@ Commonly affected services:
         active: true
         requests: 1000
   ```
-  See [reload strategies](../README.md#reload-strategies) for details.
+  See [reload strategies](reload-strategies.md) for details.
 
 ## Static and Global State That Survives Requests
 
@@ -273,17 +273,3 @@ php tests/App/index.php stop       # stop a daemon left by an interrupted run
 Additional knobs (parallel runs across git worktrees, ephemeral Docker port
 publishing) are documented in
 [CONTRIBUTING.md](../CONTRIBUTING.md#parallel-test-runs-across-git-worktrees).
-
-## Reload Strategies Reference
-
-Consider which restart strategy matches your deployment model:
-
-| Strategy | When to use | Frequency |
-|----------|-------------|-----------|
-| [`exception`](../README.md#reload-strategies) | Catch unexpected service state corruption after exceptions | On exception |
-| [`max_requests`](../README.md#reload-strategies) | Safety net for memory leaks, stale connections, state pollution | Every N requests |
-| [`file_monitor`](../README.md#reload-strategies) | Development: pick up code changes without restarting | On file change |
-| [`always`](../README.md#reload-strategies) | Highest isolation — every request gets a fresh worker | Every request |
-| [`memory`](../README.md#reload-strategies) | Stop runaway memory before OOM | When PHP memory (`memory_get_usage()`) exceeds the limit |
-
-Combine multiple strategies. For example, production typically runs `exception` + `max_requests` + `memory`.

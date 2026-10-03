@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/reload-strategies.md` explains every reload strategy and how to write your own; the README text and the table in `docs/troubleshooting.md` moved there. `ReloadStrategiesDocTest` checks that every strategy and every `reload_strategy` key is on the page (#884)
 - `docs/http-server.md` and `docs/middlewares.md`; the README middleware text moved to them. The middleware page lists the static file headers (`Last-Modified`, `ETag`, `Cache-Control`) and the 304 rules. `HttpMiddlewareDocTest` checks the constructor arguments, the headers, the chunk size and that the middleware service examples parse and are public (#883)
 - `docs/commands.md` lists `workerman:server` with all actions and options, the `connections` columns, `Utils::reload()` and both build commands; `CommandReferenceDocTest` checks that every command, long option and server action is in it (#882)
 - `docs/configuration.md` lists every config key with its default and every environment variable; the README config tables moved there, and `docs/build-packaging.md` links to it (#881)
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docs: the `StaticFilesMiddleware` example in `UPGRADE.md` has `public: true`, and the README says what `processes` defaults to (#884)
 - Docs: a middleware service must be `public: true`, because the server reads it from the container by its ID; the examples in the README, `docs/security.md` and `docs/middlewares.md` now say so (#883)
 - Docs: the last middleware is no longer called "next to the controller"; the static files layer of `serve_files` and `root_dir` is the innermost layer, and `response_chunk_size` values below 8192 are raised to 8192 (#883)
 - `docs/build-packaging.md` no longer has line numbers of the source code (#883)
