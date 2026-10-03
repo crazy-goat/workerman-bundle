@@ -38,7 +38,7 @@ final class DeploymentDocTest extends TestCase
     {
         $page = DocsHelper::read(self::PAGE);
 
-        foreach (['WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1', 'config.cache.php', 'cache:warmup', 'SIGINT', 'SIGQUIT', 'opcache.enable_cli=1'] as $needle) {
+        foreach (['WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE=1', 'config.cache.php', 'cache:warmup', 'SIGINT', 'SIGQUIT', 'opcache.enable_cli=1', 'cache:clear'] as $needle) {
             self::assertStringContainsString($needle, $page);
         }
     }

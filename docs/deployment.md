@@ -122,17 +122,21 @@ systemctl enable --now myapp
 
 ## Deploy script
 
-The server reads two things at start only: the config cache and the settings in `workerman.yaml`.
-The master process reads them once.
+The master process reads the config cache and the settings in `workerman.yaml` once, at start.
 A `reload` does not read them again.
+
+In `prod` (debug is off), the server does not compare `workerman.yaml` with the cache file.
+If `var/cache/prod/workerman/config.cache.php` exists, the server loads it, even when you changed `workerman.yaml` after it was made.
+So after an in-place change of `workerman.yaml`, services or tags, run `bin/console cache:clear` as the runtime user (or remove `var/cache/prod`) before you restart.
+In debug mode, the server builds a stale cache again by itself.
 
 So choose by what changed:
 
 | What changed | What to run |
 |--------------|-------------|
-| Only PHP code of the app, changed in place (in `prod`, run `cache:warmup` as the runtime user first) | `reload` |
-| `workerman.yaml`, tasks, processes, listen addresses, or the number of workers | `restart` |
-| A new release directory with a symlink switch | `restart` |
+| Only PHP code of the app, changed in place | `reload` |
+| `workerman.yaml`, services, tasks, processes, listen addresses, or the number of workers, changed in place | `cache:clear` as the runtime user, then `restart` |
+| A new release directory with a symlink switch | `restart` (the new release must have its own warm cache) |
 
 With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`.
 While `restart` runs, the server does not answer for a moment.
@@ -164,7 +168,7 @@ systemctl restart myapp
 ```
 
 Step 3 is the one that people forget: see the next section.
-The server also warms up the cache itself at start when it is not fresh.
+The server also warms up the cache itself at start when the cache file is missing (in `prod`) or out of date (in debug mode).
 Then the user of the unit owns the cache, so this is safe, but the start takes longer.
 
 ## Config cache and the runtime user
