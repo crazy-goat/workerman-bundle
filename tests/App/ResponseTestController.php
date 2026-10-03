@@ -39,6 +39,18 @@ final class ResponseTestController extends AbstractController
         ]);
     }
 
+    #[Route('/response_test_file_big', name: 'app_response_test_file_big')]
+    public function bigFileResponse(): BinaryFileResponse
+    {
+        // 3 MB: above the 2 MB limit where Workerman streams a file in chunks.
+        $path = sys_get_temp_dir() . '/wmb_big_file_test.bin';
+        if (!is_file($path) || filesize($path) !== 3145728) {
+            file_put_contents($path, str_repeat('0123456789abcdef', 196608));
+        }
+
+        return new BinaryFileResponse($path, Response::HTTP_OK, ['Content-Type' => 'application/octet-stream']);
+    }
+
     #[Route('/response_test_file_delete', name: 'app_response_test_file_delete')]
     public function fileResponseWithDelete(): BinaryFileResponse
     {
