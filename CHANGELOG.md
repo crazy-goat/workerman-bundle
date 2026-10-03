@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/supervisor.md` explains `#[AsProcess]`, the `workerman.process` tag, what happens when a process method ends and the `process` log channel; the README text moved there. `SupervisorDocTest` checks the attribute parameters and the YAML examples (#886)
 - `docs/scheduler.md` explains `#[AsTask]`, the `workerman.task` tag, every schedule format, the fixed-rate rule, jitter, the run lock and task errors; the README text moved there. `SchedulerDocTest` checks the attribute parameters, the schedule examples and the YAML examples (#885)
 - `docs/reload-strategies.md` explains every reload strategy and how to write your own; the README text and the table in `docs/troubleshooting.md` moved there. `ReloadStrategiesDocTest` checks that every strategy and every `reload_strategy` key is on the page (#884)
 - `docs/http-server.md` and `docs/middlewares.md`; the README middleware text moved to them. The middleware page lists the static file headers (`Last-Modified`, `ETag`, `Cache-Control`) and the 304 rules. `HttpMiddlewareDocTest` checks the constructor arguments, the headers, the chunk size and that the middleware service examples parse and are public (#883)

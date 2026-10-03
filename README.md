@@ -279,29 +279,9 @@ A schedule can be seconds, an ISO 8601 duration, a relative date, a date and tim
 See [docs/scheduler.md](docs/scheduler.md) for the schedule formats, the fixed-rate rule, jitter, locks and errors.
 
 ## Supervisor
-Supervisor can be configured with attributes or with tags in configuration files.  
-Processes are kept alive and wake up if one of them dies.
-
-```php
-<?php
-
-use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
-
-/**
- * Attribute parameters
- * name: Process name
- * processes: number of processes
- * method: method to call, __invoke by default
- */
-#[AsProcess(name: 'My worker', processes: 1)]
-final class ProcessService
-{
-    public function __invoke()
-    {
-        // ...
-    }
-}
-```
+Long-running processes are configured with the `#[AsProcess]` attribute or with the `workerman.process` tag.
+The bundle starts them again when they end.
+See [docs/supervisor.md](docs/supervisor.md) for the parameters, the restart rules and errors.
 
 ## Packaging (experimental)
 
