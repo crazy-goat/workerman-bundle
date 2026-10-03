@@ -139,6 +139,53 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNotNull($workermanResponse->file);
     }
 
+    /**
+     * Issue #902: Symfony's default maxlen is -1 ("to the end"). Workerman treats any
+     * non-zero length as a range, so the strategy must pass 0.
+     */
+    public function testConvertMapsDefaultMaxlenToZeroLength(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $workermanResponse = $strategy->convert(new BinaryFileResponse($this->testFile), [], $this->connection, '1.1');
+
+        $this->assertIsArray($workermanResponse->file);
+        $this->assertSame(0, $workermanResponse->file['offset']);
+        $this->assertSame(0, $workermanResponse->file['length']);
+    }
+
+    public function testConvertMapsOpenRangeMaxlenToZeroLength(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+        $binaryResponse = new BinaryFileResponse($this->testFile);
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('offset')->setValue($binaryResponse, 5);
+        $reflection->getProperty('maxlen')->setValue($binaryResponse, -1);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+
+        $this->assertIsArray($workermanResponse->file);
+        $this->assertSame(5, $workermanResponse->file['offset']);
+        $this->assertSame(0, $workermanResponse->file['length']);
+    }
+
+    public function testConvertKeepsClosedRangeLength(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+        $binaryResponse = new BinaryFileResponse($this->testFile);
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('offset')->setValue($binaryResponse, 2);
+        $reflection->getProperty('maxlen')->setValue($binaryResponse, 5);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
+
+        $this->assertIsArray($workermanResponse->file);
+        $this->assertSame(2, $workermanResponse->file['offset']);
+        $this->assertSame(5, $workermanResponse->file['length']);
+    }
+
     public function testConvertHandlesDeleteFileAfterSendViaBufferDrain(): void
     {
         $strategy = new BinaryFileResponseStrategy();
