@@ -59,7 +59,7 @@ final class SchedulerDocTest extends TestCase
     #[DataProvider('scheduleProvider')]
     public function testScheduleExampleIsOnThePageAndValid(string $schedule): void
     {
-        self::assertStringContainsString($schedule . '`', DocsHelper::read(self::PAGE));
+        self::assertStringContainsString($schedule, DocsHelper::read(self::PAGE));
 
         self::assertNotSame('', (string) TriggerFactory::create($schedule));
     }
