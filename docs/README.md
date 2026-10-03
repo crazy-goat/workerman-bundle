@@ -10,6 +10,8 @@ This directory contains documentation for the WorkermanBundle.
 - [getting-started.md](getting-started.md) — Requirements, install, minimal config and first start
 - [configuration.md](configuration.md) — Every config key and environment variable
 - [commands.md](commands.md) — Every console command with its options
+- [http-server.md](http-server.md) — Listen address, workers, limits, keep-alive and streamed responses
+- [middlewares.md](middlewares.md) — Write and register middlewares, order, static files and their headers
 - [build-packaging.md](build-packaging.md) — PHAR and standalone binary packaging
 - [security.md](security.md) — Security hardening and trusted hosts
 - [troubleshooting.md](troubleshooting.md) — Long-running worker pitfalls and mitigations

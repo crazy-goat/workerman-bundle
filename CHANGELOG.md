@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/http-server.md` and `docs/middlewares.md`; the README middleware text moved to them. The middleware page lists the static file headers (`Last-Modified`, `ETag`, `Cache-Control`) and the 304 rules. `HttpMiddlewareDocTest` checks the constructor arguments, the headers and the chunk size (#883)
 - `docs/commands.md` lists `workerman:server` with all actions and options, the `connections` columns, `Utils::reload()` and both build commands; `CommandReferenceDocTest` checks that every command, long option and server action is in it (#882)
 - `docs/configuration.md` lists every config key with its default and every environment variable; the README config tables moved there, and `docs/build-packaging.md` links to it (#881)
 - Doc tests in `tests/Docs/`: every config key and its default must be in `docs/configuration.md`, every environment variable that the bundle reads must be in its table, and every YAML example with a `workerman:` root must pass the config tree (#881)
@@ -20,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docs: the last middleware is no longer called "next to the controller"; the static files layer of `serve_files` and `root_dir` is the innermost layer, and `response_chunk_size` values below 8192 are raised to 8192 (#883)
+- `docs/build-packaging.md` no longer has line numbers of the source code (#883)
 - The command text moved from the README and `docs/build-packaging.md` to `docs/commands.md`; the old places link to it. `docs/commands.md` says that `-g` alone has no effect on `start` and that `-d` and `-g` should not be used together (#882)
 - The getting started guide says that a worker reloads after 800 to 1000 requests and that the memory limit counts PHP memory (`memory_get_usage()`) (#881)
 - The `build` example in `docs/build-packaging.md` writes the kernel class as `App\Kernel` in single quotes; the old `App\\Kernel` was wrong in YAML (#881)
