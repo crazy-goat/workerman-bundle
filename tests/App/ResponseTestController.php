@@ -109,6 +109,29 @@ final class ResponseTestController extends AbstractController
     }
 
     /**
+     * A file response whose status Symfony turns into a bodyless one:
+     * prepare() sets maxlen = 0 for an empty status (RFC 9110 §15.4.5), so
+     * the file must not follow the head (issue #948).
+     */
+    #[Route('/response_test_file_not_modified', name: 'app_response_test_file_not_modified')]
+    public function notModifiedFileResponse(): BinaryFileResponse
+    {
+        return new BinaryFileResponse(__DIR__ . '/../Fixtures/test_download.txt', Response::HTTP_NOT_MODIFIED, [
+            'ETag' => '"test-download-etag"',
+        ]);
+    }
+
+    /**
+     * The same for a 204, which must not carry content at all
+     * (RFC 9110 §15.3.5) — issue #948.
+     */
+    #[Route('/response_test_file_no_content', name: 'app_response_test_file_no_content')]
+    public function noContentFileResponse(): BinaryFileResponse
+    {
+        return new BinaryFileResponse(__DIR__ . '/../Fixtures/test_download.txt', Response::HTTP_NO_CONTENT);
+    }
+
+    /**
      * Minimal endpoint used by MiddlewareDispatchContractTest to verify the
      * middleware pipeline dispatches exactly once per request. The middleware
      * chain is solely responsible for tagging X-Dispatch-Count on the

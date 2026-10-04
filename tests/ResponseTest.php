@@ -206,4 +206,89 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('Temp file object content', (string) $response->getBody());
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
+
+    /**
+     * A 304 on a BinaryFileResponse must not put the file on the wire
+     * (RFC 9110 §15.4.5, issue #948) — end-to-end through the real daemon.
+     *
+     * The raw socket is not optional here: curl (and therefore Guzzle) never
+     * reads a body after a 304, so a client-level assertion passes even while
+     * the whole file follows the head. Reading the socket to EOF is the only
+     * way to see the bytes the server actually writes.
+     */
+    public function testNotModifiedBinaryFileResponseSendsNoBodyOnTheWire(): void
+    {
+        $wire = $this->rawGet('/response_test_file_not_modified');
+
+        $this->assertStringStartsWith('HTTP/1.1 304 Not Modified', $wire);
+        $this->assertStringContainsString('ETag: "test-download-etag"', $wire, 'a 304 repeats the cached response header fields');
+        $this->assertStringContainsString('Content-Length: 0', $wire, 'the file length must not be advertised on a 304');
+        $this->assertSame('', $this->bodyOf($wire), 'a 304 must not emit a body');
+    }
+
+    /**
+     * A 204 must not carry content at all (RFC 9110 §15.3.5, issue #948) —
+     * raw socket, because curl also stops reading the body of a 204.
+     */
+    public function testNoContentBinaryFileResponseSendsNoBodyOnTheWire(): void
+    {
+        $wire = $this->rawGet('/response_test_file_no_content');
+
+        $this->assertStringStartsWith('HTTP/1.1 204 No Content', $wire);
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', $this->bodyOf($wire), 'a 204 must not emit a body');
+    }
+
+    /**
+     * The GET file path next to it must keep working: the bodyless guard is
+     * about prepare()'s maxlen = 0, not about file responses in general
+     * (issue #948).
+     */
+    public function testOkBinaryFileResponseStillSendsTheFileOnTheWire(): void
+    {
+        $wire = $this->rawGet('/response_test_file');
+
+        $this->assertStringStartsWith('HTTP/1.1 200 OK', $wire);
+        $this->assertSame(
+            (string) file_get_contents(__DIR__ . '/Fixtures/test_download.txt'),
+            $this->bodyOf($wire),
+        );
+    }
+
+    /**
+     * Send one GET on a raw socket and read the response to EOF.
+     *
+     * `Connection: close` makes the daemon close the socket after the reply,
+     * so the full response — including any body the server wrongly wrote — is
+     * in the string this returns.
+     */
+    private function rawGet(string $path): string
+    {
+        $socket = @fsockopen('127.0.0.1', 9999, $errorCode, $errorMessage, 2);
+        $this->assertIsResource($socket, sprintf('Cannot connect to the test server on 127.0.0.1:9999 (%s)', $errorMessage));
+        assert(is_resource($socket));
+
+        try {
+            $request = sprintf("GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", $path);
+            $this->assertSame(strlen($request), @fwrite($socket, $request), 'the whole request must reach the server');
+
+            stream_set_timeout($socket, 10);
+            $wire = stream_get_contents($socket);
+            $this->assertIsString($wire);
+        } finally {
+            fclose($socket);
+        }
+
+        return $wire;
+    }
+
+    /**
+     * The bytes after the header terminator of a raw response.
+     */
+    private function bodyOf(string $wire): string
+    {
+        $parts = explode("\r\n\r\n", $wire, 2);
+
+        return $parts[1] ?? '';
+    }
 }
