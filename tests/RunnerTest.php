@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Exception\WorkermanExceptionInterface;
@@ -37,7 +38,7 @@ final class RunnerTest extends TestCase
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/runner_test_runner.php';
     private const RUNNER_SOURCE = __DIR__ . '/../src/Runner.php';
 
-    public function testForkFailureThrowsRuntimeException(): void
+    public function testForkFailureThrowsCacheWarmupException(): void
     {
         $kernelFactory = new KernelFactory(
             fn(): KernelInterface => $this->createMock(KernelInterface::class),
@@ -52,10 +53,44 @@ final class RunnerTest extends TestCase
             isDebug: false,
         );
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(CacheWarmupException::class);
         $this->expectExceptionMessage('Failed to fork process for cache warmup');
 
         $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+    }
+
+    /**
+     * The fork-failure path must throw the bundle's typed exception, not a
+     * bare \RuntimeException, and the typed exception must sit inside the
+     * hierarchy so a single `WorkermanExceptionInterface` catch covers it
+     * while a `\RuntimeException` catch still works (BC).
+     */
+    public function testForkFailureThrowsTypedExceptionInHierarchy(): void
+    {
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $this->createMock(KernelInterface::class),
+            [],
+        );
+        $runner = new ForkFailureRunner($kernelFactory);
+
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        $configLoader = new ConfigLoader(
+            projectDir: $tmpDir,
+            cacheDir: $tmpDir . '/var/cache/test',
+            isDebug: false,
+        );
+
+        $thrown = null;
+        try {
+            $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, 'warmUpCache() must throw when fork fails');
+        $this->assertInstanceOf(CacheWarmupException::class, $thrown);
+        $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+        $this->assertInstanceOf(\RuntimeException::class, $thrown);
     }
 
     /**
@@ -160,7 +195,7 @@ final class RunnerTest extends TestCase
     /**
      * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
      * constructor argument. Verifies that when the child process is stuck,
-     * the parent throws RuntimeException after the configured timeout.
+     * the parent throws CacheWarmupException after the configured timeout.
      */
     public function testWarmupTimeoutKicksIn(): void
     {

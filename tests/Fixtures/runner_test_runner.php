@@ -330,8 +330,8 @@ function testWarmupTimeoutKicksIn(): void
         try {
             $ref = new \ReflectionMethod($runner, 'warmUpCache');
             $ref->invoke($runner, $configLoader);
-            fail('Expected RuntimeException for cache warmup timeout');
-        } catch (\RuntimeException $e) {
+            fail('Expected CacheWarmupException for cache warmup timeout');
+        } catch (\CrazyGoat\WorkermanBundle\Exception\CacheWarmupException $e) {
             $elapsed = microtime(true) - $start;
 
             if (!str_contains($e->getMessage(), 'Cache warmup timed out after 1 seconds')) {

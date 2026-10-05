@@ -66,6 +66,10 @@ public function shouldReboot(): bool
 
 `Runner::__construct()` previously threw a bare `\InvalidArgumentException` when `cacheWarmupTimeout` was less than 1. It now throws `InvalidCacheWarmupTimeoutException` ([#815](https://github.com/crazy-goat/workerman-bundle/issues/815)). The new type extends `ValidationException` → `\InvalidArgumentException`, so callers catching `\InvalidArgumentException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
 
+### `Runner::warmUpCache()` now throws `CacheWarmupException` instead of bare `\RuntimeException`
+
+`Runner::warmUpCache()` previously threw a bare `\RuntimeException` on all seven failure paths (fork failure, waitpid failure, timeout, unexpected status, SIGTERM failure, unexpected signal, non-zero exit). It now throws `CacheWarmupException` ([#816](https://github.com/crazy-goat/workerman-bundle/issues/816)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover these paths too.
+
 ---
 
 ## Upgrading to 0.25
@@ -495,7 +499,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
 | `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException`, `InvalidCacheWarmupTimeoutException` |
-| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
+| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `CacheWarmupException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
 **Exception hierarchy:**
@@ -512,7 +516,8 @@ WorkermanExceptionInterface
 │   │   └── ServerStopFailedException
 │   ├── KernelException
 │   │   ├── KernelCreationException
-│   │   └── InvalidCacheDirectoryException
+│   │   ├── InvalidCacheDirectoryException
+│   │   └── CacheWarmupException
 │   └── UnsupportedListenSchemeException
 ├── SfxExtractionException (extends \RuntimeException)
 ├── ValidationException (extends \InvalidArgumentException)
