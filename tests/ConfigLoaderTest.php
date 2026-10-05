@@ -1073,6 +1073,7 @@ final class ConfigLoaderTest extends TestCase
         yield 'int processor' => ['int:WORKERS', 'WORKERS'];
         yield 'bool processor' => ['bool:DEBUG_FEATURE', 'DEBUG_FEATURE'];
         yield 'default with fallback' => ['default:FOO:bar', 'FOO'];
+        yield 'stacked processors' => ['int:default:FOO:bar', 'FOO'];
         yield 'empty segment skipped' => ['default::BAR', 'BAR'];
     }
 
@@ -1080,6 +1081,24 @@ final class ConfigLoaderTest extends TestCase
     public function testShortEnvNameDropsProcessorPrefix(string $ref, string $expected): void
     {
         $this->assertSame($expected, ConfigLoader::shortEnvName($ref));
+    }
+
+    public function testStackedProcessorsTrackEveryRemainingSegment(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loader->setWorkermanConfig(['server' => ['listen' => 'x']]);
+        $loader->setProcessConfig([]);
+        $loader->setSchedulerConfig([]);
+        $loader->setBuildConfig([]);
+        $loader->setWorkermanEnvVarNames(['int:default:WMB_TEST_FOO:bar']);
+        $loader->warmUp($this->tempDir . '/cache');
+
+        /** @var array{config: array<string, mixed[]>, env: array<string, string|null>} $payload */
+        $payload = require $this->tempDir . '/cache/workerman/config.cache.php';
+
+        // Over-tracking the literal fallback is deliberate: a spurious
+        // re-warm heals itself, a missed variable keeps stale config.
+        $this->assertSame(['WMB_TEST_FOO' => null, 'bar' => null], $payload['env']);
     }
 
     public function testWarmUpStoresEnvSnapshotWhenEnvVarNamesAreSet(): void

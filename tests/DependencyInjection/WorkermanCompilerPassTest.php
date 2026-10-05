@@ -190,6 +190,22 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertSame([], $this->recordedEnvVarNames());
     }
 
+    public function testEnvVarsInTaskAndProcessTagAttributesAreRecorded(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [[
+            'name' => 'a',
+            'listen' => 'http://127.0.0.1:8080',
+        ]]]);
+        $this->container->register('task.env', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '%env(TASK_SCHEDULE)%']);
+        $this->container->register('process.env', \stdClass::class)
+            ->addTag('workerman.process', ['count' => '%env(int:PROCESS_COUNT)%']);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame(['int:PROCESS_COUNT', 'TASK_SCHEDULE'], $this->recordedEnvVarNames());
+    }
+
     /**
      * @return iterable<string, array{mixed}>
      */

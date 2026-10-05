@@ -162,6 +162,11 @@ values (warm up as that user, see [deployment.md](deployment.md#deploy-script)).
 And a `file:` placeholder re-reads the file only when its path changes; a
 changed file content under the same path needs `cache:clear` first.
 
+After upgrading from a version without this behaviour, warm the cache once
+(`bin/console cache:warmup`): a cache file written before the upgrade carries
+no snapshot, so the first start cannot detect changed values until the cache
+is re-warmed.
+
 ## Environment variables
 
 The bundle reads these variables.

@@ -450,6 +450,12 @@ final class ConfigLoader implements CacheWarmerInterface
      * (e.g. `PORT`, `int:WORKERS`); only the variable name is kept
      * (the processor prefix is dropped), duplicates are removed.
      *
+     * Stacked processors (e.g. `%env(int:default:FOO:bar)%`) carry the
+     * variable name plus literal fallback segments after the processor
+     * chain. Every remaining segment is tracked, not just the variable:
+     * over-tracking only causes a spurious re-warm (self-healing), while
+     * under-tracking would keep stale config.
+     *
      * @param mixed[] $names
      */
     public function setWorkermanEnvVarNames(array $names): void
@@ -460,7 +466,9 @@ final class ConfigLoader implements CacheWarmerInterface
                 continue;
             }
 
-            $short[self::shortEnvName($name)] = true;
+            foreach (self::envNameCandidates($name) as $candidate) {
+                $short[$candidate] = true;
+            }
         }
 
         $this->envVarNames = array_keys($short);
@@ -468,22 +476,74 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
+     * Env processors shipped by Symfony DI (keys of
+     * `EnvVarProcessor::getProvidedTypes()`). Only leading segments
+     * matching this list are treated as processors: an unknown custom
+     * processor stays tracked, so a custom prefix can only cause a
+     * spurious re-warm, never a missed one.
+     *
+     * @var array<string, true>
+     */
+    private const ENV_PROCESSORS = [
+        'base64' => true,
+        'bool' => true,
+        'not' => true,
+        'const' => true,
+        'csv' => true,
+        'file' => true,
+        'float' => true,
+        'int' => true,
+        'json' => true,
+        'key' => true,
+        'url' => true,
+        'query_string' => true,
+        'resolve' => true,
+        'default' => true,
+        'string' => true,
+        'trim' => true,
+        'require' => true,
+        'enum' => true,
+        'shuffle' => true,
+        'defined' => true,
+        'urlencode' => true,
+    ];
+
+    /**
      * Drops the `%env()%` processor prefix: `PORT` stays `PORT`,
      * `int:WORKERS` becomes `WORKERS`, `default:FOO:bar` becomes `FOO`.
      */
     public static function shortEnvName(string $name): string
     {
+        return self::envNameCandidates($name)[0] ?? $name;
+    }
+
+    /**
+     * Every trackable segment of a `%env()%` reference: the leading
+     * processor chain is stripped and every remaining non-empty segment
+     * is returned, the variable name first.
+     * `int:default:FOO:bar` gives `['FOO', 'bar']`.
+     *
+     * @return list<string>
+     */
+    private static function envNameCandidates(string $name): array
+    {
         if (!str_contains($name, ':')) {
-            return $name;
+            return $name === '' ? [] : [$name];
         }
 
-        foreach (explode(':', $name) as $index => $part) {
-            if ($index > 0 && $part !== '') {
-                return $part;
+        $parts = explode(':', $name);
+        while ($parts !== [] && isset(self::ENV_PROCESSORS[strtolower($parts[0])])) {
+            array_shift($parts);
+        }
+
+        $candidates = [];
+        foreach ($parts as $part) {
+            if ($part !== '' && !isset($candidates[$part])) {
+                $candidates[$part] = true;
             }
         }
 
-        return $name;
+        return array_keys($candidates);
     }
 
     /**

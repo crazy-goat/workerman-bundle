@@ -181,8 +181,13 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * Records the env vars used in the workerman config so a value changed
+     * Records the env vars used in the bundle config so a value changed
      * after warmup can re-warm the cache at server start (issue #996).
+     *
+     * Every config-loader method call is scanned — the workerman section
+     * as well as the task and process tag attributes — because the
+     * container resolves `%env()%` in all of those arguments at build
+     * time and every one of them would otherwise freeze at warmup.
      *
      * The container resolves `%env()%` placeholders when the config loader
      * service is built (at warmup), so the resolved values frozen in the
@@ -194,18 +199,17 @@ final class WorkermanCompilerPass implements CompilerPassInterface
      */
     private function recordUsedEnvs(ContainerBuilder $container, Definition $configLoader): void
     {
+        $usedEnvs = [];
         foreach ($configLoader->getMethodCalls() as [$method, $arguments]) {
-            if ($method !== 'setWorkermanConfig' || !is_array($arguments[0] ?? null)) {
+            if ($method === 'setWorkermanEnvVarNames' || !is_array($arguments[0] ?? null)) {
                 continue;
             }
 
-            $usedEnvs = [];
             $resolved = $container->getParameterBag()->resolveValue($arguments[0]);
             $container->resolveEnvPlaceholders($resolved, null, $usedEnvs);
-            $configLoader->addMethodCall('setWorkermanEnvVarNames', [array_values($usedEnvs ?? [])]);
-
-            return;
         }
+
+        $configLoader->addMethodCall('setWorkermanEnvVarNames', [array_values(array_unique($usedEnvs ?? []))]);
     }
 
     /**
