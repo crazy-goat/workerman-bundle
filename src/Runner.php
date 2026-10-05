@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
@@ -25,7 +26,7 @@ readonly class Runner implements RunnerInterface
         private ?LoggerInterface $logger = null,
     ) {
         if ($this->cacheWarmupTimeout < 1) {
-            throw new \InvalidArgumentException(\sprintf(
+            throw new InvalidCacheWarmupTimeoutException(\sprintf(
                 '%s must be a positive integer, got %d',
                 CacheWarmupTimeoutConfig::ENV_VAR,
                 $this->cacheWarmupTimeout,

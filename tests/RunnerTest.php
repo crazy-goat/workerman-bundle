@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Exception\WorkermanExceptionInterface;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
@@ -283,9 +284,18 @@ final class RunnerTest extends TestCase
         $kernel = $this->createMock(KernelInterface::class);
         $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
-        new Runner($kernelFactory, 0);
+        $thrown = null;
+        try {
+            new Runner($kernelFactory, 0);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, 'Runner::__construct() must throw for a zero timeout');
+        $this->assertInstanceOf(InvalidCacheWarmupTimeoutException::class, $thrown);
+        $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $thrown);
+        $this->assertStringContainsString('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer', $thrown->getMessage());
     }
 
     public function testConstructorRejectsNegativeTimeout(): void
@@ -293,9 +303,18 @@ final class RunnerTest extends TestCase
         $kernel = $this->createMock(KernelInterface::class);
         $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
-        new Runner($kernelFactory, -5);
+        $thrown = null;
+        try {
+            new Runner($kernelFactory, -5);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, 'Runner::__construct() must throw for a negative timeout');
+        $this->assertInstanceOf(InvalidCacheWarmupTimeoutException::class, $thrown);
+        $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $thrown);
+        $this->assertStringContainsString('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer', $thrown->getMessage());
     }
 
     public function testApplyWorkermanConfigSetsWorkerStaticProperties(): void
