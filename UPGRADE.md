@@ -62,6 +62,10 @@ public function shouldReboot(): bool
 
 `Runner::applyWorkermanConfig()` previously threw a generic `\RuntimeException` when `mkdir()` failed for a PID, log, or stdout directory. It now throws `InvalidCacheDirectoryException` ([#593](https://github.com/crazy-goat/workerman-bundle/issues/593)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
 
+### `Runner` now throws `InvalidCacheWarmupTimeoutException` for a non-positive cache warmup timeout
+
+`Runner::__construct()` previously threw a bare `\InvalidArgumentException` when `cacheWarmupTimeout` was less than 1. It now throws `InvalidCacheWarmupTimeoutException` ([#815](https://github.com/crazy-goat/workerman-bundle/issues/815)). The new type extends `ValidationException` → `\InvalidArgumentException`, so callers catching `\InvalidArgumentException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
+
 ---
 
 ## Upgrading to 0.25
@@ -490,7 +494,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
-| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException` |
+| `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException`, `InvalidCacheWarmupTimeoutException` |
 | `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
@@ -512,7 +516,8 @@ WorkermanExceptionInterface
 │   └── UnsupportedListenSchemeException
 ├── SfxExtractionException (extends \RuntimeException)
 ├── ValidationException (extends \InvalidArgumentException)
-│   └── FileUploadValidationException
+│   ├── FileUploadValidationException
+│   └── InvalidCacheWarmupTimeoutException
 ├── SchedulerException (extends \InvalidArgumentException)
 │   ├── InvalidTriggerException
 │   └── InvalidCronExpressionException
