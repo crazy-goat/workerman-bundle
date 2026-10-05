@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
@@ -105,7 +106,7 @@ readonly class Runner implements RunnerInterface
      * - SIGTERM (15) for error
      * This avoids deadlock with extensions that register shutdown handlers (e.g., grpc).
      *
-     * @throws \RuntimeException on fork failure, timeout, or unexpected child status
+     * @throws CacheWarmupException on fork failure, timeout, or unexpected child status
      */
     private function warmUpCache(ConfigLoader $configLoader, bool $force = false): void
     {
@@ -115,7 +116,7 @@ readonly class Runner implements RunnerInterface
 
         $pid = $this->fork();
         if ($pid === -1) {
-            throw new \RuntimeException('Failed to fork process for cache warmup');
+            throw new CacheWarmupException('Failed to fork process for cache warmup');
         }
 
         if ($pid === 0) {
@@ -154,19 +155,19 @@ readonly class Runner implements RunnerInterface
         );
 
         if ($waitFailed) {
-            throw new \RuntimeException('Failed to wait for cache warmup process');
+            throw new CacheWarmupException('Failed to wait for cache warmup process');
         }
 
         if (!$completed) {
             \posix_kill($pid, \SIGKILL);
             \pcntl_waitpid($pid, $status, 0);
 
-            throw new \RuntimeException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
+            throw new CacheWarmupException(\sprintf('Cache warmup timed out after %d seconds', $timeout));
         }
 
         if (!\pcntl_wifexited($status)) {
             if (!\pcntl_wifsignaled($status)) {
-                throw new \RuntimeException(\sprintf(
+                throw new CacheWarmupException(\sprintf(
                     'Cache warmup failed in forked process (unexpected status: %d)',
                     $status,
                 ));
@@ -174,17 +175,17 @@ readonly class Runner implements RunnerInterface
 
             $signal = \pcntl_wtermsig($status);
             if ($signal === \SIGTERM) {
-                throw new \RuntimeException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
+                throw new CacheWarmupException('Cache warmup failed in forked process (child signaled failure via SIGTERM)');
             }
 
             if ($signal !== \SIGKILL) {
-                throw new \RuntimeException(\sprintf(
+                throw new CacheWarmupException(\sprintf(
                     'Cache warmup failed in forked process (killed by unexpected signal %d)',
                     $signal,
                 ));
             }
         } elseif (\pcntl_wexitstatus($status) !== 0) {
-            throw new \RuntimeException(\sprintf(
+            throw new CacheWarmupException(\sprintf(
                 'Cache warmup failed in forked process (exit code %d)',
                 \pcntl_wexitstatus($status),
             ));

@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking**: `Runner::warmUpCache()` now throws `CacheWarmupException` (extends `KernelException` → `WorkermanException` → `\RuntimeException`) instead of a bare `\RuntimeException` on all seven failure paths (fork failure, waitpid failure, timeout, unexpected status, SIGTERM failure, unexpected signal, non-zero exit), so a single `WorkermanExceptionInterface` catch covers them while a `\RuntimeException` catch still works. See `UPGRADE.md` (#816)
 - Docs: `docs/http-server.md` says that a file response Symfony made bodyless (a 1xx, 204 or 304 status, or the `X-Sendfile` / `X-Accel-Redirect` hand-off) sends no file and which `Content-Length` such a reply carries (#948)
 - `bin/check-coverage.php` now needs the threshold argument. Without it, or with a value that is not a number from 0 to 100, it prints the usage and exits with code 2, so a caller that forgets the threshold can no longer pass the gate by accident. `composer coverage:check` already passes `80.0` (#839)
 - Docs: the `StaticFilesMiddleware` example in `UPGRADE.md` has `public: true` (#884)
