@@ -62,6 +62,7 @@ step "rector" vendor/bin/rector process --dry-run
 step "kb-lint" php bin/kb-lint.php
 step "changelog" php bin/check-changelog.php
 step "exception-usage" php bin/check-exception-usage.php
+step "upgrade-exceptions" php bin/check-upgrade-exceptions.php
 step "shellcheck" run_shellcheck
 step "hadolint" run_hadolint
 
