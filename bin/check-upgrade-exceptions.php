@@ -123,18 +123,10 @@ function checkUpgradeExceptionsParseTree(string $path): array
         exit(1);
     }
 
-    $tree = null;
+    $tree = $blocks[1][0];
 
-    foreach ($blocks[1] as $block) {
-        if (str_contains($block, '├──') || str_contains($block, '└──')) {
-            $tree = $block;
-
-            break;
-        }
-    }
-
-    if ($tree === null) {
-        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (a ```text block with a hierarchy listing) found in %s\n", UPGRADE_EXCEPTIONS_FILE));
+    if (!str_contains($tree, '├──') && !str_contains($tree, '└──')) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (the first ```text block after **Exception hierarchy:** holds no hierarchy listing) found in %s\n", UPGRADE_EXCEPTIONS_FILE));
         exit(1);
     }
 
