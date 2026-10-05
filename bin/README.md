@@ -100,11 +100,34 @@ Exit codes: 0 = every type is referenced, 1 = one or more unused types,
 does not match `InvalidCacheDirectoryException`; a `use` import counts as a
 reference, and a self-reference inside the class's own file does not.
 
+### `check-upgrade-exceptions.php`
+
+Verifies that the exception-hierarchy tree in `UPGRADE.md` (the `text` fenced
+block under "**Exception hierarchy:**") matches the types declared in
+`src/Exception/`. PR #814 fixed the tree by hand after four classes drifted
+out of it with nothing checking, so this gate compares both the set of type
+short names and the parent links: every nesting edge must match the child's
+real parent class or one of its directly implemented/extended interfaces,
+and every explicit `(extends X)` annotation must match the declaration.
+Wired into `composer lint`, so the pre-push hook and the CI Lint job run it
+too; `tests/UpgradeExceptionsLintTest.php` drives the same script as a
+subprocess against synthetic fixtures.
+
+**Usage:**
+```bash
+php bin/check-upgrade-exceptions.php               # what composer lint runs
+php bin/check-upgrade-exceptions.php --root=/path/to/checkout
+```
+
+Exit codes: 0 = the doc tree matches, 1 = drift found (missing/extra types,
+wrong parent links, missing tree block), 2 = usage error (unknown option,
+missing root, missing/unreadable `UPGRADE.md` or `src/Exception/`).
+
 ### `lint.sh`
 
 Runs every static analysis, linter and formatter check: `composer validate --strict`,
 `composer audit`, PHP-CS-Fixer (dry run), PHPStan, Rector (dry run), `kb-lint.php`,
-`check-changelog.php`, `check-exception-usage.php`, `shellcheck` on every shell script
+`check-changelog.php`, `check-exception-usage.php`, `check-upgrade-exceptions.php`, `shellcheck` on every shell script
 (including extensionless ones such as `docker-test`) and `hadolint` on the Dockerfile.
 It runs every step, even after one failed, and exits non-zero if any failed. A missing
 tool (`shellcheck`, `hadolint`) is a failure. `composer lint` calls this script.

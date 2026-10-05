@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Doc tests in `tests/Docs/`: every config key and its default must be in `docs/configuration.md`, every environment variable that the bundle reads must be in its table, and every YAML example with a `workerman:` root must pass the config tree (#881)
 - Dev dependency `symfony/yaml`, used by the YAML example test (#881)
 - `bin/lint.sh` runs every linter in one place (composer validate and audit, PHP-CS-Fixer, PHPStan level 8, Rector, `bin/kb-lint.php`, the CHANGELOG and exception-usage checks, `shellcheck` on all tracked shell scripts and `hadolint` on the Dockerfile) and `composer lint` / `composer lint-fix` now call it (#859)
+- `bin/check-upgrade-exceptions.php` verifies that the exception-hierarchy tree in `UPGRADE.md` matches the types declared in `src/Exception/` (names and parent links), so the hand-fixed drift from #814 cannot silently return. Wired into `bin/lint.sh`, so the pre-push hook and the CI Lint job run it too (#817)
 - `AGENTS.md`, `docs/release-workflow.md`, `.github/dependabot.yml` and `.github/pull_request_template.md` from the crazy-goat repository standard (#859)
 - `bin/worktree-setup.sh` prepares a fresh worktree (#859)
 - `docs/getting-started.md` with the requirements, install steps, a minimal config with `when@dev` and `when@prod` blocks, and the first start; the README has a short Requirements list (#879)

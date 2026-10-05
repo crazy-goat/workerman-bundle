@@ -8,7 +8,7 @@ Thank you for your interest in contributing to this project!
 required status check is **`ci-ok`**. It aggregates the CI jobs:
 
 - **lint** - `bin/lint.sh`: PHP-CS-Fixer, PHPStan, Rector, the knowledge-base,
-  CHANGELOG and exception-usage checks, `shellcheck`, `hadolint`, `composer validate`
+  CHANGELOG, exception-usage and upgrade-exceptions checks, `shellcheck`, `hadolint`, `composer validate`
   and `composer audit`
 - **tests** - PHPUnit across PHP (8.2-8.5) and Symfony (6.4-8.0) versions, plus the
   root-only permission tests
