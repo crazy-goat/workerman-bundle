@@ -151,6 +151,62 @@ final class WorkermanCompilerPassTest extends TestCase
     }
 
     /**
+     * @return list<string>
+     */
+    private function recordedEnvVarNames(): array
+    {
+        foreach ($this->container->getDefinition('workerman.config_loader')->getMethodCalls() as [$method, $arguments]) {
+            if ($method === 'setWorkermanEnvVarNames') {
+                return $arguments[0];
+            }
+        }
+
+        $this->fail('setWorkermanEnvVarNames call not found');
+    }
+
+    public function testEnvVarsUsedInWorkermanConfigAreRecordedForStartTimeRewarm(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [[
+            'name' => 'a',
+            'listen' => '%env(PORT)%',
+            'processes' => '%env(int:WORKERS)%',
+        ]]]);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame(['PORT', 'int:WORKERS'], $this->recordedEnvVarNames());
+    }
+
+    public function testNoEnvVarNamesRecordedWhenConfigHasNoEnvPlaceholders(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [[
+            'name' => 'a',
+            'listen' => 'http://127.0.0.1:8080',
+            'processes' => 4,
+        ]]]);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame([], $this->recordedEnvVarNames());
+    }
+
+    public function testEnvVarsInTaskAndProcessTagAttributesAreRecorded(): void
+    {
+        $this->registerConfigLoaderWithConfig(['servers' => [[
+            'name' => 'a',
+            'listen' => 'http://127.0.0.1:8080',
+        ]]]);
+        $this->container->register('task.env', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '%env(TASK_SCHEDULE)%']);
+        $this->container->register('process.env', \stdClass::class)
+            ->addTag('workerman.process', ['count' => '%env(int:PROCESS_COUNT)%']);
+
+        $this->compilerPass->process($this->container);
+
+        $this->assertSame(['int:PROCESS_COUNT', 'TASK_SCHEDULE'], $this->recordedEnvVarNames());
+    }
+
+    /**
      * @return iterable<string, array{mixed}>
      */
     public static function invalidJitterProvider(): iterable

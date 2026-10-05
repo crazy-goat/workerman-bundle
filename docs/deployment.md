@@ -134,6 +134,9 @@ In `prod` (debug is off), the server does not compare `workerman.yaml` with the 
 If `var/cache/prod/workerman/config.cache.php` exists, the server loads it, even when you changed `workerman.yaml` after it was made.
 So after an in-place change of `workerman.yaml`, services or tags, run `bin/console cache:clear` as the runtime user (or remove `var/cache/prod`) before you restart.
 In debug mode, the server builds a stale cache again by itself.
+The exception is a changed `%env()%` value used in `workerman.yaml` (see [configuration.md](configuration.md#env-in-workermanyaml)):
+the server notices the new value at start and warms the cache again by itself, so `PORT=8081 ... restart` just works.
+That re-warm writes to the cache directory, so the starting user must own it, or the start fails with an error.
 
 So choose by what changed:
 
