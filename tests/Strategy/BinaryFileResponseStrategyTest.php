@@ -1134,6 +1134,46 @@ final class BinaryFileResponseStrategyTest extends TestCase
     }
 
     /**
+     * A HEAD request that Symfony prepared as bodyless (304/204) must not
+     * fall back to the file size: prepare() removed Content-Length before
+     * the HEAD line, so the length is 0 exactly like the GET 304/204
+     * (issue #948 review R1-01).
+     *
+     * @dataProvider emptyStatusProvider
+     */
+    public function testHeadRequestWithEmptyStatusEmitsZeroContentLength(int $status): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, $status, [
+            'ETag' => '"abc"',
+        ]);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_HEAD));
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'ETag' => '"abc"',
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame($status, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file, 'HEAD bodyless must not attach a file (no withFile())');
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless HEAD must not emit a body');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function emptyStatusProvider(): iterable
+    {
+        yield 'not modified' => [Response::HTTP_NOT_MODIFIED];
+        yield 'no content' => [Response::HTTP_NO_CONTENT];
+    }
+
+    /**
      * A 204 must not carry content at all (RFC 9110 §15.3.5). prepare() sets
      * maxlen = 0 for it, which Workerman would read as "the whole file"
      * (issue #948).
@@ -1235,6 +1275,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $this->assertStringContainsString('X-Sendfile: ' . $sendfilePath, $wire, 'the hand-off header must reach the front-end server');
             $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the prepared length must appear exactly once');
             $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'prepare() keeps the file size for the hand-off');
+            $this->assertStringContainsString('Accept-Ranges: bytes', $wire, 'the hand-off reply must keep Accept-Ranges like the file path does');
             $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'X-Sendfile must not emit a body');
         } finally {
             $flag->setValue(null, $previous);

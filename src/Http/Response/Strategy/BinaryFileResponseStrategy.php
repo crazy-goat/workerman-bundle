@@ -132,6 +132,20 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     {
         $tempFileObject = $this->reflector->getTempFileObject($response);
 
+        if ($this->reflector->getMaxlen($response) === 0) {
+            $contentLength = $this->resolvePreparedContentLength($response);
+            unset($headers['Content-Length']);
+
+            $statusCode = $response->getStatusCode();
+            if ($statusCode >= 200 && $statusCode < 300 && !$tempFileObject instanceof \SplTempFileObject) {
+                $headers['Accept-Ranges'] = 'bytes';
+            }
+
+            $this->deleteFileAfterBodylessSend($response, $tempFileObject);
+
+            return new HeadResponse($response->getStatusCode(), $headers, $contentLength);
+        }
+
         if (!$tempFileObject instanceof \SplTempFileObject) {
             $file = $response->getFile();
             // Mirror the GET path, where Workerman's withFile() turns an absent
@@ -219,6 +233,11 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     {
         $contentLength = $this->resolvePreparedContentLength($response);
         unset($headers['Content-Length']);
+
+        $statusCode = $response->getStatusCode();
+        if ($statusCode >= 200 && $statusCode < 300 && !$this->reflector->getTempFileObject($response) instanceof \SplTempFileObject) {
+            $headers['Accept-Ranges'] = 'bytes';
+        }
 
         $this->deleteFileAfterBodylessSend($response, $this->reflector->getTempFileObject($response));
 
