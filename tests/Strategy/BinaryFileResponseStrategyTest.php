@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Workerman\Connection\TcpConnection;
 
@@ -1091,5 +1092,308 @@ final class BinaryFileResponseStrategyTest extends TestCase
             @unlink($tempFile);
             rmdir($dir);
         }
+    }
+
+    /**
+     * A 304 must not carry a body (RFC 9110 §15.4.5). Symfony's prepare()
+     * signals that with maxlen = 0 and removes Content-Length and
+     * Content-Type, and Workerman reads a length of 0 as "the whole file", so
+     * the strategy must emit a bodyless response and never call withFile()
+     * (issue #948).
+     */
+    public function testNotModifiedResponseSendsNoFileAndNoBody(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NOT_MODIFIED, [
+            'ETag' => '"abc"',
+        ]);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        $fileSize = (int) filesize($this->testFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Cache-Control' => 'public',
+            'ETag' => '"abc"',
+        ], $this->connection, '1.1', 'GET');
+
+        $this->assertNull($workermanResponse->file, 'a 304 must not attach a file (no withFile())');
+        $this->assertSame(304, $workermanResponse->getStatusCode());
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('HTTP/1.1 304 Not Modified', $wire);
+        $this->assertStringContainsString('ETag: "abc"', $wire, 'a 304 repeats the cached response header fields');
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
+        $this->assertStringNotContainsString(
+            'Content-Length: ' . $fileSize,
+            $wire,
+            'the file size must not be advertised on a bodyless 304 (prepare() removed the header)',
+        );
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 304 must not emit a body');
+    }
+
+    /**
+     * A HEAD request that Symfony prepared as bodyless (304/204) must not
+     * fall back to the file size: prepare() removed Content-Length before
+     * the HEAD line, so the length is 0 exactly like the GET 304/204
+     * (issue #948 review R1-01).
+     *
+     * @dataProvider emptyStatusProvider
+     */
+    public function testHeadRequestWithEmptyStatusEmitsZeroContentLength(int $status): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, $status, [
+            'ETag' => '"abc"',
+        ]);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_HEAD));
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'ETag' => '"abc"',
+        ], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame($status, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file, 'HEAD bodyless must not attach a file (no withFile())');
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'prepare() returns early for empty statuses before setting Accept-Ranges (issue #948 review R2-01)');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless HEAD must not emit a body');
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function emptyStatusProvider(): iterable
+    {
+        yield 'not modified' => [Response::HTTP_NOT_MODIFIED];
+        yield 'no content' => [Response::HTTP_NO_CONTENT];
+    }
+
+    /**
+     * A 204 must not carry content at all (RFC 9110 §15.3.5). prepare() sets
+     * maxlen = 0 for it, which Workerman would read as "the whole file"
+     * (issue #948).
+     */
+    public function testNoContentResponseSendsNoFileAndNoBody(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NO_CONTENT);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Cache-Control' => 'public',
+        ], $this->connection, '1.1', 'GET');
+
+        $this->assertNull($workermanResponse->file, 'a 204 must not attach a file (no withFile())');
+        $this->assertSame(204, $workermanResponse->getStatusCode());
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('HTTP/1.1 204 No Content', $wire);
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'prepare() returns early for empty statuses before setting Accept-Ranges (issue #948 review R2-01)');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 204 must not emit a body');
+    }
+
+    /**
+     * A bodyless response must not read a temp file into memory either: the
+     * GET path buffers it via withBody(), which is a body this response must
+     * not send (issue #948).
+     */
+    public function testBodylessResponseWithTempFileDoesNotReadBody(): void
+    {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = new \SplTempFileObject();
+        $tempFile->fwrite('Temp file content');
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NOT_MODIFIED);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('tempFileObject')->setValue($binaryResponse, $tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'GET');
+
+        $this->assertSame('', $workermanResponse->rawBody(), 'a bodyless response must not read the temp file');
+        $this->assertNull($workermanResponse->file);
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless response must not emit a body');
+    }
+
+    /**
+     * The X-Sendfile / X-Accel-Redirect hand-off is the third case in which
+     * prepare() sets maxlen = 0: the front-end server sends the file, so
+     * Workerman must send neither the bytes nor a 404 for a file it never
+     * opens, and the prepared Content-Length has to survive over the empty
+     * body (Symfony keeps it, so the front-end server's reply is framed the
+     * same way as the file response it replaces) — issue #948.
+     */
+    public function testXSendfileResponseHandsTheFileOverWithoutSendingIt(): void
+    {
+        // trustXSendfileTypeHeader() is a one-way static flag with no public
+        // reset, so restore it after the test to keep the rest of the suite on
+        // the default.
+        $flag = new \ReflectionProperty(BinaryFileResponse::class, 'trustXSendfileTypeHeader');
+        $previous = $flag->getValue();
+
+        $strategy = new BinaryFileResponseStrategy();
+        $fileSize = (int) filesize($this->testFile);
+
+        try {
+            BinaryFileResponse::trustXSendfileTypeHeader();
+
+            $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK, [
+                'Content-Type' => 'text/plain',
+            ]);
+
+            $request = Request::create('/', Request::METHOD_GET);
+            $request->headers->set('X-Sendfile-Type', 'X-Sendfile');
+            $binaryResponse->prepare($request);
+
+            $sendfilePath = strval($binaryResponse->headers->get('X-Sendfile'));
+            $this->assertSame(realpath($this->testFile), $sendfilePath, 'prepare() must set the hand-off header');
+
+            $workermanResponse = $strategy->convert($binaryResponse, [
+                'Content-Type' => ['text/plain'],
+                'X-Sendfile' => $sendfilePath,
+            ], $this->connection, '1.1', 'GET');
+
+            $this->assertNull($workermanResponse->file, 'X-Sendfile must not attach a file (no withFile())');
+            $this->assertSame(200, $workermanResponse->getStatusCode());
+
+            $wire = (string) $workermanResponse;
+            $this->assertStringContainsString('X-Sendfile: ' . $sendfilePath, $wire, 'the hand-off header must reach the front-end server');
+            $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the prepared length must appear exactly once');
+            $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'prepare() keeps the file size for the hand-off');
+            $this->assertStringContainsString('Accept-Ranges: bytes', $wire, 'the hand-off reply must keep Accept-Ranges like the file path does');
+            $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'X-Sendfile must not emit a body');
+        } finally {
+            $flag->setValue(null, $previous);
+        }
+    }
+
+    /**
+     * deleteFileAfterSend on a bodyless response deletes the file immediately,
+     * exactly like the HEAD path: no bytes are buffered, so the onBufferDrain
+     * cleanup would never fire and the file would leak on a keep-alive
+     * connection (issue #948).
+     */
+    public function testBodylessResponseWithDeleteFileAfterSendDeletesImmediately(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/bodyless_delete_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'Delete me on a bodyless response!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_NOT_MODIFIED);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('deleteFileAfterSend')->setValue($binaryResponse, true);
+
+        $this->assertFileExists($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'GET');
+
+        $this->assertNull($workermanResponse->file);
+        $this->assertFileDoesNotExist($tempFile, 'a bodyless response + deleteFileAfterSend must delete the file immediately');
+        $this->assertNull($this->connection->onBufferDrain, 'no async buffer-drain cleanup may be installed');
+        $this->assertNull($this->connection->onClose, 'no async onClose cleanup may be installed');
+    }
+
+    /**
+     * A bodyless response must not turn into a 404 when the file is gone:
+     * withFile() is the only reason the GET path ever synthesises that 404,
+     * and a 304 has to repeat the cached response, not a fresh error
+     * (issue #948).
+     */
+    public function testBodylessResponseWithMissingFileKeepsPreparedStatus(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/bodyless_missing_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'I will vanish!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_NOT_MODIFIED);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        unlink($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'GET');
+
+        $this->assertSame(304, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file);
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless response must not emit a body');
+    }
+
+    /**
+     * A HEAD request prepared as 200 for a file that vanishes after prepare()
+     * must 404 like the unprepared path does: the early bodyless branch must
+     * not return the stale prepared status and length (issue #948 review R2-02).
+     */
+    public function testPreparedHeadRequestWithMissingFileReturns404(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/head_prepared_missing_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'I will vanish after prepare!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_HEAD));
+
+        unlink($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame(404, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file);
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD 404 must not emit a body');
+    }
+
+    /**
+     * A prepared 200 with a byte range still sends the range: maxlen 0 is the
+     * only bodyless marker, and the guard must not swallow the GET file path
+     * (issue #948).
+     */
+    public function testPreparedRangeRequestStillSendsTheRange(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+
+        $request = Request::create('/', Request::METHOD_GET);
+        $request->headers->set('Range', 'bytes=0-4');
+        $binaryResponse->prepare($request);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Type' => ['text/plain'],
+            'Content-Range' => ['bytes 0-4/29'],
+        ], $this->connection, '1.1', 'GET');
+
+        $this->assertIsArray($workermanResponse->file, 'a ranged GET response still attaches the file');
+        $this->assertSame(5, $workermanResponse->file['length']);
     }
 }

@@ -47,6 +47,19 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
             return $this->convertHead($response, $headers);
         }
 
+        // A response Symfony prepared as bodyless must not carry the file.
+        // prepare() sets maxlen = 0 in three cases: a HEAD request (handled
+        // above), an informational or empty status (1xx, 204, 304 — RFC 9110
+        // §15.4.5 and §15.3.5 allow no body there) and the X-Sendfile /
+        // X-Accel-Redirect hand-off, where the front-end server sends the file.
+        // Workerman reads a length of 0 as "the whole file", so withFile()
+        // shipped the entire file with a 304 or 204 status (issue #948);
+        // Symfony's own sendContent() returns before it touches the file when
+        // maxlen is 0.
+        if ($this->reflector->getMaxlen($response) === 0) {
+            return $this->convertBodyless($response, $headers);
+        }
+
         // $protocolVersion and $shouldClose are intentionally unused: this
         // strategy returns a regular WorkermanResponse (with or without
         // withFile()); the status line and Connection header are handled by
@@ -81,6 +94,8 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         $offset = $this->reflector->getOffset($response);
         // Symfony uses maxlen -1 for "to the end of the file". Workerman has no such
         // value: it uses 0 and treats any other non-zero length as a range (issue #902).
+        // maxlen 0 never reaches here — the bodyless path above returns first, because
+        // Workerman would read it as "the whole file" (issue #948).
         $maxlen = max(0, $this->reflector->getMaxlen($response) ?? 0);
         $deleteFileAfterSend = $this->reflector->getDeleteFileAfterSend($response);
 
@@ -117,6 +132,32 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     {
         $tempFileObject = $this->reflector->getTempFileObject($response);
 
+        if ($this->reflector->getMaxlen($response) === 0) {
+            $statusCode = $response->getStatusCode();
+            unset($headers['Content-Length']);
+
+            if ($statusCode >= 200 && $statusCode < 300 && !$tempFileObject instanceof \SplTempFileObject) {
+                $file = $response->getFile();
+                // Mirror the unprepared path below: Workerman's withFile()
+                // turns an absent file into a 404, so a prepared HEAD 200 for
+                // a file that vanished after prepare() must 404 as well
+                // (issue #948 review R2-02).
+                if (!is_file($file->getPathname())) {
+                    return new HeadResponse(404, $headers, 0);
+                }
+            }
+
+            $contentLength = $this->resolvePreparedContentLength($response);
+
+            if (($statusCode === 200 || $statusCode === 206) && !$tempFileObject instanceof \SplTempFileObject) {
+                $headers['Accept-Ranges'] = 'bytes';
+            }
+
+            $this->deleteFileAfterBodylessSend($response, $tempFileObject);
+
+            return new HeadResponse($response->getStatusCode(), $headers, $contentLength);
+        }
+
         if (!$tempFileObject instanceof \SplTempFileObject) {
             $file = $response->getFile();
             // Mirror the GET path, where Workerman's withFile() turns an absent
@@ -141,13 +182,14 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
             $headers['Accept-Ranges'] = 'bytes';
         }
 
-        // deleteFileAfterSend on HEAD: the file body is never sent, so the
-        // onBufferDrain cleanup used by the GET path would not fire reliably.
-        // Delete synchronously, matching Symfony's BinaryFileResponse (which
-        // unlinks in sendContent()'s finally even for HEAD) and avoiding a
-        // leak on keep-alive connections. Temp files are in-memory and are
+        // deleteFileAfterSend on a bodyless response: the file is never read
+        // or buffered, so the onBufferDrain cleanup used by the GET path
+        // would not fire reliably. Delete synchronously, matching Symfony's
+        // BinaryFileResponse (which unlinks in sendContent()'s finally even
+        // when maxlen is 0, as it is for every bodyless response) and avoiding
+        // a leak on keep-alive connections. Temp files are in-memory and are
         // never unlinked (mirrors Symfony's `null === $tempFileObject` guard).
-        $this->deleteFileAfterHead($response, $tempFileObject);
+        $this->deleteFileAfterBodylessSend($response, $tempFileObject);
 
         return new HeadResponse($response->getStatusCode(), $headers, $contentLength);
     }
@@ -178,9 +220,63 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     }
 
     /**
-     * Delete a deleteFileAfterSend file immediately for a HEAD request.
+     * Build a bodyless response for a BinaryFileResponse that Symfony prepared
+     * as bodyless (an informational or empty status, or the X-Sendfile /
+     * X-Accel-Redirect hand-off).
+     *
+     * This is the same shape the HEAD path and DefaultResponseStrategy use for
+     * a response with no body: the headers Symfony prepared, no file attached
+     * and no Content-Length of our own. The length is the one prepare() left in
+     * the response — it keeps the file size for the sendfile hand-off, where the
+     * front-end server sends the body and a reply without a length would be
+     * close-delimited, and it removes it for 1xx/204/304, where the transport
+     * computes 0 exactly as it does for every other bodyless response this
+     * bundle emits.
+     *
+     * The file is never opened. withFile() exists to make the transport read
+     * the file, and everything it derives (Content-Length, Accept-Ranges, the
+     * implicit 404 for a vanished file) comes from a body this response must not
+     * send. The prepared status is kept: a 304 has to repeat the cached
+     * response's header fields, not turn into a fresh error (issue #948).
+     *
+     * @param array<string, string|list<string|null>> $headers
      */
-    private function deleteFileAfterHead(BinaryFileResponse $response, ?\SplTempFileObject $tempFileObject): void
+    private function convertBodyless(BinaryFileResponse $response, array $headers): HeadResponse
+    {
+        $contentLength = $this->resolvePreparedContentLength($response);
+        unset($headers['Content-Length']);
+
+        $statusCode = $response->getStatusCode();
+        if (($statusCode === 200 || $statusCode === 206) && !$this->reflector->getTempFileObject($response) instanceof \SplTempFileObject) {
+            $headers['Accept-Ranges'] = 'bytes';
+        }
+
+        $this->deleteFileAfterBodylessSend($response, $this->reflector->getTempFileObject($response));
+
+        return new HeadResponse($response->getStatusCode(), $headers, $contentLength);
+    }
+
+    /**
+     * The Content-Length a bodyless response carries: the value Symfony's
+     * prepare() left in the response headers, or 0 when prepare() removed it
+     * (the informational and empty statuses).
+     *
+     * ResponseConverter strips Content-Length for every request except HEAD
+     * (issue #579), so the prepared value has to be read from the response
+     * itself and not from the normalised header array.
+     */
+    private function resolvePreparedContentLength(BinaryFileResponse $response): int
+    {
+        $contentLength = $response->headers->get('Content-Length');
+
+        return is_string($contentLength) && ctype_digit($contentLength) ? (int) $contentLength : 0;
+    }
+
+    /**
+     * Delete a deleteFileAfterSend file for a bodyless response (a HEAD
+     * request, or a response Symfony prepared as bodyless).
+     */
+    private function deleteFileAfterBodylessSend(BinaryFileResponse $response, ?\SplTempFileObject $tempFileObject): void
     {
         if ($tempFileObject instanceof \SplTempFileObject) {
             return;
