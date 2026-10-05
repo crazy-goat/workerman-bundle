@@ -109,7 +109,16 @@ function checkUpgradeExceptionsParseTree(string $path): array
         exit(2);
     }
 
-    if (!preg_match_all('/```text\n(.*?)\n```/s', $source, $blocks)) {
+    $markerPos = strpos($source, '**Exception hierarchy:**');
+
+    if ($markerPos === false) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (no **Exception hierarchy:** section found in %s)\n", UPGRADE_EXCEPTIONS_FILE));
+        exit(1);
+    }
+
+    $scope = substr($source, $markerPos);
+
+    if (!preg_match_all('/```text\n(.*?)\n```/s', $scope, $blocks)) {
         fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no ```text block found in %s\n", UPGRADE_EXCEPTIONS_FILE));
         exit(1);
     }

@@ -159,6 +159,32 @@ final class UpgradeExceptionsLintTest extends TestCase
         self::assertStringContainsString('no exception-hierarchy tree', $result['err']);
     }
 
+    public function testABlockBeforeTheHeadingIsIgnored(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            ```text
+            decoy
+            └── NotAType
+            ```
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('check-upgrade-exceptions: OK', $result['out']);
+    }
+
     public function testAMissingExceptionDirectoryIsAUsageError(): void
     {
         $this->writeUpgrade(<<<'MD'
