@@ -133,11 +133,23 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         $tempFileObject = $this->reflector->getTempFileObject($response);
 
         if ($this->reflector->getMaxlen($response) === 0) {
-            $contentLength = $this->resolvePreparedContentLength($response);
+            $statusCode = $response->getStatusCode();
             unset($headers['Content-Length']);
 
-            $statusCode = $response->getStatusCode();
             if ($statusCode >= 200 && $statusCode < 300 && !$tempFileObject instanceof \SplTempFileObject) {
+                $file = $response->getFile();
+                // Mirror the unprepared path below: Workerman's withFile()
+                // turns an absent file into a 404, so a prepared HEAD 200 for
+                // a file that vanished after prepare() must 404 as well
+                // (issue #948 review R2-02).
+                if (!is_file($file->getPathname())) {
+                    return new HeadResponse(404, $headers, 0);
+                }
+            }
+
+            $contentLength = $this->resolvePreparedContentLength($response);
+
+            if (($statusCode === 200 || $statusCode === 206) && !$tempFileObject instanceof \SplTempFileObject) {
                 $headers['Accept-Ranges'] = 'bytes';
             }
 
@@ -235,7 +247,7 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         unset($headers['Content-Length']);
 
         $statusCode = $response->getStatusCode();
-        if ($statusCode >= 200 && $statusCode < 300 && !$this->reflector->getTempFileObject($response) instanceof \SplTempFileObject) {
+        if (($statusCode === 200 || $statusCode === 206) && !$this->reflector->getTempFileObject($response) instanceof \SplTempFileObject) {
             $headers['Accept-Ranges'] = 'bytes';
         }
 

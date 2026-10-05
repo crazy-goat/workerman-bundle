@@ -1161,6 +1161,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $wire = (string) $workermanResponse;
         $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
         $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'prepare() returns early for empty statuses before setting Accept-Ranges (issue #948 review R2-01)');
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless HEAD must not emit a body');
     }
 
@@ -1196,6 +1197,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertStringContainsString('HTTP/1.1 204 No Content', $wire);
         $this->assertSame(1, substr_count($wire, 'Content-Length:'));
         $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'prepare() returns early for empty statuses before setting Accept-Ranges (issue #948 review R2-01)');
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 204 must not emit a body');
     }
 
@@ -1336,6 +1338,37 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $wire = (string) $workermanResponse;
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless response must not emit a body');
+    }
+
+    /**
+     * A HEAD request prepared as 200 for a file that vanishes after prepare()
+     * must 404 like the unprepared path does: the early bodyless branch must
+     * not return the stale prepared status and length (issue #948 review R2-02).
+     */
+    public function testPreparedHeadRequestWithMissingFileReturns404(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/head_prepared_missing_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'I will vanish after prepare!');
+
+        $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_HEAD));
+
+        unlink($tempFile);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'HEAD');
+
+        $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
+        $this->assertSame(404, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file);
+
+        $wire = (string) $workermanResponse;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD 404 must not emit a body');
     }
 
     /**
