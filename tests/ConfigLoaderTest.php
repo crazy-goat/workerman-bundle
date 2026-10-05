@@ -16,6 +16,9 @@ final class ConfigLoaderTest extends TestCase
     /** @var string|false the process env value captured at setUp, restored at tearDown */
     private string|false $savedTrustEnv = false;
 
+    /** @var list<string> test env vars set via setTestEnv(), removed at tearDown */
+    private array $testEnvNames = [];
+
     protected function setUp(): void
     {
         $this->tempDir = sys_get_temp_dir() . '/config-loader-test-' . uniqid();
@@ -46,6 +49,13 @@ final class ConfigLoaderTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->testEnvNames as $name) {
+            unset($_SERVER[$name], $_ENV[$name]);
+            if (function_exists('putenv')) {
+                putenv($name);
+            }
+        }
+        $this->testEnvNames = [];
         ConfigCacheGuardConfig::reset();
         unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
         if (function_exists('putenv')) {
@@ -1052,5 +1062,124 @@ final class ConfigLoaderTest extends TestCase
         $this->expectExceptionMessage('Configuration not available');
 
         $loader->getProcessConfig();
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function shortEnvNameProvider(): iterable
+    {
+        yield 'plain' => ['PORT', 'PORT'];
+        yield 'int processor' => ['int:WORKERS', 'WORKERS'];
+        yield 'bool processor' => ['bool:DEBUG_FEATURE', 'DEBUG_FEATURE'];
+        yield 'default with fallback' => ['default:FOO:bar', 'FOO'];
+        yield 'empty segment skipped' => ['default::BAR', 'BAR'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('shortEnvNameProvider')]
+    public function testShortEnvNameDropsProcessorPrefix(string $ref, string $expected): void
+    {
+        $this->assertSame($expected, ConfigLoader::shortEnvName($ref));
+    }
+
+    public function testWarmUpStoresEnvSnapshotWhenEnvVarNamesAreSet(): void
+    {
+        $this->setTestEnv('WMB_TEST_PORT', 'A');
+
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loader->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:A']]);
+        $loader->setProcessConfig([]);
+        $loader->setSchedulerConfig([]);
+        $loader->setBuildConfig([]);
+        $loader->setWorkermanEnvVarNames(['WMB_TEST_PORT', 'int:WMB_TEST_WORKERS']);
+        $loader->warmUp($this->tempDir . '/cache');
+
+        /** @var array{config: array<string, mixed[]>, env: array<string, string|null>} $payload */
+        $payload = require $this->tempDir . '/cache/workerman/config.cache.php';
+
+        $this->assertArrayHasKey('config', $payload);
+        $this->assertArrayHasKey('env', $payload);
+        $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:A']], $payload['config']['workerman']);
+        // The processor prefix is dropped, duplicates are removed, names are sorted.
+        $this->assertSame(['WMB_TEST_PORT' => 'A', 'WMB_TEST_WORKERS' => null], $payload['env']);
+    }
+
+    public function testEnvelopeCacheLoadsConfigSections(): void
+    {
+        $this->setTestEnv('WMB_TEST_PORT', 'A');
+
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:A']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->setWorkermanEnvVarNames(['WMB_TEST_PORT']);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:A']], $loaderB->getWorkermanConfig());
+        $this->assertFalse($loaderB->hasTrackedEnvChanged());
+    }
+
+    public function testHasTrackedEnvChangedDetectsChangedValue(): void
+    {
+        $this->setTestEnv('WMB_TEST_PORT', 'A');
+
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:A']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->setWorkermanEnvVarNames(['WMB_TEST_PORT']);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $this->setTestEnv('WMB_TEST_PORT', 'B');
+
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertTrue($loaderB->hasTrackedEnvChanged());
+    }
+
+    public function testHasTrackedEnvChangedReturnsFalseForLegacyCache(): void
+    {
+        // A cache written without env names (legacy format) carries no snapshot.
+        $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
+        $loaderA->setProcessConfig([]);
+        $loaderA->setSchedulerConfig([]);
+        $loaderA->setBuildConfig([]);
+        $loaderA->warmUp($this->tempDir . '/cache');
+
+        $this->setTestEnv('WMB_TEST_PORT', 'B');
+
+        $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+        $this->assertFalse($loaderB->hasTrackedEnvChanged());
+    }
+
+    public function testHasTrackedEnvChangedReturnsFalseWhenCacheFileIsMissing(): void
+    {
+        $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
+
+        $this->assertFalse($loader->hasTrackedEnvChanged());
+    }
+
+    /**
+     * Sets a test env var in every place ConfigLoader::readEnvValues()
+     * looks (`$_SERVER`, `$_ENV`, `getenv()`), restoring the previous
+     * state afterwards.
+     */
+    private function setTestEnv(string $name, string $value): void
+    {
+        $_SERVER[$name] = $value;
+        $_ENV[$name] = $value;
+        putenv($name . '=' . $value);
+
+        $this->trackTestEnvForCleanup($name);
+    }
+
+    private function trackTestEnvForCleanup(string $name): void
+    {
+        if (!\in_array($name, $this->testEnvNames, true)) {
+            $this->testEnvNames[] = $name;
+        }
     }
 }

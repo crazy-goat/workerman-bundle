@@ -52,6 +52,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->addMethodCall('setSchedulerConfig', [$tasks]);
 
         $this->prepareMiddlewares($container, $configLoader);
+        $this->recordUsedEnvs($container, $configLoader);
 
         $container
             ->register('workerman.task_locator', ServiceLocator::class)
@@ -177,6 +178,34 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         }
 
         $configLoader->setMethodCalls($calls);
+    }
+
+    /**
+     * Records the env vars used in the workerman config so a value changed
+     * after warmup can re-warm the cache at server start (issue #996).
+     *
+     * The container resolves `%env()%` placeholders when the config loader
+     * service is built (at warmup), so the resolved values frozen in the
+     * cache would ignore `PORT` or `WORKERS` set later. The parameter bag
+     * turns `%env()%` into unique placeholders first, then resolving with
+     * a null format collects the used names without reading values — like
+     * {@see staticRoot()} does — and the loader snapshots the values at
+     * warmup and compares them again at start.
+     */
+    private function recordUsedEnvs(ContainerBuilder $container, Definition $configLoader): void
+    {
+        foreach ($configLoader->getMethodCalls() as [$method, $arguments]) {
+            if ($method !== 'setWorkermanConfig' || !is_array($arguments[0] ?? null)) {
+                continue;
+            }
+
+            $usedEnvs = [];
+            $resolved = $container->getParameterBag()->resolveValue($arguments[0]);
+            $container->resolveEnvPlaceholders($resolved, null, $usedEnvs);
+            $configLoader->addMethodCall('setWorkermanEnvVarNames', [array_values($usedEnvs ?? [])]);
+
+            return;
+        }
     }
 
     /**

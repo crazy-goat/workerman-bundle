@@ -16,6 +16,27 @@ final class ConfigLoader implements CacheWarmerInterface
     private readonly ConfigCache $cache;
     private readonly string $yamlConfigFilePath;
 
+    /**
+     * Names of the environment variables used in the workerman config
+     * (without the `%env()%` processor prefix, e.g. `PORT` for
+     * `%env(PORT)%` or `%env(int:PORT)%`). Recorded at container build
+     * time by the compiler pass, snapshotted at warmup, and compared
+     * again at server start so a changed value re-warms the cache
+     * (issue #996).
+     *
+     * @var list<string>
+     */
+    private array $envVarNames = [];
+
+    /**
+     * Env snapshot stored in the cache file, keyed by variable name.
+     * `null` means the loader holds in-memory config (warmup path) or
+     * the cache file carries no snapshot (legacy cache).
+     *
+     * @var array<string, string|null>|null
+     */
+    private ?array $trackedEnv = null;
+
     public function __construct(
         string $projectDir,
         string $cacheDir,
@@ -52,9 +73,17 @@ final class ConfigLoader implements CacheWarmerInterface
 
         $resources = is_file($this->yamlConfigFilePath) ? [new FileResource($this->yamlConfigFilePath)] : [];
 
+        $payload = $this->config;
+        if ($this->envVarNames !== []) {
+            $payload = [
+                'config' => $this->config,
+                'env' => $this->readEnvValues($this->envVarNames),
+            ];
+        }
+
         $previousUmask = umask(0077);
         try {
-            $this->cache->write(sprintf('<?php return %s;', var_export($this->config, true)), $resources);
+            $this->cache->write(sprintf('<?php return %s;', var_export($payload, true)), $resources);
         } finally {
             umask($previousUmask);
         }
@@ -91,10 +120,67 @@ final class ConfigLoader implements CacheWarmerInterface
 
         $this->validateCacheFilePermissions($cachePath);
 
-        /** @var array<string, mixed[]> $cached */
+        /** @var array<string, mixed> $cached */
         $cached = require $cachePath;
 
+        if (isset($cached['config'], $cached['env']) && \is_array($cached['config']) && \is_array($cached['env'])) {
+            /** @var array<string, mixed[]> $config */
+            $config = $cached['config'];
+            /** @var array<string, string|null> $env */
+            $env = $cached['env'];
+            $this->trackedEnv = $env;
+
+            return $this->config = $config;
+        }
+
+        /** @var array<string, mixed[]> $cached */
         return $this->config = $cached;
+    }
+
+    /**
+     * Whether an env var used in the workerman config changed since warmup.
+     *
+     * Compares the snapshot stored in the cache file with the current
+     * process environment. Returns false when the config did not come
+     * from the cache (warmup path), when the cache carries no snapshot
+     * (legacy cache, or no `%env()%` in the config), or when every
+     * tracked value is unchanged.
+     */
+    public function hasTrackedEnvChanged(): bool
+    {
+        if ($this->trackedEnv === null) {
+            $this->loadTrackedEnvFromCache();
+        }
+
+        if ($this->trackedEnv === null || $this->trackedEnv === []) {
+            return false;
+        }
+
+        return $this->readEnvValues(array_keys($this->trackedEnv)) !== $this->trackedEnv;
+    }
+
+    /**
+     * Loads only the env snapshot from the cache file, without touching
+     * the in-memory config. A legacy cache (no snapshot) or a missing
+     * file leaves the snapshot unset.
+     */
+    private function loadTrackedEnvFromCache(): void
+    {
+        $cachePath = $this->cache->getPath();
+        if (!is_file($cachePath)) {
+            return;
+        }
+
+        $this->validateCacheFilePermissions($cachePath);
+
+        /** @var array<string, mixed> $cached */
+        $cached = require $cachePath;
+
+        if (isset($cached['config'], $cached['env']) && \is_array($cached['env'])) {
+            /** @var array<string, string|null> $env */
+            $env = $cached['env'];
+            $this->trackedEnv = $env;
+        }
     }
 
     /**
@@ -355,6 +441,69 @@ final class ConfigLoader implements CacheWarmerInterface
     public function setBuildConfig(array $config): void
     {
         $this->config[ConfigSection::BUILD->value] = $config;
+    }
+
+    /**
+     * Records the env vars used in the workerman config (issue #996).
+     *
+     * Called by the compiler pass with the raw `%env()%` references
+     * (e.g. `PORT`, `int:WORKERS`); only the variable name is kept
+     * (the processor prefix is dropped), duplicates are removed.
+     *
+     * @param mixed[] $names
+     */
+    public function setWorkermanEnvVarNames(array $names): void
+    {
+        $short = [];
+        foreach ($names as $name) {
+            if (!\is_string($name) || $name === '') {
+                continue;
+            }
+
+            $short[self::shortEnvName($name)] = true;
+        }
+
+        $this->envVarNames = array_keys($short);
+        sort($this->envVarNames);
+    }
+
+    /**
+     * Drops the `%env()%` processor prefix: `PORT` stays `PORT`,
+     * `int:WORKERS` becomes `WORKERS`, `default:FOO:bar` becomes `FOO`.
+     */
+    public static function shortEnvName(string $name): string
+    {
+        if (!str_contains($name, ':')) {
+            return $name;
+        }
+
+        foreach (explode(':', $name) as $index => $part) {
+            if ($index > 0 && $part !== '') {
+                return $part;
+            }
+        }
+
+        return $name;
+    }
+
+    /**
+     * Reads the raw values of the given env vars: `$_SERVER` first,
+     * then `$_ENV`, then `getenv()` — the same order the bundle uses
+     * for its own env-based settings.
+     *
+     * @param list<string> $names
+     *
+     * @return array<string, string|null> `null` when the var is not set
+     */
+    private function readEnvValues(array $names): array
+    {
+        $values = [];
+        foreach ($names as $name) {
+            $raw = $_SERVER[$name] ?? $_ENV[$name] ?? getenv($name);
+            $values[$name] = $raw === false ? null : (string) $raw;
+        }
+
+        return $values;
     }
 
     /** @return mixed[] */

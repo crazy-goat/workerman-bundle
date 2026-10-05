@@ -135,6 +135,33 @@ See [security.md](security.md#static-files-protection).
 | `servers[].root_dir` | string or null | `null` | The directory that `serve_files` serves. |
 | `servers[].static_files.allowed_extensions` | list of strings | `[]` | The allowed file extensions, without a dot. It works only with `serve_files` and `root_dir`. A `StaticFilesMiddleware` that you register as a service does not read it. It uses its constructor argument `$allowedExtensions`. |
 
+## `%env()%` in `workerman.yaml`
+
+Any value under `workerman:` can use a Symfony `%env()%` placeholder, so the
+port or the number of workers can come from the environment:
+
+```yaml
+workerman:
+  servers:
+    - name: 'Symfony webserver'
+      listen: 'http://0.0.0.0:%env(PORT)%'
+```
+
+The placeholder is resolved when the cache is warmed up, but the server also
+remembers which variables were used and what they held.
+When you start the server with a different value, it warms the cache again by
+itself, so the new value wins; processors work the same way as in a normal
+container (`processes: '%env(int:WORKERS)%'` gives an integer) and validation
+runs again on the new values.
+Only a changed value re-warms: a config without `%env()%` starts from the
+cache as before.
+
+Two limits: the cache directory must be writable by the user that starts the
+server, or the re-warm fails with an error instead of silently keeping the old
+values (warm up as that user, see [deployment.md](deployment.md#deploy-script)).
+And a `file:` placeholder re-reads the file only when its path changes; a
+changed file content under the same path needs `cache:clear` first.
+
 ## Environment variables
 
 The bundle reads these variables.

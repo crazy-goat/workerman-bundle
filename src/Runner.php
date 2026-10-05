@@ -39,6 +39,28 @@ readonly class Runner implements RunnerInterface
 
         $this->warmUpCache($configLoader);
 
+        if ($configLoader->hasTrackedEnvChanged()) {
+            // An env var used in workerman.yaml changed after warmup, so the
+            // frozen cache no longer matches the environment (issue #996).
+            // Boot the kernel again: Symfony re-resolves %env()% (with the
+            // int:, bool:, file:, ... processors) and re-runs validation.
+            // On a read-only cache dir this fails instead of silently
+            // keeping the stale values.
+            try {
+                $this->warmUpCache($configLoader, true);
+            } catch (\RuntimeException $e) {
+                throw new \RuntimeException(
+                    'The workerman config uses %env()% values that changed since the cache was warmed up, '
+                    . 'but re-warming the cache failed. Make sure the cache directory is writable by the '
+                    . 'user that starts the server, or warm up the cache again as that user '
+                    . '(e.g. APP_ENV=prod php bin/console cache:warmup).',
+                    0,
+                    $e,
+                );
+            }
+            $configLoader = $this->createConfigLoader();
+        }
+
         $config = $configLoader->getWorkermanConfig();
         if ($this->firstMissingStaticRoot($config) !== null && $this->kernelFactory->isDebug()) {
             // The root directory list comes from the container. The config cache is only
