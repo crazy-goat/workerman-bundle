@@ -1148,6 +1148,35 @@ final class SfxDownloaderTest extends TestCase
         self::assertFileExists($wrapDir . '/big');
     }
 
+    public function testWriteStreamThrowsCleanExceptionWithoutWarningWhenDestinationCannotBeOpened(): void
+    {
+        $in = fopen('php://memory', 'rb');
+        self::assertIsResource($in);
+
+        $warningEmitted = false;
+        $previousReporting = error_reporting(E_ALL);
+        set_error_handler(static function (int $errno) use (&$warningEmitted): bool {
+            if ((error_reporting() & $errno) === 0) {
+                return true;
+            }
+            $warningEmitted = true;
+
+            return true;
+        });
+        try {
+            $this->invokePrivateSfxMethod('writeStream', $in, $this->tempDir);
+            self::fail('Expected a RuntimeException when the destination cannot be opened for writing.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Unable to open', $e->getMessage());
+            self::assertStringContainsString('for writing', $e->getMessage());
+        } finally {
+            restore_error_handler();
+            error_reporting($previousReporting);
+        }
+
+        self::assertFalse($warningEmitted, 'writeStream() must suppress the raw PHP warning on fopen() failure.');
+    }
+
     public function testChecksumIsVerifiedBeforeZipExtraction(): void
     {
         // A corrupt archive that would fail ZipArchive::open(): the SHA-256
