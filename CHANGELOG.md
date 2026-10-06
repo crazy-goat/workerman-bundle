@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SfxDownloader::writeStream()` now suppresses the raw PHP warning when the destination cannot be opened for writing and includes the underlying reason in the `RuntimeException`, mirroring `downloadWithRedirectCheck()` (#785)
 - `StreamedBinaryFileResponseTest` content-type tests no longer skip when `symfony/mime` is not installed: explicit `Content-Type` headers are set before `prepare()` and the unknown-extension test covers both the `LogicException` without the Mime component and the `application/octet-stream` fallback with it; `symfony/mime` stays optional with a `suggest` entry in `composer.json` (#809)
 - `composer bench` now runs PHPBench with `XDEBUG_MODE=off`, so an installed Xdebug no longer adds per-call overhead or inflates microbenchmark variance (#799)
+- `ProcessInspector::killOrphanedIntermediateFork()` now accepts the parent PID captured while the master was still alive as ancestry proof (`ServerManager::stop()` passes its pre-kill read), instead of re-reading `getParentPid()` after the master died — a re-read after the intermediate reaped the master observed a gone `/proc/$master`, failed closed and leaked the intermediate. Fail-closed semantics (title check, refusal on unreadable reads) are unchanged (#790)
 
 ### Changed
 

@@ -220,7 +220,23 @@ final readonly class ProcessInspector
         return false;
     }
 
-    public function killOrphanedIntermediateFork(int $parentPid, ?MasterFingerprint $fingerprint = null): void
+    /**
+     * @param int $preKillParentPid Ancestry proof captured while the master
+     *                             was still alive (issue #790):
+     *                             `getParentPid($fingerprint->pid)` read
+     *                             before the master was signaled. When
+     *                             provided (non-null), it is compared against
+     *                             `$parentPid` instead of re-reading
+     *                             `getParentPid()` post-mortem — a re-read
+     *                             after `waitForProcessToStop()` can observe
+     *                             a reaped master (`/proc/$master` gone,
+     *                             read returns 0) and fail closed, leaking
+     *                             the intermediate. A non-positive proof
+     *                             (unreadable pre-kill read) refuses, same as
+     *                             a failed re-read. When null, the ancestry
+     *                             is re-read as before.
+     */
+    public function killOrphanedIntermediateFork(int $parentPid, ?MasterFingerprint $fingerprint = null, ?int $preKillParentPid = null): void
     {
         if ($parentPid <= 0 || !$this->isProcessAlive($parentPid)) {
             return;
@@ -248,7 +264,7 @@ final readonly class ProcessInspector
 
             $masterPid = $fingerprint->pid;
             if ($masterPid > 0) {
-                $actualParent = $this->getParentPid($masterPid);
+                $actualParent = $preKillParentPid ?? $this->getParentPid($masterPid);
                 if ($actualParent === $parentPid) {
                     if ($this->isWorkermanMasterTitle($parentPid)) {
                         posix_kill($parentPid, \SIGKILL);

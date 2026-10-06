@@ -1041,6 +1041,98 @@ PHP;
     }
 
     /**
+     * Regression test for issue #790: `killOrphanedIntermediateFork()`
+     * must use the pre-kill ancestry proof instead of re-reading
+     * `getParentPid()` post-mortem.
+     *
+     * The fingerprint names a master PID that no longer exists (reaped):
+     * the post-mortem `getParentPid()` re-read returns 0, so the call
+     * without proof fails closed and the intermediate leaks. Passing the
+     * parent PID captured while the master was still alive as
+     * `$preKillParentPid` must kill the intermediate (the title check
+     * still applies).
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkUsesPreKillProofWhenMasterReaped(): void
+    {
+        $pid = $this->forkChildWithMasterTitle();
+
+        try {
+            // Fingerprint names a master PID that is already gone
+            // (reaped): the post-mortem re-read observes nothing.
+            $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+                pid: 999_999_999,
+                startTime: 0,
+                uid: \posix_getuid(),
+            );
+            $this->assertSame(
+                0,
+                $this->inspector->getParentPid(999_999_999),
+                'Post-mortem getParentPid() must return 0 for a reaped master for this test to be meaningful',
+            );
+
+            // Without proof the post-mortem re-read fails closed: no kill.
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint);
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 1);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() without pre-kill proof must refuse once the master is reaped',
+            );
+
+            // With the pre-kill proof the intermediate must be killed.
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint, $pid);
+
+            $this->waitForProcessDeath($pid);
+
+            $this->assertFalse(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() must use the pre-kill proof instead of the post-mortem re-read',
+            );
+        } finally {
+            if ($this->inspector->isProcessAlive($pid)) {
+                posix_kill($pid, SIGKILL);
+            }
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #790: a pre-kill ancestry proof that does
+     * not match the candidate PID — including 0 from an unreadable
+     * pre-kill read — must refuse, preserving fail-closed semantics.
+     *
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testKillOrphanedIntermediateForkRefusesWhenPreKillProofMismatches(): void
+    {
+        $pid = $this->forkChildWithMasterTitle();
+
+        try {
+            $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
+                pid: 999_999_999,
+                startTime: 0,
+                uid: \posix_getuid(),
+            );
+
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint, $pid + 1_000_000);
+            $this->inspector->killOrphanedIntermediateFork($pid, $fingerprint, 0);
+            Wait::until(fn(): bool => !$this->inspector->isProcessAlive($pid), 1);
+
+            $this->assertTrue(
+                $this->inspector->isProcessAlive($pid),
+                'killOrphanedIntermediateFork() must NOT kill when the pre-kill proof does not match the candidate PID',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
      * Regression test for issue #722: `killOrphanedIntermediateFork()`
      * with a fingerprint must kill the daemonize intermediate via
      * ancestry verification on Darwin (ps-based getParentPid + ps-based
