@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -70,16 +71,10 @@ final readonly class ProcessInspector
             }
 
             // The command name (field 2) can contain spaces and
-            // parentheses, so look for the last ')' and parse after it —
-            // the same approach as MasterFingerprint::readStartTimeForPid().
+            // parentheses, so look for the last ')' and parse after it.
             // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
-            $closeParen = \strrpos($stat, ')');
-            if ($closeParen === false) {
-                return 0;
-            }
-
-            $afterParts = \preg_split('/\s+/', \trim(\substr($stat, $closeParen + 1)));
-            if (!\is_array($afterParts) || \count($afterParts) < 2 || !\ctype_digit($afterParts[1])) {
+            $afterParts = ProcStatParser::splitFields($stat);
+            if ($afterParts === null || \count($afterParts) < 2 || !\ctype_digit($afterParts[1])) {
                 return 0;
             }
 
@@ -484,22 +479,14 @@ final readonly class ProcessInspector
         }
 
         // The command name (field 2) can contain spaces and parentheses,
-        // so we look for the last ')' and parse after it — the same
-        // approach used in MasterFingerprint::readStartTimeForPid().
-        $closeParen = \strrpos($content, ')');
-        if ($closeParen === false) {
-            return null;
-        }
-
-        $afterParen = \substr($content, $closeParen + 1);
-        // Field 3 (state) is the first whitespace-delimited token after ')'.
-        $state = \trim($afterParen);
-        if ($state === '') {
+        // so parsing starts after the last ')'.
+        $afterParts = ProcStatParser::splitFields($content);
+        if ($afterParts === null || $afterParts === [] || $afterParts[0] === '') {
             return null;
         }
 
         // The state is a single character; return just it.
-        return $state[0];
+        return $afterParts[0][0];
     }
 
     /**
@@ -530,14 +517,8 @@ final readonly class ProcessInspector
             return null;
         }
 
-        $closeParen = \strrpos($content, ')');
-        if ($closeParen === false) {
-            return null;
-        }
-
-        $afterParen = \substr($content, $closeParen + 1);
-        $afterParts = \preg_split('/\s+/', \trim($afterParen));
-        if (!\is_array($afterParts) || $afterParts === [] || $afterParts[0] === '') {
+        $afterParts = ProcStatParser::splitFields($content);
+        if ($afterParts === null || $afterParts === [] || $afterParts[0] === '') {
             return null;
         }
 

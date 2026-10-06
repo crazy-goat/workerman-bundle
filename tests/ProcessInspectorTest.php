@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ProcessInspector;
+use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -1366,13 +1367,9 @@ PHP;
         if (\is_readable($statFile)) {
             $content = \file_get_contents($statFile);
             if (\is_string($content)) {
-                $closeParen = \strrpos($content, ')');
-                if ($closeParen !== false) {
-                    $afterParen = \substr($content, $closeParen + 1);
-                    $afterParts = \preg_split('/\s+/', \trim($afterParen));
-                    if (\is_array($afterParts) && \count($afterParts) >= 20) {
-                        $startTime = (int) $afterParts[19];
-                    }
+                $afterParts = ProcStatParser::splitFields($content);
+                if (\is_array($afterParts) && \count($afterParts) >= 20) {
+                    $startTime = (int) $afterParts[19];
                 }
             }
         }
@@ -1719,21 +1716,7 @@ PHP;
             // Build a fingerprint with a wrong UID (current UID + 1, or a
             // different UID if running as root). The PID and start time
             // match, but the UID does not — must fail closed.
-            $startTime = 0;
-            $statFile = "/proc/{$pid}/stat";
-            if (\is_readable($statFile)) {
-                $content = \file_get_contents($statFile);
-                if (\is_string($content)) {
-                    $closeParen = \strrpos($content, ')');
-                    if ($closeParen !== false) {
-                        $afterParen = \substr($content, $closeParen + 1);
-                        $afterParts = \preg_split('/\s+/', \trim($afterParen));
-                        if (\is_array($afterParts) && \count($afterParts) >= 20) {
-                            $startTime = (int) $afterParts[19];
-                        }
-                    }
-                }
-            }
+            $startTime = \CrazyGoat\WorkermanBundle\MasterFingerprint::readStartTimeForPid($pid);
 
             $wrongUid = \posix_getuid() === 0 ? 1 : \posix_getuid() + 1;
             $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $wrongUid);

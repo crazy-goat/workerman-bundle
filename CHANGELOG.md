@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Deduplicated `/proc/{pid}/stat` parsing (find last `)` then split) shared by `ProcessInspector` and `MasterFingerprint` into the internal `Util\ProcStatParser` helper, reused at all call sites including `getParentPid()` (#804)
 - `ProcessInspector::getParentPid()` on Linux now reads the PPid from `/proc/{pid}/stat` field 4 (last-`)` split) instead of slurping the whole `/proc/{pid}/status` with a multiline regex, mirroring the `isProcessAlive()` optimization from #567 (#802)
 
 ## [0.30.0] - 2026-10-06
