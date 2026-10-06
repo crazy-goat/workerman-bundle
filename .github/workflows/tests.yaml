@@ -118,9 +118,9 @@ jobs:
       - name: Update Symfony constraints in composer.json
         run: |
           export SYMFONY_VERSION=${{ matrix.symfony-version }}
-          # symfony/deprecation-contracts versions 2.x/3.x only — it has no
-          # 6.4/7.4/8.0 line, so it is excluded from the matrix rewrite (#588).
-          sed -i -E "/deprecation-contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
+          # symfony/*-contracts packages version 2.x/3.x only — they have no
+          # 6.4/7.4/8.0 line, so they are excluded from the matrix rewrite (#588, #808).
+          sed -i -E "/contracts/!s/(\"symfony\/[a-z-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
       # Matrix jobs intentionally resolve fresh dependencies after rewriting
       # Symfony constraints; lint and benchmark install the committed lock.
