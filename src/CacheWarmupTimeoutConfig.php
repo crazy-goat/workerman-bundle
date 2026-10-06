@@ -75,6 +75,33 @@ final class CacheWarmupTimeoutConfig
     }
 
     /**
+     * Strictly parse an already-trimmed env value into a positive timeout.
+     *
+     * `filter_var()` with `min_range=1` accepts only plain decimal integers
+     * with an optional sign (`+45` passes as 45) and rejects floats
+     * (`45.9`), unit suffixes (`60s`), hex (`0x2D`) and non-numeric input
+     * (`abc`) — the same class of values a Symfony `intNode` rejects — so
+     * nothing is silently truncated by an `(int)` cast. The raw value (not
+     * the cast result) is quoted in the error message. Leading/trailing
+     * whitespace is already trimmed by {@see self::readEnvRaw()}.
+     *
+     * @internal Shared with WorkermanBundle; not part of the public API.
+     */
+    public static function parseEnvRaw(string $trimmed): int
+    {
+        $timeout = filter_var($trimmed, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($timeout === false) {
+            throw new \InvalidArgumentException(\sprintf(
+                '%s must be a positive integer, got "%s"',
+                self::ENV_VAR,
+                $trimmed,
+            ));
+        }
+
+        return $timeout;
+    }
+
+    /**
      * Resolve the effective timeout.
      *
      * An explicit {@see self::set()} value (written by
@@ -98,16 +125,7 @@ final class CacheWarmupTimeoutConfig
             return self::DEFAULT;
         }
 
-        $timeout = (int) $trimmed;
-        if ($timeout < 1) {
-            throw new \InvalidArgumentException(\sprintf(
-                '%s must be a positive integer, got %d',
-                self::ENV_VAR,
-                $timeout,
-            ));
-        }
-
-        return $timeout;
+        return self::parseEnvRaw($trimmed);
     }
 
     /**

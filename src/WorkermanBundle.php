@@ -94,10 +94,10 @@ final class WorkermanBundle extends AbstractBundle
         // Shared env bridge (issue #759 review N-1): precedence lives in
         // CacheWarmupTimeoutConfig::readEnvRaw() so the two paths cannot
         // drift again (F-1). Whitespace-only / non-scalar treated as absent
-        // there; a present value is cast like resolve() (F-4 parity).
+        // there; a present value is strictly parsed like resolve() (F-4 parity).
         $envOverride = CacheWarmupTimeoutConfig::readEnvRaw();
         if ($envOverride !== null) {
-            $timeout = (int) $envOverride;
+            $timeout = CacheWarmupTimeoutConfig::parseEnvRaw($envOverride);
         }
 
         CacheWarmupTimeoutConfig::set($timeout);
