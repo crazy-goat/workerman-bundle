@@ -123,7 +123,7 @@
             "@php -d phar.readonly=0 vendor/bin/phpunit --filter='BuildBin' tests/Command/"
         ],
         "bench": [
-            "vendor/bin/phpbench run --report=aggregate"
+            "XDEBUG_MODE=off vendor/bin/phpbench run --report=aggregate"
         ]
     }
 }
