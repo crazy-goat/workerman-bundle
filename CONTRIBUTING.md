@@ -123,6 +123,10 @@ The installer asks git where the hooks folder is (`git rev-parse --git-path hook
    Results are printed as an aggregate report showing memory peak, mode, and
    relative standard deviation per subject.
 
+   The bench script runs PHPBench with `XDEBUG_MODE=off`, so an installed
+   Xdebug does not add per-call overhead or inflate variance. Coverage
+   workflows are unaffected — they use PCOV via `composer test:coverage`.
+
    > **Interpreting results**
    > - `mode` — the most common execution time (lower is better)
    > - `mem_peak` — peak memory allocated during the benchmark

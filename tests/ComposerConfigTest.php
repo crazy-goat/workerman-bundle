@@ -178,6 +178,34 @@ final class ComposerConfigTest extends TestCase
         return $stdout;
     }
 
+    /**
+     * Benchmark numbers are unreliable with Xdebug enabled (per-call
+     * overhead and variance). The bench script must disable it via
+     * XDEBUG_MODE=off, matching the unix env-prefix convention of the
+     * test scripts. Coverage workflows are separate (test:coverage
+     * uses pcov), so this does not affect coverage.
+     */
+    public function testBenchScriptDisablesXdebug(): void
+    {
+        self::assertArrayHasKey('scripts', $this->composerConfig);
+        self::assertArrayHasKey('bench', $this->composerConfig['scripts']);
+        self::assertIsArray($this->composerConfig['scripts']['bench']);
+
+        $found = false;
+        foreach ($this->composerConfig['scripts']['bench'] as $command) {
+            self::assertIsString($command);
+            if (str_contains($command, 'phpbench')) {
+                $found = true;
+                self::assertStringContainsString(
+                    'XDEBUG_MODE=off',
+                    $command,
+                    'The bench command must run with XDEBUG_MODE=off so microbenchmark numbers are stable',
+                );
+            }
+        }
+        self::assertTrue($found, 'The bench script must invoke phpbench');
+    }
+
     public function testDescriptionMentionsMajorCapabilities(): void
     {
         self::assertArrayHasKey('description', $this->composerConfig);

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `composer bench` now runs PHPBench with `XDEBUG_MODE=off`, so an installed Xdebug no longer adds per-call overhead or inflates microbenchmark variance (#799)
+
 ## [0.30.0] - 2026-10-06
 
 ### Added
