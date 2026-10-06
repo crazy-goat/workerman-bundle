@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `StreamedBinaryFileResponseTest` content-type tests no longer skip when `symfony/mime` is not installed: explicit `Content-Type` headers are set before `prepare()` and the unknown-extension test covers both the `LogicException` without the Mime component and the `application/octet-stream` fallback with it; `symfony/mime` stays optional with a `suggest` entry in `composer.json` (#809)
 - `composer bench` now runs PHPBench with `XDEBUG_MODE=off`, so an installed Xdebug no longer adds per-call overhead or inflates microbenchmark variance (#799)
 
 ### Changed
