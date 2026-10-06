@@ -265,6 +265,31 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($path, 'sfx-content');
     }
 
+    public function testFetchThrowsWhenDestinationDirectoryIsNotWritable(): void
+    {
+        $dir = $this->tempDir . '/readonly-dest';
+        mkdir($dir, 0755, true);
+
+        chmod($dir, 0555);
+        if (is_writable($dir)) {
+            chmod($dir, 0755);
+            self::markTestSkipped('Cannot simulate a non-writable directory: it stays writable (running as root?).');
+        }
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/php8.3.micro.sfx',
+                $dir,
+            );
+            self::fail('Expected a RuntimeException for the non-writable destination directory.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString($dir, $e->getMessage());
+            self::assertStringContainsString('not writable', $e->getMessage());
+        } finally {
+            chmod($dir, 0755);
+        }
+    }
+
     /**
      * @return array<string, array{0: string, 1: string}>
      */

@@ -53,6 +53,10 @@ final readonly class SfxDownloader
         $filename = self::filenameFromUrl($url);
         $destination = rtrim($destinationDir, '/') . '/' . $filename;
 
+        if (!is_file($destination) && !is_writable($destinationDir)) {
+            throw new \RuntimeException(sprintf('Destination directory "%s" is not writable; check its permissions before downloading.', $destinationDir));
+        }
+
         if (!is_file($destination)) {
             $this->downloadTo($url, $destination, $allowInsecure);
         }
