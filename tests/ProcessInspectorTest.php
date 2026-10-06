@@ -364,6 +364,95 @@ final class ProcessInspectorTest extends TestCase
         }
     }
 
+    /**
+     * Regression test for issue #802: `getParentPid()` on Linux must read
+     * the PPid from `/proc/{pid}/stat` field 4 instead of slurping the
+     * whole `/proc/{pid}/status` (~1 KB) with a multiline regex — the
+     * exact pattern eliminated from `isProcessAlive()` in #567.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testGetParentPidReturnsParentOnLinux(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            for (;;) {
+                sleep(1);
+            }
+        }
+
+        try {
+            $this->assertSame(
+                \getmypid(),
+                $this->inspector->getParentPid($pid),
+                'getParentPid() must return the parent PID on Linux via /proc/{pid}/stat',
+            );
+            $this->assertSame(0, $this->inspector->getParentPid(0));
+            $this->assertSame(0, $this->inspector->getParentPid(-1));
+            $this->assertSame(0, $this->inspector->getParentPid(999_999_999));
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /**
+     * Regression test for issue #802: `getParentPid()` must still return
+     * the correct PPid when the comm name (stat field 2) contains spaces
+     * and parentheses — the reason for the last-`)` split shared with
+     * `MasterFingerprint::readStartTimeForPid()`. A naive
+     * `explode(' ', ...)` parse would shift every field index.
+     *
+     * The comm name is the basename of the executed file, so the child
+     * execs a copy of `sleep` renamed to a name with spaces and parens.
+     *
+     * @requires OS Linux
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testGetParentPidHandlesCommWithSpacesAndParensOnLinux(): void
+    {
+        $sleep = \is_file('/bin/sleep') ? '/bin/sleep' : '/usr/bin/sleep';
+        if (!\is_file($sleep)) {
+            $this->markTestSkipped('sleep binary not found');
+        }
+
+        $copy = sys_get_temp_dir() . '/wmb (paren) ' . bin2hex(random_bytes(4));
+        if (!@\copy($sleep, $copy) || !@\chmod($copy, 0755)) {
+            $this->markTestSkipped('cannot stage renamed sleep binary');
+        }
+
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            @\unlink($copy);
+            $this->markTestSkipped('pcntl_fork failed');
+        }
+
+        if ($pid === 0) {
+            pcntl_exec($copy, ['60']);
+            \fwrite(STDERR, 'Unable to exec renamed sleep' . PHP_EOL);
+            exit(1);
+        }
+
+        try {
+            $this->assertSame(
+                \getmypid(),
+                $this->inspector->getParentPid($pid),
+                'getParentPid() must return the parent PID when comm contains spaces and parens',
+            );
+        } finally {
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+            @\unlink($copy);
+        }
+    }
+
     // ──────────────────────────────────────────────
     // Fingerprint verification (issue #327)
     // ──────────────────────────────────────────────

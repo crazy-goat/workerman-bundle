@@ -59,17 +59,31 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $statusFile = "/proc/{$pid}/status";
-            if (!is_readable($statusFile)) {
+            $statFile = "/proc/{$pid}/stat";
+            if (!is_readable($statFile)) {
                 return 0;
             }
 
-            $status = file_get_contents($statusFile);
-            if (\is_string($status) && preg_match('/^PPid:\s+(\d+)/m', $status, $matches)) {
-                return (int) $matches[1];
+            $stat = @file_get_contents($statFile);
+            if (!\is_string($stat) || $stat === '') {
+                return 0;
             }
 
-            return 0;
+            // The command name (field 2) can contain spaces and
+            // parentheses, so look for the last ')' and parse after it —
+            // the same approach as MasterFingerprint::readStartTimeForPid().
+            // After ')', the fields are: state(3), ppid(4), pgrp(5), ...
+            $closeParen = \strrpos($stat, ')');
+            if ($closeParen === false) {
+                return 0;
+            }
+
+            $afterParts = \preg_split('/\s+/', \trim(\substr($stat, $closeParen + 1)));
+            if (!\is_array($afterParts) || \count($afterParts) < 2 || !\ctype_digit($afterParts[1])) {
+                return 0;
+            }
+
+            return (int) $afterParts[1];
         }
 
         return $this->readParentPidViaPs($pid);
