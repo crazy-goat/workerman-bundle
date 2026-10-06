@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Runner::__construct()` now defaults `cacheWarmupTimeout` to `null` and resolves it via `CacheWarmupTimeoutConfig::resolve()`, so a direct `new Runner($factory)` honours `WORKERMAN_CACHE_WARMUP_TIMEOUT` instead of silently pinning the default; an invalid env value throws the typed `InvalidCacheWarmupTimeoutException` (#843)
 - `composer.json` now declares `symfony/event-dispatcher-contracts` and `symfony/service-contracts` (`^2.5|^3.0`) instead of resolving them only transitively via `symfony/event-dispatcher` / `symfony/dependency-injection`; the CI matrix `sed` rewrite exclusion widened from `/deprecation-contracts/!` to `/contracts/!` to cover all three off-scheme packages (#808)
 - `GithubWorkflowsTest` now replays the CI matrix `sed` rewrite against `composer.json` and pins that every `symfony/*` package off the framework versioning scheme is covered by a `/needle/!` exclusion (and that no exclusion is stale or overbroad), so workflow/composer drift fails locally instead of breaking the matrix (#807)
 - `SfxDownloader::fetch()` now throws a `RuntimeException` naming the destination directory when a download is required but the directory is not writable, instead of failing late with a generic write error (#784)

@@ -21,18 +21,30 @@ use Workerman\Worker;
 
 readonly class Runner implements RunnerInterface
 {
+    private int $cacheWarmupTimeout;
+
     public function __construct(
         private KernelFactory $kernelFactory,
-        private int $cacheWarmupTimeout = CacheWarmupTimeoutConfig::DEFAULT,
+        ?int $cacheWarmupTimeout = null,
         private ?LoggerInterface $logger = null,
     ) {
-        if ($this->cacheWarmupTimeout < 1) {
+        if ($cacheWarmupTimeout === null) {
+            try {
+                $cacheWarmupTimeout = CacheWarmupTimeoutConfig::resolve();
+            } catch (\InvalidArgumentException $e) {
+                throw new InvalidCacheWarmupTimeoutException($e->getMessage(), 0, $e);
+            }
+        }
+
+        if ($cacheWarmupTimeout < 1) {
             throw new InvalidCacheWarmupTimeoutException(\sprintf(
                 '%s must be a positive integer, got %d',
                 CacheWarmupTimeoutConfig::ENV_VAR,
-                $this->cacheWarmupTimeout,
+                $cacheWarmupTimeout,
             ));
         }
+
+        $this->cacheWarmupTimeout = $cacheWarmupTimeout;
     }
 
     public function run(): int
