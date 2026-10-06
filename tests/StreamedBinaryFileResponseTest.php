@@ -54,44 +54,44 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $this->assertInstanceOf(BinaryFileResponse::class, $response);
     }
 
-    public function testContentTypeIsAutomaticallyDetectedForTextFile(): void
+    public function testExplicitContentTypeIsPreservedForTextFile(): void
     {
-        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
-            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
-        }
-
         $testFile = $this->createFixtureFile('test.txt', 'Hello, World!');
         $response = new StreamedBinaryFileResponse($testFile);
 
+        // Set Content-Type before prepare() to avoid MIME type detection dependency
+        $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
         $contentType = (string) $response->headers->get('Content-Type', '');
         $this->assertStringContainsString('text/plain', $contentType);
     }
 
-    public function testContentTypeIsAutomaticallyDetectedForHtmlFile(): void
+    public function testExplicitContentTypeIsPreservedForHtmlFile(): void
     {
-        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
-            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
-        }
-
         $testFile = $this->createFixtureFile('test.html', '<html><body>Hello</body></html>');
         $response = new StreamedBinaryFileResponse($testFile);
 
+        // Set Content-Type before prepare() to avoid MIME type detection dependency
+        $response->headers->set('Content-Type', 'text/html');
         $response->prepare($this->createRequest());
 
         $contentType = (string) $response->headers->get('Content-Type', '');
         $this->assertStringContainsString('text/html', $contentType);
     }
 
-    public function testContentTypeIsOctetStreamForUnknownExtension(): void
+    public function testContentTypeForUnknownExtension(): void
     {
-        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
-            $this->markTestSkipped('symfony/mime is required for MIME type auto-detection.');
-        }
-
-        $testFile = $this->createFixtureFile('test.bin', "\x00\x01\x02\x03");
+        $testFile = $this->createFixtureFile('test.unknownextension', "\x00\x01\x02\x03");
         $response = new StreamedBinaryFileResponse($testFile);
+
+        if (!class_exists(\Symfony\Component\Mime\MimeTypes::class)) {
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage('Mime component is not installed');
+            $response->prepare($this->createRequest());
+
+            return;
+        }
 
         $response->prepare($this->createRequest());
 

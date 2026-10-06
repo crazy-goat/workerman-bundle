@@ -57,7 +57,8 @@
         "ext-event": "For better performance",
         "ext-inotify": "For effective file monitoring",
         "dragonmantank/cron-expression": "For parse cron expressions",
-        "ext-zip": "For workerman:build:bin (unpacking the downloaded SFX archive)"
+        "ext-zip": "For workerman:build:bin (unpacking the downloaded SFX archive)",
+        "symfony/mime": "For MIME type auto-detection in binary file responses"
     },
     "autoload": {
         "psr-4": {
