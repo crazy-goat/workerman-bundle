@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-06
+
 ### Fixed
 
 - `WORKERMAN_CACHE_WARMUP_TIMEOUT` is now strictly validated with `filter_var(..., FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])` in both `CacheWarmupTimeoutConfig::resolve()` and `WorkermanBundle::loadExtension()` (shared via the new `CacheWarmupTimeoutConfig::parseEnvRaw()` helper), so values like `45.9` or `60s` are rejected instead of being silently truncated by an `(int)` cast, and the error message quotes the raw input instead of the cast result (#842)
