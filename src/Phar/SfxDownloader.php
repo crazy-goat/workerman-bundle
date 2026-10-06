@@ -279,10 +279,11 @@ final readonly class SfxDownloader
 
     private function writeStream(mixed $in, string $destination): void
     {
-        $out = fopen($destination, 'wb');
+        $out = @fopen($destination, 'wb');
         if (!is_resource($out)) {
             fclose($in);
-            throw new \RuntimeException(sprintf('Unable to open "%s" for writing.', $destination));
+            $err = error_get_last()['message'] ?? 'unknown error';
+            throw new \RuntimeException(sprintf('Unable to open "%s" for writing: %s', $destination, $err));
         }
 
         $totalBytes = 0;
