@@ -275,7 +275,7 @@ readonly class Runner implements RunnerInterface
         assert(is_int($maxPackageSize));
 
         $pidDir = dirname($pidFile);
-        if (!is_dir($pidDir) && (!mkdir(directory: $pidDir, permissions: 0700, recursive: true) && !is_dir($pidDir))) {
+        if (!is_dir($pidDir) && !mkdir(directory: $pidDir, permissions: 0700, recursive: true) && !is_dir($pidDir)) {
             throw new InvalidCacheDirectoryException(\sprintf('Unable to create directory "%s".', $pidDir));
         }
 
