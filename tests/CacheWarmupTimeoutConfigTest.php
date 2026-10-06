@@ -238,5 +238,6 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
         yield 'float is rejected, not truncated' => ['45.9'];
         yield 'unit suffix is rejected, not truncated' => ['60s'];
         yield 'hex is rejected' => ['0x2D'];
+        yield 'leading-zero decimal is rejected' => ['007'];
     }
 }

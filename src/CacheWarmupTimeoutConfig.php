@@ -81,7 +81,9 @@ final class CacheWarmupTimeoutConfig
      * with an optional sign (`+45` passes as 45) and rejects floats
      * (`45.9`), unit suffixes (`60s`), hex (`0x2D`) and non-numeric input
      * (`abc`) — the same class of values a Symfony `intNode` rejects — so
-     * nothing is silently truncated by an `(int)` cast. The raw value (not
+     * nothing is silently truncated by an `(int)` cast. Leading-zero decimals
+     * (`007`, `08`, `010`) are also rejected: default `filter_var()` flags
+     * disallow octal notation. The raw value (not
      * the cast result) is quoted in the error message. Leading/trailing
      * whitespace is already trimmed by {@see self::readEnvRaw()}.
      *
