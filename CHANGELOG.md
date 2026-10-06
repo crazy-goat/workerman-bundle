@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-06
+
 ### Added
 
 - `docs/logging-monitoring.md` tells where each log goes (Workerman log, stdout file, Monolog, task and process channels), how to rotate the files, how to read `status`, and how to make a health check. The Docker `HEALTHCHECK` in `docs/deployment.md` now sends a `Host` header, so it also works with `trusted_hosts`. `LoggingMonitoringDocTest` checks the config keys, the YAML examples and the links (#891)
@@ -56,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `bin/install-git-hook.php` finds the hooks directory with `git rev-parse --git-path hooks`, so the installer works in linked worktrees and with `core.hooksPath` (#828)
 - `Runner::__construct()` now throws `InvalidCacheWarmupTimeoutException` (extends `ValidationException` → `\InvalidArgumentException`) instead of a bare `\InvalidArgumentException` for a non-positive cache warmup timeout, so a single `WorkermanExceptionInterface` catch covers it while an `\InvalidArgumentException` catch still works. See `UPGRADE.md` (#815)
 - `%env()%` values in `workerman.yaml` are no longer frozen at `cache:warmup`. The compiler pass records the used variable names, the cache warmer snapshots their values, and the server warms the cache again at start when a value changed, so `PORT` or `WORKERS` set at start win. Processors (`int:`, `bool:`, `file:`, ...) resolve like in a normal container and validation runs again on the new values. A config without `%env()%` starts from the cache as before, and a re-warm that cannot write the cache fails with a clear error instead of keeping stale values. `docs/configuration.md` and `docs/deployment.md` explain the behaviour (#996)
 - A `BinaryFileResponse` that Symfony prepared as bodyless no longer sends the file. `prepare()` sets `maxlen = 0` for a 1xx, 204 or 304 status and for the `X-Sendfile` / `X-Accel-Redirect` hand-off, and Workerman reads a length of 0 as "the whole file", so a bodyless response shipped the entire file. It now emits the same bodyless response the HEAD path uses: the prepared headers, no file, and the `Content-Length` `prepare()` left (the file size for the sendfile hand-off, 0 for 1xx/204/304) (#948)
