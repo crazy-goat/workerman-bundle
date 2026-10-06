@@ -195,12 +195,12 @@ final class WorkermanBundleIntegrationTest extends TestCase
         ]], $this->container);
     }
 
-    public function testLoadExtensionNonNumericEnvOverrideCoercesToZero(): void
+    public function testLoadExtensionNonNumericEnvOverrideIsRejectedWithRawInput(): void
     {
         $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = 'abc';
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "abc"');
         $this->extension->load([[
             'cache_warmup_timeout' => 30,
         ]], $this->container);
@@ -224,15 +224,15 @@ final class WorkermanBundleIntegrationTest extends TestCase
         self::assertSame(45, CacheWarmupTimeoutConfig::get());
     }
 
-    public function testLoadExtensionFloatEnvOverrideIsTruncated(): void
+    public function testLoadExtensionFloatEnvOverrideIsRejected(): void
     {
         $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '3.7';
 
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "3.7"');
         $this->extension->load([[
             'cache_warmup_timeout' => 30,
         ]], $this->container);
-
-        self::assertSame(3, CacheWarmupTimeoutConfig::get());
     }
 
     public function testLoadExtensionNegativeEnvOverrideIsRejected(): void

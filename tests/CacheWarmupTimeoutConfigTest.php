@@ -206,8 +206,24 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
     {
         $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $raw;
 
+        try {
+            CacheWarmupTimeoutConfig::resolve();
+            self::fail('Expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringStartsWith(
+                'WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer',
+                $e->getMessage(),
+            );
+            self::assertStringContainsString('"' . $raw . '"', $e->getMessage());
+        }
+    }
+
+    public function testResolveRejectsFloatEnvVarWithoutTruncation(): void
+    {
+        $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '45.9';
+
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "45.9"');
         CacheWarmupTimeoutConfig::resolve();
     }
 
@@ -218,6 +234,10 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
     {
         yield 'zero' => ['0'];
         yield 'negative' => ['-5'];
-        yield 'non-numeric casts to zero' => ['abc'];
+        yield 'non-numeric reports raw input' => ['abc'];
+        yield 'float is rejected, not truncated' => ['45.9'];
+        yield 'unit suffix is rejected, not truncated' => ['60s'];
+        yield 'hex is rejected' => ['0x2D'];
+        yield 'leading-zero decimal is rejected' => ['007'];
     }
 }
