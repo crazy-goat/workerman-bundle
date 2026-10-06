@@ -36,6 +36,7 @@ final class RequestConverterBench
     private Request $simpleRequest;
     private Request $headerHeavyRequest;
     private Request $multipartRequest;
+    private Request $multipartMultiRequest;
     private Request $resetHeadersRequest;
 
     public function init(): void
@@ -66,6 +67,40 @@ final class RequestConverterBench
         $buffer .= 'Content-Length: ' . strlen($body) . "\r\n";
         $buffer .= "\r\n";
         $this->multipartRequest = new Request($buffer . $body);
+
+        $multiBody = '';
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"doc_a\"; filename=\"a.txt\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "content a\r\n";
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"doc_b\"; filename=\"b.txt\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "content b\r\n";
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"files[]\"; filename=\"file1.txt\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "content 1\r\n";
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"files[]\"; filename=\"file2.txt\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "content 2\r\n";
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"user[avatar]\"; filename=\"avatar.png\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "fake image\r\n";
+        $multiBody .= "--TestBoundaryMulti\r\n";
+        $multiBody .= "Content-Disposition: form-data; name=\"user[resume]\"; filename=\"resume.pdf\"\r\n";
+        $multiBody .= "Content-Type: text/plain\r\n\r\n";
+        $multiBody .= "fake pdf\r\n";
+        $multiBody .= "--TestBoundaryMulti--\r\n";
+
+        $multiBuffer = "POST /test HTTP/1.1\r\n";
+        $multiBuffer .= "Host: localhost\r\n";
+        $multiBuffer .= "Content-Type: multipart/form-data; boundary=TestBoundaryMulti\r\n";
+        $multiBuffer .= 'Content-Length: ' . strlen($multiBody) . "\r\n";
+        $multiBuffer .= "\r\n";
+        $this->multipartMultiRequest = new Request($multiBuffer . $multiBody);
         $this->resetHeadersRequest = new Request("GET /test HTTP/1.1\r\nHost: localhost\r\nX-Forwarded-For: 198.51.100.10\r\n\r\n");
     }
 
@@ -82,6 +117,11 @@ final class RequestConverterBench
     public function benchMultipartRequest(): void
     {
         RequestConverter::toSymfonyRequest($this->multipartRequest);
+    }
+
+    public function benchMultipartMultiRequest(): void
+    {
+        RequestConverter::toSymfonyRequest($this->multipartMultiRequest);
     }
 
     public function benchResetHeaders(): void

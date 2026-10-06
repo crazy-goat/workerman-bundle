@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `RequestConverterBench` gains a `benchMultipartMultiRequest` subject (two flat files, a `files[]` list and a nested associative field) exercising the single-traversal upload conversion from #566 across all dispatch branches; the existing single-file `benchMultipartRequest` is unchanged (#798)
 - Deduplicated `/proc/{pid}/stat` parsing (find last `)` then split) shared by `ProcessInspector` and `MasterFingerprint` into the internal `Util\ProcStatParser` helper, reused at all call sites including `getParentPid()` (#804)
 - `ProcessInspector::getParentPid()` on Linux now reads the PPid from `/proc/{pid}/stat` field 4 (last-`)` split) instead of slurping the whole `/proc/{pid}/status` with a multiline regex, mirroring the `isProcessAlive()` optimization from #567 (#802)
 

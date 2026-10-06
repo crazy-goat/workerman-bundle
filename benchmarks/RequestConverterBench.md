@@ -91,3 +91,11 @@ the win is at the filter-operation level. The swap was kept because it is
 consistently faster on the operation it replaces, is byte-identical for all
 256 byte values (verified exhaustively), and removes the regex engine from
 the per-header hot path.
+
+## Multi-file/nested multipart subject (issue #798)
+
+`benchMultipartMultiRequest` (two flat files, a `files[]` two-file list and a
+nested `user[avatar]`/`user[resume]` associative field) exercises the
+single-traversal upload conversion (#566) across all three dispatch branches.
+The tables above predate this subject, so they list only the original
+single-file `benchMultipartRequest`.
