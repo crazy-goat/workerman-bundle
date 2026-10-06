@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
+
 /**
  * Fingerprint of the Workerman master process recorded at start time.
  *
@@ -86,15 +88,9 @@ final readonly class MasterFingerprint
         }
 
         // The command name (field 2) can contain spaces and parentheses,
-        // so we look for the last ')' and parse after it.
-        $closeParen = \strrpos($content, ')');
-        if ($closeParen === false) {
-            return 0;
-        }
-
-        $afterParen = \substr($content, $closeParen + 1);
-        $afterParts = \preg_split('/\s+/', \trim($afterParen));
-        if (!\is_array($afterParts) || \count($afterParts) < 20) {
+        // so parsing starts after the last ')'.
+        $afterParts = ProcStatParser::splitFields($content);
+        if ($afterParts === null || \count($afterParts) < 20) {
             return 0;
         }
 
