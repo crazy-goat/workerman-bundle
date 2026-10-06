@@ -96,7 +96,7 @@ final class RunnerTest extends TestCase
     /**
      * Structural test: verify getCacheWarmupTimeout returns the constructor value.
      */
-    public function testCacheWarmupTimeoutDefaultsTo30(): void
+    public function testCacheWarmupTimeoutResolvesViaConfig(): void
     {
         $sourceFile = self::RUNNER_SOURCE;
         $this->assertFileExists($sourceFile);
@@ -111,13 +111,13 @@ final class RunnerTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'CacheWarmupTimeoutConfig::DEFAULT',
+            'CacheWarmupTimeoutConfig::resolve()',
             $content,
-            'Default cache warmup timeout must come from CacheWarmupTimeoutConfig::DEFAULT',
+            'Omitted cache warmup timeout must resolve via CacheWarmupTimeoutConfig::resolve()',
         );
 
         $this->assertStringContainsString(
-            'private int $cacheWarmupTimeout = CacheWarmupTimeoutConfig::DEFAULT',
+            '?int $cacheWarmupTimeout = null',
             $content,
             'Must accept cacheWarmupTimeout as a constructor argument with default',
         );
@@ -294,13 +294,124 @@ final class RunnerTest extends TestCase
 
     public function testGetCacheWarmupTimeoutDefaultsTo30Seconds(): void
     {
-        $kernel = $this->createMock(KernelInterface::class);
-        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
-        $runner = new Runner($kernelFactory);
+        $savedServer = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedEnv = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedGetenv = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR], $_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+        putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        CacheWarmupTimeoutConfig::reset();
 
-        $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
 
-        $this->assertSame(CacheWarmupTimeoutConfig::DEFAULT, $timeout);
+            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+
+            $this->assertSame(CacheWarmupTimeoutConfig::DEFAULT, $timeout);
+        } finally {
+            if ($savedServer !== null) {
+                $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $savedServer;
+            } else {
+                unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedEnv !== null) {
+                $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = $savedEnv;
+            } else {
+                unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedGetenv !== false) {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $savedGetenv);
+            } else {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+            }
+            CacheWarmupTimeoutConfig::reset();
+        }
+    }
+
+    public function testOmittedTimeoutReadsEnv(): void
+    {
+        $savedServer = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedEnv = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedGetenv = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        CacheWarmupTimeoutConfig::reset();
+
+        try {
+            $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '77';
+            unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+            $runner = new Runner($kernelFactory);
+
+            $timeout = $this->invokeRunnerMethod($runner, 'getCacheWarmupTimeout');
+
+            $this->assertSame(77, $timeout);
+        } finally {
+            if ($savedServer !== null) {
+                $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $savedServer;
+            } else {
+                unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedEnv !== null) {
+                $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = $savedEnv;
+            } else {
+                unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedGetenv !== false) {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $savedGetenv);
+            } else {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+            }
+            CacheWarmupTimeoutConfig::reset();
+        }
+    }
+
+    public function testOmittedTimeoutWithInvalidEnvThrowsTypedException(): void
+    {
+        $savedServer = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedEnv = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
+        $savedGetenv = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        CacheWarmupTimeoutConfig::reset();
+
+        try {
+            $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '0';
+            unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+            putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+            $thrown = null;
+            try {
+                new Runner($kernelFactory);
+            } catch (\Throwable $e) {
+                $thrown = $e;
+            }
+
+            $this->assertNotNull($thrown, 'Runner::__construct() must throw for an invalid env timeout');
+            $this->assertInstanceOf(InvalidCacheWarmupTimeoutException::class, $thrown);
+            $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+            $this->assertInstanceOf(\InvalidArgumentException::class, $thrown);
+        } finally {
+            if ($savedServer !== null) {
+                $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $savedServer;
+            } else {
+                unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedEnv !== null) {
+                $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] = $savedEnv;
+            } else {
+                unset($_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
+            }
+            if ($savedGetenv !== false) {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $savedGetenv);
+            } else {
+                putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+            }
+            CacheWarmupTimeoutConfig::reset();
+        }
     }
 
     public function testGetCacheWarmupTimeoutWithConstructorOverride(): void
