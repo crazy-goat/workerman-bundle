@@ -56,7 +56,15 @@ final readonly class ServerManager
             return false;
         }
 
-        $this->processInspector->killOrphanedIntermediateFork($parentPid, $fingerprint);
+        // $parentPid was read while the master was still alive
+        // (verified by getRunningMasterPid() above). Pass it as ancestry
+        // proof: a post-mortem getParentPid() re-read inside
+        // killOrphanedIntermediateFork() can observe an already-reaped
+        // master (/proc/$master gone, read returns 0) and fail closed,
+        // leaking the intermediate (issue #790). An unreadable pre-kill
+        // read yields 0, which refuses inside killOrphanedIntermediateFork()
+        // — fail-closed is preserved.
+        $this->processInspector->killOrphanedIntermediateFork($parentPid, $fingerprint, $parentPid);
         $this->cleanupMasterFingerprint();
 
         return true;
