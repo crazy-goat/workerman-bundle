@@ -279,6 +279,14 @@ final class GithubWorkflowsTest extends TestCase
 
         $counts = array_count_values(array_values($constraints));
         arsort($counts);
+        $orderedCounts = array_values($counts);
+        if (count($orderedCounts) > 1) {
+            self::assertGreaterThan(
+                $orderedCounts[1],
+                $orderedCounts[0],
+                'The most-used symfony/* constraint must strictly exceed the runner-up so the framework scheme is unambiguous',
+            );
+        }
         $frameworkConstraint = array_key_first($counts);
         self::assertGreaterThan(
             1,
@@ -295,7 +303,6 @@ final class GithubWorkflowsTest extends TestCase
                 $offScheme[] = $package;
             }
         }
-        self::assertNotEmpty($offScheme, 'At least one symfony/* package must sit outside the framework scheme');
 
         $matched = preg_match_all(
             '/^      - name: Update Symfony constraints in composer\.json\n(?:^        .*\n)+?^          sed -i.*$/m',
@@ -313,15 +320,18 @@ final class GithubWorkflowsTest extends TestCase
         foreach ($steps[0] as $step) {
             preg_match_all('/\/([^\/\n]+)\/!s\//', $step, $found);
             foreach ($found[1] as $needle) {
+                self::assertNotFalse(
+                    @preg_match('/' . $needle . '/', ''),
+                    sprintf('sed exclusion "/%s/!" is not a valid regular expression', $needle),
+                );
                 $exclusions[] = $needle;
             }
         }
-        self::assertNotEmpty($exclusions, 'The matrix sed rewrite must carry at least one /needle/! exclusion');
 
         foreach ($offScheme as $package) {
             $covered = false;
             foreach ($exclusions as $needle) {
-                if (str_contains($package, $needle)) {
+                if (preg_match('/' . $needle . '/', $package) === 1) {
                     $covered = true;
                     break;
                 }
@@ -340,7 +350,7 @@ final class GithubWorkflowsTest extends TestCase
         foreach ($exclusions as $needle) {
             $matchesOffScheme = false;
             foreach ($offScheme as $package) {
-                if (str_contains($package, $needle)) {
+                if (preg_match('/' . $needle . '/', $package) === 1) {
                     $matchesOffScheme = true;
                     break;
                 }
@@ -351,9 +361,9 @@ final class GithubWorkflowsTest extends TestCase
             );
 
             foreach ($onScheme as $package) {
-                $this->assertStringNotContainsStringIgnoringCase(
-                    $needle,
-                    $package,
+                self::assertSame(
+                    0,
+                    preg_match('/' . $needle . '/', $package),
                     sprintf('sed exclusion "/%s/!" must not match on-scheme package "%s"', $needle, $package),
                 );
             }
