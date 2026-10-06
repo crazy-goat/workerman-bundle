@@ -244,4 +244,129 @@ final class GithubWorkflowsTest extends TestCase
             'The issue opener must deduplicate open issues by a title marker',
         );
     }
+
+    /**
+     * Issue #807: every matrix `Update Symfony constraints` step rewrites
+     * symfony/* constraints with sed, excluding packages that do not follow
+     * the framework versioning scheme (today: deprecation-contracts 2.x/3.x).
+     * The exclusion lived only in the workflow, so adding or removing an
+     * off-scheme package in composer.json passed locally and broke the
+     * matrix. This test replays the workflow rewrite against composer.json
+     * and pins the exclusion set in both directions.
+     */
+    public function testMatrixRewriteExclusionsCoverOffSchemeSymfonyPackages(): void
+    {
+        $composerPath = __DIR__ . '/../composer.json';
+        self::assertFileExists($composerPath);
+
+        $composerRaw = file_get_contents($composerPath);
+        self::assertNotFalse($composerRaw);
+
+        $composer = json_decode($composerRaw, true);
+        self::assertIsArray($composer, 'composer.json must decode to an array');
+
+        $constraints = [];
+        foreach (['require', 'require-dev'] as $section) {
+            self::assertArrayHasKey($section, $composer, 'composer.json must define section: ' . $section);
+            self::assertIsArray($composer[$section]);
+            foreach ($composer[$section] as $package => $constraint) {
+                if (str_starts_with((string) $package, 'symfony/')) {
+                    $constraints[(string) $package] = (string) $constraint;
+                }
+            }
+        }
+        self::assertNotEmpty($constraints, 'composer.json must require at least one symfony/* package');
+
+        $counts = array_count_values(array_values($constraints));
+        arsort($counts);
+        $orderedCounts = array_values($counts);
+        if (count($orderedCounts) > 1) {
+            self::assertGreaterThan(
+                $orderedCounts[1],
+                $orderedCounts[0],
+                'The most-used symfony/* constraint must strictly exceed the runner-up so the framework scheme is unambiguous',
+            );
+        }
+        $frameworkConstraint = array_key_first($counts);
+        self::assertGreaterThan(
+            1,
+            $counts[$frameworkConstraint],
+            'One symfony/* constraint must dominate so the framework scheme is unambiguous',
+        );
+
+        $offScheme = [];
+        $onScheme = [];
+        foreach ($constraints as $package => $constraint) {
+            if ($constraint === $frameworkConstraint) {
+                $onScheme[] = $package;
+            } else {
+                $offScheme[] = $package;
+            }
+        }
+
+        $matched = preg_match_all(
+            '/^      - name: Update Symfony constraints in composer\.json\n(?:^        .*\n)+?^          sed -i.*$/m',
+            $this->workflowContent,
+            $steps,
+        );
+        self::assertNotFalse($matched);
+        self::assertGreaterThan(
+            0,
+            $matched,
+            'At least one "Update Symfony constraints in composer.json" step with a sed rewrite must exist',
+        );
+
+        $exclusions = [];
+        foreach ($steps[0] as $step) {
+            preg_match_all('/\/([^\/\n]+)\/!s\//', $step, $found);
+            foreach ($found[1] as $needle) {
+                self::assertNotFalse(
+                    @preg_match('/' . $needle . '/', ''),
+                    sprintf('sed exclusion "/%s/!" is not a valid regular expression', $needle),
+                );
+                $exclusions[] = $needle;
+            }
+        }
+
+        foreach ($offScheme as $package) {
+            $covered = false;
+            foreach ($exclusions as $needle) {
+                if (preg_match('/' . $needle . '/', $package) === 1) {
+                    $covered = true;
+                    break;
+                }
+            }
+            $this->assertTrue(
+                $covered,
+                sprintf(
+                    'symfony package "%s" (%s) is off the framework scheme (%s) but no sed /needle/! exclusion covers it',
+                    $package,
+                    $constraints[$package],
+                    $frameworkConstraint,
+                ),
+            );
+        }
+
+        foreach ($exclusions as $needle) {
+            $matchesOffScheme = false;
+            foreach ($offScheme as $package) {
+                if (preg_match('/' . $needle . '/', $package) === 1) {
+                    $matchesOffScheme = true;
+                    break;
+                }
+            }
+            $this->assertTrue(
+                $matchesOffScheme,
+                sprintf('sed exclusion "/%s/!" matches no off-scheme symfony/* package; remove or retarget it', $needle),
+            );
+
+            foreach ($onScheme as $package) {
+                self::assertSame(
+                    0,
+                    preg_match('/' . $needle . '/', $package),
+                    sprintf('sed exclusion "/%s/!" must not match on-scheme package "%s"', $needle, $package),
+                );
+            }
+        }
+    }
 }

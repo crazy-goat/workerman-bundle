@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `GithubWorkflowsTest` now replays the CI matrix `sed` rewrite against `composer.json` and pins that every `symfony/*` package off the framework versioning scheme is covered by a `/needle/!` exclusion (and that no exclusion is stale or overbroad), so workflow/composer drift fails locally instead of breaking the matrix (#807)
 - `SfxDownloader::fetch()` now throws a `RuntimeException` naming the destination directory when a download is required but the directory is not writable, instead of failing late with a generic write error (#784)
 - `SfxDownloader::writeStream()` now suppresses the raw PHP warning when the destination cannot be opened for writing and includes the underlying reason in the `RuntimeException`, mirroring `downloadWithRedirectCheck()` (#785)
 - `StreamedBinaryFileResponseTest` content-type tests no longer skip when `symfony/mime` is not installed: explicit `Content-Type` headers are set before `prepare()` and the unknown-extension test covers both the `LogicException` without the Mime component and the `application/octet-stream` fallback with it; `symfony/mime` stays optional with a `suggest` entry in `composer.json` (#809)
