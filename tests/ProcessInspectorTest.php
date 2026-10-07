@@ -1374,14 +1374,7 @@ PHP;
             }
         }
 
-        $uid = \posix_getuid();
-        $statusFile = "/proc/{$pid}/status";
-        if (\is_readable($statusFile)) {
-            $content = \file_get_contents($statusFile);
-            if (\is_string($content) && \preg_match('/^Uid:\s+(\d+)/m', $content, $matches)) {
-                $uid = (int) $matches[1];
-            }
-        }
+        $uid = \CrazyGoat\WorkermanBundle\MasterFingerprint::readUidForPid($pid) ?? \posix_getuid();
 
         return new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, $startTime, $uid);
     }
