@@ -189,7 +189,7 @@ final class WorkermanBundleIntegrationTest extends TestCase
         $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '0';
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "0"');
         $this->extension->load([[
             'cache_warmup_timeout' => 30,
         ]], $this->container);
@@ -240,7 +240,7 @@ final class WorkermanBundleIntegrationTest extends TestCase
         $_SERVER['WORKERMAN_CACHE_WARMUP_TIMEOUT'] = '-5';
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "-5"');
         $this->extension->load([[
             'cache_warmup_timeout' => 30,
         ]], $this->container);
