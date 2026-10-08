@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
+
 /**
  * Static configuration holder and validator for the cache warmup timeout.
  *
@@ -23,8 +25,8 @@ final class CacheWarmupTimeoutConfig
     public static function set(int $timeout): void
     {
         if ($timeout < 1) {
-            throw new \InvalidArgumentException(\sprintf(
-                '%s must be a positive integer, got %d',
+            throw new InvalidCacheWarmupTimeoutException(\sprintf(
+                '%s must be a positive integer, got "%s"',
                 self::ENV_VAR,
                 $timeout,
             ));
@@ -93,7 +95,7 @@ final class CacheWarmupTimeoutConfig
     {
         $timeout = filter_var($trimmed, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($timeout === false) {
-            throw new \InvalidArgumentException(\sprintf(
+            throw new InvalidCacheWarmupTimeoutException(\sprintf(
                 '%s must be a positive integer, got "%s"',
                 self::ENV_VAR,
                 $trimmed,
