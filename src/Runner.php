@@ -29,16 +29,12 @@ readonly class Runner implements RunnerInterface
         private ?LoggerInterface $logger = null,
     ) {
         if ($cacheWarmupTimeout === null) {
-            try {
-                $cacheWarmupTimeout = CacheWarmupTimeoutConfig::resolve();
-            } catch (\InvalidArgumentException $e) {
-                throw new InvalidCacheWarmupTimeoutException($e->getMessage(), 0, $e);
-            }
+            $cacheWarmupTimeout = CacheWarmupTimeoutConfig::resolve();
         }
 
         if ($cacheWarmupTimeout < 1) {
             throw new InvalidCacheWarmupTimeoutException(\sprintf(
-                '%s must be a positive integer, got %d',
+                '%s must be a positive integer, got "%s"',
                 CacheWarmupTimeoutConfig::ENV_VAR,
                 $cacheWarmupTimeout,
             ));
