@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: `Runner::run()` now rethrows `CacheWarmupException` (extends `KernelException` → `WorkermanException` → `\RuntimeException`) instead of a bare `\RuntimeException` when the env-drift cache re-warm fails, so a single `WorkermanExceptionInterface` catch covers this path while a `\RuntimeException` catch still works. See `UPGRADE.md` (#1040)
+
 ## [0.31.0] - 2026-10-06
 
 ### Fixed
