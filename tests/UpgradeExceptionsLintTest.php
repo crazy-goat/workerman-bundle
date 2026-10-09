@@ -236,6 +236,24 @@ final class UpgradeExceptionsLintTest extends TestCase
         self::assertStringContainsString('UPGRADE.md is missing or unreadable', $result['err']);
     }
 
+    public function testAnEmptyRootValueIsAUsageError(): void
+    {
+        // Regression test for issue #1044: substr('--root=', 7) yields ''
+        // and realpath('') is the working directory, so the gate silently
+        // ran against the wrong tree. The sandbox doubles as the script's
+        // cwd and holds a valid fixture, so the old code would have exited
+        // 0 here instead of rejecting the empty value.
+        $this->writeFixture(
+            ['BaseException' => "abstract class BaseException extends \\RuntimeException\n{\n}\n"],
+            'BaseException (extends \RuntimeException)',
+        );
+
+        $result = $this->runScript([], ['--root=']);
+
+        self::assertSame(2, $result['code'], $result['out']);
+        self::assertStringContainsString('--root= requires a directory path', $result['err']);
+    }
+
     public function testAnUnknownOptionIsAUsageError(): void
     {
         $result = $this->runScript([], ['--nope']);

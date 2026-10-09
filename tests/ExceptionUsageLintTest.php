@@ -158,6 +158,22 @@ final class ExceptionUsageLintTest extends TestCase
         self::assertStringContainsString('src/Exception is missing', $result['err']);
     }
 
+    public function testAnEmptyRootValueIsAUsageError(): void
+    {
+        // Regression test for issue #1044: substr('--root=', 7) yields ''
+        // and realpath('') is the working directory, so the gate silently
+        // ran against the wrong tree. The sandbox doubles as the script's
+        // cwd and holds an unused exception, so the old code would have
+        // exited 1 here instead of rejecting the empty value.
+        $this->writeException('UnusedException', "final class UnusedException extends \\RuntimeException\n{\n}\n");
+        $this->writeReferencingFile('src/Other.php', "<?php\n\n// a file that mentions no exception\n");
+
+        $result = $this->runScript([], ['--root=']);
+
+        self::assertSame(2, $result['code'], $result['out']);
+        self::assertStringContainsString('--root= requires a directory path', $result['err']);
+    }
+
     public function testAnUnknownOptionIsAUsageError(): void
     {
         $result = $this->runScript([], ['--nope']);
