@@ -60,18 +60,7 @@ readonly class Runner implements RunnerInterface
             // int:, bool:, file:, ... processors) and re-runs validation.
             // On a read-only cache dir this fails instead of silently
             // keeping the stale values.
-            try {
-                $this->warmUpCache($configLoader, true);
-            } catch (\RuntimeException $e) {
-                throw new \RuntimeException(
-                    'The workerman config uses %env()% values that changed since the cache was warmed up, '
-                    . 'but re-warming the cache failed. Make sure the cache directory is writable by the '
-                    . 'user that starts the server, or warm up the cache again as that user '
-                    . '(e.g. APP_ENV=prod php bin/console cache:warmup).',
-                    0,
-                    $e,
-                );
-            }
+            $this->rewarmCacheAfterEnvDrift($configLoader);
             $configLoader = $this->createConfigLoader();
         }
 
@@ -120,6 +109,33 @@ readonly class Runner implements RunnerInterface
      *
      * @throws CacheWarmupException on fork failure, timeout, or unexpected child status
      */
+    /**
+     * Re-warm the cache after an env drift was detected (issue #996).
+     *
+     * The failure is wrapped in the typed CacheWarmupException (issue
+     * #1040) so the re-warm path stays inside the bundle's exception
+     * hierarchy: callers catching WorkermanExceptionInterface — or, for
+     * BC, \RuntimeException — see a hierarchy member instead of a bare
+     * \RuntimeException.
+     *
+     * @throws CacheWarmupException
+     */
+    private function rewarmCacheAfterEnvDrift(ConfigLoader $configLoader): void
+    {
+        try {
+            $this->warmUpCache($configLoader, true);
+        } catch (CacheWarmupException $e) {
+            throw new CacheWarmupException(
+                'The workerman config uses %env()% values that changed since the cache was warmed up, '
+                . 'but re-warming the cache failed. Make sure the cache directory is writable by the '
+                . 'user that starts the server, or warm up the cache again as that user '
+                . '(e.g. APP_ENV=prod php bin/console cache:warmup).',
+                0,
+                $e,
+            );
+        }
+    }
+
     private function warmUpCache(ConfigLoader $configLoader, bool $force = false): void
     {
         if (!$force && $configLoader->isFresh()) {
