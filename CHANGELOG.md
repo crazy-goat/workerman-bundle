@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `PharHelper::resolveRuntimePath()` now rewrites a path to the runtime directory only when it is exactly the project directory or starts with it followed by a `/`, so a sibling directory that merely shares the name prefix (e.g. `/application/...` with project directory `/app`) is left unchanged instead of being rewritten to `/runtime...` (#914)
+
 ## [0.31.0] - 2026-10-06
 
 ### Fixed
