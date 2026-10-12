@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-use PHPUnit\Framework\TestCase;
-
 /**
  * Drives `bin/check-upgrade-exceptions.php` as a subprocess (issue #817).
  *
@@ -18,27 +16,16 @@ use PHPUnit\Framework\TestCase;
  *
  * @coversNothing
  */
-final class UpgradeExceptionsLintTest extends TestCase
+final class UpgradeExceptionsLintTest extends LintScriptTestCase
 {
-    private string $sandbox = '';
-
-    private string $script = '';
-
-    protected function setUp(): void
+    protected function getScriptName(): string
     {
-        $this->script = \dirname(__DIR__) . '/bin/check-upgrade-exceptions.php';
-        self::assertFileExists($this->script);
-
-        $sandbox = sys_get_temp_dir() . '/check-upgrade-exceptions-test-' . bin2hex(random_bytes(6));
-        self::assertTrue(mkdir($sandbox, 0o775, true));
-        $this->sandbox = $sandbox;
+        return 'check-upgrade-exceptions.php';
     }
 
-    protected function tearDown(): void
+    protected function getSandboxPrefix(): string
     {
-        if ($this->sandbox !== '' && is_dir($this->sandbox)) {
-            $this->removeRecursively($this->sandbox);
-        }
+        return 'check-upgrade-exceptions-test-';
     }
 
     public function testTheRealTreePassesWithNoArguments(): void
@@ -305,70 +292,5 @@ final class UpgradeExceptionsLintTest extends TestCase
         self::assertSame(1, $result['code'], 'expected a drift violation, got: ' . $result['out']);
 
         return $result;
-    }
-
-    /**
-     * @param array<string, string> $env
-     * @param list<string>          $args
-     *
-     * @return array{code: int, out: string, err: string}
-     */
-    private function runScript(array $env, array $args): array
-    {
-        $command = [\PHP_BINARY, $this->script, ...$args];
-
-        $outFile = $this->sandbox . '/stdout.log';
-        $errFile = $this->sandbox . '/stderr.log';
-
-        $descriptors = [
-            1 => ['file', $outFile, 'w'],
-            2 => ['file', $errFile, 'w'],
-        ];
-        $pipes = [];
-
-        $process = proc_open(
-            $command,
-            $descriptors,
-            $pipes,
-            $this->sandbox,
-            [...getenv(), ...$env],
-        );
-        self::assertIsResource($process);
-
-        $code = proc_close($process);
-
-        return [
-            'code' => $code,
-            'out' => (string) file_get_contents($outFile),
-            'err' => (string) file_get_contents($errFile),
-        ];
-    }
-
-    private function removeRecursively(string $path): void
-    {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $item) {
-            if (!$item instanceof \SplFileInfo) {
-                continue;
-            }
-
-            if ($item->isDir()) {
-                if (!@rmdir($item->getPathname())) {
-                    error_log(sprintf('UpgradeExceptionsLintTest removeRecursively: rmdir(%s) failed', $item->getPathname()));
-                }
-            } else {
-                if (!@unlink($item->getPathname())) {
-                    error_log(sprintf('UpgradeExceptionsLintTest removeRecursively: unlink(%s) failed', $item->getPathname()));
-                }
-            }
-        }
-
-        if (!@rmdir($path)) {
-            error_log(sprintf('UpgradeExceptionsLintTest removeRecursively: rmdir(%s) failed', $path));
-        }
     }
 }
