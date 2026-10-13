@@ -110,8 +110,18 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->config ?? null;
     }
 
-    /** @return array<string, mixed[]>|null */
-    private function loadFromCache(): ?array
+    /**
+     * Reads the raw payload array from the cache file (issue #1036).
+     *
+     * The shared preamble for every cache-file read: a missing file
+     * fails open with `null` (callers fall through to the next source),
+     * while a present file passes the permission guard first — so the
+     * fail-closed behaviour stays identical in every reader.
+     *
+     * @return array<string, mixed>|null the raw payload written by
+     *         warmUp(), or null when there is no cache file
+     */
+    private function readCachePayload(): ?array
     {
         $cachePath = $this->cache->getPath();
         if (!is_file($cachePath)) {
@@ -122,6 +132,17 @@ final class ConfigLoader implements CacheWarmerInterface
 
         /** @var array<string, mixed> $cached */
         $cached = require $cachePath;
+
+        return $cached;
+    }
+
+    /** @return array<string, mixed[]>|null */
+    private function loadFromCache(): ?array
+    {
+        $cached = $this->readCachePayload();
+        if ($cached === null) {
+            return null;
+        }
 
         if (isset($cached['config'], $cached['env']) && \is_array($cached['config']) && \is_array($cached['env'])) {
             /** @var array<string, mixed[]> $config */
@@ -166,15 +187,10 @@ final class ConfigLoader implements CacheWarmerInterface
      */
     private function loadTrackedEnvFromCache(): void
     {
-        $cachePath = $this->cache->getPath();
-        if (!is_file($cachePath)) {
+        $cached = $this->readCachePayload();
+        if ($cached === null) {
             return;
         }
-
-        $this->validateCacheFilePermissions($cachePath);
-
-        /** @var array<string, mixed> $cached */
-        $cached = require $cachePath;
 
         if (isset($cached['config'], $cached['env']) && \is_array($cached['env'])) {
             /** @var array<string, string|null> $env */
