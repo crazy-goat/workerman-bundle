@@ -53,7 +53,16 @@ function checkUpgradeExceptionsParseArgs(array $argv): array
         }
 
         if (str_starts_with($arg, '--root=')) {
-            $options['root'] = substr($arg, 7);
+            $value = substr($arg, 7);
+
+            // An empty value would resolve via realpath('') to the working
+            // directory (issue #1044), silently checking the wrong tree.
+            if ($value === '') {
+                fwrite(STDERR, "--root= requires a directory path (see --help)\n");
+                exit(2);
+            }
+
+            $options['root'] = $value;
 
             continue;
         }
