@@ -21,7 +21,7 @@ bin/console config:dump-reference workerman
 | `runtime_dir` | string | `%kernel.project_dir%` | A writable directory for cache, logs and PID files. In PHAR or BIN mode, the default is the directory of the PHAR or BIN file. The bundle creates sub-directories with mode 0700. The `WORKERMAN_RUNTIME_DIR` variable overrides it. See [build-packaging.md](build-packaging.md#writable-paths). |
 | `user` | string or null | `null` | The Unix user of the processes. `null` means the current user. |
 | `group` | string or null | `null` | The Unix group of the processes. `null` means the current group. |
-| `stop_timeout` | int, seconds | `2` | The maximum time a child process may work before the master kills it. |
+| `stop_timeout` | int, seconds | `2` | The time a worker gets to end after a stop or reload. Then the master kills it. |
 | `cache_warmup_timeout` | int, seconds, minimum 1 | `30` | The maximum time to wait for the cache warmup in the forked process. The `WORKERMAN_CACHE_WARMUP_TIMEOUT` variable overrides it. |
 | `status_timeout` | int, seconds | `5` | The maximum time to wait for the status file after the `status` command sends a signal. |
 | `pid_file` | string, not empty | `%kernel.project_dir%/var/run/workerman.pid` | The file that holds the PID of the master process. |
