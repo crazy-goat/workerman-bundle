@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `CacheWarmupTimeoutConfig::set()` and `CacheWarmupTimeoutConfig::parseEnvRaw()` (via `resolve()`) now throw the typed `InvalidCacheWarmupTimeoutException` at the source instead of a bare `\InvalidArgumentException`, so `Runner::__construct()` no longer needs its try/catch translation wrapper; the error message now quotes the raw input (`got "0"`) consistently across all three throw sites (#1063)
+- `Runner::checkStaticRoots()` now throws the typed `InvalidStaticRootException` instead of a bare `\RuntimeException` when a configured static files root directory does not exist, so callers catching `WorkermanExceptionInterface` cover this path too (#1041)
 
 ## [0.31.0] - 2026-10-06
 

@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
+use CrazyGoat\WorkermanBundle\Exception\InvalidStaticRootException;
 use CrazyGoat\WorkermanBundle\Exception\WorkermanExceptionInterface;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
@@ -582,6 +583,27 @@ final class RunnerTest extends TestCase
             $this->expectException(\RuntimeException::class);
 
             $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => ['/does/not/exist/public']]);
+        } finally {
+            Worker::$command = $command;
+        }
+    }
+
+    public function testMissingStaticRootDirectoryThrowsTypedExceptionInHierarchy(): void
+    {
+        $command = Worker::$command;
+        Worker::$command = 'start';
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            try {
+                $this->invokeRunnerMethod($runner, 'checkStaticRoots', ['static_roots' => ['/does/not/exist/public']]);
+                self::fail('Expected InvalidStaticRootException');
+            } catch (InvalidStaticRootException $e) {
+                self::assertInstanceOf(WorkermanExceptionInterface::class, $e);
+                self::assertInstanceOf(\RuntimeException::class, $e);
+                self::assertStringContainsString('"/does/not/exist/public"', $e->getMessage());
+            }
         } finally {
             Worker::$command = $command;
         }

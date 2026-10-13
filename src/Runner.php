@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle;
 use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
+use CrazyGoat\WorkermanBundle\Exception\InvalidStaticRootException;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
@@ -210,13 +211,13 @@ readonly class Runner implements RunnerInterface
      *
      * @param mixed[] $config
      *
-     * @throws \RuntimeException when a root directory does not exist
+     * @throws InvalidStaticRootException when a root directory does not exist
      */
     private function checkStaticRoots(array $config): void
     {
         $missing = $this->firstMissingStaticRoot($config);
         if ($missing !== null) {
-            throw new \RuntimeException(\sprintf('The root directory "%s" of the static files middleware does not exist.', $missing));
+            throw new InvalidStaticRootException(\sprintf('The root directory "%s" of the static files middleware does not exist.', $missing));
         }
     }
 
