@@ -85,14 +85,65 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNotNull($workermanResponse->file);
     }
 
+    /**
+     * A prepared non-2xx BinaryFileResponse carries no body: Symfony's own
+     * sendContent() returns before it touches the file when the response is
+     * not successful, so withFile() must never stream the file and the
+     * emitted Content-Length is 0, not the prepared file size (issue #1032).
+     */
     public function testConvertHandlesNotFoundResponse(): void
     {
         $strategy = new BinaryFileResponseStrategy();
         $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_NOT_FOUND);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
 
         $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
         $this->assertSame(404, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file, 'a 404 must not attach a file (no withFile())');
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('HTTP/1.1 404 Not Found', $wire);
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 0', $wire, 'an error status must not advertise the file size');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 404 must not emit a body');
+    }
+
+    /**
+     * An unsatisfiable Range makes prepare() answer 416 while keeping maxlen
+     * at -1 and the full file size as Content-Length — the bodyless path must
+     * still send no file and advertise Content-Length: 0, keeping the prepared
+     * Content-Range (issue #1032).
+     */
+    public function testConvertHandlesUnsatisfiableRangeAsBodyless416(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET, [], [], [], ['HTTP_RANGE' => 'bytes=999999-1999999']));
+
+        $this->assertSame(416, $binaryResponse->getStatusCode(), 'prepare() must answer 416 for the unsatisfiable range');
+
+        $contentRange = $binaryResponse->headers->get('Content-Range');
+        $this->assertNotNull($contentRange, 'prepare() must set Content-Range on the 416');
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Range' => [$contentRange],
+        ], $this->connection, '1.1');
+
+        $this->assertSame(416, $workermanResponse->getStatusCode());
+        $this->assertNull($workermanResponse->file, 'a 416 must not attach a file (no withFile())');
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('HTTP/1.1 416 Range Not Satisfiable', $wire);
+        $this->assertStringContainsString(
+            'Content-Range: ' . $contentRange,
+            $wire,
+            'the 416 keeps its prepared Content-Range',
+        );
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the bodyless response must emit exactly one Content-Length');
+        $this->assertStringContainsString('Content-Length: 0', $wire, 'an error status must not advertise the file size');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 416 must not emit a body');
     }
 
     public function testConvertHandlesTempFileObject(): void
