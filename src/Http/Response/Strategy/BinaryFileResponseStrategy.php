@@ -47,6 +47,16 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
             return $this->convertHead($response, $headers);
         }
 
+        // A prepared non-2xx BinaryFileResponse carries no body: Symfony's own
+        // sendContent() returns before it touches the file when the response is
+        // not successful (`if (!$this->isSuccessful()) return;`), so withFile()
+        // must never stream the file for e.g. a 404 or a 416 from an
+        // unsatisfiable Range (issue #1032). The prepared Content-Length is the
+        // full file size, but an error status must advertise Content-Length: 0.
+        if (!$response->isSuccessful()) {
+            return $this->convertBodyless($response, $headers, 0);
+        }
+
         // A response Symfony prepared as bodyless must not carry the file.
         // prepare() sets maxlen = 0 in three cases: a HEAD request (handled
         // above), an informational or empty status (1xx, 204, 304 — RFC 9110
@@ -222,7 +232,8 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     /**
      * Build a bodyless response for a BinaryFileResponse that Symfony prepared
      * as bodyless (an informational or empty status, or the X-Sendfile /
-     * X-Accel-Redirect hand-off).
+     * X-Accel-Redirect hand-off), or that carries a non-2xx status and must
+     * not send the file (issue #1032).
      *
      * This is the same shape the HEAD path and DefaultResponseStrategy use for
      * a response with no body: the headers Symfony prepared, no file attached
@@ -241,9 +252,9 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
      *
      * @param array<string, string|list<string|null>> $headers
      */
-    private function convertBodyless(BinaryFileResponse $response, array $headers): HeadResponse
+    private function convertBodyless(BinaryFileResponse $response, array $headers, ?int $contentLength = null): HeadResponse
     {
-        $contentLength = $this->resolvePreparedContentLength($response);
+        $contentLength ??= $this->resolvePreparedContentLength($response);
         unset($headers['Content-Length']);
 
         $statusCode = $response->getStatusCode();
