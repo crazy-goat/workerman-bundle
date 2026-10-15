@@ -85,6 +85,12 @@ final readonly class SfxDownloader
 
         // If the upstream artifact is a zip, extract it.
         if (str_ends_with($destination, '.zip')) {
+            // Extraction writes entries into the destination directory: fail
+            // fast when it is not writable instead of surfacing a late
+            // per-entry "Failed to extract entry" after the archive was
+            // already opened and validated (issue #1052).
+            $this->assertExtractDestinationWritable($destination, $destinationDir);
+
             try {
                 $destination = $this->extractZip($destination, $destinationDir);
             } catch (\RuntimeException $e) {
@@ -382,6 +388,52 @@ final readonly class SfxDownloader
                 'timeout' => 60,
             ],
         ]);
+    }
+
+    /**
+     * Fail fast when the destination directory is not writable before a zip
+     * extraction would write entries into it (issue #1052).
+     *
+     * A corrupt cached artifact must still reach the poisoned-artifact
+     * cleanup in {@see fetch()} (failed open → unlink attempt → error_log
+     * when the removal fails), so the check only fires for archives that
+     * actually open; an unopenable archive keeps the original "Failed to
+     * open zip archive" path.
+     *
+     * @throws \RuntimeException when the directory is not writable and the archive opens cleanly
+     */
+    private function assertExtractDestinationWritable(string $zipPath, string $destinationDir): void
+    {
+        if (is_writable($destinationDir)) {
+            return;
+        }
+
+        if (!$this->archiveOpensCleanly($zipPath)) {
+            return;
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Destination directory "%s" is not writable; check its permissions before extracting.',
+            $destinationDir,
+        ));
+    }
+
+    /**
+     * Probe whether a zip archive opens cleanly, without throwing.
+     */
+    private function archiveOpensCleanly(string $zipPath): bool
+    {
+        if (!class_exists(\ZipArchive::class)) {
+            return false;
+        }
+
+        $zip = new \ZipArchive();
+        $opened = $zip->open($zipPath, \ZipArchive::CHECKCONS) === true;
+        if ($opened) {
+            $zip->close();
+        }
+
+        return $opened;
     }
 
     /**
