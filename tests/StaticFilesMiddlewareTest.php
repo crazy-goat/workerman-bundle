@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesRealPathCache;
 use PHPUnit\Framework\TestCase;
@@ -567,9 +568,9 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    private function createRequest(string $path): Request
+    private function createRequest(string $path, string $method = 'GET'): Request
     {
-        $buffer = "GET $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $buffer = "$method $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
         return new Request($buffer);
     }
 
@@ -1494,6 +1495,87 @@ final class StaticFilesMiddlewareTest extends TestCase
         $response = $middleware($requestWithOldIMS, $next);
 
         $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function testHeadReturnsHeadersOnlyWithContentLength(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(500);
+        };
+
+        $response = $middleware($this->createRequest('/test.txt', 'HEAD'), $next);
+
+        $this->assertFalse($called, 'Next should NOT be called for HEAD on a static file');
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertInstanceOf(HeadResponse::class, $response);
+
+        // HEAD carries the same headers the GET would produce…
+        $getResponse = $middleware($this->createRequest('/test.txt'), $next);
+        $this->assertEquals($getResponse->getHeader('ETag'), $response->getHeader('ETag'));
+        $this->assertEquals($getResponse->getHeader('Last-Modified'), $response->getHeader('Last-Modified'));
+        $this->assertEquals($getResponse->getHeader('Cache-Control'), $response->getHeader('Cache-Control'));
+
+        // …with the Content-Length the GET body would have, and no body
+        // ('test file content' is 17 bytes; RFC 9110 §9.3.2, issue #903).
+        $wire = (string) $response;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 17\r\n", $wire);
+        $this->assertStringNotContainsString('test file content', $wire);
+    }
+
+    public function testHeadWithMatchingEtagReturns304(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $next = fn(): Response => new Response(404);
+
+        $getResponse = $middleware($this->createRequest('/test.txt'), $next);
+        $etag = $getResponse->getHeader('ETag');
+        assert(is_string($etag));
+
+        $request = $this->createRequest('/test.txt', 'HEAD');
+        $request->setHeader('If-None-Match', $etag);
+
+        $response = $middleware($request, $next);
+
+        $this->assertEquals(304, $response->getStatusCode());
+    }
+
+    /**
+     * @dataProvider nonGetHeadMethodProvider
+     */
+    public function testNonGetHeadMethodsPassToNext(string $method): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt', $method);
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(200);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, "Next should be called for $method request to a static path");
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function nonGetHeadMethodProvider(): array
+    {
+        return [
+            'POST' => ['POST'],
+            'PUT' => ['PUT'],
+            'DELETE' => ['DELETE'],
+            'PATCH' => ['PATCH'],
+        ];
     }
 
     public function testConstructWithPharPathDoesNotThrow(): void
