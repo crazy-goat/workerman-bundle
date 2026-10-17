@@ -133,6 +133,15 @@ final class ComposerAuditE2ETest extends TestCase
 
         // composer audit exits 0 (clean) or 1 (advisories/abandoned found)
         if ($exitCode !== 0 && $exitCode !== 1) {
+            if (self::isNetworkError($stdout, $stderr)) {
+                self::markTestSkipped(\sprintf(
+                    'Skipping composer audit: could not reach packagist.org (exit code %d): %s %s',
+                    $exitCode,
+                    \trim($stdout),
+                    \trim($stderr),
+                ));
+            }
+
             self::fail(\sprintf(
                 "composer audit failed unexpectedly (exit code %d):\nstdout: %s\nstderr: %s",
                 $exitCode,
@@ -150,5 +159,32 @@ final class ComposerAuditE2ETest extends TestCase
         }
 
         return $stdout;
+    }
+
+    /**
+     * Detects composer/packagist network failures (timeouts, DNS, refused or
+     * reset connections) so the audit tests skip instead of failing on them.
+     */
+    private static function isNetworkError(string $stdout, string $stderr): bool
+    {
+        $haystack = \strtolower($stdout . "\n" . $stderr);
+
+        $markers = [
+            'curl error',
+            'connection timed out',
+            'could not resolve host',
+            'failed to connect',
+            'connection refused',
+            'network is unreachable',
+            'operation timed out',
+        ];
+
+        foreach ($markers as $marker) {
+            if (\str_contains($haystack, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
