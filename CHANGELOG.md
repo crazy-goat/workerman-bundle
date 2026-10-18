@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The CI matrix `sed` rewrite now matches digits in package names (`[a-z0-9-]+` instead of `[a-z-]+`), so a future `symfony/foo2bar`-style package is not silently skipped by the "Update Symfony constraints" step; `GithubWorkflowsTest` now replays the rewrite character class against every `symfony/*` key in `composer.json` (#1060)
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `PharHelper::resolveRuntimePath()` now rewrites a path to the runtime directory only when it is exactly the project directory or starts with it followed by a `/`, so a sibling directory that merely shares the name prefix (e.g. `/application/...` with project directory `/app`) is left unchanged instead of being rewritten to `/runtime...` (#914)
 
