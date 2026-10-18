@@ -60,13 +60,8 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $statFile = "/proc/{$pid}/stat";
-            if (!is_readable($statFile)) {
-                return 0;
-            }
-
-            $stat = @file_get_contents($statFile);
-            if (!\is_string($stat) || $stat === '') {
+            $stat = self::readProcFile("/proc/{$pid}/stat");
+            if ($stat === null) {
                 return 0;
             }
 
@@ -195,12 +190,9 @@ final readonly class ProcessInspector
         // master forks, so it survives daemon mode and matches only
         // genuine Workerman masters.
         if (self::isLinux()) {
-            $cmdline = "/proc/{$masterPid}/cmdline";
-            if (is_readable($cmdline)) {
-                $content = file_get_contents($cmdline);
-                if (\is_string($content) && $content !== '' && str_contains($content, 'WorkerMan: master process')) {
-                    return true;
-                }
+            $content = self::readProcFile("/proc/{$masterPid}/cmdline");
+            if ($content !== null && str_contains($content, 'WorkerMan: master process')) {
+                return true;
             }
         }
 
@@ -307,13 +299,8 @@ final readonly class ProcessInspector
     private function isWorkermanMasterTitle(int $pid): bool
     {
         if (self::isLinux()) {
-            $cmdline = "/proc/{$pid}/cmdline";
-            if (!is_readable($cmdline)) {
-                return false;
-            }
-
-            $content = file_get_contents($cmdline);
-            if (!\is_string($content)) {
+            $content = self::readProcFile("/proc/{$pid}/cmdline");
+            if ($content === null) {
                 return false;
             }
 
@@ -453,6 +440,28 @@ final readonly class ProcessInspector
     }
 
     /**
+     * Fail-closed read of a /proc pseudo-file.
+     *
+     * An unreadable path, a read failure and empty content all surface as
+     * null, so callers keep their own fail-closed sentinel (0 / false /
+     * null). Kept per-class: the ServerManager consumeFile() reads
+     * rename-then-read and have different semantics, so they stay out of
+     * scope.
+     *
+     * @phpstan-impure
+     */
+    private static function readProcFile(string $path): ?string
+    {
+        if (!\is_readable($path)) {
+            return null;
+        }
+
+        $content = @\file_get_contents($path);
+
+        return \is_string($content) && $content !== '' ? $content : null;
+    }
+
+    /**
      * Read the process state character from `/proc/{pid}/stat` field 3.
      *
      * This is cheaper than slurping the whole `/proc/{pid}/status` file
@@ -468,13 +477,8 @@ final readonly class ProcessInspector
      */
     private function readProcessStateFromStat(int $pid): ?string
     {
-        $statFile = "/proc/{$pid}/stat";
-        if (!is_readable($statFile)) {
-            return null;
-        }
-
-        $content = @file_get_contents($statFile);
-        if (!\is_string($content) || $content === '') {
+        $content = self::readProcFile("/proc/{$pid}/stat");
+        if ($content === null) {
             return null;
         }
 
@@ -507,13 +511,8 @@ final readonly class ProcessInspector
      */
     private function readLinuxProcessSnapshot(int $pid): ?ProcessSnapshot
     {
-        $statFile = "/proc/{$pid}/stat";
-        if (!is_readable($statFile)) {
-            return null;
-        }
-
-        $content = @file_get_contents($statFile);
-        if (!\is_string($content) || $content === '') {
+        $content = self::readProcFile("/proc/{$pid}/stat");
+        if ($content === null) {
             return null;
         }
 
