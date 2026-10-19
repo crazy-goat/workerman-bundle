@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Runner::warmUpCache()` now invokes the `workerman.config_loader` cache warmer explicitly after the forked child boots the kernel: when the container is already built, booting does not run the cache warmers, so the env-drift re-warm path from #996 kept the stale `%env()%` snapshot instead of picking up the changed values; `RunnerEnvDriftTest` covers the branch at boot level (#1037)
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `PharHelper::resolveRuntimePath()` now rewrites a path to the runtime directory only when it is exactly the project directory or starts with it followed by a `/`, so a sibling directory that merely shares the name prefix (e.g. `/application/...` with project directory `/app`) is left unchanged instead of being rewritten to `/runtime...` (#914)
 
