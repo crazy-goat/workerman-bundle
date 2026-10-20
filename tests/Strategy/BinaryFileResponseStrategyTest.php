@@ -1170,6 +1170,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
      */
     public static function emptyStatusProvider(): iterable
     {
+        yield 'early hints' => [Response::HTTP_EARLY_HINTS];
         yield 'not modified' => [Response::HTTP_NOT_MODIFIED];
         yield 'no content' => [Response::HTTP_NO_CONTENT];
     }
@@ -1282,6 +1283,114 @@ final class BinaryFileResponseStrategyTest extends TestCase
         } finally {
             $flag->setValue(null, $previous);
         }
+    }
+
+    /**
+     * The X-Accel-Redirect hand-off is the x-accel-redirect case of the
+     * sendfile branch in prepare(): with an X-Accel-Mapping the file path is
+     * rewritten to a URI the front-end server serves, maxlen becomes 0, and
+     * Workerman must send neither the bytes nor a 404 for a file it never
+     * opens, keeping the prepared Content-Length over the empty body
+     * (issue #1034).
+     */
+    public function testXAccelRedirectResponseHandsTheFileOverWithoutSendingIt(): void
+    {
+        // trustXSendfileTypeHeader() is a one-way static flag with no public
+        // reset, so restore it after the test to keep the rest of the suite on
+        // the default.
+        $flag = new \ReflectionProperty(BinaryFileResponse::class, 'trustXSendfileTypeHeader');
+        $previous = $flag->getValue();
+
+        $strategy = new BinaryFileResponseStrategy();
+        $fileSize = (int) filesize($this->testFile);
+        $realPath = (string) realpath($this->testFile);
+        $expectedUri = rawurlencode('/protected/' . basename($realPath));
+
+        try {
+            BinaryFileResponse::trustXSendfileTypeHeader();
+
+            $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_OK, [
+                'Content-Type' => 'text/plain',
+            ]);
+
+            $request = Request::create('/', Request::METHOD_GET);
+            $request->headers->set('X-Sendfile-Type', 'x-accel-redirect');
+            $request->headers->set('X-Accel-Mapping', \dirname($realPath) . '/=/protected/');
+            $binaryResponse->prepare($request);
+
+            $accelPath = strval($binaryResponse->headers->get('X-Accel-Redirect'));
+            $this->assertSame($expectedUri, $accelPath, 'prepare() must map the file path to the protected URI');
+
+            $workermanResponse = $strategy->convert($binaryResponse, [
+                'Content-Type' => ['text/plain'],
+                'X-Accel-Redirect' => $accelPath,
+            ], $this->connection, '1.1', 'GET');
+
+            $this->assertNull($workermanResponse->file, 'X-Accel-Redirect must not attach a file (no withFile())');
+            $this->assertSame(200, $workermanResponse->getStatusCode());
+
+            $wire = (string) $workermanResponse;
+            $this->assertStringContainsString('X-Accel-Redirect: ' . $accelPath, $wire, 'the hand-off header must reach the front-end server');
+            $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'the prepared length must appear exactly once');
+            $this->assertStringContainsString('Content-Length: ' . $fileSize, $wire, 'prepare() keeps the file size for the hand-off');
+            $this->assertStringContainsString('Accept-Ranges: bytes', $wire, 'the hand-off reply must keep Accept-Ranges like the file path does');
+            $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'X-Accel-Redirect must not emit a body');
+        } finally {
+            $flag->setValue(null, $previous);
+        }
+    }
+
+    /**
+     * prepare() throws when X-Sendfile-Type is x-accel-redirect but no
+     * X-Accel-Mapping is present: without a mapping no valid URI can be
+     * produced for the front-end server (issue #1034).
+     */
+    public function testXAccelRedirectWithoutMappingThrowsLogicException(): void
+    {
+        $flag = new \ReflectionProperty(BinaryFileResponse::class, 'trustXSendfileTypeHeader');
+        $previous = $flag->getValue();
+
+        try {
+            BinaryFileResponse::trustXSendfileTypeHeader();
+
+            $binaryResponse = new BinaryFileResponse($this->testFile);
+
+            $request = Request::create('/', Request::METHOD_GET);
+            $request->headers->set('X-Sendfile-Type', 'x-accel-redirect');
+
+            $this->expectException(\LogicException::class);
+            $binaryResponse->prepare($request);
+        } finally {
+            $flag->setValue(null, $previous);
+        }
+    }
+
+    /**
+     * A 103 (Early Hints) must not carry a body. prepare() takes the early
+     * return for informational statuses (maxlen = 0, Content-Length removed),
+     * so the strategy must emit a bodyless response with Content-Length: 0
+     * and never call withFile() (issue #1034).
+     */
+    public function testEarlyHintsResponseSendsNoFileAndNoBody(): void
+    {
+        $strategy = new BinaryFileResponseStrategy();
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_EARLY_HINTS);
+        $binaryResponse->prepare(Request::create('/', Request::METHOD_GET));
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Cache-Control' => ['public'],
+        ], $this->connection, '1.1', 'GET');
+
+        $this->assertNull($workermanResponse->file, 'a 103 must not attach a file (no withFile())');
+        $this->assertSame(103, $workermanResponse->getStatusCode());
+
+        $wire = (string) $workermanResponse;
+        $this->assertStringContainsString('HTTP/1.1 103 Early Hints', $wire);
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'));
+        $this->assertStringContainsString('Content-Length: 0', $wire);
+        $this->assertStringNotContainsString('Accept-Ranges', $wire, 'a bodyless 103 carries no Accept-Ranges');
+        $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 103 must not emit a body');
     }
 
     /**

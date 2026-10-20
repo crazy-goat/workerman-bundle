@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `PharHelper::resolveRuntimePath()` now rewrites a path to the runtime directory only when it is exactly the project directory or starts with it followed by a `/`, so a sibling directory that merely shares the name prefix (e.g. `/application/...` with project directory `/app`) is left unchanged instead of being rewritten to `/runtime...` (#914)
+- `BinaryFileResponseStrategyTest` now covers the X-Accel-Redirect hand-off branch (prepare() maps the file path via `X-Accel-Mapping` to the `X-Accel-Redirect` URI, the bundle hands it over with the prepared Content-Length and no body, and throws `LogicException` when the mapping is absent) and pins a 1xx case (103) in `emptyStatusProvider` plus the GET-path test, so the documented claim that 1xx statuses take the bodyless path is verified (#1034)
 
 ### Changed
 
