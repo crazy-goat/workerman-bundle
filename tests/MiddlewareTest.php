@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use GuzzleHttp\Client;
-use GuzzleHttp\HandlerStack;
 
 use function PHPUnit\Framework\assertIsArray;
 
@@ -63,11 +62,7 @@ final class MiddlewareTest extends WebTestCase
 
     private function createHttpClient(): Client
     {
-        return new Client([
-            'http_errors' => false,
-            'handler' => HandlerStack::create(),
-            'headers' => ['Connection' => 'keep-alive'],
-        ]);
+        return BoundedHttpClient::create(['headers' => ['Connection' => 'keep-alive']]);
     }
 
     /**

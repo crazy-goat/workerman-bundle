@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Psr7\MultipartStream;
 
@@ -358,7 +357,7 @@ final class RequestParametersTest extends KernelTestCase
      */
     private function createResponse(string $method, array $options = [], string $path = '/request_test'): array
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
         $response = $client->request($method, 'http://127.0.0.1:8888' . $path, $options);
 
         $result = json_decode((string) $response->getBody(), true);
