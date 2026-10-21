@@ -275,6 +275,14 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
     /**
      * Delete a deleteFileAfterSend file for a bodyless response (a HEAD
      * request, or a response Symfony prepared as bodyless).
+     *
+     * The X-Sendfile / X-Accel-Redirect hand-off is the exception: the
+     * front-end server reads the file after this response is sent, so
+     * unlinking here would delete it before it is served. This follows the
+     * documented deleteFileAfterSend() contract ("If the X-Sendfile header
+     * is used, the deleteFileAfterSend setting will not be used") rather
+     * than Symfony's runtime, which unlinks in sendContent()'s finally even
+     * on the hand-off (issue #1033).
      */
     private function deleteFileAfterBodylessSend(BinaryFileResponse $response, ?\SplTempFileObject $tempFileObject): void
     {
@@ -283,6 +291,10 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
         }
 
         if ($this->reflector->getDeleteFileAfterSend($response) !== true) {
+            return;
+        }
+
+        if ($response->headers->has('X-Sendfile') || $response->headers->has('X-Accel-Redirect')) {
             return;
         }
 

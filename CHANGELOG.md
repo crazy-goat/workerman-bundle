@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BinaryFileResponseStrategy` no longer unlinks a `deleteFileAfterSend` file on the `X-Sendfile` / `X-Accel-Redirect` hand-off: the front-end server reads the file after the response is sent, so the synchronous bodyless-path unlink deleted it before it was served. This follows the documented `deleteFileAfterSend()` contract ("If the X-Sendfile header is used, the deleteFileAfterSend setting will not be used") instead of mirroring Symfony's runtime, which unlinks in `sendContent()`'s `finally` even on the hand-off; `docs/http-server.md` documents the behaviour and `BinaryFileResponseStrategyTest` pins the hand-off + `deleteFileAfterSend` combination (#1033)
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `PharHelper::resolveRuntimePath()` now rewrites a path to the runtime directory only when it is exactly the project directory or starts with it followed by a `/`, so a sibling directory that merely shares the name prefix (e.g. `/application/...` with project directory `/app`) is left unchanged instead of being rewritten to `/runtime...` (#914)
 
