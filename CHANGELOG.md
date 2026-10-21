@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking**: `Runner::run()` now rethrows `CacheWarmupException` (extends `KernelException` → `WorkermanException` → `\RuntimeException`) instead of a bare `\RuntimeException` when the env-drift cache re-warm fails, so a single `WorkermanExceptionInterface` catch covers this path while a `\RuntimeException` catch still works. See `UPGRADE.md` (#1040)
 - `CacheWarmupTimeoutConfig::set()` and `CacheWarmupTimeoutConfig::parseEnvRaw()` (via `resolve()`) now throw the typed `InvalidCacheWarmupTimeoutException` at the source instead of a bare `\InvalidArgumentException`, so `Runner::__construct()` no longer needs its try/catch translation wrapper; the error message now quotes the raw input (`got "0"`) consistently across all three throw sites (#1063)
 
 ## [0.31.0] - 2026-10-06

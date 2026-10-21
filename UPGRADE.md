@@ -70,6 +70,10 @@ public function shouldReboot(): bool
 
 `Runner::warmUpCache()` previously threw a bare `\RuntimeException` on all seven failure paths (fork failure, waitpid failure, timeout, unexpected status, SIGTERM failure, unexpected signal, non-zero exit). It now throws `CacheWarmupException` ([#816](https://github.com/crazy-goat/workerman-bundle/issues/816)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover these paths too.
 
+### `Runner` now throws `CacheWarmupException` when the env-drift cache re-warm fails
+
+`Runner::run()` previously caught the env-drift re-warm failure (a `Runner::warmUpCache()` failure during the post-warmup env-change check) and rethrew a bare `\RuntimeException`. It now rethrows `CacheWarmupException` ([#1040](https://github.com/crazy-goat/workerman-bundle/issues/1040)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
+
 ---
 
 ## Upgrading to 0.25

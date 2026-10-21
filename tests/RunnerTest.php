@@ -94,6 +94,44 @@ final class RunnerTest extends TestCase
     }
 
     /**
+     * The env-drift re-warm failure (issue #1040) must throw the bundle's
+     * typed exception, not a bare \RuntimeException, and the typed
+     * exception must sit inside the hierarchy so a single
+     * `WorkermanExceptionInterface` catch covers it while a
+     * `\RuntimeException` catch still works (BC). The original failure is
+     * chained as the previous exception.
+     */
+    public function testEnvDriftRewarmFailureThrowsTypedExceptionInHierarchy(): void
+    {
+        $kernelFactory = new KernelFactory(
+            fn(): KernelInterface => $this->createMock(KernelInterface::class),
+            [],
+        );
+        $runner = new ForkFailureRunner($kernelFactory);
+
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_test_' . uniqid();
+        $configLoader = new ConfigLoader(
+            projectDir: $tmpDir,
+            cacheDir: $tmpDir . '/var/cache/test',
+            isDebug: false,
+        );
+
+        $thrown = null;
+        try {
+            $this->invokeRunnerMethod($runner, 'rewarmCacheAfterEnvDrift', $configLoader);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, 'rewarmCacheAfterEnvDrift() must throw when warmup fails');
+        $this->assertInstanceOf(CacheWarmupException::class, $thrown);
+        $this->assertInstanceOf(WorkermanExceptionInterface::class, $thrown);
+        $this->assertInstanceOf(\RuntimeException::class, $thrown);
+        $this->assertStringContainsString('re-warming the cache failed', $thrown->getMessage());
+        $this->assertInstanceOf(CacheWarmupException::class, $thrown->getPrevious());
+    }
+
+    /**
      * Structural test: verify getCacheWarmupTimeout returns the constructor value.
      */
     public function testCacheWarmupTimeoutResolvesViaConfig(): void
