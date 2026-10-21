@@ -78,4 +78,24 @@ final class PharHelperTest extends TestCase
             PharHelper::resolveRuntimePath('/app/var/cache/test', '/app/'),
         );
     }
+
+    public function testResolveRuntimePathLeavesSiblingWithSharedPrefixUnchanged(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        self::assertSame(
+            '/application/var/run/workerman.pid',
+            PharHelper::resolveRuntimePath('/application/var/run/workerman.pid', '/app'),
+        );
+    }
+
+    public function testResolveRuntimePathRewritesExactProjectDir(): void
+    {
+        $_SERVER['WORKERMAN_RUNTIME_DIR'] = '/runtime';
+
+        self::assertSame(
+            '/runtime',
+            PharHelper::resolveRuntimePath('/app', '/app'),
+        );
+    }
 }

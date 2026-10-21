@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
+use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
+use CrazyGoat\WorkermanBundle\Exception\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 final class CacheWarmupTimeoutConfigTest extends TestCase
@@ -75,16 +77,28 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
 
     public function testSetRejectsZero(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectException(InvalidCacheWarmupTimeoutException::class);
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "0"');
         CacheWarmupTimeoutConfig::set(0);
     }
 
     public function testSetRejectsNegative(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer');
+        $this->expectException(InvalidCacheWarmupTimeoutException::class);
+        $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "-1"');
         CacheWarmupTimeoutConfig::set(-1);
+    }
+
+    public function testSetRejectionThrowsTypedExceptionInHierarchy(): void
+    {
+        try {
+            CacheWarmupTimeoutConfig::set(0);
+            self::fail('Expected InvalidCacheWarmupTimeoutException');
+        } catch (InvalidCacheWarmupTimeoutException $e) {
+            self::assertInstanceOf(ValidationException::class, $e);
+            self::assertInstanceOf(\InvalidArgumentException::class, $e);
+            self::assertStringContainsString('got "0"', $e->getMessage());
+        }
     }
 
     public function testDefaultIs30(): void
@@ -103,8 +117,8 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
 
         try {
             CacheWarmupTimeoutConfig::set(0);
-            self::fail('Expected InvalidArgumentException');
-        } catch (\InvalidArgumentException) {
+            self::fail('Expected InvalidCacheWarmupTimeoutException');
+        } catch (InvalidCacheWarmupTimeoutException) {
             self::assertSame(42, CacheWarmupTimeoutConfig::get());
         }
     }
@@ -208,8 +222,8 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
 
         try {
             CacheWarmupTimeoutConfig::resolve();
-            self::fail('Expected InvalidArgumentException');
-        } catch (\InvalidArgumentException $e) {
+            self::fail('Expected InvalidCacheWarmupTimeoutException');
+        } catch (InvalidCacheWarmupTimeoutException $e) {
             self::assertStringStartsWith(
                 'WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer',
                 $e->getMessage(),
@@ -222,7 +236,7 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
     {
         $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '45.9';
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidCacheWarmupTimeoutException::class);
         $this->expectExceptionMessage('WORKERMAN_CACHE_WARMUP_TIMEOUT must be a positive integer, got "45.9"');
         CacheWarmupTimeoutConfig::resolve();
     }
