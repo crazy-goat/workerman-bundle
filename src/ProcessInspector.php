@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\ProcFileReader;
 use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use Psr\Log\LoggerInterface;
@@ -60,7 +61,7 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $stat = $this->readProcFile("/proc/{$pid}/stat");
+            $stat = ProcFileReader::read("/proc/{$pid}/stat");
             if ($stat === null) {
                 return 0;
             }
@@ -190,7 +191,7 @@ final readonly class ProcessInspector
         // master forks, so it survives daemon mode and matches only
         // genuine Workerman masters.
         if (self::isLinux()) {
-            $content = $this->readProcFile("/proc/{$masterPid}/cmdline");
+            $content = ProcFileReader::read("/proc/{$masterPid}/cmdline");
             if ($content !== null && str_contains($content, 'WorkerMan: master process')) {
                 return true;
             }
@@ -299,7 +300,7 @@ final readonly class ProcessInspector
     private function isWorkermanMasterTitle(int $pid): bool
     {
         if (self::isLinux()) {
-            $content = $this->readProcFile("/proc/{$pid}/cmdline");
+            $content = ProcFileReader::read("/proc/{$pid}/cmdline");
             if ($content === null) {
                 return false;
             }
@@ -440,28 +441,6 @@ final readonly class ProcessInspector
     }
 
     /**
-     * Fail-closed read of a /proc pseudo-file.
-     *
-     * An unreadable path, a read failure and empty content all surface as
-     * null, so callers keep their own fail-closed sentinel (0 / false /
-     * null). Kept per-class: the ServerManager consumeFile() reads
-     * rename-then-read and have different semantics, so they stay out of
-     * scope.
-     *
-     * @phpstan-impure
-     */
-    private function readProcFile(string $path): ?string
-    {
-        if (!\is_readable($path)) {
-            return null;
-        }
-
-        $content = @\file_get_contents($path);
-
-        return \is_string($content) && $content !== '' ? $content : null;
-    }
-
-    /**
      * Read the process state character from `/proc/{pid}/stat` field 3.
      *
      * This is cheaper than slurping the whole `/proc/{pid}/status` file
@@ -477,7 +456,7 @@ final readonly class ProcessInspector
      */
     private function readProcessStateFromStat(int $pid): ?string
     {
-        $content = $this->readProcFile("/proc/{$pid}/stat");
+        $content = ProcFileReader::read("/proc/{$pid}/stat");
         if ($content === null) {
             return null;
         }
@@ -511,7 +490,7 @@ final readonly class ProcessInspector
      */
     private function readLinuxProcessSnapshot(int $pid): ?ProcessSnapshot
     {
-        $content = $this->readProcFile("/proc/{$pid}/stat");
+        $content = ProcFileReader::read("/proc/{$pid}/stat");
         if ($content === null) {
             return null;
         }
