@@ -105,7 +105,7 @@ described in `docs/workflow.md`. Both files are gitignored.
 ## Pull requests and CI
 
 `.github/workflows/tests.yaml` runs `changes` and `docs` always. `lint` and the test jobs run
-for code changes: `tests` (PHP 8.2 to 8.5 against Symfony 6.4 to 8.0; the PHP 8.2 / Symfony 6.4
+for code changes: `tests` (PHP 8.2 to 8.5 against Symfony 6.4 to 8.1; the PHP 8.2 / Symfony 6.4
 leg enforces the coverage floor), `tests-root-permissions` (root-only `ConfigLoader` tests under
 `sudo`; it fails if they skip) and an advisory `benchmark`. `ci-ok` aggregates them and is the
 only required check. The `lint` job only runs `bin/lint.sh`. A weekly scheduled run executes
