@@ -133,7 +133,7 @@ final class ComposerAuditE2ETest extends TestCase
 
         // composer audit exits 0 (clean) or 1 (advisories/abandoned found)
         if ($exitCode !== 0 && $exitCode !== 1) {
-            if (self::isNetworkError($stdout, $stderr)) {
+            if ($this->isNetworkError($stdout, $stderr)) {
                 self::markTestSkipped(\sprintf(
                     'Skipping composer audit: could not reach packagist.org (exit code %d): %s %s',
                     $exitCode,
@@ -165,7 +165,7 @@ final class ComposerAuditE2ETest extends TestCase
      * Detects composer/packagist network failures (timeouts, DNS, refused or
      * reset connections) so the audit tests skip instead of failing on them.
      */
-    private static function isNetworkError(string $stdout, string $stderr): bool
+    private function isNetworkError(string $stdout, string $stderr): bool
     {
         $haystack = \strtolower($stdout . "\n" . $stderr);
 
