@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -54,6 +55,26 @@ final class ComposerAuditE2ETest extends TestCase
 
         self::assertArrayHasKey('abandoned', $decoded, 'Audit JSON must contain abandoned key');
         self::assertIsArray($decoded['abandoned'], 'abandoned value must be an array');
+    }
+
+    /**
+     * @return iterable<string, array{bool, string, string}>
+     */
+    public static function networkErrorOutputs(): iterable
+    {
+        yield 'curl timeout from the issue' => [true, '', 'curl error 28 while downloading https://packagist.org/api/security-advisories/: Connection timed out after 10002 milliseconds'];
+        yield 'DNS failure' => [true, '', 'curl error 6 while downloading https://packagist.org/: Could not resolve host: packagist.org'];
+        yield 'failed to connect' => [true, '', 'Failed to connect to packagist.org port 443'];
+        yield 'connection reset' => [true, '', 'Connection reset by peer'];
+        yield 'marker in stdout, mixed case' => [true, 'Network is unreachable', ''];
+        yield 'non-network error' => [false, '', 'In AuditCommand.php line 42: Undefined array key "advisories"'];
+        yield 'empty output' => [false, '', ''];
+    }
+
+    #[DataProvider('networkErrorOutputs')]
+    public function testNetworkErrorDetection(bool $expected, string $stdout, string $stderr): void
+    {
+        self::assertSame($expected, $this->isNetworkError($stdout, $stderr));
     }
 
     private function runCommand(string $command): string
@@ -133,6 +154,15 @@ final class ComposerAuditE2ETest extends TestCase
 
         // composer audit exits 0 (clean) or 1 (advisories/abandoned found)
         if ($exitCode !== 0 && $exitCode !== 1) {
+            if ($this->isNetworkError($stdout, $stderr)) {
+                self::markTestSkipped(\sprintf(
+                    'Skipping composer audit: could not reach packagist.org (exit code %d): %s %s',
+                    $exitCode,
+                    \trim($stdout),
+                    \trim($stderr),
+                ));
+            }
+
             self::fail(\sprintf(
                 "composer audit failed unexpectedly (exit code %d):\nstdout: %s\nstderr: %s",
                 $exitCode,
@@ -150,5 +180,33 @@ final class ComposerAuditE2ETest extends TestCase
         }
 
         return $stdout;
+    }
+
+    /**
+     * Detects composer/packagist network failures (timeouts, DNS, refused or
+     * reset connections) so the audit tests skip instead of failing on them.
+     */
+    private function isNetworkError(string $stdout, string $stderr): bool
+    {
+        $haystack = \strtolower($stdout . "\n" . $stderr);
+
+        $markers = [
+            'curl error',
+            'connection timed out',
+            'could not resolve host',
+            'failed to connect',
+            'connection refused',
+            'connection reset',
+            'network is unreachable',
+            'operation timed out',
+        ];
+
+        foreach ($markers as $marker) {
+            if (\str_contains($haystack, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
