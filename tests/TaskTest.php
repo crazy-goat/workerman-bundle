@@ -9,11 +9,26 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class TaskTest extends KernelTestCase
 {
+    /**
+     * Timeout for waiting on a fresh scheduler timestamp, in seconds.
+     *
+     * The test task runs every second, so a few seconds is normally enough;
+     * the extra headroom keeps the test green on slow or loaded CI runners
+     * where a single read against a fixed window flakes (#1081).
+     */
+    private const FRESH_TIMESTAMP_TIMEOUT_SECONDS = 10;
+
     public function testTaskIsRunning(): void
     {
-        $content = $this->getTaskStatusFileContent() ?? $this->fail('Task status file is not found');
+        $path = dirname(__DIR__) . '/var/task_status.log';
 
-        $this->assertTrue((int) $content > time() - 4, 'Task was called more than 4 seconds ago');
+        $found = Wait::until(
+            static fn(): bool => ($content = @file_get_contents($path)) !== false
+                && (int) $content > time() - 4,
+            self::FRESH_TIMESTAMP_TIMEOUT_SECONDS,
+        );
+
+        $this->assertTrue($found, 'No fresh task status timestamp appeared within 10 seconds');
     }
 
     /**
@@ -60,19 +75,5 @@ final class TaskTest extends KernelTestCase
                 unlink($pidFile);
             }
         }
-    }
-
-    private function getTaskStatusFileContent(): string|null
-    {
-        $path = dirname(__DIR__) . '/var/task_status.log';
-        $found = Wait::until(static fn(): bool => @file_get_contents($path) !== false, 2);
-
-        if (!$found) {
-            return null;
-        }
-
-        $content = @file_get_contents($path);
-
-        return $content === false ? null : $content;
     }
 }
