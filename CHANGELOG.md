@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `StaticFilesMiddleware` gained a `$precompressed` constructor argument (e.g. `['br', 'gzip']`): when the client advertises a configured encoding via `Accept-Encoding` and the `app.js.br` / `app.js.gz` variant exists next to the plain file, the variant is served with `Content-Encoding`, the `Content-Type` of the original file, its own `ETag` and `Vary: Accept-Encoding`. Variants pass the same block checks as plain files and are never served without the plain file; the default `[]` keeps the old behaviour (#1007)
+
 ### Fixed
 
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
