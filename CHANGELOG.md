@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CacheWarmupTimeoutConfig::set()` and `CacheWarmupTimeoutConfig::parseEnvRaw()` (via `resolve()`) now throw the typed `InvalidCacheWarmupTimeoutException` at the source instead of a bare `\InvalidArgumentException`, so `Runner::__construct()` no longer needs its try/catch translation wrapper; the error message now quotes the raw input (`got "0"`) consistently across all three throw sites (#1063)
 
+### Security
+
+- The development `composer.lock` now pins `symfony/http-foundation` 7.4.21 (was 7.4.17) to clear CVE-2026-108082, so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.46, 7.4.19 or 8.1.7 or later (#1094)
+
 ## [0.31.0] - 2026-10-06
 
 ### Fixed
