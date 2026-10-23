@@ -60,7 +60,7 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $stat = self::readProcFile("/proc/{$pid}/stat");
+            $stat = $this->readProcFile("/proc/{$pid}/stat");
             if ($stat === null) {
                 return 0;
             }
@@ -190,7 +190,7 @@ final readonly class ProcessInspector
         // master forks, so it survives daemon mode and matches only
         // genuine Workerman masters.
         if (self::isLinux()) {
-            $content = self::readProcFile("/proc/{$masterPid}/cmdline");
+            $content = $this->readProcFile("/proc/{$masterPid}/cmdline");
             if ($content !== null && str_contains($content, 'WorkerMan: master process')) {
                 return true;
             }
@@ -299,7 +299,7 @@ final readonly class ProcessInspector
     private function isWorkermanMasterTitle(int $pid): bool
     {
         if (self::isLinux()) {
-            $content = self::readProcFile("/proc/{$pid}/cmdline");
+            $content = $this->readProcFile("/proc/{$pid}/cmdline");
             if ($content === null) {
                 return false;
             }
@@ -450,7 +450,7 @@ final readonly class ProcessInspector
      *
      * @phpstan-impure
      */
-    private static function readProcFile(string $path): ?string
+    private function readProcFile(string $path): ?string
     {
         if (!\is_readable($path)) {
             return null;
@@ -477,7 +477,7 @@ final readonly class ProcessInspector
      */
     private function readProcessStateFromStat(int $pid): ?string
     {
-        $content = self::readProcFile("/proc/{$pid}/stat");
+        $content = $this->readProcFile("/proc/{$pid}/stat");
         if ($content === null) {
             return null;
         }
@@ -511,7 +511,7 @@ final readonly class ProcessInspector
      */
     private function readLinuxProcessSnapshot(int $pid): ?ProcessSnapshot
     {
-        $content = self::readProcFile("/proc/{$pid}/stat");
+        $content = $this->readProcFile("/proc/{$pid}/stat");
         if ($content === null) {
             return null;
         }
