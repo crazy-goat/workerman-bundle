@@ -65,7 +65,10 @@
     "autoload": {
         "psr-4": {
             "CrazyGoat\\WorkermanBundle\\": "src/"
-        }
+        },
+        "files": [
+            "src/polyfill_headers_send.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
