@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AbstractController::sendEarlyHints()` now writes a `103 Early Hints` interim response to the connection ahead of the final response, so browsers can preload assets while the controller still works. HTTP/1.0 clients get no interim response; keep-alive is unaffected (#1018)
+
 ### Fixed
 
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)

@@ -130,3 +130,39 @@ An error before the first byte still gives a normal 500 answer.
 A middleware cannot change a streamed response.
 The server has already sent it when `$next()` returns.
 A header that you add then is not sent.
+
+## Early hints (103)
+
+`AbstractController::sendEarlyHints()` works with no change in your controller:
+
+```php
+public function index(): Response
+{
+    $response = $this->sendEarlyHints([
+        new Link(href: '/style.css', rel: 'preload'),
+    ]);
+
+    // slow work here; the browser already loads /style.css
+
+    return $this->render('index.html.twig', response: $response);
+}
+```
+
+The bundle writes the interim response to the connection at once:
+
+```
+HTTP/1.1 103 Early Hints
+Link: </style.css>; rel=preload
+
+```
+
+and the normal final response follows later. (It needs `symfony/web-link`,
+like everywhere else `sendEarlyHints()` is used.)
+
+Two things to know:
+
+- The 103 is HTTP/1.1 only. An HTTP/1.0 request gets no interim response,
+  only the final one.
+- Some proxies (nginx and others) drop `103` responses, so the gain is small
+  behind them. Keep-alive is unaffected either way: the 103 carries no body,
+  and the final response is sent unchanged.
