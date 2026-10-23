@@ -91,14 +91,14 @@ jobs:
           - php-version: '8.4'
             symfony-version: '7.4.*'
           - php-version: '8.4'
-            symfony-version: '8.0.*'
+            symfony-version: '8.1.*'
 
           - php-version: '8.5'
             symfony-version: '6.4.*'
           - php-version: '8.5'
             symfony-version: '7.4.*'
           - php-version: '8.5'
-            symfony-version: '8.0.*'
+            symfony-version: '8.1.*'
 
     steps:
       - name: Checkout
@@ -119,7 +119,7 @@ jobs:
         run: |
           export SYMFONY_VERSION=${{ matrix.symfony-version }}
           # symfony/*-contracts packages version 2.x/3.x only — they have no
-          # 6.4/7.4/8.0 line, so they are excluded from the matrix rewrite (#588, #808).
+          # 6.4/7.4/8.1 line, so they are excluded from the matrix rewrite (#588, #808).
           sed -i -E "/contracts/!s/(\"symfony\/[a-z0-9-]+\":\s*\")[^\"]+/\1$SYMFONY_VERSION/g" composer.json
 
       # Matrix jobs intentionally resolve fresh dependencies after rewriting
