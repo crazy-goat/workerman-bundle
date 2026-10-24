@@ -368,5 +368,35 @@ final class GithubWorkflowsTest extends TestCase
                 );
             }
         }
+
+        // The rewrite regex itself must match every symfony/* package name, so a
+        // future symfony/foo2bar-style name is never silently skipped (#1060).
+        $rewriteClass = null;
+        foreach ($steps[0] as $step) {
+            preg_match_all('/(\[[a-z0-9\-^]+\])/', $step, $classes);
+            foreach ($classes[1] as $class) {
+                if (str_contains($class, 'a-z')) {
+                    $rewriteClass = $class;
+                    break 2;
+                }
+            }
+        }
+        self::assertNotNull(
+            $rewriteClass,
+            'The "Update Symfony constraints in composer.json" step must contain a symfony\/[...] rewrite character class',
+        );
+
+        foreach ($constraints as $package => $constraint) {
+            $name = substr($package, strlen('symfony/'));
+            self::assertMatchesRegularExpression(
+                sprintf('/^%s+$/', $rewriteClass),
+                $name,
+                sprintf(
+                    'symfony package "%s" is not matched by the sed rewrite character class %s and would be silently skipped',
+                    $package,
+                    $rewriteClass,
+                ),
+            );
+        }
     }
 }
