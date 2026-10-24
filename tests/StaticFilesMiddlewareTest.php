@@ -1525,6 +1525,33 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
         $this->assertStringContainsString("Content-Length: 17\r\n", $wire);
         $this->assertStringNotContainsString('test file content', $wire);
+
+        // …and the Content-Type Workerman adds when it sends the file for
+        // GET, not the text/html default of a bodyless response.
+        $this->assertSame('text/plain', $response->getHeader('Content-Type'));
+        $this->assertSame(1, substr_count($wire, 'Content-Type:'), 'must emit exactly one Content-Type');
+    }
+
+    public function testHeadOnUnknownExtensionSendsOctetStreamAndAttachment(): void
+    {
+        $filePath = $this->rootDirectory . '/data.unknownext';
+        file_put_contents($filePath, 'binary');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $response = $middleware(
+                $this->createRequest('/data.unknownext', 'HEAD'),
+                fn(): Response => new Response(500),
+            );
+
+            $this->assertInstanceOf(HeadResponse::class, $response);
+            $this->assertSame('application/octet-stream', $response->getHeader('Content-Type'));
+            $this->assertSame('attachment; filename="data.unknownext"', $response->getHeader('Content-Disposition'));
+            $this->assertStringContainsString("Content-Length: 6\r\n", (string) $response);
+        } finally {
+            unlink($filePath);
+        }
     }
 
     public function testHeadWithMatchingEtagReturns304(): void

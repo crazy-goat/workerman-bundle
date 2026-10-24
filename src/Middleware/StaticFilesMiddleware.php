@@ -95,7 +95,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     public function __invoke(Request $request, callable $next): Response
     {
-        $method = (string) $request->method();
+        $method = $request->method();
         $isHead = strcasecmp($method, 'HEAD') === 0;
 
         // Static files are only served for GET and HEAD. HEAD carries the
@@ -157,11 +157,22 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
      * corresponding GET would produce (RFC 9110 §9.3.2), without attaching
      * the file (issue #903).
      *
+     * Workerman adds Content-Type (and Content-Disposition for unknown
+     * types) only when it sends a file, so they are set here the same way;
+     * without them the HEAD response would fall back to text/html.
+     *
      * @param array<string, string> $headers
      */
     private function headResponse(string $filePath, array $headers): HeadResponse
     {
         $size = filesize($filePath);
+
+        $mime = (new Response())->getMimeType(pathinfo($filePath, PATHINFO_EXTENSION));
+        $headers['Content-Type'] = $mime;
+        if ($mime === 'application/octet-stream') {
+            $baseName = (string) preg_replace('/["\\\\\x00-\x1F\x7F]/', '', basename($filePath));
+            $headers['Content-Disposition'] = 'attachment; filename="' . ($baseName !== '' ? $baseName : 'unknown') . '"';
+        }
 
         return new HeadResponse(200, $headers, is_int($size) ? $size : 0);
     }
