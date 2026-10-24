@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `docs/deployment.md` "Stop time and graceful stop" and the `stop_timeout` row in `docs/configuration.md` now match the #987 fix: `stop_timeout` is the time a running request gets to end after a stop or reload, and the table shows the new test results (#1024)
+- `docs/deployment.md` "Stop time and graceful stop" and the `stop_timeout` row in `docs/configuration.md` now match the #987 fix: `stop_timeout` is the time a running request gets to end after a stop or reload without `-g`, and the table shows the new test results (#1024)
 - `ProcessInspector` and `MasterFingerprint` now read their `/proc/{pid}` pseudo-files (stat, cmdline, status) through one shared internal `Util\ProcFileReader::read()` helper instead of repeating the `is_readable` + `file_get_contents` + empty-check preamble at seven call sites; fail-closed semantics (unreadable → sentinel) are unchanged at every site. The two cmdline reads now also suppress the PHP warning when the process exits between `is_readable()` and the read, as the stat and status reads already did. The ServerManager status and connections reads are not `/proc` reads and stay on their rename-then-read `consumeFile()` (#1056)
 - `CacheWarmupTimeoutConfig::set()` and `CacheWarmupTimeoutConfig::parseEnvRaw()` (via `resolve()`) now throw the typed `InvalidCacheWarmupTimeoutException` at the source instead of a bare `\InvalidArgumentException`, so `Runner::__construct()` no longer needs its try/catch translation wrapper; the error message now quotes the raw input (`got "0"`) consistently across all three throw sites (#1063)
 
