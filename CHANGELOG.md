@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `SfxDownloader::fetch()` now also fails fast with the directory-permissions message when a cached zip artifact sits in a destination directory that is no longer writable, instead of failing late per entry inside the extraction; a cached archive that does not open still reaches the poisoned-artifact cleanup path (#1052)
 - The CI matrix `sed` rewrite now matches digits in package names (`[a-z0-9-]+` instead of `[a-z-]+`), so a future `symfony/foo2bar`-style package is not silently skipped by the "Update Symfony constraints" step; `GithubWorkflowsTest` now replays the rewrite character class against every `symfony/*` key in `composer.json` (#1060)
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `TaskTest::testTaskIsRunning()` now waits with `Util\\Wait::until()` for a fresh scheduler timestamp (up to 10 s) instead of asserting against a single read with a fixed 4 s window, so the test no longer flakes on slow or loaded CI runners where the 1 s task tick is delayed (#1081)

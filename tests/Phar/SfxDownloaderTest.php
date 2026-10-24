@@ -319,8 +319,10 @@ final class SfxDownloaderTest extends TestCase
             );
             self::fail('Expected a RuntimeException for the non-writable destination directory.');
         } catch (\RuntimeException $e) {
-            self::assertStringContainsString($dir, $e->getMessage());
-            self::assertStringContainsString('not writable', $e->getMessage());
+            self::assertSame(
+                sprintf('Destination directory "%s" is not writable; check its permissions before extracting.', $dir),
+                $e->getMessage(),
+            );
         } finally {
             chmod($dir, 0755);
         }

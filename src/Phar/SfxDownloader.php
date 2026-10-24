@@ -54,7 +54,7 @@ final readonly class SfxDownloader
         $destination = rtrim($destinationDir, '/') . '/' . $filename;
 
         if (!is_file($destination) && !is_writable($destinationDir)) {
-            throw new \RuntimeException(sprintf('Destination directory "%s" is not writable; check its permissions before downloading.', $destinationDir));
+            throw $this->notWritable($destinationDir, 'downloading');
         }
 
         if (!is_file($destination)) {
@@ -412,9 +412,19 @@ final readonly class SfxDownloader
             return;
         }
 
-        throw new \RuntimeException(sprintf(
-            'Destination directory "%s" is not writable; check its permissions before extracting.',
+        throw $this->notWritable($destinationDir, 'extracting');
+    }
+
+    /**
+     * One directory-permissions message for the download and the extract
+     * guards, so both fail fast with the same wording (issue #1052).
+     */
+    private function notWritable(string $destinationDir, string $step): \RuntimeException
+    {
+        return new \RuntimeException(sprintf(
+            'Destination directory "%s" is not writable; check its permissions before %s.',
             $destinationDir,
+            $step,
         ));
     }
 
