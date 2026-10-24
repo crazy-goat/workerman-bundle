@@ -400,7 +400,12 @@ final readonly class SfxDownloader
      * actually open; an unopenable archive keeps the original "Failed to
      * open zip archive" path.
      *
-     * @throws \RuntimeException when the directory is not writable and the archive opens cleanly
+     * ZipArchive::extractTo() overwrites an existing writable file in place
+     * without needing a writable directory, so a read-only directory that
+     * already holds every entry keeps working; the check fires only when an
+     * entry would need a new file or directory.
+     *
+     * @throws \RuntimeException when the directory is not writable and an entry needs to be created
      */
     private function assertExtractDestinationWritable(string $zipPath, string $destinationDir): void
     {
@@ -408,11 +413,32 @@ final readonly class SfxDownloader
             return;
         }
 
-        if (!$this->archiveOpensCleanly($zipPath)) {
+        try {
+            $zip = $this->openArchive($zipPath);
+        } catch (\RuntimeException) {
             return;
         }
 
-        throw $this->notWritable($destinationDir, 'extracting');
+        try {
+            $base = rtrim($destinationDir, '/') . '/';
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (!is_string($name) || $name === '') {
+                    // Leave the unreadable name to extractToDirectory()'s own error.
+                    return;
+                }
+
+                $target = $base . $name;
+                $inPlace = str_ends_with($name, '/')
+                    ? is_dir($target)
+                    : is_file($target) && is_writable($target);
+                if (!$inPlace) {
+                    throw $this->notWritable($destinationDir, 'extracting');
+                }
+            }
+        } finally {
+            $zip->close();
+        }
     }
 
     /**
@@ -426,24 +452,6 @@ final readonly class SfxDownloader
             $destinationDir,
             $step,
         ));
-    }
-
-    /**
-     * Probe whether a zip archive opens cleanly, without throwing.
-     */
-    private function archiveOpensCleanly(string $zipPath): bool
-    {
-        if (!class_exists(\ZipArchive::class)) {
-            return false;
-        }
-
-        $zip = new \ZipArchive();
-        $opened = $zip->open($zipPath, \ZipArchive::CHECKCONS) === true;
-        if ($opened) {
-            $zip->close();
-        }
-
-        return $opened;
     }
 
     /**

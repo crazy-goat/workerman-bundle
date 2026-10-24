@@ -333,6 +333,40 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * A read-only directory that already holds every entry of the cached zip
+     * keeps working: extractTo() overwrites the existing writable file in
+     * place, so the fail-fast guard of issue #1052 must not fire.
+     *
+     * @requires extension zip
+     */
+    public function testFetchReextractsInPlaceWhenNonWritableDirectoryAlreadyHoldsEntries(): void
+    {
+        $dir = $this->tempDir . '/readonly-prepopulated';
+        mkdir($dir, 0755, true);
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, ['phpmicro.sfx' => 'fake-sfx-bytes']);
+        file_put_contents($dir . '/phpmicro.sfx', 'old-bytes');
+
+        chmod($dir, 0555);
+        if (is_writable($dir)) {
+            chmod($dir, 0755);
+            self::markTestSkipped('Cannot simulate a non-writable directory: it stays writable (running as root?).');
+        }
+
+        try {
+            $result = (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $dir,
+            );
+        } finally {
+            chmod($dir, 0755);
+        }
+
+        self::assertSame($dir . '/phpmicro.sfx', $result);
+        self::assertSame('fake-sfx-bytes', file_get_contents($result));
+    }
+
+    /**
      * @return array<string, array{0: string, 1: string}>
      */
     public static function maliciousEntryProvider(): array
