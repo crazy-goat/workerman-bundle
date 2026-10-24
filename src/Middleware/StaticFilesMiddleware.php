@@ -106,11 +106,19 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return $next($request);
         }
 
-        if ($this->isAllowlistExtensionMismatch($request->path())) {
+        // Workerman Request::path() returns the raw path without decoding
+        // percent-encoding (issue #905), so decode once here and use the
+        // decoded path for both the allowlist check and the resolver.
+        // Decoding twice would turn `%252e%252e` into `..`, so this is
+        // the only decode; the NUL, backslash and root guards in
+        // getPublicPathFile() run on the decoded path.
+        $path = rawurldecode($request->path());
+
+        if ($this->isAllowlistExtensionMismatch($path)) {
             return new Response(404);
         }
 
-        $filePath = $this->getPublicPathFile($request);
+        $filePath = $this->getPublicPathFile($path);
         if ($filePath === false || !is_file($filePath)) {
             return $next($request);
         }
@@ -288,10 +296,8 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return $isFile && $this->allowedExtensions !== [] && !in_array($ext, $this->allowedExtensions, true);
     }
 
-    private function getPublicPathFile(Request $request): string|false
+    private function getPublicPathFile(string $path): string|false
     {
-        $path = $request->path();
-
         if (str_contains($path, "\0") || str_contains($path, '%00') || str_contains($path, '\\')) {
             return false;
         }
