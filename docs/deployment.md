@@ -348,6 +348,7 @@ or until `stop_timeout` is over.
 `stop_timeout` is the time a running request gets to end.
 It counts from the stop signal.
 Then the master kills the worker with `SIGKILL`, and the client gets an empty reply.
+This is for a stop without `-g`; graceful stop with `-g` was not tested again.
 We ran the tests again on the fixed code: a route that works for 5 seconds, on a Linux host and in Docker, with the Select and `event` loops, stopped 0.5 seconds after the request began:
 
 | Setup | Result |
@@ -357,13 +358,15 @@ We ran the tests again on the fixed code: a route that works for 5 seconds, on a
 | `stop_timeout: 2`, stop | Cut 2 s after the stop, empty reply |
 | Old code 0446513, `stop_timeout: 10`, Select | Cut after about 1 s (stop) or at once (reload) |
 
+These results are for HTTP workers. A scheduler worker on the `event` loop does not stop or reload in this way (see [issue 1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
+
 The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)):
 a running request is no longer cut in the middle by the signal.
 A request that takes longer than `stop_timeout` is still cut.
 Set `stop_timeout` higher than your longest request.
 `workerman:server reload` works the same way.
-A PHP `sleep()` ends early when the stop or reload signal comes: it returns the seconds that are left, and the request goes on.
-`usleep()` and normal work are not cut.
+We did not test how a PHP `sleep()` or `usleep()` in a request acts on a stop or reload.
+A short check outside the server, on macOS, showed that both calls end early when a signal comes.
 Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
 
 - Docker: `docker stop -t` or `stop_grace_period` in Compose.
