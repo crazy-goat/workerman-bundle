@@ -19,7 +19,7 @@ use GuzzleHttp\HandlerStack;
 final class BoundedHttpClient
 {
     /** A stalled response must fail the test, not hang the suite (#830). */
-    private const BOUNDED_OPTIONS = ['http_errors' => false, 'connect_timeout' => 0.2, 'timeout' => 1];
+    public const OPTIONS = ['http_errors' => false, 'connect_timeout' => 0.2, 'timeout' => 1];
 
     /**
      * @param array<string, mixed> $options extra client options; a longer
@@ -28,7 +28,7 @@ final class BoundedHttpClient
     public static function create(array $options = [], ?MockHandler $handler = null): Client
     {
         return new Client(
-            $options + self::BOUNDED_OPTIONS + ($handler instanceof MockHandler ? ['handler' => HandlerStack::create($handler)] : []),
+            $options + self::OPTIONS + ($handler instanceof MockHandler ? ['handler' => HandlerStack::create($handler)] : []),
         );
     }
 }

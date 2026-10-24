@@ -12,7 +12,6 @@ use GuzzleHttp\Exception\NetworkException;
 use GuzzleHttp\Exception\NetworkTimeoutException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\AssertionFailedError;
@@ -22,9 +21,6 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class WorkermanCommandTest extends KernelTestCase
 {
-    /** A stalled response must fail the test, not hang the suite (#830). */
-    private const BOUNDED_OPTIONS = ['http_errors' => false, 'connect_timeout' => 0.2, 'timeout' => 1];
-
     public function testInvalidAction(): void
     {
         $tester = $this->createCommandTester();
@@ -53,7 +49,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
     public function testStopAndStartViaCli(): void
     {
-        $client = $this->createBoundedClient();
+        $client = BoundedHttpClient::create();
 
         // Server is running (started by bootstrap.php) — verify HTTP works.
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
@@ -101,7 +97,7 @@ final class WorkermanCommandTest extends KernelTestCase
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
 
         // The listening socket can stay up while workers are restarting.
-        $this->assertHttpReadyAfterReload($this->createBoundedClient());
+        $this->assertHttpReadyAfterReload(BoundedHttpClient::create());
     }
 
     public function testReloadHttpReadinessRetriesTransientTransportFailures(): void
@@ -115,7 +111,7 @@ final class WorkermanCommandTest extends KernelTestCase
             new Response(200),
         ]);
 
-        $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+        $this->assertHttpReadyAfterReload(BoundedHttpClient::create([], $handler));
 
         self::assertCount(0, $handler);
         self::assertSame(1, $handler->getLastOptions()['timeout']);
@@ -135,7 +131,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
         // A zero deadline deterministically exercises exhaustion after the first failed probe.
         try {
-            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]), 0);
+            $this->assertHttpReadyAfterReload(BoundedHttpClient::create([], $handler), 0);
         } finally {
             self::assertCount(1, $handler, 'Must not probe again after the deadline');
         }
@@ -148,7 +144,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $this->expectExceptionMessage('Unexpected HTTP status after reload');
 
         try {
-            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+            $this->assertHttpReadyAfterReload(BoundedHttpClient::create([], $handler));
         } finally {
             self::assertCount(1, $handler);
         }
@@ -162,39 +158,10 @@ final class WorkermanCommandTest extends KernelTestCase
         $this->expectExceptionObject($error);
 
         try {
-            $this->assertHttpReadyAfterReload(new Client(['handler' => HandlerStack::create($handler)]));
+            $this->assertHttpReadyAfterReload(BoundedHttpClient::create([], $handler));
         } finally {
             self::assertCount(1, $handler);
         }
-    }
-
-    public function testTheHttpClientOfTheCliTestsIsBounded(): void
-    {
-        $handler = new MockHandler([new Response(200)]);
-
-        $this->createBoundedClient($handler)->request('GET', 'http://127.0.0.1:8888/response_test');
-
-        self::assertSame(1, $handler->getLastOptions()['timeout']);
-        self::assertSame(0.2, $handler->getLastOptions()['connect_timeout']);
-        self::assertFalse($handler->getLastOptions()['http_errors']);
-    }
-
-    public function testNoClientOfThisFileIsCreatedWithoutTimeouts(): void
-    {
-        $source = (string) file_get_contents(__FILE__);
-
-        self::assertGreaterThan(0, preg_match_all('/new Client\(([^;]*);/', $source, $matches));
-        foreach ($matches[1] as $arguments) {
-            self::assertTrue(
-                str_contains($arguments, "'handler'") || str_contains($arguments, 'self::BOUNDED_OPTIONS'),
-                'A real client needs connect_timeout and timeout (#830): use createBoundedClient() instead of: ' . $arguments,
-            );
-        }
-    }
-
-    private function createBoundedClient(?MockHandler $handler = null): Client
-    {
-        return new Client(self::BOUNDED_OPTIONS + ($handler instanceof MockHandler ? ['handler' => HandlerStack::create($handler)] : []));
     }
 
     private function assertHttpReadyAfterReload(Client $client, int $timeoutSeconds = 5): void
@@ -203,7 +170,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $ready = Wait::until(static function () use ($client, &$lastError): bool {
             try {
                 $response = $client->request('GET', 'http://127.0.0.1:8888/response_test', [
-                    ...self::BOUNDED_OPTIONS,
+                    ...BoundedHttpClient::OPTIONS,
                     'allow_redirects' => false,
                 ]);
             } catch (NetworkException $exception) {

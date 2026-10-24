@@ -41,7 +41,7 @@ final class BoundedHttpClientTest extends TestCase
     /**
      * A test or a lint check must fail when a client without timeouts is
      * added (#1028): scan every tests/ file for a bare client construction
-     * and require timeouts, the shared factory, or a mock handler; a raw
+     * and require both timeouts (or the shared factory); a raw
      * curl_init() client needs CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT.
      */
     public function testNoUnboundedHttpClientInTests(): void
@@ -60,14 +60,18 @@ final class BoundedHttpClientTest extends TestCase
                 && (!str_contains($source, 'CURLOPT_CONNECTTIMEOUT') || !str_contains($source, 'CURLOPT_TIMEOUT'))) {
                 $offenders[] = $file->getFilename() . ': curl_init() without CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT';
             }
+            // The factory itself is the one place that builds a client
+            // from the shared options; testCreateCarriesTimeouts covers it.
+            if ($file->getFilename() === 'BoundedHttpClient.php') {
+                continue;
+            }
             if (preg_match_all('/new Client\(([^;]*);/', $source, $matches) === 0) {
                 continue;
             }
             foreach ($matches[1] as $arguments) {
-                $bounded = str_contains($arguments, 'BOUNDED_OPTIONS')
-                    || str_contains($arguments, 'BoundedHttpClient::create')
-                    || str_contains($arguments, "'handler'")
-                    || (str_contains($arguments, 'connect_timeout') && str_contains($arguments, 'timeout'));
+                // Quoted keys: 'timeout' is a substring of connect_timeout,
+                // so a bare str_contains() would accept connect_timeout alone.
+                $bounded = str_contains($arguments, "'connect_timeout'") && str_contains($arguments, "'timeout'");
                 if (!$bounded) {
                     $offenders[] = $file->getFilename() . ': ' . trim($arguments);
                 }
