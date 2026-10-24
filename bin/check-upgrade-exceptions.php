@@ -21,10 +21,13 @@ declare(strict_types=1);
  *   4. every exception type named in UPGRADE.md outside the tree block —
  *      the `| Before | After |` table, per-version prose and the `use` /
  *      `catch` / `new` references in the PHP examples — must be declared
- *      in src/Exception/ (issue #1045). A leading backslash marks an
- *      external type (PHP built-ins like `\InvalidArgumentException`) and
- *      is skipped, as is the bare word `Exception` (the namespace name,
- *      not a type).
+ *      in src/Exception/ (issue #1045). A name whose namespace is not
+ *      `CrazyGoat\WorkermanBundle\...` marks an external type (PHP
+ *      built-ins like `\InvalidArgumentException`, third-party types like
+ *      `Symfony\...\NotFoundHttpException`) and is skipped, as is the bare
+ *      word `Exception` (the namespace name, not a type). A leading
+ *      backslash alone no longer marks a type external: a fully qualified
+ *      bundle name is checked like a short one (issue #1105).
  *
  * Usage: php bin/check-upgrade-exceptions.php [options]
  *
@@ -257,16 +260,25 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
     }
 
     // `use` imports, `catch` clauses and `new` instantiations in the PHP
-    // examples.
-    if (preg_match_all('/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)\s*;/m', $scope, $uses)) {
+    // examples. A `use X as Y;` alias (issue #1105) names X, not the
+    // local alias Y, so the alias is allowed after the type.
+    if (preg_match_all('/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?\s*;/m', $scope, $uses)) {
         foreach ($uses[1] as $name) {
             checkUpgradeExceptionsAddNamedType($names, $name);
         }
     }
 
-    if (preg_match_all('/\bcatch\s*\(\s*(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\b/', $scope, $catches)) {
-        foreach ($catches[1] as $name) {
-            checkUpgradeExceptionsAddNamedType($names, $name);
+    // Every type of a multi-catch clause (`catch (A | B $e)`, issue #1105)
+    // is checked, not just the first: the whole clause is captured and
+    // each type inside it is recorded. A single-type clause re-records
+    // the same name, which is harmless (set semantics).
+    if (preg_match_all('/\bcatch\s*\(([^)]*)\)/', $scope, $catchGroups)) {
+        foreach ($catchGroups[1] as $group) {
+            if (preg_match_all('/(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\b/', $group, $catches)) {
+                foreach ($catches[1] as $name) {
+                    checkUpgradeExceptionsAddNamedType($names, $name);
+                }
+            }
         }
     }
 
@@ -280,15 +292,30 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
 }
 
 /**
- * Record a referenced type unless it is external: a leading backslash marks
- * a global-namespace type (PHP built-ins like `\InvalidArgumentException`),
- * and the bare word `Exception` is the namespace name, not a type.
+ * Record a referenced type unless it is external: a name whose namespace
+ * is not `CrazyGoat\WorkermanBundle\...` is a third-party or global type
+ * (PHP built-ins like `\InvalidArgumentException`, third-party types like
+ * `Symfony\...\NotFoundHttpException` with or without a leading backslash)
+ * and is skipped, as is the bare word `Exception` (the namespace name,
+ * not a type). A leading backslash alone does not mark a bundle type
+ * external: a fully qualified bundle name is checked like a short one.
  *
  * @param array<string, true> $names
  */
 function checkUpgradeExceptionsAddNamedType(array &$names, string $name): void
 {
-    if (str_starts_with(ltrim($name), '\\')) {
+    $qualified = ltrim(trim($name), '\\');
+    $separator = strrpos($qualified, '\\');
+
+    if ($separator !== false) {
+        $namespace = substr($qualified, 0, $separator);
+
+        if ($namespace !== 'CrazyGoat\\WorkermanBundle' && !str_starts_with($namespace, 'CrazyGoat\\WorkermanBundle\\')) {
+            return;
+        }
+    } elseif (str_starts_with(ltrim($name), '\\')) {
+        // A leading-backslash name with no namespace is a global type
+        // (PHP built-ins like `\InvalidArgumentException`).
         return;
     }
 
