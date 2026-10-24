@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class ResponseTest extends KernelTestCase
 {
     public function testController(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
 
@@ -21,7 +20,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testNotFound(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test_not_exist');
 
@@ -30,7 +29,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testFileServe(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:8888/readme.txt');
 
@@ -40,7 +39,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testNoFileServe(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/readme.txt');
         $this->assertSame(404, $response->getStatusCode());
@@ -48,7 +47,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testContentTypeJsonResponse(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_json');
         $this->assertSame(200, $response->getStatusCode());
@@ -59,7 +58,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponse(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file');
 
@@ -77,7 +76,7 @@ final class ResponseTest extends KernelTestCase
      */
     public function testHeadBinaryFileResponse(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('HEAD', 'http://127.0.0.1:9999/response_test_file');
 
@@ -95,7 +94,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponseWithRangeRequest(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         // Request only first 5 bytes
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
@@ -116,7 +115,7 @@ final class ResponseTest extends KernelTestCase
      */
     public function testBigBinaryFileResponseIsSentInFull(): void
     {
-        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+        $client = BoundedHttpClient::create(['timeout' => 20]);
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big');
 
@@ -128,7 +127,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBigBinaryFileResponseWithClosedRange(): void
     {
-        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+        $client = BoundedHttpClient::create(['timeout' => 20]);
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
             'headers' => ['Range' => 'bytes=16-47'],
@@ -141,7 +140,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBigBinaryFileResponseWithOpenRange(): void
     {
-        $client = new Client(['http_errors' => false, 'timeout' => 20]);
+        $client = BoundedHttpClient::create(['timeout' => 20]);
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
             'headers' => ['Range' => 'bytes=100-'],
@@ -154,7 +153,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponseWithOpenRange(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
             'headers' => ['Range' => 'bytes=5-'],
@@ -169,7 +168,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponseWithDeleteAfterSend(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_delete');
 
@@ -181,7 +180,7 @@ final class ResponseTest extends KernelTestCase
 
     public function testStreamedBinaryFileResponse(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:8888/response_test_streamed_binary');
 
@@ -198,7 +197,7 @@ final class ResponseTest extends KernelTestCase
             $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
         }
 
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file');
 
