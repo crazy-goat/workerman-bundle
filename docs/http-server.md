@@ -109,6 +109,7 @@ The server sends a Symfony response in the way that fits its type.
 - A `StreamedResponse` is sent in chunks with `Transfer-Encoding: chunked`. Then the memory does not grow with the size of the body. HTTP/1.0 clients get the body without chunks, and the connection is closed after it.
 - For a `HEAD` request, the server sends the headers and no body.
 - A file response that Symfony made bodyless sends no file either: a `1xx`, `204` or `304` status, and the `X-Sendfile` or `X-Accel-Redirect` hand-off, where the server in front sends the file. The reply keeps the `Content-Length` that `prepare()` set — the file size for the hand-off, `0` for the empty statuses — and the file is not opened.
+- On the `X-Sendfile` / `X-Accel-Redirect` hand-off a `deleteFileAfterSend` file is kept, not deleted: the server in front reads the file after the response is sent, so deleting it here would remove it before it is served. This follows the documented `BinaryFileResponse::deleteFileAfterSend()` contract ("If the X-Sendfile header is used, the deleteFileAfterSend setting will not be used").
 
 `response_chunk_size` is the size of the chunks of a streamed response.
 The default is 2048 bytes.

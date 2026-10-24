@@ -1314,6 +1314,64 @@ final class BinaryFileResponseStrategyTest extends TestCase
     }
 
     /**
+     * The X-Sendfile / X-Accel-Redirect hand-off must NOT delete a
+     * deleteFileAfterSend file: the front-end server reads the file after
+     * this response is sent, so unlinking it here would delete it before it
+     * is served. This pins the documented deleteFileAfterSend() contract
+     * ("If the X-Sendfile header is used, the deleteFileAfterSend setting
+     * will not be used") over Symfony's runtime, which unlinks in
+     * sendContent()'s finally even on the hand-off (issue #1033).
+     */
+    public function testXSendfileHandOffWithDeleteFileAfterSendKeepsTheFile(): void
+    {
+        // trustXSendfileTypeHeader() is a one-way static flag with no public
+        // reset, so restore it after the test to keep the rest of the suite on
+        // the default.
+        $flag = new \ReflectionProperty(BinaryFileResponse::class, 'trustXSendfileTypeHeader');
+        $previous = $flag->getValue();
+
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = sys_get_temp_dir() . '/sendfile_delete_' . uniqid() . '.txt';
+        file_put_contents($tempFile, 'The front-end server reads me after the response!');
+
+        try {
+            BinaryFileResponse::trustXSendfileTypeHeader();
+
+            $binaryResponse = new BinaryFileResponse($tempFile, Response::HTTP_OK, [
+                'Content-Type' => 'text/plain',
+            ]);
+            $binaryResponse->deleteFileAfterSend(true);
+
+            $request = Request::create('/', Request::METHOD_GET);
+            $request->headers->set('X-Sendfile-Type', 'X-Sendfile');
+            $binaryResponse->prepare($request);
+
+            $sendfilePath = strval($binaryResponse->headers->get('X-Sendfile'));
+            $this->assertSame(realpath($tempFile), $sendfilePath, 'prepare() must set the hand-off header');
+
+            $this->assertFileExists($tempFile);
+
+            $workermanResponse = $strategy->convert($binaryResponse, [
+                'Content-Type' => ['text/plain'],
+                'X-Sendfile' => $sendfilePath,
+            ], $this->connection, '1.1', 'GET');
+
+            $this->assertNull($workermanResponse->file, 'the hand-off must not attach a file');
+            $this->assertSame(200, $workermanResponse->getStatusCode());
+            $this->assertFileExists($tempFile, 'the X-Sendfile hand-off must keep a deleteFileAfterSend file: the front-end server reads it after the response');
+            $this->assertNull($this->connection->onBufferDrain, 'no async buffer-drain cleanup may be installed');
+            $this->assertNull($this->connection->onClose, 'no async onClose cleanup may be installed');
+        } finally {
+            $flag->setValue(null, $previous);
+
+            if (is_file($tempFile)) {
+                unlink($tempFile);
+            }
+        }
+    }
+
+    /**
      * A bodyless response must not turn into a 404 when the file is gone:
      * withFile() is the only reason the GET path ever synthesises that 404,
      * and a 304 has to repeat the cached response, not a fresh error
