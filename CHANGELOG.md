@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Runner::warmUpCache()` now invokes the `workerman.config_loader` cache warmer explicitly after the forked child boots the kernel: when the container is already built, booting does not run the cache warmers, so the env-drift re-warm path from #996 kept the stale `%env()%` snapshot instead of picking up the changed values; `RunnerEnvDriftTest` covers the branch at boot level (#1037)
 - `bin/check-exception-usage.php` and `bin/check-upgrade-exceptions.php` now reject an empty `--root=` value with exit code 2 and a usage hint instead of resolving it to the working directory via `realpath('')` and silently checking the wrong tree; `ExceptionUsageLintTest` and `UpgradeExceptionsLintTest` cover the empty-value case (#1044)
 - `TaskTest::testTaskIsRunning()` now waits with `Util\\Wait::until()` for a fresh scheduler timestamp (up to 10 s) instead of asserting against a single read with a fixed 4 s window, so the test no longer flakes on slow or loaded CI runners where the 1 s task tick is delayed (#1081)
 - `ComposerAuditE2ETest::runAuditCommand()` now calls `markTestSkipped()` when `composer audit` fails with a network error (curl error, timeout, DNS resolution failure, refused, reset or unreachable connection) instead of failing the run, so a slow packagist.org no longer turns `ci-ok` red at random; any other unexpected exit code still fails the test, and `testNetworkErrorDetection` pins the network markers (#1080)

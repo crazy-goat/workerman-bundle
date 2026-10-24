@@ -114,6 +114,11 @@ readonly class Runner implements RunnerInterface
      * - SIGTERM (15) for error
      * This avoids deadlock with extensions that register shutdown handlers (e.g., grpc).
      *
+     * The config cache warmer is invoked explicitly after boot: when the
+     * container is already built, booting does not run the cache warmers,
+     * so without this the config cache would keep a stale env snapshot on
+     * the env-drift re-warm path (issue #1037).
+     *
      * @throws CacheWarmupException on fork failure, timeout, or unexpected child status
      */
     private function warmUpCache(ConfigLoader $configLoader, bool $force = false): void
@@ -130,7 +135,21 @@ readonly class Runner implements RunnerInterface
         if ($pid === 0) {
             $success = false;
             try {
-                $this->kernelFactory->createKernel()->boot();
+                $kernel = $this->kernelFactory->createKernel();
+                $kernel->boot();
+                // The container may already be built, in which case booting
+                // does not run the cache warmers and the config cache would
+                // keep a stale env snapshot on the env-drift re-warm path
+                // (issue #1037): invoke the warmer explicitly so %env()% is
+                // re-resolved with the current environment. The class alias
+                // is private, so the public service id is used.
+                $container = $kernel->getContainer();
+                $warmer = $container->has('workerman.config_loader')
+                    ? $container->get('workerman.config_loader')
+                    : null;
+                if ($warmer instanceof ConfigLoader) {
+                    $warmer->warmUp($kernel->getCacheDir());
+                }
                 $success = true;
             } catch (\Throwable $e) {
                 fwrite(STDERR, $e->getMessage() . PHP_EOL);
