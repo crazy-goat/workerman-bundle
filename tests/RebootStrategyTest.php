@@ -29,7 +29,7 @@ final class RebootStrategyTest extends TestCase
 
         $this->assertFalse($strategy->shouldReboot());
         $this->assertFalse($strategy->shouldReboot());
-        $this->assertFalse($strategy->shouldReboot());
+        // Issue #967: the 3rd request triggers the reload, not the 4th.
         $this->assertTrue($strategy->shouldReboot());
     }
 
@@ -60,7 +60,7 @@ final class RebootStrategyTest extends TestCase
             }
         }
 
-        $this->assertSame(6, $rebootAt, 'Should reboot after exactly 5 jobs with 0% dispersion');
+        $this->assertSame(5, $rebootAt, 'Should reboot after exactly 5 jobs with 0% dispersion');
     }
 
     public function testMaxJobsRebootStrategyWithSeededRandomizer(): void
@@ -79,8 +79,9 @@ final class RebootStrategyTest extends TestCase
             }
         }
 
-        // With seeded randomizer, we should reboot at exactly 91 (90 + 1st job)
-        $this->assertSame(91, $rebootAt, 'Should reboot at deterministic job count with seeded randomizer');
+        // With seeded randomizer, we should reboot at exactly 90: the
+        // drawn limit is 90 and the 90th job triggers the reload (issue #967).
+        $this->assertSame(90, $rebootAt, 'Should reboot at deterministic job count with seeded randomizer');
     }
 
     public function testExceptionRebootStrategyReturnsFalseInitially(): void
