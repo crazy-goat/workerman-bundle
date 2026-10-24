@@ -340,7 +340,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNotNull($this->connection->onClose, 'worker-level onClose should be restored after buffer drain');
 
         $restoredOnClose = $this->connection->onClose;
-        assert(is_callable($restoredOnClose));
         $restoredOnClose($this->connection);
 
         $this->assertTrue($workerOnCloseCalled, 'restored worker-level onClose callback must still run');
