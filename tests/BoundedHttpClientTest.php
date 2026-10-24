@@ -41,7 +41,8 @@ final class BoundedHttpClientTest extends TestCase
     /**
      * A test or a lint check must fail when a client without timeouts is
      * added (#1028): scan every tests/ file for a bare client construction
-     * and require timeouts, the shared factory, or a mock handler.
+     * and require timeouts, the shared factory, or a mock handler; a raw
+     * curl_init() client needs CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT.
      */
     public function testNoUnboundedHttpClientInTests(): void
     {
@@ -54,6 +55,11 @@ final class BoundedHttpClientTest extends TestCase
                 continue;
             }
             $source = (string) file_get_contents($file->getPathname());
+            // A raw curl client needs both curl timeouts in the same file.
+            if (str_contains($source, 'curl_init(')
+                && (!str_contains($source, 'CURLOPT_CONNECTTIMEOUT') || !str_contains($source, 'CURLOPT_TIMEOUT'))) {
+                $offenders[] = $file->getFilename() . ': curl_init() without CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT';
+            }
             if (preg_match_all('/new Client\(([^;]*);/', $source, $matches) === 0) {
                 continue;
             }

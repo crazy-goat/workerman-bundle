@@ -33,6 +33,7 @@ function httpGet(string $url, int $timeout = 5): array
 {
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
     $body = curl_exec($ch);
