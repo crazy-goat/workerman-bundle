@@ -157,9 +157,9 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
      * corresponding GET would produce (RFC 9110 §9.3.2), without attaching
      * the file (issue #903). A file that is gone by now gives 404.
      *
-     * Workerman adds Content-Type (and Content-Disposition for unknown
-     * types) only when it sends a file, so they are set here the same way;
-     * without them the HEAD response would fall back to text/html.
+     * Workerman adds Content-Type, Accept-Ranges (and Content-Disposition
+     * for unknown types) only when it sends a file, so they are set here the
+     * same way; without them the HEAD response would fall back to text/html.
      *
      * @param array<string, string> $headers
      */
@@ -173,6 +173,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
         $mime = (new Response())->getMimeType(pathinfo($filePath, PATHINFO_EXTENSION));
         $headers['Content-Type'] = $mime;
+        $headers['Accept-Ranges'] = 'bytes';
         if ($mime === 'application/octet-stream') {
             $baseName = (string) preg_replace('/["\\\\\x00-\x1F\x7F]/', '', basename($filePath));
             $headers['Content-Disposition'] = 'attachment; filename="' . ($baseName !== '' ? $baseName : 'unknown') . '"';

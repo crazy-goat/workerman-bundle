@@ -1518,6 +1518,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertEquals($getResponse->getHeader('ETag'), $response->getHeader('ETag'));
         $this->assertEquals($getResponse->getHeader('Last-Modified'), $response->getHeader('Last-Modified'));
         $this->assertEquals($getResponse->getHeader('Cache-Control'), $response->getHeader('Cache-Control'));
+        $this->assertSame('bytes', $response->getHeader('Accept-Ranges'));
 
         // …with the Content-Length the GET body would have, and no body
         // ('test file content' is 17 bytes; RFC 9110 §9.3.2, issue #903).
@@ -1603,6 +1604,31 @@ final class StaticFilesMiddlewareTest extends TestCase
             'DELETE' => ['DELETE'],
             'PATCH' => ['PATCH'],
         ];
+    }
+
+    public function testNonGetHeadMethodOnBlockedFilePassesToNextWithoutContent(): void
+    {
+        $envFile = $this->rootDirectory . '/.env';
+        file_put_contents($envFile, 'DB_PASSWORD=secret');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($this->createRequest('/.env', 'POST'), $next);
+
+            // The static rules (denylist, allowlist) apply to GET and HEAD
+            // only; a POST goes to the application, never to the file.
+            $this->assertTrue($called, 'Next should be called for POST to a blocked path');
+            $this->assertStringNotContainsString('DB_PASSWORD', (string) $response);
+        } finally {
+            unlink($envFile);
+        }
     }
 
     public function testConstructWithPharPathDoesNotThrow(): void
