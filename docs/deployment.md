@@ -364,7 +364,8 @@ The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bu
 a running request is no longer cut in the middle by the signal.
 A request that takes longer than `stop_timeout` is still cut.
 Set `stop_timeout` higher than your longest request.
-`workerman:server reload` works the same way.
+`workerman:server reload` also gives a running request `stop_timeout` seconds to end.
+But the master sends the reload signal to a worker at once, also in the foreground.
 We did not test how a PHP `sleep()` or `usleep()` in a request acts on a stop or reload.
 Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
 
