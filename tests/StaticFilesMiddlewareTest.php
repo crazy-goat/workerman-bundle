@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesRealPathCache;
 use PHPUnit\Framework\TestCase;
@@ -567,9 +568,9 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    private function createRequest(string $path): Request
+    private function createRequest(string $path, string $method = 'GET'): Request
     {
-        $buffer = "GET $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        $buffer = "$method $path HTTP/1.1\r\nHost: localhost\r\n\r\n";
         return new Request($buffer);
     }
 
@@ -1494,6 +1495,140 @@ final class StaticFilesMiddlewareTest extends TestCase
         $response = $middleware($requestWithOldIMS, $next);
 
         $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function testHeadReturnsHeadersOnlyWithContentLength(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(500);
+        };
+
+        $response = $middleware($this->createRequest('/test.txt', 'HEAD'), $next);
+
+        $this->assertFalse($called, 'Next should NOT be called for HEAD on a static file');
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertInstanceOf(HeadResponse::class, $response);
+
+        // HEAD carries the same headers the GET would produce…
+        $getResponse = $middleware($this->createRequest('/test.txt'), $next);
+        $this->assertEquals($getResponse->getHeader('ETag'), $response->getHeader('ETag'));
+        $this->assertEquals($getResponse->getHeader('Last-Modified'), $response->getHeader('Last-Modified'));
+        $this->assertEquals($getResponse->getHeader('Cache-Control'), $response->getHeader('Cache-Control'));
+        $this->assertSame('bytes', $response->getHeader('Accept-Ranges'));
+
+        // …with the Content-Length the GET body would have, and no body
+        // ('test file content' is 17 bytes; RFC 9110 §9.3.2, issue #903).
+        $wire = (string) $response;
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
+        $this->assertStringContainsString("Content-Length: 17\r\n", $wire);
+        $this->assertStringNotContainsString('test file content', $wire);
+
+        // …and the Content-Type Workerman adds when it sends the file for
+        // GET, not the text/html default of a bodyless response.
+        $this->assertSame('text/plain', $response->getHeader('Content-Type'));
+        $this->assertSame(1, substr_count($wire, 'Content-Type:'), 'must emit exactly one Content-Type');
+    }
+
+    public function testHeadOnUnknownExtensionSendsOctetStreamAndAttachment(): void
+    {
+        $filePath = $this->rootDirectory . '/data.unknownext';
+        file_put_contents($filePath, 'binary');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $response = $middleware(
+                $this->createRequest('/data.unknownext', 'HEAD'),
+                fn(): Response => new Response(500),
+            );
+
+            $this->assertInstanceOf(HeadResponse::class, $response);
+            $this->assertSame('application/octet-stream', $response->getHeader('Content-Type'));
+            $this->assertSame('attachment; filename="data.unknownext"', $response->getHeader('Content-Disposition'));
+            $this->assertStringContainsString("Content-Length: 6\r\n", (string) $response);
+        } finally {
+            unlink($filePath);
+        }
+    }
+
+    public function testHeadWithMatchingEtagReturns304(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $next = fn(): Response => new Response(404);
+
+        $getResponse = $middleware($this->createRequest('/test.txt'), $next);
+        $etag = $getResponse->getHeader('ETag');
+        assert(is_string($etag));
+
+        $request = $this->createRequest('/test.txt', 'HEAD');
+        $request->setHeader('If-None-Match', $etag);
+
+        $response = $middleware($request, $next);
+
+        $this->assertEquals(304, $response->getStatusCode());
+    }
+
+    /**
+     * @dataProvider nonGetHeadMethodProvider
+     */
+    public function testNonGetHeadMethodsPassToNext(string $method): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt', $method);
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(200);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, "Next should be called for $method request to a static path");
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function nonGetHeadMethodProvider(): array
+    {
+        return [
+            'POST' => ['POST'],
+            'PUT' => ['PUT'],
+            'DELETE' => ['DELETE'],
+            'PATCH' => ['PATCH'],
+        ];
+    }
+
+    public function testNonGetHeadMethodOnBlockedFilePassesToNextWithoutContent(): void
+    {
+        $envFile = $this->rootDirectory . '/.env';
+        file_put_contents($envFile, 'DB_PASSWORD=secret');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $called = false;
+            $next = function (Request $req) use (&$called): Response {
+                $called = true;
+                return new Response(404);
+            };
+
+            $response = $middleware($this->createRequest('/.env', 'POST'), $next);
+
+            // The static rules (denylist, allowlist) apply to GET and HEAD
+            // only; a POST goes to the application, never to the file.
+            $this->assertTrue($called, 'Next should be called for POST to a blocked path');
+            $this->assertStringNotContainsString('DB_PASSWORD', (string) $response);
+        } finally {
+            unlink($envFile);
+        }
     }
 
     public function testConstructWithPharPathDoesNotThrow(): void
