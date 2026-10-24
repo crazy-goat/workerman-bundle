@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\ProcFileReader;
 use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 
 /**
@@ -77,13 +78,8 @@ final readonly class MasterFingerprint
             return 0;
         }
 
-        $statFile = "/proc/{$pid}/stat";
-        if (!\is_readable($statFile)) {
-            return 0;
-        }
-
-        $content = @\file_get_contents($statFile);
-        if (!\is_string($content) || $content === '') {
+        $content = ProcFileReader::read("/proc/{$pid}/stat");
+        if ($content === null) {
             return 0;
         }
 
@@ -113,13 +109,8 @@ final readonly class MasterFingerprint
             return null;
         }
 
-        $statusFile = "/proc/{$pid}/status";
-        if (!\is_readable($statusFile)) {
-            return null;
-        }
-
-        $content = @\file_get_contents($statusFile);
-        if (!\is_string($content)) {
+        $content = ProcFileReader::read("/proc/{$pid}/status");
+        if ($content === null) {
             return null;
         }
 
