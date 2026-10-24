@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `StaticFilesMiddleware` gained a `$precompressed` constructor argument (e.g. `['br', 'gzip']`): when the client advertises a configured encoding via `Accept-Encoding` and the `app.js.br` / `app.js.gz` variant exists next to the plain file, the variant is served with `Content-Encoding`, the `Content-Type` of the original file, its own `ETag` and `Vary: Accept-Encoding`. Variants pass the same block checks as plain files and are never served without the plain file; the default `[]` keeps the old behaviour (#1007)
+
 ### Fixed
 
 - The CI matrix `sed` rewrite now matches digits in package names (`[a-z0-9-]+` instead of `[a-z-]+`), so a future `symfony/foo2bar`-style package is not silently skipped by the "Update Symfony constraints" step; `GithubWorkflowsTest` now replays the rewrite character class against every `symfony/*` key in `composer.json` (#1060)

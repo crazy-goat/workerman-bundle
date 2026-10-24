@@ -123,13 +123,41 @@ workerman:
         - workerman.middleware.static_files
 ```
 
-The constructor has three arguments:
+The constructor has four arguments:
 
 | Argument | Type | Default | What it does |
 |----------|------|---------|--------------|
 | `$rootDirectory` | string | required | The directory with the public files. It must exist when the server starts. If it does not, `start` and `restart` stop with one error message and a non-zero exit code. The check is skipped for a path with an `%env()%` value and in a PHAR. |
 | `$allowedExtensions` | list of strings | `[]` | Only files with these extensions are served. An empty list allows all extensions, except the blocked files. |
 | `$followSymlinks` | bool | `false` | When `false`, a file that you reach through a symbolic link is not served. |
+| `$precompressed` | list of strings | `[]` | Pre-compressed encodings to serve when the client advertises them via `Accept-Encoding`, in preference order. Supported values are `br` and `gzip`; unknown values are ignored. An empty list serves the plain file for every request. |
+
+### Pre-compressed static files
+
+Build tools (Vite, Webpack) can write `app.js.br` and `app.js.gz` next to `app.js`.
+With `$precompressed` enabled, the middleware serves the compressed variant instead of the
+plain file when the client advertises the encoding:
+
+```yaml
+# config/services.yaml
+services:
+  workerman.middleware.static_files:
+    class: CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware
+    arguments:
+      $rootDirectory: '%kernel.project_dir%/public'
+      $precompressed: ['br', 'gzip']
+```
+
+For a request to `/build/app.js` with `Accept-Encoding: br, gzip`, the middleware checks the
+configured encodings in order and serves `app.js.br` with `Content-Encoding: br`. The
+`Content-Type` is taken from the original file name (`application/javascript` for `.js`),
+each encoding gets its own `ETag`, and every response carries `Vary: Accept-Encoding` while
+the option is on. When the client advertises no supported encoding — or the variant file is
+missing — the plain file is served exactly as before.
+
+The variant files pass the same block checks as the plain file: a `.gz`/`.br` variant is
+never served when the plain file does not exist, and e.g. an allowlisted `app.js` never
+serves `app.js.gz` (whose final extension is not allowlisted).
 
 The `static_files` key of a server does not work for a middleware that you register as a service.
 It only works for the deprecated `serve_files` and `root_dir` options.

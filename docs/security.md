@@ -229,6 +229,7 @@ When `$followSymlinks` is `false` (default), any path component inside the root 
 - **Prefer the allowlist over the denylist**: without `$allowedExtensions`, the default posture is "serve everything except the denylist above" — safe for a directory that contains only public assets, but the denylist is a last line of defence, not a guarantee. Configure `$allowedExtensions` to only permit the file types your application actually serves as static assets.
 - **Disable symlinks**: Keep `$followSymlinks: false` (default) to prevent symlink-based file disclosure unless your application explicitly requires symlinks inside the public directory.
 - **404 for blocked files**: Denied files always return a 404 response (identical to non-existent files). This prevents attackers from probing whether a blocked file exists.
+- **Pre-compressed variants are checked like plain files**: with `$precompressed` enabled, a `.br`/`.gz` variant passes the same denylist and allowlist checks as the plain file before it is served, and a variant is never served when the plain file does not exist. Each encoding gets its own `ETag`, so a poisoned or stale cache entry for one encoding cannot be served for another.
 
 ## Connection Timeouts (Slowloris Protection)
 

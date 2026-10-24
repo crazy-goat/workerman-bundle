@@ -57,6 +57,17 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         'package.json',
     ];
 
+    /**
+     * Maps a precompressed encoding name to the filename suffix of its
+     * pre-compressed variant (`app.js` + `.br`).
+     *
+     * @var array<string, string>
+     */
+    private const PRECOMPRESSED_SUFFIXES = [
+        'br' => '.br',
+        'gzip' => '.gz',
+    ];
+
     private const CACHE_MAX_SIZE = 1024;
     private const CACHE_TTL = 60;
     private const CACHE_NEGATIVE_TTL = 5;
@@ -69,14 +80,21 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     private string $rootRealPath;
     /** @var string[] */
     private array $allowedExtensions;
+    /** @var string[] pre-compressed encodings to serve, in preference order */
+    private array $precompressed;
 
 
     /**
      * @param string[] $allowedExtensions
      * @param bool     $followSymlinks When false (default), symlinks under the root directory are not followed.
      *                                 Set to true to allow serving files through symlinks.
+     * @param string[] $precompressed  Pre-compressed encodings to serve when the client
+     *                                 advertises them via `Accept-Encoding`, in preference
+     *                                 order (e.g. `['br', 'gzip']`). Unknown names are
+     *                                 ignored. Defaults to `[]`, which keeps serving the
+     *                                 plain file for every request.
      */
-    public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false)
+    public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false, array $precompressed = [])
     {
         if ($this->isPharPath($rootDirectory)) {
             $this->rootRealPath = rtrim($rootDirectory, '\\/');
@@ -90,6 +108,13 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $this->rootRealPath = $resolved;
         }
         $this->allowedExtensions = array_map(strtolower(...), $allowedExtensions);
+        $this->precompressed = [];
+        foreach ($precompressed as $encoding) {
+            $encoding = strtolower((string) $encoding);
+            if (isset(self::PRECOMPRESSED_SUFFIXES[$encoding]) && !in_array($encoding, $this->precompressed, true)) {
+                $this->precompressed[] = $encoding;
+            }
+        }
     }
 
     public function __invoke(Request $request, callable $next): Response
@@ -112,17 +137,117 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return (new Response())->withFile($filePath);
         }
 
-        $etag = $this->generateEtag($filePath, $fileMtime);
-
-        if ($this->isNotModified($request, $etag, $fileMtime)) {
-            return new Response(304);
+        // Serve a pre-compressed variant (`.br`, `.gz`) when the option is
+        // enabled, the client advertises the encoding and the variant file
+        // exists next to the plain file. The plain file must exist too — a
+        // lone `app.js.gz` is never served.
+        $servePath = $filePath;
+        $serveMtime = $fileMtime;
+        $contentEncoding = null;
+        if ($this->precompressed !== []) {
+            $variant = $this->selectPrecompressedVariant($request, $filePath);
+            if ($variant !== null) {
+                $variantMtime = filemtime($variant['path']);
+                if ($variantMtime !== false) {
+                    $servePath = $variant['path'];
+                    $serveMtime = $variantMtime;
+                    $contentEncoding = $variant['encoding'];
+                }
+            }
         }
 
-        return (new Response())
-            ->withFile($filePath)
-            ->header('Last-Modified', $this->formatHttpDate($fileMtime))
+        $etag = $this->generateEtag($servePath, $serveMtime, $contentEncoding);
+
+        if ($this->isNotModified($request, $etag, $serveMtime)) {
+            $notModified = new Response(304);
+            if ($this->precompressed !== []) {
+                $notModified->header('Vary', 'Accept-Encoding');
+            }
+
+            return $notModified;
+        }
+
+        $response = (new Response())
+            ->withFile($servePath)
+            ->header('Last-Modified', $this->formatHttpDate($serveMtime))
             ->header('ETag', $etag)
             ->header('Cache-Control', 'public, max-age=3600, must-revalidate');
+
+        if ($this->precompressed !== []) {
+            // The representation now varies by Accept-Encoding, so caches
+            // must key on it.
+            $response->header('Vary', 'Accept-Encoding');
+        }
+
+        if ($contentEncoding !== null) {
+            // Workerman guesses the Content-Type from the extension of the
+            // file being sent; for `app.js.br` that would be
+            // `application/octet-stream` (plus a `Content-Disposition:
+            // attachment`). Serve the type of the original file instead.
+            $response->header('Content-Encoding', $contentEncoding);
+            $response->header(
+                'Content-Type',
+                $response->getMimeType(strtolower(pathinfo($filePath, PATHINFO_EXTENSION))),
+            );
+        }
+
+        return $response;
+    }
+
+    /**
+     * Pick a pre-compressed variant of a plain file for the request.
+     *
+     * Encodings are tried in the configured `$precompressed` order against
+     * the client's `Accept-Encoding` (an offer with `q=0` does not count).
+     * The variant must exist next to the plain file and pass the same block
+     * checks as the plain file, so e.g. an allowlisted `app.js` never serves
+     * `app.js.gz` (whose final extension is not allowlisted) and `x.php.gz`
+     * stays blocked.
+     *
+     * @return array{path: string, encoding: string}|null
+     */
+    private function selectPrecompressedVariant(Request $request, string $filePath): ?array
+    {
+        $acceptEncoding = $request->header('accept-encoding');
+        if (!is_string($acceptEncoding) || $acceptEncoding === '') {
+            return null;
+        }
+
+        $offered = [];
+        foreach (explode(',', $acceptEncoding) as $part) {
+            $segments = explode(';', $part);
+            $token = strtolower(trim($segments[0]));
+            if ($token === '') {
+                continue;
+            }
+            $quality = 1.0;
+            foreach (array_slice($segments, 1) as $parameter) {
+                $parameter = trim($parameter);
+                if (str_starts_with($parameter, 'q=')) {
+                    $quality = (float) substr($parameter, 2);
+                }
+            }
+            if ($quality > 0.0) {
+                $offered[$token] = true;
+            }
+        }
+
+        foreach ($this->precompressed as $encoding) {
+            if (!isset($offered[$encoding])) {
+                continue;
+            }
+            $variantPath = $filePath . self::PRECOMPRESSED_SUFFIXES[$encoding];
+            if (!is_file($variantPath)) {
+                continue;
+            }
+            if ($this->isFilePathBlocked($variantPath)) {
+                continue;
+            }
+
+            return ['path' => $variantPath, 'encoding' => $encoding];
+        }
+
+        return null;
     }
 
     private function isNotModified(Request $request, string $etag, int $fileMtime): bool
@@ -154,8 +279,15 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return false;
     }
 
-    private function generateEtag(string $filePath, int $fileMtime): string
+    private function generateEtag(string $filePath, int $fileMtime, ?string $contentEncoding = null): string
     {
+        // Each pre-compressed variant gets its own ETag (the encoding is
+        // part of it), so caches can never mix the plain file with a
+        // `.br`/`.gz` variant of it.
+        if ($contentEncoding !== null) {
+            return sprintf('"%x-%x-%s"', $fileMtime, crc32($filePath), $contentEncoding);
+        }
+
         return sprintf('"%x-%x"', $fileMtime, crc32($filePath));
     }
 

@@ -1618,4 +1618,244 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertTrue($called, 'Next should be called for NUL byte path in phar');
         $this->assertEquals(200, $response->getStatusCode());
     }
+
+    public function testPrecompressedBrVariantServedWhenClientAcceptsIt(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br', 'gzip']);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'br, gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('br', $response->getHeader('Content-Encoding'));
+            $this->assertSame('Accept-Encoding', $response->getHeader('Vary'));
+
+            // The Content-Type comes from the original `.js` name, not from
+            // the `.br` variant (which Workerman would map to
+            // `application/octet-stream` plus a `Content-Disposition:
+            // attachment`).
+            $head = (string) $response;
+            $this->assertStringContainsString('Content-Type: application/javascript', $head);
+            $this->assertStringNotContainsString('Content-Disposition: attachment', $head);
+
+            // The ETag is derived from the variant path with the encoding
+            // suffix, so it differs from the plain file's ETag.
+            $brPath = realpath($this->rootDirectory . '/app.js.br');
+            assert(is_string($brPath));
+            $brMtime = filemtime($brPath);
+            assert(is_int($brMtime));
+            $this->assertSame(sprintf('"%x-%x-br"', $brMtime, crc32($brPath)), $response->getHeader('ETag'));
+
+            $plainResponse = $middleware($this->createRequest('/app.js'), $next);
+            $this->assertNotSame($plainResponse->getHeader('ETag'), $response->getHeader('ETag'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+        }
+    }
+
+    public function testPlainFileServedWhenClientSendsNoAcceptEncoding(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br', 'gzip']);
+
+            $request = $this->createRequest('/app.js');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertNull($response->getHeader('Content-Encoding'));
+            // The option is on, so caches still get the Vary header.
+            $this->assertSame('Accept-Encoding', $response->getHeader('Vary'));
+
+            $plainPath = realpath($this->rootDirectory . '/app.js');
+            assert(is_string($plainPath));
+            $plainMtime = filemtime($plainPath);
+            assert(is_int($plainMtime));
+            $this->assertSame(sprintf('"%x-%x"', $plainMtime, crc32($plainPath)), $response->getHeader('ETag'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+        }
+    }
+
+    public function testPrecompressedDefaultsToDisabled(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'br, gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertNull($response->getHeader('Content-Encoding'));
+            $this->assertNull($response->getHeader('Vary'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+        }
+    }
+
+    public function testLoneGzipFileWithoutPlainFileIsNotServed(): void
+    {
+        file_put_contents($this->rootDirectory . '/lonely.js.gz', 'fake-gz-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br', 'gzip']);
+
+            $request = $this->createRequest('/lonely.js');
+            $request->setHeader('Accept-Encoding', 'gzip');
+            $called = false;
+            $next = function () use (&$called): Response {
+                $called = true;
+
+                return new Response(404);
+            };
+
+            $response = $middleware($request, $next);
+
+            $this->assertTrue($called, 'A missing plain file must fall through to $next even when a lone .gz exists');
+            $this->assertSame(404, $response->getStatusCode());
+        } finally {
+            @unlink($this->rootDirectory . '/lonely.js.gz');
+        }
+    }
+
+    public function testPhpGzVariantStaysBlocked(): void
+    {
+        file_put_contents($this->rootDirectory . '/x.php', '<?php // source');
+        file_put_contents($this->rootDirectory . '/x.php.gz', 'fake-gz-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br', 'gzip']);
+
+            $request = $this->createRequest('/x.php');
+            $request->setHeader('Accept-Encoding', 'gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame(404, $response->getStatusCode());
+        } finally {
+            @unlink($this->rootDirectory . '/x.php');
+            @unlink($this->rootDirectory . '/x.php.gz');
+        }
+    }
+
+    public function testPrecompressedVariantBlockedByAllowlistFallsBackToPlain(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.gz', 'fake-gz-bytes');
+
+        try {
+            // Only `js` is allowlisted: the `.gz` variant's final extension
+            // is not, so the variant is blocked and the plain file is served.
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, ['js'], false, ['gzip']);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertNull($response->getHeader('Content-Encoding'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.gz');
+        }
+    }
+
+    public function testPrecompressedFollowsConfiguredOrderNotClientOrder(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+        file_put_contents($this->rootDirectory . '/app.js.gz', 'fake-gz-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['gzip', 'br']);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'br, gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame('gzip', $response->getHeader('Content-Encoding'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+            @unlink($this->rootDirectory . '/app.js.gz');
+        }
+    }
+
+    public function testPrecompressedSkipsZeroQualityEncoding(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+        file_put_contents($this->rootDirectory . '/app.js.gz', 'fake-gz-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br', 'gzip']);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'br;q=0, gzip');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+
+            $this->assertSame('gzip', $response->getHeader('Content-Encoding'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+            @unlink($this->rootDirectory . '/app.js.gz');
+        }
+    }
+
+    public function testPrecompressedVariantSupportsConditionalRequests(): void
+    {
+        file_put_contents($this->rootDirectory . '/app.js', 'console.log("plain");');
+        file_put_contents($this->rootDirectory . '/app.js.br', 'fake-br-bytes');
+
+        try {
+            $middleware = new StaticFilesMiddleware($this->rootDirectory, [], false, ['br']);
+
+            $request = $this->createRequest('/app.js');
+            $request->setHeader('Accept-Encoding', 'br');
+            $next = fn(): Response => new Response(404);
+
+            $response = $middleware($request, $next);
+            $etag = $response->getHeader('ETag');
+            assert(is_string($etag));
+
+            $conditional = $this->createRequest('/app.js');
+            $conditional->setHeader('Accept-Encoding', 'br');
+            $conditional->setHeader('If-None-Match', $etag);
+
+            $notModified = $middleware($conditional, $next);
+
+            $this->assertSame(304, $notModified->getStatusCode());
+            $this->assertSame('Accept-Encoding', $notModified->getHeader('Vary'));
+        } finally {
+            @unlink($this->rootDirectory . '/app.js');
+            @unlink($this->rootDirectory . '/app.js.br');
+        }
+    }
 }
