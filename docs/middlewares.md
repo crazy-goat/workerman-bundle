@@ -138,11 +138,13 @@ Read [Static files protection](security.md#static-files-protection) for the list
 
 ### What the middleware does with a request
 
-1. If `$allowedExtensions` is set and the path ends with another extension, the answer is 404.
-2. If the path is not a file in the root directory, the middleware calls `$next`. The next layer can be your controller. A path outside of the root directory is never served.
-3. If the file is blocked (for example a dotfile or a `.php` file), the answer is 404. It is the same answer as for a file that does not exist.
-4. If the request headers say that the client has the newest file, the answer is 304 with no body.
-5. Otherwise the answer is 200 with the file.
+1. If the method is not `GET` or `HEAD` (for example `POST`, `PUT` or `DELETE`), the middleware calls `$next`. It never sends a file for these methods.
+2. If `$allowedExtensions` is set and the path ends with another extension, the answer is 404.
+3. If the path is not a file in the root directory, the middleware calls `$next`. The next layer can be your controller. A path outside of the root directory is never served.
+4. If the file is blocked (for example a dotfile or a `.php` file), the answer is 404. It is the same answer as for a file that does not exist.
+5. If the request headers say that the client has the newest file, the answer is 304 with no body.
+6. Otherwise the answer to `GET` is 200 with the file.
+   The answer to `HEAD` is 200 with the same headers and the `Content-Length` of the file, but with no body.
 
 ### Headers of a static file
 
