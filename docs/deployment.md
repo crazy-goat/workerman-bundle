@@ -358,7 +358,7 @@ We ran the tests again on the fixed code (8f0fb14): a route that works for 5 sec
 | `stop_timeout: 2`, stop | Cut 2 s after the stop, empty reply |
 | Old code 0446513, `stop_timeout: 10`, Select | Cut after about 1 s (stop) or at once (reload) |
 
-These results are for HTTP workers. A scheduler worker on the `event` loop does not stop or reload in this way (see [issue 1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
+These results are for HTTP workers. A scheduler worker on the `event` loop has a known open problem: it does not stop or reload in this way (see [issue 1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
 
 The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)):
 a running request is no longer cut in the middle by the signal.
