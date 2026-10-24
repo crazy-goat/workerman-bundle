@@ -155,7 +155,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     /**
      * Build a headers-only HEAD response carrying the Content-Length the
      * corresponding GET would produce (RFC 9110 §9.3.2), without attaching
-     * the file (issue #903).
+     * the file (issue #903). A file that is gone by now gives 404.
      *
      * Workerman adds Content-Type (and Content-Disposition for unknown
      * types) only when it sends a file, so they are set here the same way;
@@ -163,9 +163,13 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
      *
      * @param array<string, string> $headers
      */
-    private function headResponse(string $filePath, array $headers): HeadResponse
+    private function headResponse(string $filePath, array $headers): Response
     {
+        // The file went away after is_file(): no length to announce.
         $size = filesize($filePath);
+        if ($size === false) {
+            return new Response(404);
+        }
 
         $mime = (new Response())->getMimeType(pathinfo($filePath, PATHINFO_EXTENSION));
         $headers['Content-Type'] = $mime;
@@ -174,7 +178,7 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $headers['Content-Disposition'] = 'attachment; filename="' . ($baseName !== '' ? $baseName : 'unknown') . '"';
         }
 
-        return new HeadResponse(200, $headers, is_int($size) ? $size : 0);
+        return new HeadResponse(200, $headers, $size);
     }
 
     private function isNotModified(Request $request, string $etag, int $fileMtime): bool
