@@ -253,6 +253,106 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('check-upgrade-exceptions: OK', $result['out']);
     }
 
+    /**
+     * Issue #1105: a namespace-qualified third-party name is external —
+     * a `use` import with an alias, a multi-catch second type and a
+     * backtick-quoted prose mention of a Symfony exception must all pass
+     * the gate, even though the short name ends in `Exception` and is not
+     * declared in src/Exception/.
+     */
+    public function testThirdPartyQualifiedNamesAndAliasesAreExternal(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            ```php
+            use Symfony\Component\HttpKernel\Exception\NotFoundHttpException as NotFound;
+
+            try {
+                run();
+            } catch (BaseException | Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e) {
+            }
+            ```
+
+            Migrate by catching `Symfony\Component\HttpKernel\Exception\NotFoundHttpException` instead:
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('check-upgrade-exceptions: OK', $result['out']);
+    }
+
+    /**
+     * Issue #1105: the `use X as Y;` alias form is scanned — an aliased
+     * import of a bundle-namespaced type that declares no class must fail
+     * the gate, not slip through unparsed.
+     */
+    public function testAliasedUndeclaredBundleTypeFails(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            ```php
+            use CrazyGoat\WorkermanBundle\Exception\GhostException as Ghost;
+            ```
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
+    }
+
+    /**
+     * Issue #1105: every type of a multi-catch clause is scanned — an
+     * undeclared type in second (or later) position must fail the gate,
+     * not just the first type.
+     */
+    public function testMultiCatchSecondTypeIsChecked(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            ```php
+            try {
+                run();
+            } catch (BaseException | GhostException $e) {
+            }
+            ```
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
+    }
+
     public function testABlockBeforeTheHeadingIsIgnored(): void
     {
         $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
