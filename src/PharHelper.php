@@ -46,6 +46,10 @@ final class PharHelper
      * Resolve a path relative to project_dir, replacing the project_dir
      * prefix with runtime_dir when in PHAR mode.
      *
+     * Only the exact project directory or a path inside it (followed by
+     * a "/") is rewritten: a sibling that merely shares the name prefix,
+     * e.g. "/application/..." with project_dir "/app", is left unchanged.
+     *
      * Consolidates logic previously duplicated across Runner, KernelFactory,
      * and ServerManager.
      */
@@ -54,7 +58,7 @@ final class PharHelper
         $projectDir = rtrim($projectDir, '/');
         $runtimeDir = self::getRuntimeDir($projectDir);
 
-        if ($runtimeDir !== $projectDir && str_starts_with($path, $projectDir)) {
+        if ($runtimeDir !== $projectDir && ($path === $projectDir || str_starts_with($path, $projectDir . '/'))) {
             return $runtimeDir . substr($path, strlen($projectDir));
         }
 

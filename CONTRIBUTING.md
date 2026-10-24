@@ -10,7 +10,7 @@ required status check is **`ci-ok`**. It aggregates the CI jobs:
 - **lint** - `bin/lint.sh`: PHP-CS-Fixer, PHPStan, Rector, the knowledge-base,
   CHANGELOG, exception-usage and upgrade-exceptions checks, `shellcheck`, `hadolint`, `composer validate`
   and `composer audit`
-- **tests** - PHPUnit across PHP (8.2-8.5) and Symfony (6.4-8.0) versions, plus the
+- **tests** - PHPUnit across PHP (8.2-8.5) and Symfony (6.4-8.1) versions, plus the
   root-only permission tests
 - **docs** - CHANGELOG shape, English-only Markdown, relative links
 
@@ -261,7 +261,7 @@ to `master`, on a weekly schedule (Monday 05:23 UTC), and on demand via `workflo
   Markdown file (links, anchors, fences) and `bin/lint.sh` checks `CHANGELOG.md`
 - **lint**: runs only `bin/lint.sh`. The scheduled run catches advisories published after a
   merge (`composer audit`) and dependency drift in the unpinned Symfony ranges
-- **tests**: PHPUnit across the supported PHP (8.2-8.5) and Symfony (6.4-8.0) matrix; the
+- **tests**: PHPUnit across the supported PHP (8.2-8.5) and Symfony (6.4-8.1) matrix; the
   PHP 8.2 / Symfony 6.4 leg also enforces the line-coverage threshold (80%, defined in
   `composer.json` -> `coverage:check`)
 - **tests-root-permissions**: the root-only `ConfigLoader` permission tests under `sudo`
