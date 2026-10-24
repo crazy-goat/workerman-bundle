@@ -17,7 +17,14 @@ declare(strict_types=1);
  *      match the child's real parent class or one of its directly
  *      implemented/extended interfaces (short names);
  *   3. every explicit "(extends X)" annotation in the tree must match the
- *      type's real parent class / extended interface (short name).
+ *      type's real parent class / extended interface (short name);
+ *   4. every exception type named in UPGRADE.md outside the tree block —
+ *      the `| Before | After |` table, per-version prose and the `use` /
+ *      `catch` / `new` references in the PHP examples — must be declared
+ *      in src/Exception/ (issue #1045). A leading backslash marks an
+ *      external type (PHP built-ins like `\InvalidArgumentException`) and
+ *      is skipped, as is the bare word `Exception` (the namespace name,
+ *      not a type).
  *
  * Usage: php bin/check-upgrade-exceptions.php [options]
  *
@@ -84,7 +91,7 @@ function checkUpgradeExceptionsParseArgs(array $argv): array
 /** @param list<string> $argv */
 function checkUpgradeExceptionsPrintUsage(array $argv): void
 {
-    fwrite(STDOUT, ($argv[0] ?? 'bin/check-upgrade-exceptions.php') . " — verify the UPGRADE.md exception tree matches src/Exception/\n\n");
+    fwrite(STDOUT, ($argv[0] ?? 'bin/check-upgrade-exceptions.php') . " — verify the UPGRADE.md exception tree and the exception types it names match src/Exception/\n\n");
     fwrite(STDOUT, "Usage: php bin/check-upgrade-exceptions.php [options]\n\n");
     fwrite(STDOUT, "Options:\n");
     fwrite(STDOUT, "  --root=DIR            repository root holding UPGRADE.md and src/Exception/\n");
@@ -190,6 +197,108 @@ function checkUpgradeExceptionsParseTree(string $path): array
     }
 
     return ['names' => $names, 'edges' => $edges, 'explicit' => $explicit];
+}
+
+/**
+ * Collect every exception-type name referenced in UPGRADE.md outside the
+ * exception-hierarchy tree: inline code spans (the `| Before | After |`
+ * table cells, per-version prose) and `use` / `catch` / `new` references in
+ * the PHP examples (issue #1045).
+ *
+ * The tree block itself (the first ```text block at or after
+ * "**Exception hierarchy:**") is removed before scanning so its names are
+ * not double-reported.
+ *
+ * @return array<string, true> referenced type short names
+ */
+function checkUpgradeExceptionsParseNamedTypes(string $path): array
+{
+    $source = @file_get_contents($path);
+
+    if ($source === false) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: cannot read %s\n", $path));
+        exit(2);
+    }
+
+    $scope = $source;
+    $markerPos = strpos($source, '**Exception hierarchy:**');
+
+    if ($markerPos !== false) {
+        $after = substr($source, $markerPos);
+
+        if (preg_match('/```text\n(.*?)\n```/s', $after, $blocks)) {
+            // The regex match is leftmost, so the first occurrence of the
+            // matched block is the tree block itself.
+            $blockPos = strpos($after, $blocks[0][0]);
+
+            if ($blockPos !== false) {
+                $start = $markerPos + $blockPos;
+                $scope = substr($source, 0, $start) . substr($source, $start + strlen($blocks[0][0]));
+            }
+        }
+    }
+
+    $names = [];
+
+    // Inline code spans: the Before/After table cells and prose mentions.
+    // The backtick must not touch another backtick, otherwise a fenced
+    // block's closing ``` pairs with the next inline span and shifts every
+    // following pair (the table sits right after a ```php block).
+    if (preg_match_all('/(?<!`)`([^`\n]+)`(?!`)/', $scope, $spans)) {
+        foreach ($spans[1] as $span) {
+            $span = trim($span);
+
+            if (!preg_match('/^(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)$/', $span)) {
+                continue;
+            }
+
+            checkUpgradeExceptionsAddNamedType($names, $span);
+        }
+    }
+
+    // `use` imports, `catch` clauses and `new` instantiations in the PHP
+    // examples.
+    if (preg_match_all('/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)\s*;/m', $scope, $uses)) {
+        foreach ($uses[1] as $name) {
+            checkUpgradeExceptionsAddNamedType($names, $name);
+        }
+    }
+
+    if (preg_match_all('/\bcatch\s*\(\s*(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\b/', $scope, $catches)) {
+        foreach ($catches[1] as $name) {
+            checkUpgradeExceptionsAddNamedType($names, $name);
+        }
+    }
+
+    if (preg_match_all('/\bnew\s+(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\s*\(/', $scope, $news)) {
+        foreach ($news[1] as $name) {
+            checkUpgradeExceptionsAddNamedType($names, $name);
+        }
+    }
+
+    return $names;
+}
+
+/**
+ * Record a referenced type unless it is external: a leading backslash marks
+ * a global-namespace type (PHP built-ins like `\InvalidArgumentException`),
+ * and the bare word `Exception` is the namespace name, not a type.
+ *
+ * @param array<string, true> $names
+ */
+function checkUpgradeExceptionsAddNamedType(array &$names, string $name): void
+{
+    if (str_starts_with(ltrim($name), '\\')) {
+        return;
+    }
+
+    $short = checkUpgradeExceptionsShortName($name);
+
+    if ($short === 'Exception' || !str_ends_with($short, 'Exception')) {
+        return;
+    }
+
+    $names[$short] = true;
 }
 
 /**
@@ -481,6 +590,12 @@ function checkUpgradeExceptionsMain(array $options): void
         }
     }
 
+    foreach (array_keys(checkUpgradeExceptionsParseNamedTypes($upgradeFile)) as $named) {
+        if (!isset($declared[$named])) {
+            $failures[] = sprintf('check-upgrade-exceptions: error: %s is named in %s but declares no type in %s', $named, UPGRADE_EXCEPTIONS_FILE, UPGRADE_EXCEPTIONS_DIR_REL);
+        }
+    }
+
     if ($failures !== []) {
         foreach ($failures as $failure) {
             fwrite(STDERR, $failure . "\n");
@@ -490,7 +605,7 @@ function checkUpgradeExceptionsMain(array $options): void
         exit(1);
     }
 
-    fwrite(STDOUT, sprintf("check-upgrade-exceptions: OK — %s tree lists all %d type(s) declared in %s with matching parents\n", UPGRADE_EXCEPTIONS_FILE, \count($srcNames), $exceptionDir));
+    fwrite(STDOUT, sprintf("check-upgrade-exceptions: OK — %s tree lists all %d type(s) declared in %s with matching parents, and every type named outside the tree is declared\n", UPGRADE_EXCEPTIONS_FILE, \count($srcNames), $exceptionDir));
     exit(0);
 }
 

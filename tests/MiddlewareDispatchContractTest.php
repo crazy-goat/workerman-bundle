@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-use GuzzleHttp\Client;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
@@ -78,7 +77,7 @@ final class MiddlewareDispatchContractTest extends WebTestCase
      */
     public function testMiddlewareRunsExactlyOncePerRequest(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
         $response = $client->request('GET', sprintf('http://%s:%d%s', self::SERVER_HOST, self::SERVER_PORT, self::PROBE_PATH));
 
         $statusCode = $response->getStatusCode();
@@ -117,7 +116,7 @@ final class MiddlewareDispatchContractTest extends WebTestCase
      */
     public function testMiddlewareRunsExactlyOncePerTwoSequentialRequests(): void
     {
-        $client = new Client(['http_errors' => false]);
+        $client = BoundedHttpClient::create();
 
         for ($i = 1; $i <= 2; $i++) {
             $response = $client->request('GET', sprintf('http://%s:%d%s', self::SERVER_HOST, self::SERVER_PORT, self::PROBE_PATH));

@@ -54,7 +54,7 @@ final readonly class SfxDownloader
         $destination = rtrim($destinationDir, '/') . '/' . $filename;
 
         if (!is_file($destination) && !is_writable($destinationDir)) {
-            throw new \RuntimeException(sprintf('Destination directory "%s" is not writable; check its permissions before downloading.', $destinationDir));
+            throw $this->notWritable($destinationDir, 'downloading');
         }
 
         if (!is_file($destination)) {
@@ -85,6 +85,12 @@ final readonly class SfxDownloader
 
         // If the upstream artifact is a zip, extract it.
         if (str_ends_with($destination, '.zip')) {
+            // Extraction writes entries into the destination directory: fail
+            // fast when it is not writable instead of surfacing a late
+            // per-entry "Failed to extract entry" after the archive was
+            // already opened and validated (issue #1052).
+            $this->assertExtractDestinationWritable($destination, $destinationDir);
+
             try {
                 $destination = $this->extractZip($destination, $destinationDir);
             } catch (\RuntimeException $e) {
@@ -382,6 +388,70 @@ final readonly class SfxDownloader
                 'timeout' => 60,
             ],
         ]);
+    }
+
+    /**
+     * Fail fast when the destination directory is not writable before a zip
+     * extraction would write entries into it (issue #1052).
+     *
+     * A corrupt cached artifact must still reach the poisoned-artifact
+     * cleanup in {@see fetch()} (failed open → unlink attempt → error_log
+     * when the removal fails), so the check only fires for archives that
+     * actually open; an unopenable archive keeps the original "Failed to
+     * open zip archive" path.
+     *
+     * ZipArchive::extractTo() overwrites an existing writable file in place
+     * without needing a writable directory, so a read-only directory that
+     * already holds every entry keeps working; the check fires only when an
+     * entry would need a new file or directory.
+     *
+     * @throws \RuntimeException when the directory is not writable and an entry needs to be created
+     */
+    private function assertExtractDestinationWritable(string $zipPath, string $destinationDir): void
+    {
+        if (is_writable($destinationDir)) {
+            return;
+        }
+
+        try {
+            $zip = $this->openArchive($zipPath);
+        } catch (\RuntimeException) {
+            return;
+        }
+
+        try {
+            $base = rtrim($destinationDir, '/') . '/';
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (!is_string($name) || $name === '') {
+                    // Leave the unreadable name to extractToDirectory()'s own error.
+                    return;
+                }
+
+                $target = $base . $name;
+                $inPlace = str_ends_with($name, '/')
+                    ? is_dir($target)
+                    : is_file($target) && is_writable($target);
+                if (!$inPlace) {
+                    throw $this->notWritable($destinationDir, 'extracting');
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    /**
+     * One directory-permissions message for the download and the extract
+     * guards, so both fail fast with the same wording (issue #1052).
+     */
+    private function notWritable(string $destinationDir, string $step): \RuntimeException
+    {
+        return new \RuntimeException(sprintf(
+            'Destination directory "%s" is not writable; check its permissions before %s.',
+            $destinationDir,
+            $step,
+        ));
     }
 
     /**

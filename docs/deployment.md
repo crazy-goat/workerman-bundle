@@ -105,12 +105,12 @@ What the important lines do:
 - `KillMode=mixed` sends the signal to the main process only.
   If something is still alive after `TimeoutStopSec`, systemd sends `SIGKILL` to all the processes of the unit.
 - `TimeoutStopSec` must be at least `stop_timeout` plus 3 seconds, like the wait of the `stop` command.
-  The `stop_timeout` (default 2) is only the time before the master kills a worker that does not end.
+  `stop_timeout` (default 2) is the time a running request gets to end.
   The master itself can end about 1 second after that.
   If systemd waits less, it kills the whole unit (`Result=timeout`, `status=9/KILL`).
   We saw this with `stop_timeout: 15` and `TimeoutStopSec=10`.
   The value 10 is fine for a `stop_timeout` of 2 to 7.
-  A running request is not guaranteed `stop_timeout` seconds: see [Stop time and graceful stop](#stop-time-and-graceful-stop).
+  See [Stop time and graceful stop](#stop-time-and-graceful-stop).
 - `Restart=always` starts the server again when it ends for any reason, for example a crash.
   `systemctl stop` does not trigger a restart.
   But a `bin/console workerman:server stop` that you run by hand does: use `systemctl stop` instead.
@@ -150,7 +150,7 @@ With systemd, run them as `systemctl reload myapp` and `systemctl restart myapp`
 `systemctl reload` only sends the signal and returns at once.
 The new workers are not up yet, so do not test the new code right after it.
 While `restart` runs, the server does not answer for a moment.
-Requests that are running can fail: the client gets an empty reply (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
+A request that takes longer than `stop_timeout` is cut: the client gets an empty reply (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
 See [Commands](commands.md#stop-restart-and-reload) for the signals and the wait times.
 
 A deploy script. It runs as `root`, or as a user who may use `sudo` and `systemctl`:
@@ -341,22 +341,32 @@ So do not point `log_file` to `/dev/null` if you want to see them.
 
 Docker and Kubernetes stop a container with `SIGTERM`.
 The master handles `SIGTERM` like `SIGINT`: a fast stop.
-About 1 second after the signal, the master tells the workers to stop.
-`stop_timeout` is only the time after which the master kills a worker that does not end.
-It is not a time that running requests are guaranteed to get.
-We ran a route that works for 5 seconds, and stopped the container with `docker stop` 1 second after the request began:
+In the foreground the master tells the workers to stop about 1 second after the signal;
+in daemon mode it tells them at once.
+A worker then takes no new requests; a running request goes on until it ends,
+or until `stop_timeout` is over.
+`stop_timeout` is the time a running request gets to end.
+It counts from the stop signal.
+Then the master kills the worker with `SIGKILL`, and the client gets an empty reply.
+This is for a stop without `-g`; graceful stop with `-g` was not tested again.
+We ran the tests again on the fixed code (8f0fb14): a route that works for 5 seconds, on a Linux host and in Docker, with the Select and `event` loops, stopped 0.5 seconds after the request began:
 
-| Setup | What happened |
-|-------|---------------|
-| `stop_timeout: 10`, `event` extension loaded | The request ended with status 200 after 5 seconds. The container stopped after 4 seconds. |
-| `stop_timeout: 10`, no `event` extension | The request was cut 1 second after the stop. The client got an empty reply. We built this image from the same Dockerfile without the `event` line. |
-| `stop_timeout: 2` (the default), `event` extension loaded | The request was cut after 2 seconds. The client got an empty reply. |
+| Setup | Result |
+|-------|--------|
+| `stop_timeout: 10`, stop, Select or `event` | 200 after 5 s, then the server stops |
+| `stop_timeout: 10`, `workerman:server reload`, Select or `event` | 200 after 5 s, new workers start |
+| `stop_timeout: 2`, stop | Cut 2 s after the stop, empty reply |
+| Old code 0446513, `stop_timeout: 10`, Select | Cut after about 1 s (stop) or at once (reload) |
 
-A test on a Linux host with systemd gave the same cut about 1 second after `systemctl stop`.
-The cause is a known bug: Symfony Console turns on async signals, so the stop signal runs inside the request (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)).
-Until it is fixed, do not trust that a running request ends on a stop or restart.
-Plan for failed requests, and let the client or the load balancer retry safe requests.
-If you can, take the server out of the load balancer before you stop it.
+These results are for HTTP workers. A scheduler worker on the `event` loop has a known open problem: it does not stop or reload in this way (see [issue 1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
+
+The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)):
+a running request is no longer cut in the middle by the signal.
+A request that takes longer than `stop_timeout` is still cut.
+Set `stop_timeout` higher than your longest request.
+`workerman:server reload` also gives a running request `stop_timeout` seconds to end.
+But the master sends the reload signal to a worker at once, also in the foreground.
+We did not test how a PHP `sleep()` or `usleep()` in a request acts on a stop or reload.
 Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
 
 - Docker: `docker stop -t` or `stop_grace_period` in Compose.
