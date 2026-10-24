@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
+use CrazyGoat\WorkermanBundle\Util\ProcFileReader;
 use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use Psr\Log\LoggerInterface;
@@ -60,13 +61,8 @@ final readonly class ProcessInspector
         }
 
         if (self::isLinux()) {
-            $statFile = "/proc/{$pid}/stat";
-            if (!is_readable($statFile)) {
-                return 0;
-            }
-
-            $stat = @file_get_contents($statFile);
-            if (!\is_string($stat) || $stat === '') {
+            $stat = ProcFileReader::read("/proc/{$pid}/stat");
+            if ($stat === null) {
                 return 0;
             }
 
@@ -195,12 +191,9 @@ final readonly class ProcessInspector
         // master forks, so it survives daemon mode and matches only
         // genuine Workerman masters.
         if (self::isLinux()) {
-            $cmdline = "/proc/{$masterPid}/cmdline";
-            if (is_readable($cmdline)) {
-                $content = file_get_contents($cmdline);
-                if (\is_string($content) && $content !== '' && str_contains($content, 'WorkerMan: master process')) {
-                    return true;
-                }
+            $content = ProcFileReader::read("/proc/{$masterPid}/cmdline");
+            if ($content !== null && str_contains($content, 'WorkerMan: master process')) {
+                return true;
             }
         }
 
@@ -307,13 +300,8 @@ final readonly class ProcessInspector
     private function isWorkermanMasterTitle(int $pid): bool
     {
         if (self::isLinux()) {
-            $cmdline = "/proc/{$pid}/cmdline";
-            if (!is_readable($cmdline)) {
-                return false;
-            }
-
-            $content = file_get_contents($cmdline);
-            if (!\is_string($content)) {
+            $content = ProcFileReader::read("/proc/{$pid}/cmdline");
+            if ($content === null) {
                 return false;
             }
 
@@ -468,13 +456,8 @@ final readonly class ProcessInspector
      */
     private function readProcessStateFromStat(int $pid): ?string
     {
-        $statFile = "/proc/{$pid}/stat";
-        if (!is_readable($statFile)) {
-            return null;
-        }
-
-        $content = @file_get_contents($statFile);
-        if (!\is_string($content) || $content === '') {
+        $content = ProcFileReader::read("/proc/{$pid}/stat");
+        if ($content === null) {
             return null;
         }
 
@@ -507,13 +490,8 @@ final readonly class ProcessInspector
      */
     private function readLinuxProcessSnapshot(int $pid): ?ProcessSnapshot
     {
-        $statFile = "/proc/{$pid}/stat";
-        if (!is_readable($statFile)) {
-            return null;
-        }
-
-        $content = @file_get_contents($statFile);
-        if (!\is_string($content) || $content === '') {
+        $content = ProcFileReader::read("/proc/{$pid}/stat");
+        if ($content === null) {
             return null;
         }
 

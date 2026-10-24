@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Middleware;
 
 use CrazyGoat\WorkermanBundle\Exception\StaticFileMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\Request;
+use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use Workerman\Protocols\Http\Response;
 
 final readonly class StaticFilesMiddleware implements MiddlewareInterface
@@ -94,6 +95,17 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     public function __invoke(Request $request, callable $next): Response
     {
+        $method = $request->method();
+        $isHead = strcasecmp($method, 'HEAD') === 0;
+
+        // Static files are only served for GET and HEAD. HEAD carries the
+        // same headers the GET would produce but no body (RFC 9110 §9.3.2);
+        // any other method is passed to the application so POST, PUT and
+        // DELETE to a static path never return the file (issue #903).
+        if (!$isHead && strcasecmp($method, 'GET') !== 0) {
+            return $next($request);
+        }
+
         if ($this->isAllowlistExtensionMismatch($request->path())) {
             return new Response(404);
         }
@@ -109,6 +121,10 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
         $fileMtime = filemtime($filePath);
         if ($fileMtime === false) {
+            if ($isHead) {
+                return $this->headResponse($filePath, []);
+            }
+
             return (new Response())->withFile($filePath);
         }
 
@@ -118,11 +134,52 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return new Response(304);
         }
 
+        if ($isHead) {
+            // Reuse HeadResponse from issue #683: headers only, carrying the
+            // Content-Length the GET would produce — the file is never
+            // attached, so Http::encode() sends no body.
+            return $this->headResponse($filePath, [
+                'Last-Modified' => $this->formatHttpDate($fileMtime),
+                'ETag' => $etag,
+                'Cache-Control' => 'public, max-age=3600, must-revalidate',
+            ]);
+        }
+
         return (new Response())
             ->withFile($filePath)
             ->header('Last-Modified', $this->formatHttpDate($fileMtime))
             ->header('ETag', $etag)
             ->header('Cache-Control', 'public, max-age=3600, must-revalidate');
+    }
+
+    /**
+     * Build a headers-only HEAD response carrying the Content-Length the
+     * corresponding GET would produce (RFC 9110 §9.3.2), without attaching
+     * the file (issue #903). A file that is gone by now gives 404.
+     *
+     * Workerman adds Content-Type, Accept-Ranges (and Content-Disposition
+     * for unknown types) only when it sends a file, so they are set here the
+     * same way; without them the HEAD response would fall back to text/html.
+     *
+     * @param array<string, string> $headers
+     */
+    private function headResponse(string $filePath, array $headers): Response
+    {
+        // The file went away after is_file(): no length to announce.
+        $size = filesize($filePath);
+        if ($size === false) {
+            return new Response(404);
+        }
+
+        $mime = (new Response())->getMimeType(pathinfo($filePath, PATHINFO_EXTENSION));
+        $headers['Content-Type'] = $mime;
+        $headers['Accept-Ranges'] = 'bytes';
+        if ($mime === 'application/octet-stream') {
+            $baseName = (string) preg_replace('/["\\\\\x00-\x1F\x7F]/', '', basename($filePath));
+            $headers['Content-Disposition'] = 'attachment; filename="' . ($baseName !== '' ? $baseName : 'unknown') . '"';
+        }
+
+        return new HeadResponse(200, $headers, $size);
     }
 
     private function isNotModified(Request $request, string $etag, int $fileMtime): bool

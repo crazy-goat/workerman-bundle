@@ -291,6 +291,82 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * A cached (already downloaded) zip in a directory that has since become
+     * non-writable must fail fast with the directory-permissions message
+     * instead of failing late per-entry inside extractToDirectory()
+     * (issue #1052). The valid cached artifact must survive: it is neither
+     * extracted nor treated as a poisoned artifact.
+     *
+     * @requires extension zip
+     */
+    public function testFetchFailsFastWhenCachedZipDestinationIsNotWritable(): void
+    {
+        $dir = $this->tempDir . '/readonly-cached-zip';
+        mkdir($dir, 0755, true);
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, ['phpmicro.sfx' => 'fake-sfx-bytes']);
+
+        chmod($dir, 0555);
+        if (is_writable($dir)) {
+            chmod($dir, 0755);
+            self::markTestSkipped('Cannot simulate a non-writable directory: it stays writable (running as root?).');
+        }
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $dir,
+            );
+            self::fail('Expected a RuntimeException for the non-writable destination directory.');
+        } catch (\RuntimeException $e) {
+            self::assertSame(
+                sprintf('Destination directory "%s" is not writable; check its permissions before extracting.', $dir),
+                $e->getMessage(),
+            );
+        } finally {
+            chmod($dir, 0755);
+        }
+
+        // The valid cached artifact must not be extracted or removed.
+        self::assertFileExists($zipPath);
+        self::assertFileDoesNotExist($dir . '/phpmicro.sfx');
+    }
+
+    /**
+     * A read-only directory that already holds every entry of the cached zip
+     * keeps working: extractTo() overwrites the existing writable file in
+     * place, so the fail-fast guard of issue #1052 must not fire.
+     *
+     * @requires extension zip
+     */
+    public function testFetchReextractsInPlaceWhenNonWritableDirectoryAlreadyHoldsEntries(): void
+    {
+        $dir = $this->tempDir . '/readonly-prepopulated';
+        mkdir($dir, 0755, true);
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, ['phpmicro.sfx' => 'fake-sfx-bytes']);
+        file_put_contents($dir . '/phpmicro.sfx', 'old-bytes');
+
+        chmod($dir, 0555);
+        if (is_writable($dir)) {
+            chmod($dir, 0755);
+            self::markTestSkipped('Cannot simulate a non-writable directory: it stays writable (running as root?).');
+        }
+
+        try {
+            $result = (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $dir,
+            );
+        } finally {
+            chmod($dir, 0755);
+        }
+
+        self::assertSame($dir . '/phpmicro.sfx', $result);
+        self::assertSame('fake-sfx-bytes', file_get_contents($result));
+    }
+
+    /**
      * @return array<string, array{0: string, 1: string}>
      */
     public static function maliciousEntryProvider(): array
