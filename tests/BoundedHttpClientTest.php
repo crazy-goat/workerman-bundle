@@ -39,6 +39,30 @@ final class BoundedHttpClientTest extends TestCase
     }
 
     /**
+     * @return array<string, array{array<string, mixed>}>
+     */
+    public static function unboundedOverrideProvider(): array
+    {
+        return [
+            'zero timeout' => [['timeout' => 0]],
+            'null timeout' => [['timeout' => null]],
+            'zero connect_timeout' => [['connect_timeout' => 0]],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @dataProvider unboundedOverrideProvider
+     */
+    public function testCreateRejectsAnOverrideThatRemovesABound(array $options): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        BoundedHttpClient::create($options);
+    }
+
+    /**
      * A test or a lint check must fail when a client without timeouts is
      * added (#1028): scan every tests/ file for a bare client construction
      * and require both timeouts (or the shared factory); a raw
@@ -65,7 +89,7 @@ final class BoundedHttpClientTest extends TestCase
             if ($file->getFilename() === 'BoundedHttpClient.php') {
                 continue;
             }
-            if (preg_match_all('/new Client\(([^;]*);/', $source, $matches) === 0) {
+            if (preg_match_all('/new\s+\\\\?(?:GuzzleHttp\\\\)?Client\s*\(([^;]*);/', $source, $matches) === 0) {
                 continue;
             }
             foreach ($matches[1] as $arguments) {
