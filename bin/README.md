@@ -109,6 +109,13 @@ out of it with nothing checking, so this gate compares both the set of type
 short names and the parent links: every nesting edge must match the child's
 real parent class or one of its directly implemented/extended interfaces,
 and every explicit `(extends X)` annotation must match the declaration.
+Since #1045 it also verifies every exception type named in `UPGRADE.md`
+outside the tree — the `| Before | After |` table, per-version prose and the
+`use` / `catch` / `new` references in the PHP examples — against
+`src/Exception/`, so the table cannot drift the way the tree did. A leading
+backslash marks an external type (PHP built-ins like `\InvalidArgumentException`)
+and is skipped; inline code spans are matched fence-aware so a fenced block's
+closing fence cannot shift the span pairing.
 Wired into `composer lint`, so the pre-push hook and the CI Lint job run it
 too; `tests/UpgradeExceptionsLintTest.php` drives the same script as a
 subprocess against synthetic fixtures.

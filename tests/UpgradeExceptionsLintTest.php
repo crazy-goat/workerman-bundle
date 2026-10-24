@@ -146,6 +146,113 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('no exception-hierarchy tree', $result['err']);
     }
 
+    /**
+     * Issue #1045: the `| Before | After |` table names exception types
+     * with no check — a table entry that declares no type in src/Exception/
+     * must fail the gate, while leading-backslash (external) entries are
+     * ignored.
+     */
+    public function testATableNamingAnUndeclaredTypeFails(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            | Before | After |
+            |--------|-------|
+            | `\InvalidArgumentException` | `BaseException`, `GhostException` |
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
+    }
+
+    /**
+     * Issue #1045: per-version prose and the PHP examples are covered too —
+     * a backtick-quoted name, a `use` import and a `catch` clause naming an
+     * undeclared type must each fail the gate.
+     */
+    public function testProseAndExampleNamingAnUndeclaredTypeFails(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            Migrate by catching `GhostException` instead:
+
+            ```php
+            use Vendor\Package\GhostException;
+
+            try {
+                run();
+            } catch (GhostException $e) {
+            }
+            ```
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
+    }
+
+    /**
+     * Issue #1045: external references stay out of the gate — a
+     * leading-backslash type (PHP built-ins like `\RuntimeException`) and
+     * the bare word `Exception` (the namespace name, not a type) must not
+     * fail, even next to a fenced block whose closing fence could shift a
+     * naive backtick-span pairing.
+     */
+    public function testExternalTypesInTableAndProseAreIgnored(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeException('ChildException', "final class ChildException extends BaseException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            ```php
+            try {
+                run();
+            } catch (\LogicException $e) {
+            }
+            ```
+
+            | Before | After |
+            |--------|-------|
+            | `\InvalidArgumentException` | `BaseException` (extends `\RuntimeException`) |
+
+            Root-level classes moved into the `Exception` namespace.
+
+            **Exception hierarchy:**
+
+            ```text
+            BaseException
+            └── ChildException
+            ```
+            MD);
+
+        $result = $this->runScript([], ['--root=' . $this->sandbox]);
+
+        self::assertSame(0, $result['code'], $result['err'] . $result['out']);
+        self::assertStringContainsString('check-upgrade-exceptions: OK', $result['out']);
+    }
+
     public function testABlockBeforeTheHeadingIsIgnored(): void
     {
         $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
