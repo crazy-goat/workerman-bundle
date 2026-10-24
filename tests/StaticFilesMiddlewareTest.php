@@ -333,6 +333,78 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertFalse($called, "Next should not be called for valid file");
     }
 
+    /**
+     * Issue #905: Workerman Request::path() returns the raw path, so a
+     * percent-encoded file name must be decoded once before lookup.
+     * The UTF-8 name is built from its percent-encoded form so this file
+     * stays ASCII-only.
+     */
+    public function testPercentEncodedSpaceAndUtf8NamesAreServed(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $spaceFile = $this->rootDirectory . '/hello world.txt';
+        $utf8File = $this->rootDirectory . '/' . rawurldecode('za%C5%BC%C3%B3%C5%82%C4%87.txt');
+        file_put_contents($spaceFile, 'space content');
+        file_put_contents($utf8File, 'utf8 content');
+
+        try {
+            $next = static function (Request $request): Response {
+                return new Response(404);
+            };
+
+            $spaceResponse = $middleware($this->createRequest('/hello%20world.txt'), $next);
+            $this->assertSame(200, $spaceResponse->getStatusCode(), 'A %20-encoded space name must be served');
+
+            $utf8Response = $middleware($this->createRequest('/za%C5%BC%C3%B3%C5%82%C4%87.txt'), $next);
+            $this->assertSame(200, $utf8Response->getStatusCode(), 'A percent-encoded UTF-8 name must be served');
+        } finally {
+            if (file_exists($spaceFile)) {
+                unlink($spaceFile);
+            }
+            if (file_exists($utf8File)) {
+                unlink($utf8File);
+            }
+        }
+    }
+
+    /**
+     * Issue #905: decoding once must not open traversal holes — an
+     * encoded `..` or NUL is still blocked, and a double-encoded name
+     * stays a literal (missing) file name instead of becoming `..`.
+     *
+     * @dataProvider encodedTraversalProvider
+     */
+    public function testEncodedTraversalAndDoubleEncodingPassToNext(string $path): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest($path);
+        $called = false;
+        $next = function (Request $req) use (&$called): Response {
+            $called = true;
+            return new Response(200);
+        };
+
+        $response = $middleware($request, $next);
+
+        $this->assertTrue($called, "Next should be called for encoded path: $path");
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function encodedTraversalProvider(): array
+    {
+        return [
+            'encoded dot-dot slash' => ['/%2e%2e/test.txt'],
+            'encoded NUL' => ['/%00/test.txt'],
+            'double-encoded dots stay a literal name' => ['/%252e%252e/test.txt'],
+            'encoded backslash' => ['/%5C..%5Ctest.txt'],
+        ];
+    }
+
     public function testNonExistentFilePassesToNext(): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
