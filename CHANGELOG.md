@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `RequestConverter` now rejects a header name containing a control character with `MalformedRequestException` (HTTP 400), reusing the header-value control-character mask, instead of forwarding the byte to the Symfony header bag and the `$_SERVER` key; `METHOD_REGEX` now anchors with `\z` instead of `$` so a method with a trailing newline no longer passes validation (#1117)
 - The development `composer.lock` now pins `symfony/http-foundation` 7.4.21 (was 7.4.17) to clear CVE-2026-108082, so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.46, 7.4.19 or 8.1.7 or later (#1094)
 
 ## [0.31.0] - 2026-10-06
