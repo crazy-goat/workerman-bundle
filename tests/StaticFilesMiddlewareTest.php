@@ -1100,8 +1100,12 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    public function testAllowlistFastPathRejectsDisallowedExtensionBeforeFilesystemProbe(): void
+    public function testAllowlistMismatchFallsThroughWhenNoFileExists(): void
     {
+        // Issue #1118: a disallowed extension with no file on disk must not
+        // shadow an app route — the request falls through to the application
+        // instead of answering 404. An existing disallowed file still gets
+        // 404 (see testAllowedExtensionsWhitelistBlocking).
         $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css']);
         $nextCalled = false;
         $response = $middleware($this->createRequest('/assets/image.png'), static function (Request $request) use (&$nextCalled): Response {
@@ -1110,8 +1114,8 @@ final class StaticFilesMiddlewareTest extends TestCase
             return new Response(200);
         });
 
-        self::assertFalse($nextCalled);
-        self::assertSame(404, $response->getStatusCode());
+        self::assertTrue($nextCalled);
+        self::assertSame(200, $response->getStatusCode());
 
         $mismatch = new \ReflectionMethod($middleware, 'isAllowlistExtensionMismatch');
         self::assertFalse($mismatch->invoke($middleware, '/assets/image.css'));
@@ -1121,6 +1125,26 @@ final class StaticFilesMiddlewareTest extends TestCase
         self::assertFalse($mismatch->invoke($middleware, '/assets/'));
         self::assertFalse($mismatch->invoke($middleware, "/assets/invalid\0.png"));
         self::assertFalse($mismatch->invoke($middleware, '/assets/invalid%00.png'));
+    }
+
+    public function testAllowlistMismatchDoesNotShadowAppRoutes(): void
+    {
+        // Issue #1118 repro: with an allowlist of css/js/png and no files on
+        // disk, app routes carrying a disallowed extension must reach the
+        // application instead of receiving a bare 404.
+        $middleware = new StaticFilesMiddleware($this->rootDirectory, ['css', 'js', 'png']);
+
+        foreach (['/sitemap.xml', '/feed.json', '/api/export.csv', '/users/john.doe'] as $path) {
+            $nextCalled = false;
+            $response = $middleware($this->createRequest($path), static function (Request $request) use (&$nextCalled): Response {
+                $nextCalled = true;
+
+                return new Response(200);
+            });
+
+            self::assertTrue($nextCalled, "Next should be called for $path");
+            self::assertSame(200, $response->getStatusCode(), "App route $path should not get 404");
+        }
     }
 
     public function testAllowlistFastPathDoesNotChangeDirectoryComponentSemantics(): void
