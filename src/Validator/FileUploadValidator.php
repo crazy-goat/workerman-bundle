@@ -108,6 +108,53 @@ final class FileUploadValidator
     }
 
     /**
+     * Assert that a single file entry's leaf fields have the scalar types
+     * UploadedFile requires (name, tmp_name and type are strings; size and
+     * error are ints).
+     *
+     * Workerman builds nested arrays for field names like f[name][x], so a
+     * leaf can itself be an array. Passing one to UploadedFile::__construct()
+     * would raise a TypeError (a 500) instead of a client-input error, so
+     * the type check happens here, before construction (issue #1111).
+     *
+     * Called by RequestConverter::processFileEntry() after
+     * assertRequiredFields(), so missing fields are reported there first.
+     *
+     * @param string               $fieldName The form field name
+     * @param array<string, mixed> $file      The file entry array to check
+     *
+     * @throws FileUploadValidationException if a field has the wrong type
+     */
+    public static function assertFieldTypes(string $fieldName, array $file): void
+    {
+        foreach (['name', 'tmp_name', 'type'] as $field) {
+            if (isset($file[$field]) && !is_string($file[$field])) {
+                throw new FileUploadValidationException(
+                    sprintf(
+                        'Malformed file upload data for field "%s": field "%s" must be a string, got %s',
+                        $fieldName,
+                        $field,
+                        gettype($file[$field]),
+                    ),
+                );
+            }
+        }
+
+        foreach (['size', 'error'] as $field) {
+            if (isset($file[$field]) && !is_int($file[$field])) {
+                throw new FileUploadValidationException(
+                    sprintf(
+                        'Malformed file upload data for field "%s": field "%s" must be an integer, got %s',
+                        $fieldName,
+                        $field,
+                        gettype($file[$field]),
+                    ),
+                );
+            }
+        }
+    }
+
+    /**
      * Build the "expected array, got X" error for a field.
      *
      * Single source of truth for this message — RequestConverter calls this

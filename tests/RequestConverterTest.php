@@ -303,6 +303,60 @@ final class RequestConverterTest extends TestCase
         }
     }
 
+    /**
+     * Issue #1111: nested multipart fields (f[name][x], f[tmp_name][x], ...)
+     * make the file entry's leaves arrays, not scalars. That must raise a
+     * client-input FileUploadValidationException, not an uncaught TypeError
+     * from UploadedFile::__construct().
+     */
+    public function testNestedFileFieldLeavesThrowFileUploadValidationException(): void
+    {
+        $tmpFile = $this->createTempFile('test content');
+
+        $buffer = "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary=x\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'f' => [
+                'name' => ['x' => 'a.txt'],
+                'tmp_name' => ['x' => $tmpFile],
+                'type' => ['x' => 'text/plain'],
+                'size' => ['x' => 5],
+                'error' => ['x' => 0],
+            ],
+        ]);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail('Expected FileUploadValidationException');
+        } catch (FileUploadValidationException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('must be a string', $e->getMessage());
+        }
+    }
+
+    public function testNonIntegerFileErrorFieldThrowsFileUploadValidationException(): void
+    {
+        $tmpFile = $this->createTempFile('test content');
+
+        $buffer = "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary=x\r\n\r\n";
+        $rawRequest = $this->createRequestWithFiles($buffer, [
+            'f' => [
+                'name' => 'a.txt',
+                'tmp_name' => $tmpFile,
+                'type' => 'text/plain',
+                'size' => 5,
+                'error' => ['x' => 0],
+            ],
+        ]);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail('Expected FileUploadValidationException');
+        } catch (FileUploadValidationException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('must be an integer', $e->getMessage());
+        }
+    }
+
     public function testControlByteInHeaderThrowsMalformedRequestException(): void
     {
         $buffer = "GET /boom HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\n\r\n";
