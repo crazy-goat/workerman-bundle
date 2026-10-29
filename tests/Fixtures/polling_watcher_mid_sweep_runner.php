@@ -7,7 +7,7 @@ declare(strict_types=1);
  * (the prefix of the tree that was visited in earlier ticks) is detected
  * on the next sweep.
  *
- * Usage: php polling_watcher_mid_sweep_runner.php <temp_dir> <autoload_path>
+ * Usage: php polling_watcher_mid_sweep_runner.php <temp_dir> <autoload_path> [tail]
  *
  * Exit codes:
  *   0 — success (detection occurred on the next sweep)
@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 $tempDir = $argv[1] ?? '';
 $autoloadPath = $argv[2] ?? '';
+$tail = ($argv[3] ?? '') === 'tail';
 
 if ($tempDir === '' || $autoloadPath === '' || !is_dir($tempDir)) {
     fprintf(STDERR, "Usage: php polling_watcher_mid_sweep_runner.php <temp_dir> <autoload_path>\n");
@@ -76,39 +77,63 @@ $watcherClass->getProperty('maxFilesPerTick')->setValue($watcher, FileMonitorWat
 
 $checkMethod = $watcherClass->getMethod('checkFileSystemChanges');
 
-// Tick 1: processes first 500 files.
-$checkMethod->invoke($watcher);
-
-// Tick 2: completes the sweep (remaining 100 files).
-$checkMethod->invoke($watcher);
-
-// Verify the sweep completed (no resume state).
+// Select from the actual traversal order, not from file names or creation order.
+$entries = iterator_to_array(new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($tempDir, FilesystemIterator::SKIP_DOTS | FilesystemIterator::UNIX_PATHS),
+    RecursiveIteratorIterator::LEAVES_ONLY,
+), false);
+$target = $entries[$tail ? 599 : 0]->getPathname();
 $iteratorsProp = $watcherClass->getProperty('iterators');
+
+// Tick 1 visits the prefix and leaves the sweep in progress.
+$checkMethod->invoke($watcher);
 $iterators = $iteratorsProp->getValue($watcher);
-if (!empty($iterators)) {
-    fprintf(STDERR, "FAIL: Sweep did not complete after 2 ticks (iterators not empty)\n");
+if (empty($iterators)) {
+    fprintf(STDERR, "FAIL: Sweep completed before the second tick\n");
     exit(3);
 }
 
-// Now modify file0.php (in the already-scanned prefix).
-// Ensure the mtime is strictly greater than lastMTime.
-sleep(1);
-file_put_contents($tempDir . '/file0.php', '<?php // changed');
-clearstatcache(true, $tempDir . '/file0.php');
+if ($tail) {
+    // Exercise detection at the end of the next sweep as well.
+    $checkMethod->invoke($watcher);
+}
 
-$modifiedMTime = filemtime($tempDir . '/file0.php');
+// In the prefix case this modification happens between ticks, after the
+// watcher visited the file. The mtime must exceed its whole-second watermark.
+sleep(1);
+file_put_contents($target, '<?php // changed');
+clearstatcache(true, $target);
+$modifiedMTime = filemtime($target);
 if (!is_int($modifiedMTime) || $modifiedMTime <= $initialMTime) {
     fprintf(STDERR, "FAIL: Modified file mtime (%s) must exceed initial lastMTime (%d)\n", var_export($modifiedMTime, true), $initialMTime);
     exit(3);
 }
 
-// Tick 3: starts a new sweep, should detect the change on file0.php.
+if (!$tail) {
+    // The remaining part of the old sweep must not revisit the prefix.
+    $checkMethod->invoke($watcher);
+    if ($lastMTimeProp->getValue($watcher) !== $initialMTime) {
+        fprintf(STDERR, "FAIL: Modified prefix was detected before the next sweep\n");
+        exit(2);
+    }
+}
+$iterators = $iteratorsProp->getValue($watcher);
+if (!empty($iterators)) {
+    fprintf(STDERR, "FAIL: Sweep did not complete after 2 ticks\n");
+    exit(3);
+}
+
+// A whole new sweep takes two ticks; the changed file can be in either one.
 $checkMethod->invoke($watcher);
-
-$afterMTime = $lastMTimeProp->getValue($watcher);
-
-if ($afterMTime <= $initialMTime) {
-    fprintf(STDERR, "FAIL: lastMTime not updated after modifying a file in the already-scanned region (was %d, now %d)\n", $initialMTime, $afterMTime);
+if ($tail && $lastMTimeProp->getValue($watcher) !== $initialMTime) {
+    fprintf(STDERR, "FAIL: Tail file was detected in the first tick\n");
+    exit(2);
+}
+if ($lastMTimeProp->getValue($watcher) === $initialMTime) {
+    $checkMethod->invoke($watcher);
+}
+if ($lastMTimeProp->getValue($watcher) !== $modifiedMTime) {
+    fprintf(STDERR, "FAIL: Modified file was not detected during the next sweep\n");
     exit(2);
 }
 

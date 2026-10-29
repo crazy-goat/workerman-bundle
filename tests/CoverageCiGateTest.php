@@ -44,6 +44,23 @@ final class CoverageCiGateTest extends TestCase
         );
     }
 
+    public function testArtifactNameIsAvailableWhenTestsOrCoverageGateFail(): void
+    {
+        $workflow = self::readWorkflow();
+
+        self::assertMatchesRegularExpression(
+            '/- name: Sanitize artifact name(?:(?!- name:).)*if: always\(\)(?:(?!- name:).)*id: artifact(?:(?!- name:).)*GITHUB_OUTPUT/s',
+            $workflow,
+            'The artifact name step must run even after a failure and publish its output',
+        );
+        self::assertStringContainsString('name="coverage-${{ matrix.php-version }}-${{ matrix.symfony-version }}"', $workflow);
+        self::assertStringContainsString('name="${name//\\*/x}"', $workflow);
+        self::assertMatchesRegularExpression(
+            '/- name: Upload coverage report(?:(?!- name:).)*name: \${{ steps\.artifact\.outputs\.name }}/s',
+            $workflow,
+        );
+    }
+
     public function testThresholdIsDefinedOnlyInComposerScript(): void
     {
         $workflow = self::readWorkflow();
