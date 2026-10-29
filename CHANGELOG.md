@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `MaxJobsRebootStrategy::shouldReboot()` now reloads the worker after exactly `requests` requests instead of one request later (`>=` instead of `>`): the strategy is consulted after each request is handled, so the old check served `maxJobs + 1` requests before reloading, contradicting the docs (#967)
+- `MaxJobsRebootStrategy::shouldReboot()` now requests a reload at the selected job limit, not one request later. With zero dispersion, the limit equals `requests` (#967)
 - `SfxDownloader::fetch()` now also fails fast with the directory-permissions message when a cached zip artifact sits in a destination directory that is no longer writable, instead of failing late per entry inside the extraction (a read-only directory that already holds every entry still re-extracts in place); a cached archive that does not open still reaches the poisoned-artifact cleanup path (#1052)
 - `StaticFilesMiddleware` now answers `HEAD` on a static file with headers only (`Content-Length`, `Content-Type`, `Accept-Ranges`, `ETag`, `Last-Modified`, `Cache-Control`, as for `GET`) and no body, and still returns 304 on a matching `If-None-Match`; methods other than `GET` and `HEAD` (`POST`, `PUT`, `DELETE`, ...) are passed to the application instead of returning the file, so the denylist and allowlist 404 answers now apply to `GET` and `HEAD` only (#903)
 - The CI matrix `sed` rewrite now matches digits in package names (`[a-z0-9-]+` instead of `[a-z-]+`), so a future `symfony/foo2bar`-style package is not silently skipped by the "Update Symfony constraints" step; `GithubWorkflowsTest` now replays the rewrite character class against every `symfony/*` key in `composer.json` (#1060)
