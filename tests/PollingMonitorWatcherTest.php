@@ -590,6 +590,19 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
+    public function testFileAtEndOfNextSweepIsDetectedOnSecondTick(): void
+    {
+        $autoloadPath = \realpath(__DIR__ . '/../vendor/autoload.php');
+        if ($autoloadPath === false) {
+            self::markTestSkipped('vendor/autoload.php not found.');
+        }
+
+        $scriptFile = __DIR__ . '/Fixtures/polling_watcher_mid_sweep_runner.php';
+        $exitCode = $this->runPhpScript($scriptFile, [$this->tempDir, $autoloadPath, 'tail']);
+
+        self::assertSame(0, $exitCode, 'A file at the end of a sweep should be detected on its second tick.');
+    }
+
     /**
      * Adding or removing a directory between ticks must not throw, and
      * the sweep must still converge.  APFS readdir order is hash-based (not
