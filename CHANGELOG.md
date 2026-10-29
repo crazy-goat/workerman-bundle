@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AbstractController::sendEarlyHints()` now writes a `103 Early Hints` interim response to the connection ahead of the final response, so browsers can preload assets while the controller still works. HTTP/1.0 clients get no interim response; keep-alive is unaffected (#1018)
+
 ### Fixed
 
 - `SfxDownloader::fetch()` now also fails fast with the directory-permissions message when a cached zip artifact sits in a destination directory that is no longer writable, instead of failing late per entry inside the extraction (a read-only directory that already holds every entry still re-extracts in place); a cached archive that does not open still reaches the poisoned-artifact cleanup path (#1052)
