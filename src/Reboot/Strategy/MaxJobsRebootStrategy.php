@@ -20,6 +20,9 @@ final class MaxJobsRebootStrategy implements RebootStrategyInterface
 
     public function shouldReboot(): bool
     {
-        return ++$this->jobsCount > $this->maxJobs;
+        // shouldReboot() is consulted after each request is handled, so
+        // the Nth request must trigger the reload (issue #967): with `>`
+        // the worker served maxJobs + 1 requests before reloading.
+        return ++$this->jobsCount >= $this->maxJobs;
     }
 }
