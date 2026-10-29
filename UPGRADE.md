@@ -70,6 +70,10 @@ public function shouldReboot(): bool
 
 `Runner::warmUpCache()` previously threw a bare `\RuntimeException` on all seven failure paths (fork failure, waitpid failure, timeout, unexpected status, SIGTERM failure, unexpected signal, non-zero exit). It now throws `CacheWarmupException` ([#816](https://github.com/crazy-goat/workerman-bundle/issues/816)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover these paths too.
 
+### `Runner::checkStaticRoots()` now throws `InvalidStaticRootException` instead of bare `\RuntimeException`
+
+`Runner::checkStaticRoots()` previously threw a bare `\RuntimeException` when a configured static files root directory did not exist. It now throws `InvalidStaticRootException` ([#1041](https://github.com/crazy-goat/workerman-bundle/issues/1041)). The new type extends `KernelException` → `WorkermanException` → `\RuntimeException`, so callers catching `\RuntimeException` are unaffected; callers catching `WorkermanExceptionInterface` now cover this path too.
+
 ---
 
 ## Upgrading to 0.25
@@ -499,7 +503,7 @@ use CrazyGoat\WorkermanBundle\Exception\ServerStopFailedException;
 | Before                          | After                                                |
 |---------------------------------|------------------------------------------------------|
 | `\InvalidArgumentException`     | `FileUploadValidationException`, `InvalidTriggerException`, `InvalidCronExpressionException`, `InvalidMiddlewareException`, `StaticFileMiddlewareException`, `MalformedRequestException`, `InvalidCacheWarmupTimeoutException` |
-| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `CacheWarmupException`, `SfxExtractionException`, `UnsupportedListenSchemeException`  |
+| `\RuntimeException`             | `KernelCreationException`, `InvalidCacheDirectoryException`, `CacheWarmupException`, `SfxExtractionException`, `UnsupportedListenSchemeException`, `InvalidStaticRootException`  |
 | `\LogicException`               | `InvalidCronExpressionException` (extends `\InvalidArgumentException`) |
 
 **Exception hierarchy:**
@@ -517,7 +521,8 @@ WorkermanExceptionInterface
 │   ├── KernelException
 │   │   ├── KernelCreationException
 │   │   ├── InvalidCacheDirectoryException
-│   │   └── CacheWarmupException
+│   │   ├── CacheWarmupException
+│   │   └── InvalidStaticRootException
 │   └── UnsupportedListenSchemeException
 ├── SfxExtractionException (extends \RuntimeException)
 ├── ValidationException (extends \InvalidArgumentException)
