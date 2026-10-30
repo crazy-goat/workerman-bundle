@@ -89,8 +89,8 @@ workerman:
 | `reload_strategy.exception.active` | bool | `true` | Reload the worker each time an exception is thrown while it handles a request. |
 | `reload_strategy.exception.allowed_exceptions` | list of class names | `Symfony\Component\HttpKernel\Exception\HttpExceptionInterface`, `Symfony\Component\Serializer\Exception\ExceptionInterface` | These exceptions do not cause a reload. |
 | `reload_strategy.max_requests.active` | bool | `false` | Reload the worker after N requests. This helps against memory leaks. |
-| `reload_strategy.max_requests.requests` | int | `1000` | The number of requests after which the worker reloads. |
-| `reload_strategy.max_requests.dispersion` | int, percent | `20` | Makes the workers reload at different times. With 1000 requests and 20 percent, a worker reloads after 800 to 1000 requests. |
+| `reload_strategy.max_requests.requests` | int, minimum 1 | `1000` | The number of requests after which the worker reloads. Must be at least 1. |
+| `reload_strategy.max_requests.dispersion` | int, percent, 0 to 100 | `20` | Makes the workers reload at different times. With 1000 requests and 20 percent, a worker reloads after 800 to 1000 requests. Values outside 0 to 100 fail with a configuration error. |
 | `reload_strategy.file_monitor.active` | bool | `false` | Reload all workers when a file changes. Use it in `dev` only. It works only in debug mode and not in a PHAR file. |
 | `reload_strategy.file_monitor.source_dir` | list of paths | `%kernel.project_dir%/src`, `%kernel.project_dir%/config` | The directories to watch. |
 | `reload_strategy.file_monitor.file_pattern` | list of patterns | `*.php`, `*.yaml` | The files to watch inside `source_dir`. |
