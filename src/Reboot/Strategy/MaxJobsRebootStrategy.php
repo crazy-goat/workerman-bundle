@@ -14,6 +14,12 @@ final class MaxJobsRebootStrategy implements RebootStrategyInterface
         int $dispersion = 0,
         private readonly \Random\Randomizer $randomizer = new \Random\Randomizer(),
     ) {
+        if ($maxJobs < 1) {
+            throw new \InvalidArgumentException(sprintf('maxJobs must be at least 1, got %d.', $maxJobs));
+        }
+        if ($dispersion < 0 || $dispersion > 100) {
+            throw new \InvalidArgumentException(sprintf('dispersion must be between 0 and 100, got %d.', $dispersion));
+        }
         $minJobs = $maxJobs - (int) round($maxJobs * $dispersion / 100);
         $this->maxJobs = $this->randomizer->getInt($minJobs, $maxJobs);
     }
