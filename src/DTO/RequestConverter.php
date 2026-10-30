@@ -18,7 +18,7 @@ final class RequestConverter
      * This is stricter than RFC 7230 (which allows digits and special characters
      * in tokens) to minimise the attack surface for method-based routing bypasses.
      */
-    private const METHOD_REGEX = '/^[A-Z]+$/';
+    private const METHOD_REGEX = '/^[A-Z]+\z/';
     private const MAX_METHOD_LENGTH = 32;
 
     /**
@@ -191,6 +191,8 @@ final class RequestConverter
      * - Host, Content-Length, Authorization: only the first value is used (duplicates discarded)
      * - All other headers: joined with ', ' per RFC 7230
      * - Header values containing control characters are rejected
+     * - Header names containing control characters are rejected, so a control
+     *   byte in a name cannot reach the Symfony header bag or a $_SERVER key
      * - Header names containing underscores are discarded because PHP's server
      *   variable convention maps both dashes and underscores to underscores
      * - Header names containing whitespace (obs-fold / space-padded) are
@@ -217,6 +219,15 @@ final class RequestConverter
             if (\strcspn($stringValue, self::HEADER_VALUE_CONTROL_CHARS) < \strlen($stringValue)) {
                 throw new MalformedRequestException(
                     \sprintf('Header "%s" contains control characters: "%s"', $nameLower, \addcslashes($stringValue, "\x00..\x1F\x7F")),
+                );
+            }
+
+            // Validate header name for control characters, reusing the value
+            // mask: a control byte in a name must not reach the Symfony header
+            // bag or a $_SERVER key (same 400 as a control byte in a value).
+            if (\strcspn($name, self::HEADER_VALUE_CONTROL_CHARS) < \strlen($name)) {
+                throw new MalformedRequestException(
+                    \sprintf('Header name "%s" contains control characters: "%s"', $nameLower, \addcslashes($name, "\x00..\x1F\x7F")),
                 );
             }
 

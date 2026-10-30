@@ -317,6 +317,20 @@ final class RequestConverterTest extends TestCase
         }
     }
 
+    public function testControlByteInHeaderNameThrowsMalformedRequestException(): void
+    {
+        $buffer = "GET /boom HTTP/1.1\r\nHost: x\r\nX-Foo\x01: injected\r\n\r\n";
+        $rawRequest = new Request($buffer);
+
+        try {
+            RequestConverter::toSymfonyRequest($rawRequest);
+            $this->fail('Expected MalformedRequestException');
+        } catch (MalformedRequestException $e) {
+            $this->assertInstanceOf(ClientInputExceptionInterface::class, $e);
+            $this->assertStringContainsString('control characters', $e->getMessage());
+        }
+    }
+
     public function testHeaderControlCharacterBoundaryIsRejectedExceptTab(): void
     {
         for ($byte = 0; $byte <= 255; ++$byte) {
