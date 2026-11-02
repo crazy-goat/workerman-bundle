@@ -50,6 +50,16 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
         // StreamedResponse has no known content length, so HeadResponse (which
         // rewrites Content-Length) does not apply; mirroring the GET framing
         // satisfies RFC 9110 §9.3.2 "same header fields".
+        // A 1xx, 204 or 304 response must have no body (RFC 9112 §6.3) and
+        // must not carry Transfer-Encoding in a 1xx or 204 response (§6.1).
+        // Like the HEAD path, send only the head — no chunks, no chunked
+        // terminator — and never execute the stream callback (issue #1114).
+        // This check comes first so a HEAD request for a bodyless status
+        // does not emit Transfer-Encoding either.
+        if (self::isBodylessStatus($response->getStatusCode())) {
+            return $this->convertBodyless($response, $headers, $connection, $protocolVersion, $shouldClose);
+        }
+
         if (strcasecmp($requestMethod, 'HEAD') === 0) {
             return $this->convertHead($response, $headers, $connection, $protocolVersion, $shouldClose);
         }
@@ -129,6 +139,36 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
     }
 
     /**
+     * A status code whose response must have no body (RFC 9112 §6.3): every
+     * 1xx status, 204 (No Content) and 304 (Not Modified).
+     */
+    private static function isBodylessStatus(int $statusCode): bool
+    {
+        return $statusCode < 200 || $statusCode === 204 || $statusCode === 304;
+    }
+
+    /**
+     * Send only the head for a bodyless status: the same status line and
+     * headers the response would carry, but no Transfer-Encoding: chunked
+     * (a 1xx or 204 response must not carry it, RFC 9112 §6.1; a 304 ends at
+     * the blank line after the headers, §6.3), no chunks and no chunked
+     * terminator — and the stream callback never runs.
+     *
+     * @param array<string, string|list<string|null>> $headers
+     */
+    private function convertBodyless(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion, bool $shouldClose = false): WorkermanResponse
+    {
+        $head = $this->buildHeaderString($headers, $response->getStatusCode(), $protocolVersion, $shouldClose, false);
+        $connection->send($head, true);
+
+        if ($connection->context instanceof \stdClass) {
+            $connection->context->responseSentDirectly = true;
+        }
+
+        return new WorkermanResponse($response->getStatusCode(), $headers, '');
+    }
+
+    /**
      * Send only the head for a HEAD request: the same status line and headers
      * the GET would carry (Transfer-Encoding: chunked for HTTP/1.1,
      * Connection: close for HTTP/1.0, and Connection: close for HTTP/1.1 when
@@ -152,7 +192,7 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
     /**
      * @param array<string, string|list<string|null>> $headers
      */
-    private function buildHeaderString(array $headers, int $statusCode, string $protocolVersion, bool $shouldClose = false): string
+    private function buildHeaderString(array $headers, int $statusCode, string $protocolVersion, bool $shouldClose = false, bool $chunked = true): string
     {
         $reason = WorkermanResponse::PHRASES[$statusCode] ?? 'Unknown';
         $head = "HTTP/{$protocolVersion} {$statusCode} {$reason}\r\n";
@@ -195,7 +235,7 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
             $head .= "Connection: close\r\n";
         }
 
-        if ($protocolVersion !== '1.0') {
+        if ($protocolVersion !== '1.0' && $chunked) {
             $head .= "Transfer-Encoding: chunked\r\n";
         }
 
