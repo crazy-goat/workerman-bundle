@@ -235,6 +235,24 @@ final class RequestConverter
                 continue;
             }
 
+            // Issue #1116: Symfony's Request::getMethod() honours
+            // X-HTTP-Method-Override on a POST with no opt-in, so a POST
+            // carrying "X-HTTP-Method-Override: HEAD" makes routing,
+            // Response::prepare() and the response strategies all see HEAD:
+            // prepare() empties the body while Content-Length keeps the GET
+            // length, and the client — which sent a POST and waits for a
+            // body — times out or desyncs on the keep-alive connection.
+            // Symfony 8.0 ignores HEAD overrides; drop the header here,
+            // before the Symfony Request is built, so routing, prepare()
+            // and framing all see the real POST. Other overrides (PUT,
+            // DELETE, PATCH, ...) are left untouched.
+            if ($nameLower === 'x-http-method-override'
+                && \strcasecmp($rawRequest->method(), 'POST') === 0
+                && \strcasecmp(\trim($stringValue), 'HEAD') === 0
+            ) {
+                continue;
+            }
+
             $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
 
             // Check if this header had duplicate values in the raw request

@@ -12,6 +12,7 @@ use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Response;
 use Workerman\Worker;
 
 /**
@@ -733,6 +734,82 @@ final class RequestConverterTest extends TestCase
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_LENGTH'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_MD5'));
+    }
+
+    /**
+     * Issue #1116: a POST carrying "X-HTTP-Method-Override: HEAD" must
+     * keep the real POST method. Without the drop in RequestConverter,
+     * Symfony's getMethod() returns HEAD, Response::prepare() empties
+     * the body while Content-Length keeps the GET length, and the
+     * client — which sent a POST — waits for a body that never comes.
+     */
+    public function testPostWithHeadMethodOverrideKeepsRealPostMethod(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-HTTP-Method-Override: HEAD\r\n";
+        $buffer .= "Content-Length: 0\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('POST', $symfonyRequest->getMethod());
+        $this->assertSame('POST', $symfonyRequest->getRealMethod());
+        $this->assertNull($symfonyRequest->headers->get('X-HTTP-Method-Override'));
+
+        // prepare() must not empty the body for what is really a POST.
+        $response = new Response('HELLO WORLD', Response::HTTP_OK, ['Content-Length' => '11']);
+        $response->prepare($symfonyRequest);
+
+        $this->assertSame('HELLO WORLD', $response->getContent());
+    }
+
+    public function testPostWithLowercaseHeadMethodOverrideKeepsRealPostMethod(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-HTTP-Method-Override: head\r\n";
+        $buffer .= "Content-Length: 0\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('POST', $symfonyRequest->getMethod());
+    }
+
+    /**
+     * Only the HEAD override is dropped: legitimate overrides such as
+     * POST -> PUT keep working exactly as before.
+     */
+    public function testPostWithPutMethodOverrideStillHonoured(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-HTTP-Method-Override: PUT\r\n";
+        $buffer .= "Content-Length: 0\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('PUT', $symfonyRequest->getMethod());
+        $this->assertSame('POST', $symfonyRequest->getRealMethod());
+        $this->assertSame('PUT', $symfonyRequest->headers->get('X-HTTP-Method-Override'));
+    }
+
+    public function testGenuineHeadRequestKeepsHeadMethod(): void
+    {
+        $buffer = "HEAD /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "\r\n";
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertSame('HEAD', $symfonyRequest->getMethod());
+        $this->assertSame('HEAD', $symfonyRequest->getRealMethod());
     }
 
     public function testServerProtocolHasHttpPrefix(): void

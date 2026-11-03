@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `RequestConverter` now drops `X-HTTP-Method-Override: HEAD` on POST requests before the Symfony Request is built, so a POST carrying that header keeps its real POST method instead of being treated as HEAD: routing, `Response::prepare()` and the response strategies no longer emit a bodyless response that still declares the GET body length, which desynced keep-alive connections (the client sent a POST and waited for a body that never came). Other overrides (PUT, DELETE, PATCH, ...) are untouched, and genuine HEAD requests are unchanged; this matches Symfony 8.0, which ignores HEAD overrides (#1116)
 - The development `composer.lock` now pins `symfony/http-foundation` 7.4.21 (was 7.4.17) to clear CVE-2026-108082, so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.46, 7.4.19 or 8.1.7 or later (#1094)
 
 ## [0.31.0] - 2026-10-06
