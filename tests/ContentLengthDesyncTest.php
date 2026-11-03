@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
+use CrazyGoat\WorkermanBundle\Http\Request as BundleRequest;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
@@ -399,6 +401,81 @@ final class ContentLengthDesyncTest extends TestCase
 
         $parts = explode("\r\n\r\n", $wire, 2);
         $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
+    }
+
+    /**
+     * Issue #1116, wire level: a POST carrying
+     * "X-HTTP-Method-Override: HEAD" must produce a bodied response
+     * whose declared length matches the body. Before the fix, the
+     * overridden HEAD made prepare() empty the body while the
+     * Content-Length: 11 survived, so the wire carried a declared
+     * length with 0 body bytes.
+     */
+    public function testPostWithHeadMethodOverrideEmitsBodyMatchingDeclaredLength(): void
+    {
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-HTTP-Method-Override: HEAD\r\n";
+        $buffer .= "Content-Length: 0\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new BundleRequest($buffer));
+        $this->assertSame('POST', $symfonyRequest->getMethod());
+
+        $converter = $this->createConverter();
+        $response = new Response('HELLO WORLD', Response::HTTP_OK, [
+            'Content-Length' => '11',
+        ]);
+        $response->prepare($symfonyRequest);
+
+        $workermanResponse = $converter->convert($response, $this->connection, '1.1', $symfonyRequest->getMethod());
+        $wire = (string) $workermanResponse;
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'Exactly one Content-Length on the wire');
+        $this->assertStringContainsString('Content-Length: 11', $wire);
+
+        $parts = explode("\r\n\r\n", $wire, 2);
+        $this->assertSame('HELLO WORLD', $parts[1] ?? '', 'Body must match the declared length');
+    }
+
+    /**
+     * Issue #1116, BinaryFileResponse path: prepare() used to set
+     * maxlen = 0 for the overridden HEAD, routing the strategy to a
+     * bodyless response that still declared the full file size. With
+     * the override dropped, the POST downloads the whole file.
+     */
+    public function testPostWithHeadMethodOverrideDownloadsFullFile(): void
+    {
+        $fixtureContent = str_repeat('w', 5000);
+        $file = $this->createFixtureFile('post_override_head.txt', $fixtureContent);
+
+        $buffer = "POST /test HTTP/1.1\r\n";
+        $buffer .= "Host: localhost\r\n";
+        $buffer .= "X-HTTP-Method-Override: HEAD\r\n";
+        $buffer .= "Content-Length: 0\r\n";
+        $buffer .= "\r\n";
+
+        $symfonyRequest = RequestConverter::toSymfonyRequest(new BundleRequest($buffer));
+        $this->assertSame('POST', $symfonyRequest->getMethod());
+
+        $converter = $this->createConverter();
+        $binaryResponse = new BinaryFileResponse($file, Response::HTTP_OK, [
+            'Content-Type' => 'text/plain',
+        ]);
+        $binaryResponse->prepare($symfonyRequest);
+
+        $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', $symfonyRequest->getMethod());
+
+        $return = Http::encode($workermanResponse, $this->connection);
+        $this->assertSame('', $return, 'encode() should send inline for small files');
+
+        $wire = implode('', $this->getSent());
+
+        $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'Exactly one Content-Length on the wire');
+        $this->assertStringContainsString('Content-Length: 5000', $wire);
+
+        $parts = explode("\r\n\r\n", $wire, 2);
+        $this->assertSame($fixtureContent, $parts[1] ?? '', 'Body must be the full fixture content');
     }
 
     private function createConverter(): ResponseConverter
