@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Middleware;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\ConnectionIntent;
+use CrazyGoat\WorkermanBundle\Http\EarlyHints;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use Psr\Log\LoggerInterface;
@@ -117,6 +118,13 @@ final class SymfonyController
             }
         }
 
+        // Arm the 103 Early Hints hook for this request: Symfony's
+        // AbstractController::sendEarlyHints() ends in headers_send(103),
+        // which the bundle polyfills (see src/polyfill_headers_send.php) so
+        // the interim response reaches the wire ahead of the final response.
+        // Disarmed in the finally block so no state leaks into the next
+        // request on this worker (issue #1018).
+        EarlyHints::arm($connection, $request->protocolVersion());
         try {
             $this->kernel->boot();
             $this->symfonyResponse = $this->kernel->handle($this->symfonyRequest);
@@ -137,6 +145,8 @@ final class SymfonyController
             $this->symfonyRequest = null;
             $this->symfonyResponse = null;
             throw $e;
+        } finally {
+            EarlyHints::disarm();
         }
     }
 

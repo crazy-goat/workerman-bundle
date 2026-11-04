@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AbstractController::sendEarlyHints()` now writes a `103 Early Hints` interim response to the connection ahead of the final response, so browsers can preload assets while the controller still works. HTTP/1.0 clients get no interim response; keep-alive is unaffected (#1018)
+
 ### Fixed
 
 - `MaxJobsRebootStrategy::shouldReboot()` now requests a reload at the selected job limit, not one request later. With zero dispersion, the limit equals `requests` (#967)
