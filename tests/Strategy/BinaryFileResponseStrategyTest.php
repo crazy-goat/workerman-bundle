@@ -118,6 +118,71 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('Temp file content', $workermanResponse->rawBody());
     }
 
+    /**
+     * Issue #1115: a Range request on a temp-file response used to send the
+     * whole file with a 206 status and a Content-Range for a sub-range.
+     * The body must contain only the requested range.
+     */
+    public function testConvertHonoursRangeOnTempFileObject(): void
+    {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = new \SplTempFileObject();
+        $tempFile->fwrite('0123456789ABCDEFGHIJ');
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_PARTIAL_CONTENT, [
+            'Content-Range' => 'bytes 5-9/20',
+        ]);
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('tempFileObject')->setValue($binaryResponse, $tempFile);
+        $reflection->getProperty('offset')->setValue($binaryResponse, 5);
+        $reflection->getProperty('maxlen')->setValue($binaryResponse, 5);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Range' => ['bytes 5-9/20'],
+        ], $this->connection, '1.1');
+
+        $this->assertSame(206, $workermanResponse->getStatusCode());
+        $this->assertSame('56789', $workermanResponse->rawBody());
+    }
+
+    /**
+     * Issue #1115: an open-ended range (maxlen -1, "to the end") on a
+     * temp-file response must send from the offset to the end of the file.
+     */
+    public function testConvertHonoursOpenRangeOnTempFileObject(): void
+    {
+        if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
+            $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
+        }
+
+        $strategy = new BinaryFileResponseStrategy();
+
+        $tempFile = new \SplTempFileObject();
+        $tempFile->fwrite('0123456789ABCDEFGHIJ');
+
+        $binaryResponse = new BinaryFileResponse($this->testFile, Response::HTTP_PARTIAL_CONTENT, [
+            'Content-Range' => 'bytes 15-/20',
+        ]);
+
+        $reflection = new \ReflectionClass($binaryResponse);
+        $reflection->getProperty('tempFileObject')->setValue($binaryResponse, $tempFile);
+        $reflection->getProperty('offset')->setValue($binaryResponse, 15);
+        $reflection->getProperty('maxlen')->setValue($binaryResponse, -1);
+
+        $workermanResponse = $strategy->convert($binaryResponse, [
+            'Content-Range' => ['bytes 15-/20'],
+        ], $this->connection, '1.1');
+
+        $this->assertSame(206, $workermanResponse->getStatusCode());
+        $this->assertSame('FGHIJ', $workermanResponse->rawBody());
+    }
+
     public function testConvertHandlesRangeRequest(): void
     {
         $strategy = new BinaryFileResponseStrategy();

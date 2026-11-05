@@ -80,10 +80,33 @@ final readonly class BinaryFileResponseStrategy implements RequestMethodAwareRes
 
         $tempFileObject = $this->reflector->getTempFileObject($response);
         if ($tempFileObject instanceof \SplTempFileObject) {
+            // A Range request sets offset/maxlen on the response via prepare()
+            // (issue #1115): Symfony's own sendContent() seeks to offset and
+            // reads only maxlen bytes. The temp-file branch used to ignore both
+            // and send the whole file with a 206 status and a Content-Range for
+            // a sub-range, so honour them here exactly like the real-file
+            // branch does via withFile(). maxlen -1 means "to the end of the
+            // file" (Symfony's default); maxlen 0 never reaches here — the
+            // bodyless path above returns first (issue #948).
+            $offset = max(0, $this->reflector->getOffset($response) ?? 0);
+            $maxlen = $this->reflector->getMaxlen($response);
+            $remaining = ($maxlen !== null && $maxlen > 0) ? $maxlen : null;
+
             $tempFileObject->rewind();
+            if ($offset > 0) {
+                $tempFileObject->fseek($offset);
+            }
+
             $content = '';
-            while (!$tempFileObject->eof()) {
-                $content .= $tempFileObject->fread(8192);
+            while (!$tempFileObject->eof() && ($remaining === null || $remaining > 0)) {
+                $chunk = $tempFileObject->fread($remaining === null ? 8192 : min(8192, $remaining));
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                $content .= $chunk;
+                if ($remaining !== null) {
+                    $remaining -= \strlen($chunk);
+                }
             }
             $workermanResponse->withBody($content);
 
