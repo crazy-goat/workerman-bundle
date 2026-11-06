@@ -68,7 +68,7 @@ services:
 In the first form, `name` is the name of the tag, so it cannot be the task name.
 Then the task name is the service ID.
 
-`jitter` must be a whole number of seconds. A numeric string such as `'30'` is cast to a number. Any other value (for example `'abc'` or `1.5`) stops the container build with an error that names the service.
+`jitter` must be a whole number of seconds from `0` to `31536000`. A numeric string such as `'30'` is cast to a number. Any other value (for example `'abc'`, `1.5` or `-3`) stops the container build with an error that names the service.
 
 If a task cannot be set up when the scheduler starts, the scheduler writes a `skipped` line to the log and goes on with the other tasks.
 
@@ -76,7 +76,7 @@ If a task cannot be set up when the scheduler starts, the scheduler writes a `sk
 
 | Format | Example | Meaning |
 |---|---|---|
-| Integer | `60` or `'60'` | Every 60 seconds. A string of only digits is read as seconds too, so `#[AsTask(schedule: '60')]` works. |
+| Integer | `60` or `'60'` | Every 60 seconds. A string of only digits is read as seconds too, so `#[AsTask(schedule: '60')]` works. The value must be from `1` to `31536000` (one year). |
 | ISO 8601 duration | `PT1M` | Every minute. |
 | Relative date | `1 minute` | Every minute. It is read by PHP `DateInterval`. |
 | ISO 8601 date and time | `2023-08-01T01:00:00+08:00` | One time, at this moment. |
@@ -85,6 +85,9 @@ If a task cannot be set up when the scheduler starts, the scheduler writes a `sk
 Notes:
 
 - A date and time runs one time only. If the moment is in the past, the task never runs.
+- An integer interval below `1` or above `31536000` seconds stops the container build with an error that names the service.
+  This is a typo guard for the integer form only: an ISO 8601 duration or a relative date such as `P2Y` or `2 years` is not capped.
+  Use a cron expression for a long plan.
 - A cron expression needs the package `dragonmantank/cron-expression`. Install it with `composer require dragonmantank/cron-expression`. Without it, the text is read as a relative date, and it is most likely not valid.
 - Cron uses the PHP default time zone of the server. Set it with `date.timezone` in `php.ini` or with `date_default_timezone_set()`. An ISO 8601 date and time has its own offset.
 

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking**: a negative task `jitter` and an integer `schedule` outside `1`–`31536000` seconds now fail at container build with a clear error instead of being silently ignored or saturating to `PHP_INT_MAX`; `docs/scheduler.md` documents the limits. See [UPGRADE.md](UPGRADE.md#scheduler-jitter-and-integer-schedule-are-validated) (#981)
 - Live-server tests now fail instead of skipping when CI sets `WORKERMAN_REQUIRE_LIVE_SERVER=1`, the test scripts wait for port 9991 too, and the bootstrap reports a daemon that did not bind its port (#925)
 - **Breaking**: `log_file` now rejects stream paths (`/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`, `/proc/self/fd/N`, `php://...`) at config time with a clear error instead of emitting a PHP warning on every log line; run the server in the foreground to send logs to stdout. See [UPGRADE.md](UPGRADE.md#log_file-rejects-stream-paths) (#985)
 - `response_chunk_size` now defaults to 8192 bytes (the effective minimum) in the config, `StreamedResponseStrategy` and the docs; values from 1 to 8191 are raised to 8192, and 0 or a negative value is rejected at config time, so the default no longer contradicts the documented behaviour (#913)

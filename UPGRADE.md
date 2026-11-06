@@ -43,6 +43,17 @@ drop-in replacement for a WebSocket endpoint until WebSocket support lands.
 If your own code references `ListenScheme::Ws` or `ListenScheme::Wss`, remove
 those references — the enum now has only `Http` and `Https`.
 
+### Scheduler jitter and integer schedule are validated
+
+A negative `jitter` and an integer `schedule` (or a digits-only string)
+outside `1`–`31536000` seconds now fail at container build.
+Before, a negative jitter was silently ignored and a too big integer
+saturated to `PHP_INT_MAX`, so the task never ran.
+
+**Migration:** set `jitter` to `0` or more, or use an integer interval from
+`1` to `31536000`. For a longer plan use a cron expression, an ISO 8601
+duration or a relative date, which are not capped.
+
 ### log_file rejects stream paths
 
 `log_file` must be a file path that Workerman can append to and stat.

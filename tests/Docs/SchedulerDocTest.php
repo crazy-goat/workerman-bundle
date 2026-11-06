@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
@@ -69,6 +70,17 @@ final class SchedulerDocTest extends TestCase
         self::assertStringContainsString('| Integer | `60` or `\'60\'` | Every 60 seconds.', DocsHelper::read(self::PAGE));
         self::assertNotSame('', (string) TriggerFactory::create(60));
         self::assertSame((string) TriggerFactory::create(60), (string) TriggerFactory::create('60'));
+    }
+
+    public function testIntegerScheduleLimitsAreDocumented(): void
+    {
+        $max = (new \ReflectionClassConstant(WorkermanCompilerPass::class, 'MAX_INTERVAL_SECONDS'))->getValue();
+        self::assertIsInt($max);
+
+        $page = DocsHelper::read(self::PAGE);
+        self::assertStringContainsString((string) $max, $page);
+        self::assertStringContainsString('from `1` to `' . $max . '`', $page);
+        self::assertStringContainsString('below `1` or above `' . $max . '`', $page);
     }
 
     public function testTaskAttributesInPhpExamplesAreValid(): void
