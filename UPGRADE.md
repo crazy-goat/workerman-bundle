@@ -43,6 +43,16 @@ drop-in replacement for a WebSocket endpoint until WebSocket support lands.
 If your own code references `ListenScheme::Ws` or `ListenScheme::Wss`, remove
 those references — the enum now has only `Http` and `Https`.
 
+### Scheduler task children no longer run PHP shutdown
+
+To keep the scheduler's SIGCHLD, stop and reload handling alive on the
+`ext-event` loop, a task child now ends through a
+`php -n -r 'exit(<code>);'` hand-off instead of `exit()` in the fork
+([#1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
+Destructors and `register_shutdown_function()` callbacks registered in a task
+child do not run. Put cleanup in the task method itself (for example in a
+`try`/`finally`) instead of a destructor or shutdown function.
+
 ---
 
 ## Upgrading to 0.28

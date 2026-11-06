@@ -560,7 +560,7 @@ function testSchedulerWorkerChildSkipsShutdown(): void
     }
     \Workerman\Worker::$outputStream = $logStream;
     \Workerman\Worker::$logFile = $logFilePath;
-    \Workerman\Worker::$pidFile = sys_get_temp_dir() . '/workerman_test.pid';
+    \Workerman\Worker::$pidFile = sys_get_temp_dir() . '/workerman_test_' . uniqid() . '.pid';
 
     $marker = sys_get_temp_dir() . '/workerman_shutdown_marker_' . uniqid();
     $schedulerWorker = createSchedulerWorkerInstance();
@@ -576,12 +576,26 @@ function testSchedulerWorkerChildSkipsShutdown(): void
     $service = new \CrazyGoat\WorkermanBundle\Util\ServiceMethod('test.shutdown.service', '__invoke');
     $taskName = 'shutdown_task';
 
-    $container = new class implements \Psr\Container\ContainerInterface {
+    $container = new class ($marker) implements \Psr\Container\ContainerInterface {
+        public function __construct(private readonly string $marker)
+        {
+        }
+
         public function get(string $id): mixed
         {
-            return new class {
-                public function __invoke(): void
+            $marker = $this->marker;
+
+            return new class ($marker) {
+                public function __construct(private readonly string $marker)
                 {
+                }
+
+                public function __invoke(): never
+                {
+                    register_shutdown_function(function (): void {
+                        file_put_contents($this->marker, 'ran');
+                    });
+                    exit(0);
                 }
             };
         }
@@ -603,9 +617,10 @@ function testSchedulerWorkerChildSkipsShutdown(): void
     }
 
     if ($pid === 0) {
-        register_shutdown_function(static function () use ($marker): void {
-            file_put_contents($marker, 'ran');
-        });
+        // Mimic Workerman's resetStd() in a daemon worker child: STDOUT and
+        // STDERR are closed. A flush on them would throw a TypeError.
+        fclose(STDOUT);
+        fclose(STDERR);
 
         $pidFile = sprintf(
             '%s/workerman.task.%s.pid',
@@ -616,8 +631,7 @@ function testSchedulerWorkerChildSkipsShutdown(): void
 
         try {
             $handleChild($pidFile, $service, $taskName, $handler);
-        } catch (\Throwable $e) {
-            fwrite(STDERR, 'handleChild did not exit: ' . $e->getMessage() . "\n");
+        } catch (\Throwable) {
             exit(255);
         }
         exit(255);

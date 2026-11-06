@@ -123,6 +123,7 @@ For every run, the scheduler makes a child process with `pcntl_fork()`.
 The child runs your method and then ends through a bare `php -n -r 'exit(<code>);'` hand-off.
 That hand-off does not run PHP shutdown in the fork: shutdown would run libevent's cleanup on the
 inherited `EventBase` and break the scheduler's SIGCHLD, stop and reload handling on the `ext-event` loop.
+Destructors and `register_shutdown_function()` callbacks in task children therefore do not run.
 The title of the child is `[Scheduler] <task name>`.
 Your task cannot block the scheduler, and a crash in the task does not stop the scheduler.
 

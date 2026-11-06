@@ -123,10 +123,9 @@ final class SchedulerWorker
             } elseif (pcntl_wifsignaled($status)) {
                 $signal = pcntl_wtermsig($status);
                 if ($signal === \SIGKILL && self::sigkillIsNormalCompletion()) {
-                    // On grpc hosts ProcessTerminator ends every task child
-                    // with SIGKILL (see ProcessTerminator), so signal 9 is
-                    // the NORMAL completion path, not a crash. A failed task
-                    // is already logged by the child with its stack trace
+                    // SIGKILL is the normal completion path when the exec
+                    // hand-off is unavailable (or grpc forces it): a failed
+                    // task is already logged by the child with its stack trace
                     // (SIGKILL carries no exit code).
                     continue;
                 }
@@ -138,13 +137,12 @@ final class SchedulerWorker
     }
 
     /**
-     * True when SIGKILL is the normal task-completion path: the grpc
-     * extension is loaded and ProcessTerminator kills children instead of
-     * calling exit() to bypass grpc's hanging shutdown handler.
+     * True when SIGKILL is the normal task-completion path: the exec hand-off
+     * is unavailable, or the grpc extension forces the SIGKILL backstop.
      */
     protected static function sigkillIsNormalCompletion(): bool
     {
-        return self::$sigkillNormalCompletion ?? \extension_loaded('grpc');
+        return self::$sigkillNormalCompletion ?? (\extension_loaded('grpc') || !\function_exists('pcntl_exec'));
     }
 
     private static bool|null $sigkillNormalCompletion = null;
@@ -360,6 +358,18 @@ final class SchedulerWorker
         fflush($fp);
 
         $childExitCode = 0;
+        register_shutdown_function(function () use (&$childExitCode): void {
+            // A task that calls exit() or hits a fatal error skips the
+            // finally block below and would otherwise run PHP module shutdown
+            // (libevent cleanup) in the fork. Take the exec hand-off here too.
+            $error = error_get_last();
+            if ($error !== null && \in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+                $childExitCode = 1;
+            }
+
+            $this->terminateTaskChild($childExitCode);
+        });
+
         try {
             $handler($service, $taskName);
         } catch (\Throwable $e) {
@@ -395,14 +405,28 @@ final class SchedulerWorker
      */
     private function terminateTaskChild(int $childExitCode): never
     {
+        while (ob_get_level() > 0) {
+            @ob_end_flush();
+        }
+
         if (function_exists('pcntl_exec') && DIRECTORY_SEPARATOR === '/') {
             if (is_resource(Worker::$outputStream)) {
                 @fflush(Worker::$outputStream);
             }
-            @fflush(STDOUT);
-            @fflush(STDERR);
+            if (defined('STDOUT') && is_resource(STDOUT)) {
+                @fflush(STDOUT);
+            }
+            if (defined('STDERR') && is_resource(STDERR)) {
+                @fflush(STDERR);
+            }
 
             @pcntl_exec(PHP_BINARY, ['-n', '-r', sprintf('exit(%d);', $childExitCode)]);
+            $error = error_get_last();
+            $this->worker->log(sprintf(
+                '%s [warning] Could not exec the task-child hand-off (%s); using SIGKILL',
+                $this->worker->name,
+                $error['message'] ?? 'unknown error',
+            ));
         }
 
         ProcessTerminator::terminate($childExitCode, hardExit: true);
