@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-06
+
 ### Added
 
 - `workerman.restart` adds an exponential restart delay for supervised processes and for HTTP workers whose kernel boot fails: `delay`, `max_delay`, `max_failures` and `healthy_after`, with per-process `restartDelay` / `maxRestartDelay` (`restart_delay` / `max_restart_delay` tag attributes) overrides. State is kept per worker slot in `var/run/restart/`, a run at least `healthy_after` seconds long resets the counter, an intentional reload forgets the slot, the wait reacts to stop and reload signals, and one "unhealthy" line is logged per slot at `max_failures`. `delay: 0` keeps the old behaviour (#994)
@@ -42,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Test coverage: the build-bin SFX guard (#926), `workerman:server` restart/error paths (#927), `warmUpCache()` failures (#928) and the streamed-response header-injection guards (#929) now run in CI
 - Docs: the WebSocket spike decision is recorded in [docs/websocket.md](docs/websocket.md); `ws://` and `wss://` stay rejected in 0.32 (#909)
 - `docs/deployment.md` "Stop time and graceful stop" and the `stop_timeout` row in `docs/configuration.md` now match the #987 fix: `stop_timeout` is the time a running request gets to end after a stop or reload without `-g`, and the table shows the new test results (#1024)
 - `ProcessInspector` and `MasterFingerprint` now read their `/proc/{pid}` pseudo-files (stat, cmdline, status) through one shared internal `Util\ProcFileReader::read()` helper instead of repeating the `is_readable` + `file_get_contents` + empty-check preamble at seven call sites; fail-closed semantics (unreadable → sentinel) are unchanged at every site. The two cmdline reads now also suppress the PHP warning when the process exits between `is_readable()` and the read, as the stat and status reads already did. The ServerManager status and connections reads are not `/proc` reads and stay on their rename-then-read `consumeFile()` (#1056)
