@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Worker;
 
 use CrazyGoat\WorkermanBundle\MasterFingerprint;
+use Workerman\Timer;
 use Workerman\Worker;
 
 /**
@@ -31,6 +32,47 @@ final class MasterWorker extends Worker
 {
     /** @var list<resource> Extra stdio handles kept open for the process lifetime. */
     private static array $stdioStreams = [];
+
+    private static bool $gracefulSigterm = false;
+
+    private static int $gracefulStopTimeout = 30;
+
+    /**
+     * Configure the SIGTERM handling before runAll().
+     *
+     * When enabled, SIGTERM in the master is a graceful stop (like SIGQUIT)
+     * with a SIGKILL backstop after $timeout seconds. Docker and Kubernetes
+     * send SIGTERM; the default keeps Workerman's fast stop.
+     */
+    public static function configureGracefulSigterm(bool $enabled, int $timeout): void
+    {
+        self::$gracefulSigterm = $enabled;
+        self::$gracefulStopTimeout = max(1, $timeout);
+    }
+
+    /**
+     * Treat SIGTERM like SIGQUIT when graceful_sigterm is enabled.
+     *
+     * Workerman's graceful stop has no time limit, so a keep-alive connection
+     * can block it forever. Arm a SIGKILL backstop for the workers.
+     */
+    public static function signalHandler(int $signal, mixed ...$args): void
+    {
+        if ($signal !== \SIGTERM || !self::$gracefulSigterm || self::$masterPid !== \posix_getpid()) {
+            parent::signalHandler($signal, ...$args);
+
+            return;
+        }
+
+        self::$gracefulStop = true;
+        self::stopAll(0, 'received signal SIGTERM (graceful)');
+
+        Timer::add(self::$gracefulStopTimeout, static function (): void {
+            foreach (self::getAllWorkerPids() as $pid) {
+                @\posix_kill($pid, \SIGKILL);
+            }
+        }, [], false);
+    }
 
     /**
      * Keep file descriptor 2 on the stdout file in daemon mode.

@@ -22,6 +22,8 @@ bin/console config:dump-reference workerman
 | `user` | string or null | `null` | The Unix user of the processes. `null` means the current user. |
 | `group` | string or null | `null` | The Unix group of the processes. `null` means the current group. |
 | `stop_timeout` | int, seconds | `2` | The time a worker gets to end after a stop or reload. Then the master kills it (not with a graceful stop, `-g`). |
+| `graceful_sigterm` | bool | `false` | Treats `SIGTERM` like `SIGQUIT`: a running request may finish before the worker stops. Docker and Kubernetes send `SIGTERM`. The default keeps Workerman's fast stop. |
+| `graceful_stop_timeout` | int, seconds, minimum 1 | `30` | The time a graceful `SIGTERM` stop may take before the master kills the workers with `SIGKILL`. Used only when `graceful_sigterm` is `true`. |
 | `cache_warmup_timeout` | int, seconds, minimum 1 | `30` | The maximum time to wait for the cache warmup in the forked process. The `WORKERMAN_CACHE_WARMUP_TIMEOUT` variable overrides it. |
 | `status_timeout` | int, seconds | `5` | The maximum time to wait for the status file after the `status` command sends a signal. |
 | `pid_file` | string, not empty | `%kernel.project_dir%/var/run/workerman.pid` | The file that holds the PID of the master process. |
