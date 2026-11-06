@@ -93,7 +93,7 @@ final class SchedulerWorker
         $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
         $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
         $service = new ServiceMethod($serviceId, $method);
-        $this->deleteTaskPid($service);
+        $this->deleteTaskPidSymlink($service);
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
@@ -358,7 +358,7 @@ final class SchedulerWorker
         fflush($fp);
 
         $childExitCode = 0;
-        register_shutdown_function(function () use (&$childExitCode, $taskName): void {
+        register_shutdown_function(function () use (&$childExitCode, $taskName, $service): void {
             // A task that calls exit() or hits a fatal error skips the
             // finally block below and would otherwise run PHP module shutdown
             // (libevent cleanup) in the fork. Take the exec hand-off here too.
@@ -375,6 +375,7 @@ final class SchedulerWorker
                 ));
             }
 
+            $this->deleteTaskPid($service);
             $this->terminateTaskChild($childExitCode);
         });
 
@@ -393,8 +394,11 @@ final class SchedulerWorker
             ));
             $childExitCode = 1;
         } finally {
-            $this->releaseLockAndClose($fp);
+            // Remove the PID file while the lock is still held: a new run
+            // cannot create its own file until this one is gone, and an old
+            // child can never delete the file of a newer run (issue #973).
             $this->deleteTaskPid($service);
+            $this->releaseLockAndClose($fp);
             $this->terminateTaskChild($childExitCode);
         }
     }
@@ -478,5 +482,23 @@ final class SchedulerWorker
     private function deleteTaskPid(ServiceMethod $service): void
     {
         @unlink($this->getTaskPidPath($service));
+    }
+
+    /**
+     * Remove a symlink left at the task PID path.
+     *
+     * A regular PID file is deliberately not deleted here: a scheduler reload
+     * leaves a running task child alive, and deleting its file would let the
+     * new scheduler lock a fresh file and overlap the old run (issue #973).
+     * An unlocked stale file is harmless — the next run locks and overwrites
+     * it. A symlink is only ever unlinked, never followed.
+     */
+    private function deleteTaskPidSymlink(ServiceMethod $service): void
+    {
+        $pidFile = $this->getTaskPidPath($service);
+        clearstatcache(true, $pidFile);
+        if (is_link($pidFile)) {
+            @unlink($pidFile);
+        }
     }
 }

@@ -673,6 +673,11 @@ function testSchedulerWorkerChildSkipsShutdown(): void
         fail('Task child ran PHP shutdown; the libevent cleanup would kill the scheduler signal events');
     }
 
+    if (file_exists($taskPidFile)) {
+        @unlink($taskPidFile);
+        fail('Task child must delete its PID file on the exit/fatal hand-off path');
+    }
+
     fclose($logStream);
     @unlink($logFilePath);
     @unlink($taskPidFile);
