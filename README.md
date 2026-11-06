@@ -162,7 +162,7 @@ when@dev:
 > **Note:** `processes` is the number of workers of a server. If you leave it out, the default is the number of CPUs times 2. In a container the CPU limit is used, not the CPUs of the host. See [docs/configuration.md](docs/configuration.md#servers).
 
 > **Note:** `listen` is required. If you leave it out, the server does not start and you get an `Unsupported listen scheme` error.
-> Supported URI schemes: `http://`, `https://`. WebSocket listeners (`ws://`, `wss://`) are not supported yet and are rejected with a clear error — see [#909](https://github.com/crazy-goat/workerman-bundle/issues/909). `https://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
+> Supported URI schemes: `http://`, `https://`. WebSocket listeners (`ws://`, `wss://`) are not supported yet and are rejected with a clear error — see [the design note](docs/websocket.md) and [#909](https://github.com/crazy-goat/workerman-bundle/issues/909). `https://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
 
 ## Configuration reference
 

@@ -302,7 +302,7 @@ workerman:
           local_pk: '%kernel.project_dir%/config/tls/server.key'
 ```
 
-WebSocket listeners (`ws://`, `wss://`) are not supported yet, so there is no WebSocket-over-SSL configuration. Both files must be PEM-encoded, existing, and readable by the server process.
+WebSocket listeners (`ws://`, `wss://`) are not supported yet, so there is no WebSocket-over-SSL configuration. The [design note](websocket.md) records the decision. Both files must be PEM-encoded, existing, and readable by the server process.
 
 > **Note:** **Symlinked certificate and key paths are rejected.** If your deployment points `local_cert` or `local_pk` at a symlink, the server fails to start with `SSL certificate path must not be a symlink: <path>` or `SSL private key path must not be a symlink: <path>` — deploy the actual files instead.
 
