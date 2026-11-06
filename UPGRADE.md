@@ -24,6 +24,27 @@ forward-looking view; past migrations live in the sections below.
 
 ---
 
+## Upgrading to 0.32
+
+### WebSocket listeners are rejected
+
+The bundle accepted `ws://` and `wss://` in `servers[].listen`, mapped them to the
+Workerman `websocket://` protocol, but had no WebSocket handler. The handshake
+succeeded and the first WebSocket message then closed the connection with a
+`TypeError`. Real WebSocket support is tracked in
+[#909](https://github.com/crazy-goat/workerman-bundle/issues/909).
+
+Configuration with a WebSocket listen address now fails at startup with
+`WebSocket listeners (ws://, wss://) are not supported yet in "<listen>". Use http:// or https://.`
+instead of starting a server that cannot serve a single message.
+
+**Migration:** use `http://` or `https://` for HTTP servers. There is no
+drop-in replacement for a WebSocket endpoint until WebSocket support lands.
+If your own code references `ListenScheme::Ws` or `ListenScheme::Wss`, remove
+those references — the enum now has only `Http` and `Https`.
+
+---
+
 ## Upgrading to 0.28
 
 ### `RebootStrategyInterface::needsPeakMemory()` removed

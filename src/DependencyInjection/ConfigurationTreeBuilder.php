@@ -107,7 +107,7 @@ final readonly class ConfigurationTreeBuilder
                             ->cannotBeEmpty()
                             ->end()
                         ->scalarNode('listen')
-                            ->info('Listen address. Supported protocols: http://, https://, ws://, wss://')
+                            ->info('Listen address. Supported protocols: http://, https://')
                             ->defaultNull()
                             ->example('http://0.0.0.0:80')
                             ->end()

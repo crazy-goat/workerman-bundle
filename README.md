@@ -56,7 +56,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 
 14. **Extended `Request` class** — adds the `setHeader()` method to Workerman's Request, required by the middleware system. `withHeader()` is a deprecated alias (since 0.23.0, removed in 1.0).
 
-15. **`ListenScheme` enum** — type-safe HTTP/HTTPS/WS/WSS scheme parsing. Upstream uses inline `str_starts_with()` checks.
+15. **`ListenScheme` enum** — type-safe HTTP/HTTPS scheme parsing with a clear error for unsupported WebSocket schemes. Upstream uses inline `str_starts_with()` checks.
 
 16. **Trigger factory improvement** — uses `CronExpression::isValidExpression()` for proper cron detection. Upstream uses a fragile heuristic (`count(explode(' ', $expr)) === 5 && str_contains($expr, '*')`).
 
@@ -162,7 +162,7 @@ when@dev:
 > **Note:** `processes` is the number of workers of a server. If you leave it out, the default is the number of CPUs times 2. In a container the CPU limit is used, not the CPUs of the host. See [docs/configuration.md](docs/configuration.md#servers).
 
 > **Note:** `listen` is required. If you leave it out, the server does not start and you get an `Unsupported listen scheme` error.
-> Supported URI schemes: `http://`, `https://`, `ws://` (WebSocket), `wss://` (WebSocket over SSL). `https://` and `wss://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
+> Supported URI schemes: `http://`, `https://`. WebSocket listeners (`ws://`, `wss://`) are not supported yet and are rejected with a clear error — see [#909](https://github.com/crazy-goat/workerman-bundle/issues/909). `https://` listeners additionally require `local_cert` and `local_pk` — see the [TLS example](docs/security.md#ssl-certificate-and-key-validation).
 
 ## Configuration reference
 
