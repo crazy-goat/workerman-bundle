@@ -496,6 +496,7 @@ final class SchedulerWorker
     private function deleteTaskPidSymlink(ServiceMethod $service): void
     {
         $pidFile = $this->getTaskPidPath($service);
+        clearstatcache(true, $pidFile);
         if (is_link($pidFile)) {
             @unlink($pidFile);
         }

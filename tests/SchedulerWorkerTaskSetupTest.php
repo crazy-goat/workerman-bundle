@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use PHPUnit\Framework\TestCase;
@@ -64,7 +65,7 @@ final class SchedulerWorkerTaskSetupTest extends TestCase
         return (string) file_get_contents($this->tmpDir . '/workerman.log');
     }
 
-    public function testSchedulerStartKeepsALockedTaskPid(): void
+    public function testSchedulerStartKeepsARegularTaskPid(): void
     {
         $service = new ServiceMethod('test.locked.service', '__invoke');
         $pidFile = sprintf(
@@ -86,6 +87,64 @@ final class SchedulerWorkerTaskSetupTest extends TestCase
             $this->assertFileExists($pidFile, 'A locked PID file belongs to a live task child and must stay');
             $this->assertSame('123', file_get_contents($pidFile), 'The start path must not touch a live task PID file');
             $this->assertStringContainsString('scheduled', $log);
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            @unlink($pidFile);
+        }
+    }
+
+    public function testLockedTaskPidSkipsTheRun(): void
+    {
+        $service = new ServiceMethod('test.skip.service', '__invoke');
+        $pidFile = sprintf(
+            '%s/workerman.task.%s.pid',
+            dirname(Worker::$pidFile),
+            hash('xxh64', $service->toString()),
+        );
+        file_put_contents($pidFile, '123');
+
+        $fp = fopen($pidFile, 'c');
+        $this->assertIsResource($fp);
+        $this->assertTrue(flock($fp, LOCK_EX | LOCK_NB));
+
+        $marker = $this->tmpDir . '/handler-ran';
+        $container = new class ($marker) implements \Psr\Container\ContainerInterface {
+            public function __construct(private readonly string $marker)
+            {
+            }
+
+            public function get(string $id): mixed
+            {
+                $marker = $this->marker;
+
+                return new class ($marker) {
+                    public function __construct(private readonly string $marker)
+                    {
+                    }
+
+                    public function __invoke(): void
+                    {
+                        file_put_contents($this->marker, 'ran');
+                    }
+                };
+            }
+
+            public function has(string $id): bool
+            {
+                return true;
+            }
+        };
+
+        $handler = new TaskHandler($container, new EventDispatcher());
+
+        try {
+            $worker = new SchedulerWorker(new KernelFactory(fn(): KernelInterface => $this->createMock(KernelInterface::class), []), null, null, []);
+            $method = new \ReflectionMethod(SchedulerWorker::class, 'runCallback');
+            $method->invoke($worker, new PeriodicalTrigger(1), $service, 'task', $handler);
+
+            $this->assertFileDoesNotExist($marker, 'A locked task must not start a second run');
+            $this->assertSame('123', file_get_contents($pidFile), 'The running task PID file must not be overwritten');
         } finally {
             flock($fp, LOCK_UN);
             fclose($fp);
