@@ -43,6 +43,18 @@ drop-in replacement for a WebSocket endpoint until WebSocket support lands.
 If your own code references `ListenScheme::Ws` or `ListenScheme::Wss`, remove
 those references — the enum now has only `Http` and `Https`.
 
+### log_file rejects stream paths
+
+`log_file` must be a file path that Workerman can append to and stat.
+`/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`,
+`/proc/self/fd/N` and `php://...` now fail at container build.
+Before, `/dev/stderr` emitted a warning on every log line and `php://stderr`
+wrote the lines but warned about `filesize()`.
+
+**Migration:** remove `log_file` to use the default `var/log/workerman.log`,
+or point it at a regular file. To send logs to stdout, run the server in the
+foreground.
+
 ### Scheduler task children no longer run PHP shutdown
 
 To keep the scheduler's SIGCHLD, stop and reload handling alive on the

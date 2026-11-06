@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
+use CrazyGoat\WorkermanBundle\Util\LogFilePath;
 use Symfony\Component\Config\Definition\Builder\NodeBuilder;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 
@@ -61,9 +62,13 @@ final readonly class ConfigurationTreeBuilder
                 ->defaultValue('%kernel.project_dir%/var/run/workerman.pid')
                 ->end()
             ->scalarNode('log_file')
-                ->info('Log file')
+                ->info('Log file. Must be a regular file path: Workerman appends to it with file_put_contents() and calls filesize(), so stream paths such as /dev/stderr and php://stderr produce a warning on every line. Run the server in the foreground to send logs to stdout.')
                 ->cannotBeEmpty()
                 ->defaultValue('%kernel.project_dir%/var/log/workerman.log')
+                ->validate()
+                    ->ifTrue(static fn(mixed $value): bool => is_string($value) && LogFilePath::isStreamPath($value))
+                    ->thenInvalid('The "log_file" option cannot be a stream path. Run the server in the foreground to send logs to stdout, or use a regular file. See https://github.com/crazy-goat/workerman-bundle/issues/985.')
+                ->end()
                 ->end()
             ->scalarNode('stdout_file')
                 ->info('File to write all output (echo var_dump, etc.) to when server is running as daemon')

@@ -8,6 +8,7 @@ use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheDirectoryException;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
+use CrazyGoat\WorkermanBundle\Util\LogFilePath;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
@@ -266,6 +267,12 @@ readonly class Runner implements RunnerInterface
         $pidFile = $this->resolveRuntimePath($config['pid_file']);
         $logFile = $this->resolveRuntimePath($config['log_file']);
         $stdoutFile = $this->resolveRuntimePath($config['stdout_file']);
+        if (LogFilePath::isStreamPath($logFile)) {
+            throw new \RuntimeException(\sprintf(
+                'The "log_file" option cannot be a stream path "%s". Run the server in the foreground to send logs to stdout, or use a regular file.',
+                $logFile,
+            ));
+        }
         $stopTimeout = $config['stop_timeout'];
         $maxPackageSize = $config['max_package_size'];
         assert(is_int($stopTimeout));

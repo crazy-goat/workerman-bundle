@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking**: `log_file` now rejects stream paths (`/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`, `/proc/self/fd/N`, `php://...`) at config time with a clear error instead of emitting a PHP warning on every log line; run the server in the foreground to send logs to stdout. See [UPGRADE.md](UPGRADE.md#log_file-rejects-stream-paths) (#985)
 - `response_chunk_size` now defaults to 8192 bytes (the effective minimum) in the config, `StreamedResponseStrategy` and the docs; values from 1 to 8191 are raised to 8192, and 0 or a negative value is rejected at config time, so the default no longer contradicts the documented behaviour (#913)
 - `workerman:server restart -g -d` and `start -g -d` now start in daemon mode: the daemon flag is set directly on `Worker::$daemonize` instead of relying on the first mode in the command line (#957)
 - In daemon mode the bundle now keeps file descriptor 2 on `stdout_file` (`MasterWorker::resetStd()`), so a Monolog `php://stderr` handler opened after the daemon starts writes to the stdout log instead of an eventpoll fd and no longer makes requests fail with an empty reply (#990)

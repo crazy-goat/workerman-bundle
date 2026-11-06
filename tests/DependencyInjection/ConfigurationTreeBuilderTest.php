@@ -166,7 +166,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
 
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
 
-        $processor->process($node, [[$override]]);
+        $processor->process($node, [$override]);
     }
 
     /**
@@ -561,7 +561,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
 
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
 
-        $processor->process($root->getNode(true), [[$override]]);
+        $processor->process($root->getNode(true), [$override]);
     }
 
     public function testConfiguredTreeAcceptsMinimumChunkSize(): void
@@ -576,6 +576,76 @@ final class ConfigurationTreeBuilderTest extends TestCase
         $config = $processor->process($root->getNode(true), [['response_chunk_size' => 1]]);
 
         self::assertSame(1, $config['response_chunk_size']);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, string>}>
+     */
+    public static function provideStreamLogFileOverrides(): iterable
+    {
+        yield 'dev stderr' => [['log_file' => '/dev/stderr']];
+        yield 'dev stdout' => [['log_file' => '/dev/stdout']];
+        yield 'dev fd 1' => [['log_file' => '/dev/fd/1']];
+        yield 'dev fd 2' => [['log_file' => '/dev/fd/2']];
+        yield 'php stderr' => [['log_file' => 'php://stderr']];
+        yield 'php stdout' => [['log_file' => 'php://stdout']];
+        yield 'php filter' => [['log_file' => 'php://filter/write=string.toupper/resource=/tmp/x']];
+        yield 'upper-case php' => [['log_file' => 'PHP://stderr']];
+        yield 'proc fd' => [['log_file' => '/proc/self/fd/2']];
+        yield 'dev tty' => [['log_file' => '/dev/tty']];
+    }
+
+    /**
+     * @dataProvider provideStreamLogFileOverrides
+     *
+     * @param array<string, string> $override
+     */
+    public function testConfiguredTreeRejectsStreamLogFile(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+        $this->expectExceptionMessage('cannot be a stream path');
+
+        $processor->process($root->getNode(true), [$override]);
+    }
+
+    public function testConfiguredTreeAcceptsRegularLogFile(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [[
+            'log_file' => sys_get_temp_dir() . '/workerman.log',
+        ]]);
+
+        self::assertSame(sys_get_temp_dir() . '/workerman.log', $config['log_file']);
+    }
+
+    public function testConfiguredTreeAcceptsPathContainingPhpScheme(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [[
+            'log_file' => '/var/log/php://weird.log',
+        ]]);
+
+        self::assertSame('/var/log/php://weird.log', $config['log_file']);
     }
 
     private function createDefinitionConfigurator(): DefinitionConfigurator

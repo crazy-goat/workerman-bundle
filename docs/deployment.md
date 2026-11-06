@@ -330,8 +330,14 @@ In the foreground, the server writes each log line to stdout.
 By default the server also writes the same lines to `var/log/workerman.log` inside the container.
 Workerman 5.1.4 and newer cut it when it gets too big (see [Logging and monitoring](logging-monitoring.md#the-workerman-log)).
 
-Do not set `log_file` to `/dev/stderr` or `php://stderr`.
-Both give a PHP warning on every log line (see [issue 985](https://github.com/crazy-goat/workerman-bundle/issues/985)).
+`log_file` must be a file path that Workerman can append to and stat.
+`/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`,
+`/proc/self/fd/N` and `php://...` are rejected with a clear error, because
+Workerman appends to the file and calls `filesize()` on it (see
+[issue 985](https://github.com/crazy-goat/workerman-bundle/issues/985)).
+Run the server in the foreground to send logs to stdout.
+A value from `%env()%` is resolved after the config tree, so make sure the
+environment value is a file path too.
 The `stdout_file` key is only used in daemon mode (see [Configuration](configuration.md#top-level-keys)).
 
 The warnings at the start (for example the one about the `grpc` extension) are written to the log file only.

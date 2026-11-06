@@ -25,7 +25,7 @@ bin/console config:dump-reference workerman
 | `cache_warmup_timeout` | int, seconds, minimum 1 | `30` | The maximum time to wait for the cache warmup in the forked process. The `WORKERMAN_CACHE_WARMUP_TIMEOUT` variable overrides it. |
 | `status_timeout` | int, seconds | `5` | The maximum time to wait for the status file after the `status` command sends a signal. |
 | `pid_file` | string, not empty | `%kernel.project_dir%/var/run/workerman.pid` | The file that holds the PID of the master process. |
-| `log_file` | string, not empty | `%kernel.project_dir%/var/log/workerman.log` | The Workerman log file. |
+| `log_file` | string, not empty | `%kernel.project_dir%/var/log/workerman.log` | The Workerman log file. It must be a file path that Workerman can append to and stat: `/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`, `/proc/self/fd/N` and `php://...` are rejected. Run the server in the foreground to send logs to stdout. |
 | `stdout_file` | string, not empty | `%kernel.project_dir%/var/log/workerman.stdout.log` | The file that gets all output (`echo`, `var_dump`) when the server runs as a daemon. |
 | `max_package_size` | int, bytes | `10485760` (10 MB) | The maximum size of one request. A server can replace it with its own `body_size_cap`, which can be lower or higher. See [security.md](security.md#body_size_cap-per-server). |
 | `connection_timeout` | int, seconds, minimum 0 | `120` | The maximum time to wait for a complete request. It protects against slowloris attacks. `0` turns it off. |
