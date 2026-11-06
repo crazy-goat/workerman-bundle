@@ -38,8 +38,13 @@ final class MasterWorkerTest extends TestCase
         $reportFile = $this->tmpDir . '/fd2.txt';
         $this->runResetStdFixture($stdoutFile, $reportFile);
 
-        self::assertSame(realpath($stdoutFile), realpath((string) file_get_contents($reportFile)));
-        self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
+        $report = json_decode((string) file_get_contents($reportFile), true);
+        $this->assertIsArray($report);
+        $this->assertSame(realpath($stdoutFile), realpath((string) $report['fd2']));
+        $this->assertSame($stdoutFile, $report['error_log'], 'An empty error_log ini must point at stdout_file');
+        $content = (string) file_get_contents($stdoutFile);
+        self::assertStringContainsString("stderr-line\n", $content);
+        self::assertStringContainsString('error-log-line', $content);
     }
 
     public function testResetStdKeepsFd2OnDevNullWhenStdoutFileCannotBeOpened(): void
@@ -52,7 +57,10 @@ final class MasterWorkerTest extends TestCase
         // A directory cannot be opened with fopen(..., 'a').
         $this->runResetStdFixture($this->tmpDir, $reportFile);
 
-        self::assertSame(realpath('/dev/null'), realpath((string) file_get_contents($reportFile)));
+        $report = json_decode((string) file_get_contents($reportFile), true);
+        $this->assertIsArray($report);
+        $this->assertSame(realpath('/dev/null'), realpath((string) $report['fd2']));
+        $this->assertSame('/dev/null', $report['error_log'], 'The fallback must use the same sink as fd 2');
     }
 
     private function runResetStdFixture(string $stdoutFile, string $reportFile): void

@@ -134,8 +134,9 @@ The second handler writes to stderr, which in daemon mode goes to `stdout_file`.
 
 Some errors of the bundle are written with the PHP function `error_log()`.
 It writes to stderr, unless you set the PHP setting `error_log`.
-In daemon mode stderr is `stdout_file` (see above), so these lines go there.
-Set `error_log` when you want them in a separate file:
+In daemon mode, when `error_log` is empty, the bundle points it at `stdout_file`
+when a worker starts, so these lines are not lost.
+Set `error_log` yourself when you want them in a separate file:
 
 ```bash
 php -d error_log=/var/www/myapp/var/log/php-error.log bin/console workerman:server start -d
@@ -143,6 +144,8 @@ php -d error_log=/var/www/myapp/var/log/php-error.log bin/console workerman:serv
 
 We ran this, and the lines went to the file.
 You can also set `error_log` in `php.ini`.
+A warning written before the daemon starts, for example a config-cache permission
+warning from the launcher, goes to the terminal and not to `stdout_file`.
 
 ## Log rotation
 

@@ -68,14 +68,23 @@ final class MasterWorker extends Worker
         }
 
         $stream = @fopen(self::$stdoutFile, 'a');
+        $stderrTarget = self::$stdoutFile;
         if ($stream === false) {
             // Keep fd 2 away from the event loop even when the configured
             // stdout file is not writable.
             $stream = @fopen('/dev/null', 'w');
+            $stderrTarget = '/dev/null';
         }
 
         if ($stream !== false) {
             self::$stdioStreams[] = $stream;
+        }
+
+        // Keep error_log() working even when fd 2 does not point at
+        // stdout_file (handle reuse, Windows, or a closed stderr). Only an
+        // empty ini setting is replaced; a user setting wins (issue #917).
+        if (ini_get('error_log') === '') {
+            @ini_set('error_log', $stderrTarget);
         }
     }
 
