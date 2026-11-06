@@ -537,6 +537,40 @@ final class ServerManagerTest extends TestCase
     // consumeFile() — atomic read-and-remove (TOCTOU fix)
     // ──────────────────────────────────────────────
 
+    // ──────────────────────────────────────────────
+    // prepareWorkerStart() — mode flags
+    // ──────────────────────────────────────────────
+
+    /**
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testPrepareWorkerStartKeepsDaemonModeWhenGracefulIsAlsoSet(): void
+    {
+        $fixture = __DIR__ . '/Fixtures/prepare_worker_start_test.php';
+        $process = proc_open(
+            [...IsolatedPhp::command(), $fixture],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        $this->assertIsResource($process);
+
+        $output = (string) stream_get_contents($pipes[1]);
+        $errors = (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $this->assertSame(0, proc_close($process), 'prepareWorkerStart fixture failed: ' . $errors);
+
+        $result = json_decode($output, true);
+        $this->assertIsArray($result);
+
+        $this->assertTrue($result[0]['daemon'], 'restart -g -d must still daemonize');
+        $this->assertSame('restart -d -g', $result[0]['command']);
+        $this->assertFalse($result[1]['daemon'], 'start -g must stay in the foreground');
+        $this->assertSame('start -g', $result[1]['command']);
+    }
+
     public function testConsumeFileReturnsContentAndRemovesTempFile(): void
     {
         $file = $this->tmpDir . '/test.status';
