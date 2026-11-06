@@ -133,6 +133,9 @@ Before a run, the scheduler takes the lock.
 If the lock is not free, the last run is still going.
 Then the scheduler skips this run and plans the next one.
 So two runs of the same task never work at the same time.
+A scheduler reload keeps a running task's lock file: the new scheduler deletes a task PID file
+only when no child holds its lock, and the old child deletes its own file while it still holds
+the lock. A run that is still going therefore blocks the new run instead of overlapping it.
 
 The scheduler does not check the [reload strategies](reload-strategies.md) `exception`, `max_requests`, `memory` and `always`.
 But `workerman:server reload` and a `file_monitor` reload restart it, and then the fixed times start again.

@@ -93,7 +93,7 @@ final class SchedulerWorker
         $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
         $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
         $service = new ServiceMethod($serviceId, $method);
-        $this->deleteTaskPid($service);
+        $this->deleteStaleTaskPid($service);
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
@@ -393,8 +393,11 @@ final class SchedulerWorker
             ));
             $childExitCode = 1;
         } finally {
-            $this->releaseLockAndClose($fp);
+            // Remove the PID file while the lock is still held: a new run
+            // cannot create its own file until this one is gone, and an old
+            // child can never delete the file of a newer run (issue #973).
             $this->deleteTaskPid($service);
+            $this->releaseLockAndClose($fp);
             $this->terminateTaskChild($childExitCode);
         }
     }
@@ -478,5 +481,34 @@ final class SchedulerWorker
     private function deleteTaskPid(ServiceMethod $service): void
     {
         @unlink($this->getTaskPidPath($service));
+    }
+
+    /**
+     * Delete a task PID file only when no live child still holds its lock.
+     *
+     * A scheduler reload stops the scheduler worker but leaves a running task
+     * child alive. Unconditionally deleting its PID file would let the new
+     * scheduler create a second lock file and start an overlapping run
+     * (issue #973). If the lock is held, the file is left in place and the
+     * new scheduler skips runs until the old child ends and deletes it.
+     */
+    private function deleteStaleTaskPid(ServiceMethod $service): void
+    {
+        $pidFile = $this->getTaskPidPath($service);
+        if (!is_file($pidFile) || is_link($pidFile)) {
+            return;
+        }
+
+        $fp = @fopen($pidFile, 'c');
+        if ($fp === false) {
+            return;
+        }
+
+        if (flock($fp, LOCK_EX | LOCK_NB)) {
+            @unlink($pidFile);
+            flock($fp, LOCK_UN);
+        }
+
+        fclose($fp);
     }
 }

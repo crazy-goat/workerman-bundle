@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Scheduler\TaskHandler;
+use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -61,6 +62,41 @@ final class SchedulerWorkerTaskSetupTest extends TestCase
         $method->invoke($worker, $config, $handler);
 
         return (string) file_get_contents($this->tmpDir . '/workerman.log');
+    }
+
+    public function testStaleTaskPidIsKeptWhileLocked(): void
+    {
+        $service = new ServiceMethod('test.locked.service', '__invoke');
+        $pidFile = sprintf(
+            '%s/workerman.task.%s.pid',
+            dirname(Worker::$pidFile),
+            hash('xxh64', $service->toString()),
+        );
+        file_put_contents($pidFile, '123');
+
+        $fp = fopen($pidFile, 'c');
+        $this->assertIsResource($fp);
+        $this->assertTrue(flock($fp, LOCK_EX | LOCK_NB));
+
+        try {
+            $worker = new SchedulerWorker(new KernelFactory(fn(): KernelInterface => $this->createMock(KernelInterface::class), []), null, null, []);
+            $method = new \ReflectionMethod(SchedulerWorker::class, 'deleteStaleTaskPid');
+
+            $method->invoke($worker, $service);
+            $this->assertFileExists($pidFile, 'A locked PID file belongs to a live task child and must stay');
+
+            flock($fp, LOCK_UN);
+            fclose($fp);
+
+            $method->invoke($worker, $service);
+            $this->assertFileDoesNotExist($pidFile, 'An unlocked PID file is stale and must be removed');
+        } finally {
+            if (is_resource($fp)) {
+                flock($fp, LOCK_UN);
+                fclose($fp);
+            }
+            @unlink($pidFile);
+        }
     }
 
     public function testStringJitterSkipsOnlyThatTask(): void
