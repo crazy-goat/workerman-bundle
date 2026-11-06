@@ -52,7 +52,13 @@ final readonly class ServerManager
 
         posix_kill($masterPid, $graceful ? \SIGQUIT : \SIGINT);
 
-        if (!$this->processInspector->waitForProcessToStop($masterPid, $this->getStopTimeout(), $graceful)) {
+        if ($graceful) {
+            $stopped = $this->processInspector->waitForProcessToStopWithin($masterPid, $this->getGracefulStopTimeout());
+        } else {
+            $stopped = $this->processInspector->waitForProcessToStop($masterPid, $this->getStopTimeout(), false);
+        }
+
+        if (!$stopped) {
             return false;
         }
 
@@ -243,6 +249,14 @@ final readonly class ServerManager
         $timeout = $config['stop_timeout'] ?? 2;
 
         return \is_int($timeout) ? $timeout : 2;
+    }
+
+    private function getGracefulStopTimeout(): int
+    {
+        $config = $this->configLoader->getWorkermanConfig();
+        $timeout = $config['graceful_stop_timeout'] ?? 30;
+
+        return \is_int($timeout) && $timeout >= 1 ? $timeout : 30;
     }
 
     private function createKernelFactory(): KernelFactory

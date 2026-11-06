@@ -52,7 +52,7 @@ final readonly class ConfigurationTreeBuilder
                 ->defaultFalse()
                 ->end()
             ->integerNode('graceful_stop_timeout')
-                ->info('Max seconds a graceful SIGTERM stop may take before the workers are killed with SIGKILL. Used only when graceful_sigterm is true.')
+                ->info('Max seconds a graceful stop (SIGTERM or SIGQUIT) may take before the workers are killed with SIGKILL.')
                 ->min(1)
                 ->defaultValue(30)
                 ->end()

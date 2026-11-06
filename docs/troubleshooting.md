@@ -231,10 +231,10 @@ unavailable or fails.
   task child (the hand-off skips PHP shutdown). Logging directly before
   termination is unaffected (it is synchronous).
 - **Stop/reload on grpc hosts:** prefer *non-graceful* `stop` / `reload`
-  (SIGINT/SIGUSR1). Workerman's SIGKILL-after-`stop_timeout` fallback is
-  only armed for non-graceful stops, so `stop --grace` / `reload
-  --grace` (SIGQUIT/SIGUSR2) can hang on grpc hosts when the master has
-  to wait for children stuck in `grpc_shutdown`.
+  (SIGINT/SIGUSR1). A graceful stop (`SIGQUIT`, or `SIGTERM` with
+  `graceful_sigterm`) now has a `graceful_stop_timeout` SIGKILL backstop, so
+  it ends, but on grpc hosts it can wait up to that timeout (default 30 s)
+  for children stuck in `grpc_shutdown`.
 - **Zombie master after a hung daemonize intermediate:** when the
   intermediate hangs in `grpc_shutdown()` it never reaps the SIGINTed
   master, which stays a zombie. Since issue #651 the liveness check reads

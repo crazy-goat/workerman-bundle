@@ -51,21 +51,24 @@ final class MasterWorker extends Worker
     }
 
     /**
-     * Treat SIGTERM like SIGQUIT when graceful_sigterm is enabled.
+     * Treat SIGTERM like SIGQUIT when graceful_sigterm is enabled, and give
+     * every graceful stop (SIGQUIT too) a SIGKILL backstop.
      *
      * Workerman's graceful stop has no time limit, so a keep-alive connection
-     * can block it forever. Arm a SIGKILL backstop for the workers.
+     * or a supervised process that never dispatches SIGQUIT can block it
+     * forever. After graceful_stop_timeout the master kills the workers.
      */
     public static function signalHandler(int $signal, mixed ...$args): void
     {
-        if ($signal !== \SIGTERM || !self::$gracefulSigterm || self::$masterPid !== \posix_getpid()) {
+        $gracefulTerm = $signal === \SIGTERM && self::$gracefulSigterm;
+        if (($signal !== \SIGQUIT && !$gracefulTerm) || self::$masterPid !== \posix_getpid()) {
             parent::signalHandler($signal, ...$args);
 
             return;
         }
 
         self::$gracefulStop = true;
-        self::stopAll(0, 'received signal SIGTERM (graceful)');
+        self::stopAll(0, $signal === \SIGQUIT ? 'received signal SIGQUIT' : 'received signal SIGTERM (graceful)');
 
         Timer::add(self::$gracefulStopTimeout, static function (): void {
             foreach (self::getAllWorkerPids() as $pid) {
