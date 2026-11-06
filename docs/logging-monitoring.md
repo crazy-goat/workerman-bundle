@@ -132,8 +132,8 @@ The second handler writes to stderr, which in daemon mode goes to `stdout_file`.
 
 Some errors of the bundle are written with the PHP function `error_log()`.
 It writes to stderr, unless you set the PHP setting `error_log`.
-In daemon mode, these lines are lost (see [issue 917](https://github.com/crazy-goat/workerman-bundle/issues/917)).
-So set `error_log` in daemon mode:
+In daemon mode stderr is `stdout_file` (see above), so these lines go there.
+Set `error_log` when you want them in a separate file:
 
 ```bash
 php -d error_log=/var/www/myapp/var/log/php-error.log bin/console workerman:server start -d

@@ -35,9 +35,35 @@ final class MasterWorkerTest extends TestCase
         }
 
         $stdoutFile = $this->tmpDir . '/stdout.log';
+        $reportFile = $this->tmpDir . '/fd2.txt';
+        $this->runResetStdFixture($stdoutFile, $reportFile);
+
+        self::assertSame($stdoutFile, (string) file_get_contents($reportFile));
+        self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
+    }
+
+    public function testResetStdKeepsFd2OnDevNullWhenStdoutFileCannotBeOpened(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/') {
+            self::markTestSkipped('Daemon mode and fd 2 redirection are Unix-only.');
+        }
+
+        if (!is_dir('/proc/self/fd')) {
+            self::markTestSkipped('/proc/self/fd is not available.');
+        }
+
+        $reportFile = $this->tmpDir . '/fd2-fallback.txt';
+        // A directory cannot be opened with fopen(..., 'a').
+        $this->runResetStdFixture($this->tmpDir, $reportFile);
+
+        self::assertSame('/dev/null', (string) file_get_contents($reportFile));
+    }
+
+    private function runResetStdFixture(string $stdoutFile, string $reportFile): void
+    {
         $fixture = __DIR__ . '/Fixtures/stderr_redirect_test.php';
         $process = proc_open(
-            [PHP_BINARY, '-n', $fixture, $stdoutFile],
+            [PHP_BINARY, '-n', $fixture, $stdoutFile, $reportFile],
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
         );
@@ -46,9 +72,6 @@ final class MasterWorkerTest extends TestCase
         fclose($pipes[1]);
         fclose($pipes[2]);
         self::assertSame(0, proc_close($process));
-
-        self::assertFileExists($stdoutFile);
-        self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
     }
 
     /**

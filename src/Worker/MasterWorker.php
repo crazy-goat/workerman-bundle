@@ -23,11 +23,14 @@ use Workerman\Worker;
  * where daemonised deployments relied on the weak `/proc/$pid/cmdline`
  * substring fallback that accepted any process whose command line contained
  * the substring "php".
+ *
+ * It also keeps file descriptor 2 on `stdout_file` in daemon mode, so
+ * `php://stderr` logging does not write to an eventpoll fd (issue #990).
  */
 final class MasterWorker extends Worker
 {
-    /** Keeps fd 2 open on the stdout file for the lifetime of the process. */
-    private static mixed $stderrStream = null;
+    /** @var list<resource> Extra stdio handles kept open for the process lifetime. */
+    private static array $stdioStreams = [];
 
     /**
      * Keep file descriptor 2 on the stdout file in daemon mode.
@@ -41,15 +44,27 @@ final class MasterWorker extends Worker
      */
     public static function resetStd(): void
     {
-        if (is_resource(self::$stderrStream)) {
-            @fclose(self::$stderrStream);
-            self::$stderrStream = null;
+        foreach (self::$stdioStreams as $stream) {
+            if (is_resource($stream)) {
+                @fclose($stream);
+            }
         }
+        self::$stdioStreams = [];
 
         parent::resetStd();
 
         if (!self::$daemonize || DIRECTORY_SEPARATOR !== '/') {
             return;
+        }
+
+        // If the parent could not open stdout_file, fd 1 is free too: the
+        // first handle would land on fd 1 and leave fd 2 to the event loop.
+        // Occupy fd 1 first in that case, then open the stderr handle.
+        if (!is_resource(self::$outputStream)) {
+            $sink = @fopen('/dev/null', 'w');
+            if ($sink !== false) {
+                self::$stdioStreams[] = $sink;
+            }
         }
 
         $stream = @fopen(self::$stdoutFile, 'a');
@@ -60,7 +75,7 @@ final class MasterWorker extends Worker
         }
 
         if ($stream !== false) {
-            self::$stderrStream = $stream;
+            self::$stdioStreams[] = $stream;
         }
     }
 
