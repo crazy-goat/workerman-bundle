@@ -26,6 +26,44 @@ use Workerman\Worker;
  */
 final class MasterWorker extends Worker
 {
+    /** Keeps fd 2 open on the stdout file for the lifetime of the process. */
+    private static mixed $stderrStream = null;
+
+    /**
+     * Keep file descriptor 2 on the stdout file in daemon mode.
+     *
+     * Workerman's resetStd() closes STDOUT and STDERR and reopens only the
+     * stdout file (fd 1). The event loop then takes fd 2, so a Monolog
+     * php://stderr handler writes to an eventpoll fd and fails with EINVAL
+     * (issue #990). Open the stdout file again here, before the event loop is
+     * created, so fd 2 stays a writable stream. php://stderr then writes to
+     * stdout_file instead of breaking requests.
+     */
+    public static function resetStd(): void
+    {
+        if (is_resource(self::$stderrStream)) {
+            @fclose(self::$stderrStream);
+            self::$stderrStream = null;
+        }
+
+        parent::resetStd();
+
+        if (!self::$daemonize || DIRECTORY_SEPARATOR !== '/') {
+            return;
+        }
+
+        $stream = @fopen(self::$stdoutFile, 'a');
+        if ($stream === false) {
+            // Keep fd 2 away from the event loop even when the configured
+            // stdout file is not writable.
+            $stream = @fopen('/dev/null', 'w');
+        }
+
+        if ($stream !== false) {
+            self::$stderrStream = $stream;
+        }
+    }
+
     /**
      * Turn async signals off before the master and the workers start.
      *

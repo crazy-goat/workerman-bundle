@@ -86,7 +86,10 @@ monolog:
 
 We ran this in Docker, and `docker logs` showed the lines of `$logger->info()` and the exception of a controller.
 
-Use a file when you run the server as a daemon:
+In daemon mode, `php://stderr` writes to `stdout_file`.
+The bundle keeps file descriptor 2 on that file, so a Monolog stream handler does not
+break requests (see [issue 990](https://github.com/crazy-goat/workerman-bundle/issues/990)).
+Use a file when you want the app log separate from the stdout output:
 
 ```yaml
 # config/packages/monolog.yaml
@@ -97,9 +100,6 @@ monolog:
       path: '%kernel.logs_dir%/app.log'
       level: info
 ```
-
-Do not use `php://stderr` in daemon mode.
-Workerman closes stderr there, and each request after the first one fails with an empty reply (see [issue 990](https://github.com/crazy-goat/workerman-bundle/issues/990)).
 
 ### Tasks and processes
 
@@ -126,7 +126,7 @@ monolog:
 
 We ran a task and a process that throw an error.
 The lines went to `background.log`, with `task.CRITICAL` and `process.CRITICAL` in front.
-(The second handler writes to stderr, so use a file there if you run a daemon.)
+The second handler writes to stderr, which in daemon mode goes to `stdout_file`.
 
 ### PHP errors and `error_log()`
 

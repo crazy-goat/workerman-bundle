@@ -28,6 +28,29 @@ final class MasterWorkerTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
+    public function testResetStdKeepsFd2OnStdoutFile(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/') {
+            self::markTestSkipped('Daemon mode and fd 2 redirection are Unix-only.');
+        }
+
+        $stdoutFile = $this->tmpDir . '/stdout.log';
+        $fixture = __DIR__ . '/Fixtures/stderr_redirect_test.php';
+        $process = proc_open(
+            [PHP_BINARY, '-n', $fixture, $stdoutFile],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        self::assertSame(0, proc_close($process));
+
+        self::assertFileExists($stdoutFile);
+        self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
+    }
+
     /**
      * Regression test for issue #584: `saveMasterPid()` must write the
      * PID file AND a fingerprint describing the current (master) process.
