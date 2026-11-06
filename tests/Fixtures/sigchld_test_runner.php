@@ -135,6 +135,7 @@ match ($testName) {
     'scheduler_worker_exception_logging' => testSchedulerWorkerExceptionLogging(),
     'sigkill_normal_when_grpc' => testSigkillNormalWhenGrpc(),
     'sigkill_warns_without_grpc' => testSigkillWarnsWithoutGrpc(),
+    'scheduler_worker_child_skips_shutdown' => testSchedulerWorkerChildSkipsShutdown(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
         exit(2);
@@ -530,6 +531,125 @@ function testSchedulerWorkerExceptionLogging(): void
     }
     if (!str_contains($logs, $taskName)) {
         fail('Log must contain task name');
+    }
+
+    fclose($logStream);
+    @unlink($logFilePath);
+
+    fwrite(STDOUT, "PASS\n");
+    exit(0);
+}
+
+/**
+ * A task child must not run PHP shutdown in the fork: that shutdown runs
+ * libevent cleanup on the inherited EventBase and kills the scheduler's
+ * signal events (issue #1023). The child is replaced with `php -n -r exit()`,
+ * so a shutdown function registered in the fork must never run.
+ */
+function testSchedulerWorkerChildSkipsShutdown(): void
+{
+    requireAutoloader();
+
+    $logFilePath = tempnam(sys_get_temp_dir(), 'test_shutdown_log_');
+    if ($logFilePath === false) {
+        fail('Failed to create temp log file');
+    }
+    $logStream = fopen($logFilePath, 'w+');
+    if ($logStream === false) {
+        fail('Failed to open temp log stream');
+    }
+    \Workerman\Worker::$outputStream = $logStream;
+    \Workerman\Worker::$logFile = $logFilePath;
+    \Workerman\Worker::$pidFile = sys_get_temp_dir() . '/workerman_test.pid';
+
+    $marker = sys_get_temp_dir() . '/workerman_shutdown_marker_' . uniqid();
+    $schedulerWorker = createSchedulerWorkerInstance();
+    $handleChild = (new \ReflectionMethod(
+        \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::class,
+        'handleChild',
+    ))->getClosure($schedulerWorker);
+
+    if (!$handleChild instanceof \Closure) {
+        fail('handleChild must be accessible via reflection');
+    }
+
+    $service = new \CrazyGoat\WorkermanBundle\Util\ServiceMethod('test.shutdown.service', '__invoke');
+    $taskName = 'shutdown_task';
+
+    $container = new class implements \Psr\Container\ContainerInterface {
+        public function get(string $id): mixed
+        {
+            return new class {
+                public function __invoke(): void
+                {
+                }
+            };
+        }
+
+        public function has(string $id): bool
+        {
+            return true;
+        }
+    };
+
+    $handler = new \CrazyGoat\WorkermanBundle\Scheduler\TaskHandler(
+        $container,
+        new \Symfony\Component\EventDispatcher\EventDispatcher(),
+    );
+
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        fail('Fork failed');
+    }
+
+    if ($pid === 0) {
+        register_shutdown_function(static function () use ($marker): void {
+            file_put_contents($marker, 'ran');
+        });
+
+        $pidFile = sprintf(
+            '%s/workerman.task.%s.pid',
+            dirname(\Workerman\Worker::$pidFile),
+            hash('xxh64', $service->toString()),
+        );
+        touch($pidFile);
+
+        try {
+            $handleChild($pidFile, $service, $taskName, $handler);
+        } catch (\Throwable $e) {
+            fwrite(STDERR, 'handleChild did not exit: ' . $e->getMessage() . "\n");
+            exit(255);
+        }
+        exit(255);
+    }
+
+    $status = 0;
+    $reaped = \CrazyGoat\WorkermanBundle\Util\Wait::until(
+        function () use ($pid, &$status): bool {
+            $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+            return $result === $pid || $result === -1;
+        },
+        10,
+        initialDelayMs: 10,
+        maxDelayMs: 10,
+    );
+
+    if (!$reaped) {
+        fail('Child process did not terminate within timeout');
+    }
+
+    if (!pcntl_wifexited($status)) {
+        fail('Task child should exit normally through the exec hand-off');
+    }
+
+    if (pcntl_wexitstatus($status) !== 0) {
+        fail('Task child should exit with code 0, got ' . pcntl_wexitstatus($status));
+    }
+
+    if (file_exists($marker)) {
+        @unlink($marker);
+        fail('Task child ran PHP shutdown; the libevent cleanup would kill the scheduler signal events');
     }
 
     fclose($logStream);

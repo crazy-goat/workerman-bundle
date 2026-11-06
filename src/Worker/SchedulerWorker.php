@@ -347,7 +347,7 @@ final class SchedulerWorker
     {
         $fp = $this->openChildPidFile($pidFile);
         if ($fp === null) {
-            ProcessTerminator::terminate(0);
+            $this->terminateTaskChild(0);
         }
 
         $this->worker::$globalEvent?->deleteAllTimer();
@@ -377,10 +377,35 @@ final class SchedulerWorker
         } finally {
             $this->releaseLockAndClose($fp);
             $this->deleteTaskPid($service);
-            // SIGKILL instead of exit() when grpc is loaded: its shutdown
-            // handler deadlocks in forked children (see ProcessTerminator).
-            ProcessTerminator::terminate($childExitCode);
+            $this->terminateTaskChild($childExitCode);
         }
+    }
+
+    /**
+     * End the task child without running PHP shutdown in the fork.
+     *
+     * A child that calls exit() runs PHP module shutdown, which includes
+     * libevent's cleanup of the EventBase it inherited from the scheduler.
+     * That cleanup shares the parent's signal socketpair and silently kills
+     * the parent's signal events, so SIGCHLD, stop and reload never run again
+     * on the ext-event loop (issue #1023). Replacing the process image with a
+     * bare `php -n -r 'exit(<code>);'` skips that shutdown and still gives the
+     * parent a normal exit code. If exec is unavailable, SIGKILL is the
+     * backstop (it also skips shutdown, but the exit code is lost).
+     */
+    private function terminateTaskChild(int $childExitCode): never
+    {
+        if (function_exists('pcntl_exec') && DIRECTORY_SEPARATOR === '/') {
+            if (is_resource(Worker::$outputStream)) {
+                @fflush(Worker::$outputStream);
+            }
+            @fflush(STDOUT);
+            @fflush(STDERR);
+
+            @pcntl_exec(PHP_BINARY, ['-n', '-r', sprintf('exit(%d);', $childExitCode)]);
+        }
+
+        ProcessTerminator::terminate($childExitCode, hardExit: true);
     }
 
     /**
