@@ -140,7 +140,7 @@ If `grpc` is loaded (Homebrew PHP), `grpc_shutdown()` **can hang indefinitely in
   ```bash
   pkill -9 -f 'tests/App/index.php'; rm -f var/run/workerman.pid*
   ```
-- A self-called `exit()` in a process service hangs the worker (no restarts). The bundle SIGKILLs worker/task children when grpc is loaded (`Util\ProcessTerminator`, #650); do not `exit()` — return. Same for **forked test children**: kill with `posix_kill(getmypid(), SIGKILL)`, never `exit()`.
+- A self-called `exit()` in a process service hangs the worker (no restarts). The bundle SIGKILLs worker children when grpc is loaded (`Util\ProcessTerminator`, #650); task children use a `php -n -r 'exit(<code>);'` hand-off instead. Do not `exit()` — return. Same for **forked test children**: kill with `posix_kill(getmypid(), SIGKILL)`, never `exit()`.
 - Expect **exactly one** start-up warning in `var/log/workerman.log`: `GRPC_ENABLE_FORK_SUPPORT` unset means "set it"; set means SIGKILL termination — mutually exclusive.
 
 CI (Linux, no grpc) exercises none of this. `pcntl_waitpid` answers only for **direct children**; on non-Linux the state comes from `ps`, and any inspection failure (exec disabled, `ps` 126/127) fails closed as alive with a warning.

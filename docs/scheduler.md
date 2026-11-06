@@ -120,7 +120,10 @@ With a cron schedule, the times do not move.
 ## One run is one child process
 
 For every run, the scheduler makes a child process with `pcntl_fork()`.
-The child runs your method and then ends.
+The child runs your method and then ends through a bare `php -n -r 'exit(<code>);'` hand-off.
+That hand-off does not run PHP shutdown in the fork: shutdown would run libevent's cleanup on the
+inherited `EventBase` and break the scheduler's SIGCHLD, stop and reload handling on the `ext-event` loop.
+Destructors and `register_shutdown_function()` callbacks in task children therefore do not run.
 The title of the child is `[Scheduler] <task name>`.
 Your task cannot block the scheduler, and a crash in the task does not stop the scheduler.
 
@@ -180,10 +183,14 @@ final class AlertOnTaskError
 
 A task that throws an exception is reported with `TaskErrorEvent`, and the child still exits with code 0.
 A method that does not exist is reported in the same way, with `TaskErrorEvent`.
-The child exits with code 1 only when the service cannot be loaded or an event listener throws.
-The scheduler logs a child that exits with a code other than 0 or that is killed by a signal (`SIGKILL` is not logged when the `grpc` extension is loaded).
+The child exits with code 1 only when the service cannot be loaded, an event listener throws,
+or the task hits a fatal error.
+A task that calls `exit()` itself is reported as a successful run; throw an exception instead
+if the scheduler should log a failure.
+The scheduler logs a child that exits with a code other than 0 or that is killed by a signal.
 
-If the `grpc` extension is loaded, the child ends with `SIGKILL` and does not run destructors.
+If `pcntl_exec` is not available, the child is ended with `SIGKILL` instead, so destructors do not run.
+The hand-off process uses `php -n`, so the `grpc` extension is not loaded there and cannot hang the exit.
 See [Troubleshooting](troubleshooting.md#grpc-extension-and-fork-safety).
 
 ## Examples

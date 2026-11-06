@@ -123,10 +123,9 @@ final class SchedulerWorker
             } elseif (pcntl_wifsignaled($status)) {
                 $signal = pcntl_wtermsig($status);
                 if ($signal === \SIGKILL && self::sigkillIsNormalCompletion()) {
-                    // On grpc hosts ProcessTerminator ends every task child
-                    // with SIGKILL (see ProcessTerminator), so signal 9 is
-                    // the NORMAL completion path, not a crash. A failed task
-                    // is already logged by the child with its stack trace
+                    // SIGKILL is the normal completion path when the exec
+                    // hand-off is unavailable (or grpc forces it): a failed
+                    // task is already logged by the child with its stack trace
                     // (SIGKILL carries no exit code).
                     continue;
                 }
@@ -138,20 +137,19 @@ final class SchedulerWorker
     }
 
     /**
-     * True when SIGKILL is the normal task-completion path: the grpc
-     * extension is loaded and ProcessTerminator kills children instead of
-     * calling exit() to bypass grpc's hanging shutdown handler.
+     * True when SIGKILL is the normal task-completion path: the exec hand-off
+     * is unavailable, or the grpc extension forces the SIGKILL backstop.
      */
     protected static function sigkillIsNormalCompletion(): bool
     {
-        return self::$sigkillNormalCompletion ?? \extension_loaded('grpc');
+        return self::$sigkillNormalCompletion ?? (\extension_loaded('grpc') || !\function_exists('pcntl_exec'));
     }
 
     private static bool|null $sigkillNormalCompletion = null;
 
     /**
      * Test hook: force the SIGKILL-completion decision. Pass null to
-     * restore auto-detection via extension_loaded().
+     * restore auto-detection (grpc loaded or pcntl_exec unavailable).
      *
      * @internal test-only
      */
@@ -347,7 +345,7 @@ final class SchedulerWorker
     {
         $fp = $this->openChildPidFile($pidFile);
         if ($fp === null) {
-            ProcessTerminator::terminate(0);
+            $this->terminateTaskChild(0);
         }
 
         $this->worker::$globalEvent?->deleteAllTimer();
@@ -360,6 +358,26 @@ final class SchedulerWorker
         fflush($fp);
 
         $childExitCode = 0;
+        register_shutdown_function(function () use (&$childExitCode, $taskName): void {
+            // A task that calls exit() or hits a fatal error skips the
+            // finally block below and would otherwise run PHP module shutdown
+            // (libevent cleanup) in the fork. Take the exec hand-off here too.
+            $error = error_get_last();
+            if ($error !== null && \in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+                $childExitCode = 1;
+                $this->worker->log(sprintf(
+                    '%s Task "%s" failed with a fatal error: %s in %s:%d',
+                    $this->worker->name,
+                    $taskName,
+                    $error['message'],
+                    $error['file'],
+                    $error['line'],
+                ));
+            }
+
+            $this->terminateTaskChild($childExitCode);
+        });
+
         try {
             $handler($service, $taskName);
         } catch (\Throwable $e) {
@@ -377,10 +395,52 @@ final class SchedulerWorker
         } finally {
             $this->releaseLockAndClose($fp);
             $this->deleteTaskPid($service);
-            // SIGKILL instead of exit() when grpc is loaded: its shutdown
-            // handler deadlocks in forked children (see ProcessTerminator).
-            ProcessTerminator::terminate($childExitCode);
+            $this->terminateTaskChild($childExitCode);
         }
+    }
+
+    /**
+     * End the task child without running PHP shutdown in the fork.
+     *
+     * A child that calls exit() runs PHP module shutdown, which includes
+     * libevent's cleanup of the EventBase it inherited from the scheduler.
+     * That cleanup shares the parent's signal socketpair and silently kills
+     * the parent's signal events, so SIGCHLD, stop and reload never run again
+     * on the ext-event loop (issue #1023). Replacing the process image with a
+     * bare `php -n -r 'exit(<code>);'` skips that shutdown and still gives the
+     * parent a normal exit code. If exec is unavailable, SIGKILL is the
+     * backstop (it also skips shutdown, but the exit code is lost).
+     */
+    private function terminateTaskChild(int $childExitCode): never
+    {
+        $level = ob_get_level();
+        while ($level-- > 0) {
+            if (!@ob_end_flush()) {
+                break;
+            }
+        }
+
+        if (function_exists('pcntl_exec') && DIRECTORY_SEPARATOR === '/') {
+            if (is_resource(Worker::$outputStream)) {
+                @fflush(Worker::$outputStream);
+            }
+            if (defined('STDOUT') && is_resource(STDOUT)) {
+                @fflush(STDOUT);
+            }
+            if (defined('STDERR') && is_resource(STDERR)) {
+                @fflush(STDERR);
+            }
+
+            @pcntl_exec(PHP_BINARY, ['-n', '-r', sprintf('exit(%d);', $childExitCode)]);
+            $error = error_get_last();
+            $this->worker->log(sprintf(
+                '%s [warning] Could not exec the task-child hand-off (%s); using SIGKILL',
+                $this->worker->name,
+                $error['message'] ?? 'unknown error',
+            ));
+        }
+
+        ProcessTerminator::terminate($childExitCode, hardExit: true);
     }
 
     /**

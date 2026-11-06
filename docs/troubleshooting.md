@@ -218,14 +218,18 @@ finishes its work therefore never dies, the supervisor cannot respawn it,
 and failed runs leave live processes behind.
 
 Because of this, when the `grpc` extension is loaded the bundle terminates
-worker and task children with **SIGKILL** instead of `exit()` (see
+worker children with **SIGKILL** instead of `exit()` (see
 [`ProcessTerminator`](../src/Util/ProcessTerminator.php), which is also
 used by the cache-warmup child via `posix_kill()`). SIGKILL bypasses PHP
-module shutdown entirely.
+module shutdown entirely. Scheduler task children use a separate
+`php -n -r 'exit(<code>);'` hand-off, so the `grpc` extension is not loaded in
+the hand-off process; SIGKILL is only their fallback when `pcntl_exec` is
+unavailable or fails.
 
 - **Trade-off:** destructors and `register_shutdown_function()` callbacks
-  are skipped for supervised processes and forked tasks on grpc hosts.
-  Logging directly before termination is unaffected (it is synchronous).
+  are skipped for supervised processes on grpc hosts, and for every scheduler
+  task child (the hand-off skips PHP shutdown). Logging directly before
+  termination is unaffected (it is synchronous).
 - **Stop/reload on grpc hosts:** prefer *non-graceful* `stop` / `reload`
   (SIGINT/SIGUSR1). Workerman's SIGKILL-after-`stop_timeout` fallback is
   only armed for non-graceful stops, so `stop --grace` / `reload

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scheduler task children now end through a bare `php -n -r 'exit(<code>);'` process hand-off instead of `exit()` in the fork, so PHP shutdown (and libevent's cleanup of the inherited `EventBase`) never runs; this restores SIGCHLD reaping and stop/reload handling on the `ext-event` loop, stops the growing `<defunct>` children and avoids the signal-11 exit crash. Destructors and `register_shutdown_function()` callbacks in task children no longer run; if `pcntl_exec` is unavailable, SIGKILL is the backstop (#1023)
 - `PharBuilder::build()` now validates `exclude_patterns` and `exclude_files` before creating the archive, so a rejected pattern no longer leaves a mapped `Phar` alias behind and a later build in the same process fails with `alias ... is already used` on PHP 8.5; `PharBuilderTest` covers the build sequence (#908)
 - `MaxJobsRebootStrategy::shouldReboot()` now requests a reload at the selected job limit, not one request later. With zero dispersion, the limit equals `requests` (#967)
 - `SfxDownloader::fetch()` now also fails fast with the directory-permissions message when a cached zip artifact sits in a destination directory that is no longer writable, instead of failing late per entry inside the extraction (a read-only directory that already holds every entry still re-extracts in place); a cached archive that does not open still reaches the poisoned-artifact cleanup path (#1052)

@@ -31,9 +31,9 @@ final class ProcessTerminator
 {
     /**
      * @param int      $code     exit code for the normal (non-grpc) path
-     * @param bool|null $hardExit force the decision for tests:
-     *                           true = SIGKILL, false = exit(), null = auto
-     *                           (SIGKILL when the grpc extension is loaded)
+     * @param bool|null $hardExit force the decision: true = SIGKILL, false = exit(),
+     *                           null = auto (SIGKILL when the grpc extension is loaded).
+     *                           The scheduler task-child fallback passes true explicitly.
      */
     public static function terminate(int $code, ?bool $hardExit = null): never
     {

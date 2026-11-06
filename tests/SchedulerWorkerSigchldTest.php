@@ -102,6 +102,20 @@ final class SchedulerWorkerSigchldTest extends TestCase
         $this->runIsolatedTest('scheduler_worker_exception_logging');
     }
 
+    /**
+     * Regression for #1023: a task child must not run PHP shutdown in the
+     * fork, because libevent cleanup there kills the scheduler's signal
+     * events (SIGCHLD, stop, reload) on the ext-event loop.
+     */
+    public function testSchedulerWorkerChildSkipsPhpShutdown(): void
+    {
+        if (!function_exists('pcntl_exec')) {
+            $this->markTestSkipped('pcntl_exec is unavailable; the task child uses the SIGKILL fallback');
+        }
+
+        $this->runIsolatedTest('scheduler_worker_child_skips_shutdown');
+    }
+
     // --- PID file handle caching structural tests (Issue #297) ---
 
     /**
