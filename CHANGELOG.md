@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- The development `composer.lock` now pins `symfony/config`, `symfony/filesystem`, `symfony/http-foundation` and `symfony/http-kernel` at 7.4.23 (with the matching polyfill refresh), clearing both CVE-2026-108082 and the 2026-11-04 Symfony security advisories so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.50, 7.4.23 or 8.1.11 or later (#1094, #908)
+- The development `composer.lock` now pins the remaining affected Symfony packages (`config`, `filesystem`, `framework-bundle`, `http-kernel`, `routing`, `yaml`) at their patched 7.4.23 / 8.1.11 releases, clearing the 2026-11-04 Symfony security advisories so `composer audit` in the Lint job passes again (#908)
+- The development `composer.lock` now pins `symfony/http-foundation` 7.4.23 (was 7.4.17) to clear CVE-2026-108082, so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.50, 7.4.23 or 8.1.11 or later (#1094)
 
 ## [0.31.0] - 2026-10-06
 
