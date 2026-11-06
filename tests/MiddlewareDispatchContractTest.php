@@ -27,6 +27,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class MiddlewareDispatchContractTest extends WebTestCase
 {
+    use RequiresLiveServer;
+
     private const SERVER_HOST = '127.0.0.1';
     private const SERVER_PORT = 9991;
     private const PROBE_PATH = '/dispatch_count_test';
@@ -42,21 +44,19 @@ final class MiddlewareDispatchContractTest extends WebTestCase
         // middleware itself uses flock() for that reason.
         $dir = dirname(self::COUNTER_FILE);
         if (!is_dir($dir) && !mkdir($dir, 0o775, true) && !is_dir($dir)) {
-            self::markTestSkipped(sprintf('Cannot create counter directory: %s', $dir));
+            self::failLiveServer(sprintf('Cannot create counter directory: %s', $dir));
         }
 
         file_put_contents(self::COUNTER_FILE, '0');
 
         $socket = @fsockopen(self::SERVER_HOST, self::SERVER_PORT, $errorCode, $errorMessage, 1);
         if ($socket === false) {
-            self::markTestSkipped(
-                sprintf(
-                    'Live Workerman contract server is not running on %s:%d (%s)',
-                    self::SERVER_HOST,
-                    self::SERVER_PORT,
-                    $errorMessage,
-                ),
-            );
+            self::failLiveServer(sprintf(
+                'Live Workerman contract server is not running on %s:%d (%s)',
+                self::SERVER_HOST,
+                self::SERVER_PORT,
+                $errorMessage,
+            ));
         }
         fclose($socket);
     }

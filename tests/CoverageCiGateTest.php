@@ -17,6 +17,17 @@ final class CoverageCiGateTest extends TestCase
         self::assertStringContainsString('composer coverage:check', $workflow);
     }
 
+    public function testTestsJobRequiresLiveServer(): void
+    {
+        $workflow = self::readWorkflow();
+
+        self::assertMatchesRegularExpression(
+            '/- name: Run tests with coverage(?:(?!- name:).)*WORKERMAN_REQUIRE_LIVE_SERVER: \'1\'/s',
+            $workflow,
+            'The tests job must set WORKERMAN_REQUIRE_LIVE_SERVER=1 so live-server skips fail',
+        );
+    }
+
     public function testCoverageGateRunsOnceOnLowestMatrixLegOnly(): void
     {
         $workflow = self::readWorkflow();

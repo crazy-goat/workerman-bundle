@@ -202,6 +202,16 @@ container on `127.0.0.1` — no `-p` port forwarding is needed. The `@requires
 extension inotify` tests use the container's own `/tmp`, not the bind mount,
 so they work as on CI.
 
+#### Live-server skips
+
+A test that needs the running test daemon skips when the daemon is down, so a
+targeted local run still works. CI sets `WORKERMAN_REQUIRE_LIVE_SERVER=1`, which
+turns the same condition into a failure: a daemon that dies mid-run can no
+longer leave the suite green. Other skips are platform- or privilege-gated
+(Darwin/Windows-only tests, root-only cache tests, inotify/`shell_exec`
+negatives, `phar.readonly` when the run does not pass `-d phar.readonly=0`);
+`phpunit --display-skipped` lists them.
+
 #### Parallel test runs across git worktrees
 
 Because the daemon and phpunit run **inside the same container**, each

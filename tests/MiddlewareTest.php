@@ -12,13 +12,13 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class MiddlewareTest extends WebTestCase
 {
+    use RequiresLiveServer;
+
     protected function setUp(): void
     {
         $socket = @fsockopen('127.0.0.1', 9999, $errorCode, $errorMessage, 1);
         if ($socket === false) {
-            self::markTestSkipped(
-                sprintf('Live Workerman server is not running on 127.0.0.1:9999 (%s)', $errorMessage),
-            );
+            self::failLiveServer(sprintf('Live Workerman server is not running on 127.0.0.1:9999 (%s)', $errorMessage));
         }
         fclose($socket);
     }
