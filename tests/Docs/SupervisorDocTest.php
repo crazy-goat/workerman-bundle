@@ -53,6 +53,13 @@ final class SupervisorDocTest extends TestCase
         foreach ($blocks[1] as $block) {
             $parsed = Yaml::parse($block);
             self::assertIsArray($parsed);
+            if (!isset($parsed['services'])) {
+                // Top-level examples (for example the restart config) do not
+                // define services; only those `workerman:` blocks may skip the
+                // tag-attribute contract.
+                self::assertArrayHasKey('workerman', $parsed);
+                continue;
+            }
             foreach ($parsed['services'] as $definition) {
                 foreach ($definition['tags'] as $tag) {
                     // The second form is `{ workerman.process: { attributes } }`; in the first form `name` is the tag name.
@@ -62,7 +69,7 @@ final class SupervisorDocTest extends TestCase
                         unset($attributes['name']);
                     }
 
-                    self::assertSame([], array_diff(array_keys($attributes), ['name', 'processes', 'method']));
+                    self::assertSame([], array_diff(array_keys($attributes), ['name', 'processes', 'method', 'restart_delay', 'max_restart_delay']));
                     self::assertIsInt($attributes['processes'] ?? 1);
                 }
             }

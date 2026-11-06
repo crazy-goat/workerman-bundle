@@ -39,8 +39,11 @@ final readonly class ServerWorker
 {
     private const PROCESS_TITLE = '[Server]';
 
+    private RestartBackoff $restartBackoff;
+
     /**
      * @param ServerConfig $serverConfig
+     * @param mixed[]      $restartConfig
      */
     public function __construct(
         KernelFactory $kernelFactory,
@@ -49,7 +52,11 @@ final readonly class ServerWorker
         array         $serverConfig,
         int           $connectionTimeout = 120,
         int           $keepaliveTimeout = 30,
+        array         $restartConfig = [],
+        string        $runtimeDir = '',
     ) {
+        $this->restartBackoff = RestartBackoff::fromConfig($runtimeDir, $restartConfig);
+
         $listen = $serverConfig['listen'] ?? '';
         assert(is_string($listen));
 
@@ -155,6 +162,13 @@ final readonly class ServerWorker
 
             $serveFiles = $serverConfig['serve_files'] ?? false;
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
+
+            $this->restartBackoff->beforeStart(
+                sprintf('server:%s:%d', $serverConfig['name'], $worker->id),
+                'HTTP server',
+                $serverConfig['name'],
+                static fn(string $message) => $worker->log($message),
+            );
 
             $worker->log(sprintf('%s "%s" started', $worker->name, $serverConfig['name']));
             $kernel = $kernelFactory->createKernel();

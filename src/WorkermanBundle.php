@@ -49,6 +49,12 @@ final class WorkermanBundle extends AbstractBundle
      *     keepalive_timeout?: int,
      *     response_chunk_size?: int,
      *     trusted_hosts?: list<string>,
+     *     restart?: array{
+     *         delay?: int,
+     *         max_delay?: int,
+     *         max_failures?: int,
+     *         healthy_after?: int,
+     *     },
      *     servers?: list<ServerConfig>,
      *     reload_strategy?: array{
      *         exception?: array{active?: bool, allowed_exceptions?: list<string>},

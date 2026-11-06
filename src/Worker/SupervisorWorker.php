@@ -16,9 +16,16 @@ final readonly class SupervisorWorker
 
     /**
      * @param mixed[] $processConfig
+     * @param mixed[] $restartConfig
      */
-    public function __construct(KernelFactory $kernelFactory, ?string $user, ?string $group, array $processConfig)
-    {
+    public function __construct(
+        KernelFactory $kernelFactory,
+        ?string $user,
+        ?string $group,
+        array $processConfig,
+        array $restartConfig = [],
+        string $runtimeDir = '',
+    ) {
         foreach ($processConfig as $serviceId => $serviceConfig) {
             if (!is_array($serviceConfig)) {
                 continue;
@@ -32,18 +39,28 @@ final readonly class SupervisorWorker
             assert(is_string($taskName));
             $processes = $serviceConfig['processes'] ?? 1;
             assert(is_int($processes));
+            $restartDelay = isset($serviceConfig['restart_delay']) ? (int) $serviceConfig['restart_delay'] : null;
+            $maxRestartDelay = isset($serviceConfig['max_restart_delay']) ? (int) $serviceConfig['max_restart_delay'] : null;
+            $backoff = RestartBackoff::fromConfig($runtimeDir, $restartConfig, $restartDelay, $maxRestartDelay);
             $worker = new Worker();
             $worker->name = self::PROCESS_TITLE;
             $worker->user = $user ?? '';
             $worker->group = $group ?? '';
             $worker->count = $processes;
-            $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serviceId, $serviceConfig, $taskName): never {
+            $worker->onWorkerStart = function (Worker $worker) use ($kernelFactory, $serviceId, $serviceConfig, $taskName, $backoff): never {
+                $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
+                assert(is_string($method));
+                $backoff->beforeStart(
+                    sprintf('process:%s::%s:%d', $serviceId, $method, $worker->id),
+                    'Process',
+                    $taskName,
+                    static fn(string $message) => $worker->log($message),
+                );
                 $worker->log(sprintf('%s "%s" started', $worker->name, $taskName));
                 $kernel = $kernelFactory->createKernel();
                 $kernel->boot();
                 /** @var ProcessHandler $handler */
                 $handler = $kernel->getContainer()->get('workerman.process_handler');
-                $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
                 $handler(new ServiceMethod($serviceId, $method), $taskName);
                 $worker->log("Process \"$taskName\" (service: $serviceId::$method) finished unexpectedly");
                 // SIGKILL instead of exit() when grpc is loaded: its shutdown

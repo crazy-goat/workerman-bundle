@@ -18,6 +18,7 @@ final readonly class ConfigurationTreeBuilder
         $children = $root->children();
 
         $this->configureTopLevelPrimitiveNodes($children);
+        $this->configureRestartNode($children);
         $this->configureServersNode($children);
         $this->configureReloadStrategyNode($children);
         $this->configureBuildNode($children);
@@ -92,6 +93,37 @@ final readonly class ConfigurationTreeBuilder
                 ->prototype('scalar')->end()
                 ->defaultValue([])
                 ->end();
+    }
+
+    private function configureRestartNode(NodeBuilder $node): void
+    {
+        $node
+            ->arrayNode('restart')
+                ->info('Restart backoff for supervised processes and for HTTP workers whose kernel boot fails. Set delay to 0 to turn it off.')
+                ->addDefaultsIfNotSet()
+                ->children()
+                    ->integerNode('delay')
+                        ->info('Seconds to wait before starting a process again after a fast failure. The wait doubles after each failure. 0 turns the backoff off.')
+                        ->min(0)
+                        ->defaultValue(0)
+                        ->end()
+                    ->integerNode('max_delay')
+                        ->info('The longest wait between restarts, in seconds. Values below delay are raised to delay.')
+                        ->min(0)
+                        ->defaultValue(60)
+                        ->end()
+                    ->integerNode('max_failures')
+                        ->info('After this many fast failures, write one "unhealthy" log line per worker slot. 0 turns the log line off.')
+                        ->min(0)
+                        ->defaultValue(10)
+                        ->end()
+                    ->integerNode('healthy_after')
+                        ->info('A run at least this many seconds long resets the failure counter. 0 resets it on every start, so the wait stays at delay.')
+                        ->min(0)
+                        ->defaultValue(30)
+                        ->end()
+                ->end()
+            ->end();
     }
 
     private function configureServersNode(NodeBuilder $node): void

@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
+use CrazyGoat\WorkermanBundle\Worker\RestartBackoff;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
@@ -354,6 +355,14 @@ readonly class Runner implements RunnerInterface
     private function createWorkers(array $config, array $schedulerConfig, array $processConfig): void
     {
         assert(is_array($config['servers']));
+        $runtimeDir = $config['runtime_dir'] ?? '';
+        assert(is_string($runtimeDir));
+        $runtimeDir = $this->resolveRuntimePath($runtimeDir);
+        if ($this->isStartOrRestart()) {
+            RestartBackoff::reset($runtimeDir);
+        }
+        $restartConfig = $config['restart'] ?? [];
+        assert(is_array($restartConfig));
         foreach ($config['servers'] as $serverConfig) {
             new ServerWorker(
                 kernelFactory: $this->kernelFactory,
@@ -362,6 +371,8 @@ readonly class Runner implements RunnerInterface
                 serverConfig: $serverConfig,
                 connectionTimeout: $config['connection_timeout'] ?? 120,
                 keepaliveTimeout: $config['keepalive_timeout'] ?? 30,
+                restartConfig: $restartConfig,
+                runtimeDir: $runtimeDir,
             );
         }
 
@@ -397,6 +408,8 @@ readonly class Runner implements RunnerInterface
                 user: $config['user'],
                 group: $config['group'],
                 processConfig: $processConfig,
+                restartConfig: $restartConfig,
+                runtimeDir: $runtimeDir,
             );
         }
     }
