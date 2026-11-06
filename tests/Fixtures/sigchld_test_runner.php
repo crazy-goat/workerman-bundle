@@ -560,7 +560,9 @@ function testSchedulerWorkerChildSkipsShutdown(): void
     }
     \Workerman\Worker::$outputStream = $logStream;
     \Workerman\Worker::$logFile = $logFilePath;
-    \Workerman\Worker::$pidFile = sys_get_temp_dir() . '/workerman_test_' . uniqid() . '.pid';
+    $pidDir = sys_get_temp_dir() . '/wm_shutdown_' . uniqid();
+    mkdir($pidDir, 0700, true);
+    \Workerman\Worker::$pidFile = $pidDir . '/workerman_test.pid';
 
     $marker = sys_get_temp_dir() . '/workerman_shutdown_marker_' . uniqid();
     $schedulerWorker = createSchedulerWorkerInstance();
@@ -575,6 +577,11 @@ function testSchedulerWorkerChildSkipsShutdown(): void
 
     $service = new \CrazyGoat\WorkermanBundle\Util\ServiceMethod('test.shutdown.service', '__invoke');
     $taskName = 'shutdown_task';
+    $taskPidFile = sprintf(
+        '%s/workerman.task.%s.pid',
+        dirname(\Workerman\Worker::$pidFile),
+        hash('xxh64', $service->toString()),
+    );
 
     $container = new class ($marker) implements \Psr\Container\ContainerInterface {
         public function __construct(private readonly string $marker)
@@ -668,6 +675,9 @@ function testSchedulerWorkerChildSkipsShutdown(): void
 
     fclose($logStream);
     @unlink($logFilePath);
+    @unlink($taskPidFile);
+    @unlink($pidDir . '/workerman_test.pid');
+    @rmdir($pidDir);
 
     fwrite(STDOUT, "PASS\n");
     exit(0);

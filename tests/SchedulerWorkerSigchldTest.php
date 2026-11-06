@@ -109,6 +109,10 @@ final class SchedulerWorkerSigchldTest extends TestCase
      */
     public function testSchedulerWorkerChildSkipsPhpShutdown(): void
     {
+        if (!function_exists('pcntl_exec')) {
+            $this->markTestSkipped('pcntl_exec is unavailable; the task child uses the SIGKILL fallback');
+        }
+
         $this->runIsolatedTest('scheduler_worker_child_skips_shutdown');
     }
 

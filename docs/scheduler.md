@@ -183,7 +183,10 @@ final class AlertOnTaskError
 
 A task that throws an exception is reported with `TaskErrorEvent`, and the child still exits with code 0.
 A method that does not exist is reported in the same way, with `TaskErrorEvent`.
-The child exits with code 1 only when the service cannot be loaded or an event listener throws.
+The child exits with code 1 only when the service cannot be loaded, an event listener throws,
+or the task hits a fatal error.
+A task that calls `exit()` itself is reported as a successful run; throw an exception instead
+if the scheduler should log a failure.
 The scheduler logs a child that exits with a code other than 0 or that is killed by a signal.
 
 If `pcntl_exec` is not available, the child is ended with `SIGKILL` instead, so destructors do not run.

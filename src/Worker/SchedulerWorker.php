@@ -149,7 +149,7 @@ final class SchedulerWorker
 
     /**
      * Test hook: force the SIGKILL-completion decision. Pass null to
-     * restore auto-detection via extension_loaded().
+     * restore auto-detection (grpc loaded or pcntl_exec unavailable).
      *
      * @internal test-only
      */
@@ -358,13 +358,21 @@ final class SchedulerWorker
         fflush($fp);
 
         $childExitCode = 0;
-        register_shutdown_function(function () use (&$childExitCode): void {
+        register_shutdown_function(function () use (&$childExitCode, $taskName): void {
             // A task that calls exit() or hits a fatal error skips the
             // finally block below and would otherwise run PHP module shutdown
             // (libevent cleanup) in the fork. Take the exec hand-off here too.
             $error = error_get_last();
             if ($error !== null && \in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
                 $childExitCode = 1;
+                $this->worker->log(sprintf(
+                    '%s Task "%s" failed with a fatal error: %s in %s:%d',
+                    $this->worker->name,
+                    $taskName,
+                    $error['message'],
+                    $error['file'],
+                    $error['line'],
+                ));
             }
 
             $this->terminateTaskChild($childExitCode);
@@ -405,8 +413,11 @@ final class SchedulerWorker
      */
     private function terminateTaskChild(int $childExitCode): never
     {
-        while (ob_get_level() > 0) {
-            @ob_end_flush();
+        $level = ob_get_level();
+        while ($level-- > 0) {
+            if (!@ob_end_flush()) {
+                break;
+            }
         }
 
         if (function_exists('pcntl_exec') && DIRECTORY_SEPARATOR === '/') {

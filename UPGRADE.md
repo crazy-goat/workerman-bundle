@@ -51,7 +51,9 @@ To keep the scheduler's SIGCHLD, stop and reload handling alive on the
 ([#1023](https://github.com/crazy-goat/workerman-bundle/issues/1023)).
 Destructors and `register_shutdown_function()` callbacks registered in a task
 child do not run. Put cleanup in the task method itself (for example in a
-`try`/`finally`) instead of a destructor or shutdown function.
+`try`/`finally`) instead of a destructor or shutdown function. A task that
+calls `exit()` itself is reported as a successful run regardless of the exit
+code; throw an exception instead if the scheduler should log a failure.
 
 ---
 
