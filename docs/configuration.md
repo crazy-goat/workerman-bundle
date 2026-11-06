@@ -72,7 +72,7 @@ See [supervisor.md](supervisor.md#restart-delay) for how it works and for the pe
 | `restart.delay` | int, seconds, minimum 0 | `0` | The first wait before a restart. The wait doubles after each fast failure. `0` turns the backoff off. |
 | `restart.max_delay` | int, seconds, minimum 0 | `60` | The longest wait between restarts. A value below `delay` is raised to `delay`. |
 | `restart.max_failures` | int, minimum 0 | `10` | After this many fast failures, write one "unhealthy" log line per worker slot. `0` turns the line off. |
-| `restart.healthy_after` | int, seconds, minimum 0 | `30` | A run at least this long resets the failure counter. `0` resets it on every start. |
+| `restart.healthy_after` | int, seconds, minimum 0 | `30` | A run at least this long resets the failure counter. `0` treats every start as healthy and disables the backoff. |
 
 ## reload_strategy
 

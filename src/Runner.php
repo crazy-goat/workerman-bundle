@@ -291,7 +291,11 @@ readonly class Runner implements RunnerInterface
         Worker::$stdoutFile = $stdoutFile;
         Worker::$stopTimeout = $stopTimeout;
         Worker::$statusFile = (string) preg_replace('/\.pid$/', '.status', $pidFile);
-        Worker::$onMasterReload = Utils::clearOpcache(...);
+        $clearOpcache = Utils::clearOpcache(...);
+        Worker::$onMasterReload = static function () use ($pidDir, $clearOpcache): void {
+            RestartBackoff::reset($pidDir);
+            $clearOpcache();
+        };
     }
 
     /**
@@ -355,14 +359,20 @@ readonly class Runner implements RunnerInterface
     private function createWorkers(array $config, array $schedulerConfig, array $processConfig): void
     {
         assert(is_array($config['servers']));
-        $runtimeDir = $config['runtime_dir'] ?? '';
-        assert(is_string($runtimeDir));
-        $runtimeDir = $this->resolveRuntimePath($runtimeDir);
+        $pidFile = $this->resolveRuntimePath((string) ($config['pid_file'] ?? ''));
+        $runtimeDir = $pidFile !== '' ? dirname($pidFile) : '';
         if ($this->isStartOrRestart()) {
             RestartBackoff::reset($runtimeDir);
         }
         $restartConfig = $config['restart'] ?? [];
         assert(is_array($restartConfig));
+        if ((int) ($restartConfig['delay'] ?? 0) > 0) {
+            $restartUser = $config['user'] ?? null;
+            $restartGroup = $config['group'] ?? null;
+            assert($restartUser === null || is_string($restartUser));
+            assert($restartGroup === null || is_string($restartGroup));
+            RestartBackoff::prepare($runtimeDir, $restartUser, $restartGroup);
+        }
         foreach ($config['servers'] as $serverConfig) {
             new ServerWorker(
                 kernelFactory: $this->kernelFactory,

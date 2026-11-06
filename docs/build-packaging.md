@@ -177,6 +177,7 @@ In PHAR/BIN mode, all writable paths (cache, logs, PID files) are redirected out
 | Cache | `{project}/var/cache/` | `{runtimeDir}/var/cache/` |
 | Logs | `{project}/var/log/` | `{runtimeDir}/var/log/` |
 | PID file | `{project}/var/run/` | `{runtimeDir}/var/run/` |
+| Restart backoff state | `{project}/var/run/restart/` | `{runtimeDir}/var/run/restart/` |
 
 The runtime directory defaults to the directory containing the PHAR/BIN file, and can be overridden with `WORKERMAN_RUNTIME_DIR` env var.
 

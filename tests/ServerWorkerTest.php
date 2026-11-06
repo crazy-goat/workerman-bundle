@@ -392,6 +392,50 @@ final class ServerWorkerTest extends TestCase
         $this->assertSame(2, $state['failures']);
     }
 
+    public function testIntentionalReloadForgetsTheFailureCount(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->exactly(2))
+            ->method('boot')
+            ->willThrowException(new \RuntimeException('boot failed'));
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        $runtimeDir = $this->tempDir . '/runtime-reload';
+        mkdir($runtimeDir, 0700, true);
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'reload-server', 'listen' => 'http://127.0.0.1:0'],
+            0,
+            0,
+            ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+            $runtimeDir,
+        );
+
+        $worker = $this->findWorkerByName('[Server] reload-server');
+        $this->assertNotNull($worker);
+        $callable = $worker->onWorkerStart;
+        $this->assertInstanceOf(\Closure::class, $callable);
+        $reload = $worker->onWorkerReload;
+        $this->assertInstanceOf(\Closure::class, $reload);
+
+        try {
+            $callable($worker);
+        } catch (\RuntimeException) {
+        }
+
+        $reload($worker);
+
+        $start = microtime(true);
+        try {
+            $callable($worker);
+        } catch (\RuntimeException) {
+        }
+        $this->assertLessThan(0.5, microtime(true) - $start, 'A reload must reset the failure counter');
+    }
+
     public function testConfigureHandlerReturnsCallable(): void
     {
         $handler = $this->getMockBuilder(StaticFileHandlerInterface::class)

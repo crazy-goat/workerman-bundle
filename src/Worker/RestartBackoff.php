@@ -88,6 +88,14 @@ final readonly class RestartBackoff
 
         $wait = $this->delayForFailures($failures);
         if ($wait > 0) {
+            // Record the attempt before sleeping. If the child is killed
+            // during the wait, startedAt stays 0, so the next start counts it
+            // as a fast failure instead of mistaking the wait for a healthy run.
+            $this->write($key, [
+                'failures' => $failures + 1,
+                'startedAt' => 0,
+                'unhealthyLogged' => $state['unhealthyLogged'],
+            ]);
             ($this->sleep)($wait);
         }
 
@@ -105,17 +113,52 @@ final readonly class RestartBackoff
     }
 
     /**
-     * Forget all per-slot state, for example when the master starts again.
+     * Forget one worker slot, for example after an intentional reload.
      */
-    public static function reset(string $runtimeDir): void
+    public function forget(string $key): void
+    {
+        $path = $this->statePath($key, false);
+        if ($path !== null) {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * Create the state directory before the master forks workers.
+     *
+     * A root master that drops workers to `user`/`group` must hand the
+     * directory to them, otherwise the child cannot write its state file.
+     */
+    public static function prepare(string $runtimeDir, ?string $user, ?string $group): void
     {
         $directory = self::stateDirectory($runtimeDir);
         if ($directory === null) {
             return;
         }
 
-        foreach (glob($directory . '/*.json') ?: [] as $file) {
-            @unlink($file);
+        if ($user !== null && $user !== '') {
+            @chown($directory, $user);
+        }
+
+        if ($group !== null && $group !== '') {
+            @chgrp($directory, $group);
+        }
+    }
+
+    /**
+     * Forget all per-slot state, for example when the master starts again.
+     */
+    public static function reset(string $runtimeDir): void
+    {
+        $directory = self::stateDirectory($runtimeDir, false);
+        if ($directory === null) {
+            return;
+        }
+
+        foreach (glob($directory . '/*') ?: [] as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
         }
     }
 
@@ -144,7 +187,7 @@ final readonly class RestartBackoff
             return;
         }
 
-        $signals = [SIGINT, SIGTERM, SIGQUIT, SIGUSR1, SIGUSR2];
+        $signals = [SIGINT, SIGTERM, SIGHUP, SIGTSTP, SIGQUIT, SIGUSR1, SIGUSR2];
         $previous = [];
         foreach ($signals as $signal) {
             $previous[$signal] = pcntl_signal_get_handler($signal);
@@ -244,9 +287,9 @@ final readonly class RestartBackoff
         }
     }
 
-    private function statePath(string $key): ?string
+    private function statePath(string $key, bool $create = true): ?string
     {
-        $directory = self::stateDirectory($this->runtimeDir);
+        $directory = self::stateDirectory($this->runtimeDir, $create);
         if ($directory === null) {
             return null;
         }
@@ -254,13 +297,17 @@ final readonly class RestartBackoff
         return $directory . '/' . hash('sha256', $key) . '.json';
     }
 
-    private static function stateDirectory(string $runtimeDir): ?string
+    private static function stateDirectory(string $runtimeDir, bool $create = true): ?string
     {
         if ($runtimeDir === '') {
             return null;
         }
 
         $directory = rtrim($runtimeDir, '/') . '/restart';
+        if (!is_dir($directory) && !$create) {
+            return null;
+        }
+
         if (!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory)) {
             return null;
         }

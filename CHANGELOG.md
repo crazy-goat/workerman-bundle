@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `workerman.restart` adds an exponential restart delay for supervised processes and for HTTP workers whose kernel boot fails: `delay`, `max_delay`, `max_failures` and `healthy_after`, with per-process `restartDelay` / `maxRestartDelay` (`restart_delay` / `max_restart_delay` tag attributes) overrides. State is kept per worker slot under `<runtime_dir>/restart/`, a run at least `healthy_after` seconds long resets the counter, the wait reacts to stop and reload signals, and one "unhealthy" line is logged at `max_failures`. `delay: 0` keeps the old behaviour (#994)
+- `workerman.restart` adds an exponential restart delay for supervised processes and for HTTP workers whose kernel boot fails: `delay`, `max_delay`, `max_failures` and `healthy_after`, with per-process `restartDelay` / `maxRestartDelay` (`restart_delay` / `max_restart_delay` tag attributes) overrides. State is kept per worker slot in `var/run/restart/`, a run at least `healthy_after` seconds long resets the counter, an intentional reload forgets the slot, the wait reacts to stop and reload signals, and one "unhealthy" line is logged per slot at `max_failures`. `delay: 0` keeps the old behaviour (#994)
 
 ### Removed
 

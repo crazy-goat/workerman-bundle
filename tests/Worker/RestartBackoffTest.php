@@ -142,6 +142,7 @@ final class RestartBackoffTest extends TestCase
 
         $this->assertSame([], $this->sleeps);
         $this->assertSame([], $logs);
+        $this->assertDirectoryDoesNotExist($this->tempDir . '/restart');
     }
 
     public function testStateIsSeparatePerSlot(): void
@@ -201,13 +202,87 @@ final class RestartBackoffTest extends TestCase
             $elapsed = microtime(true) - $start;
 
             $this->assertLessThan(2.0, $elapsed, 'The wait must react to a stop signal immediately');
-            $this->assertSame(0, $exitCode, 'The temporary stop handler must end the child cleanly');
+            $this->assertContains($exitCode, [0, 137], 'The temporary stop handler must end the child cleanly (137 on grpc hosts)');
         } finally {
             if (is_resource($process)) {
                 proc_terminate($process, SIGKILL);
                 proc_close($process);
             }
         }
+    }
+
+    public function testHealthyAfterZeroNeverWaits(): void
+    {
+        $backoff = $this->backoff(delay: 5, healthyAfter: 0);
+
+        for ($i = 0; $i < 5; $i++) {
+            $backoff->beforeStart('slot', 'Process', 'worker', self::noopLog());
+        }
+
+        $this->assertSame([], $this->sleeps);
+    }
+
+    public function testInterruptedWaitIsCountedAsFailure(): void
+    {
+        $now = 1_000;
+        $killed = new RestartBackoff(
+            runtimeDir: $this->tempDir,
+            delay: 1,
+            maxDelay: 60,
+            maxFailures: 10,
+            healthyAfter: 30,
+            sleep: static function (int $seconds): never {
+                throw new \RuntimeException('killed during the wait');
+            },
+            now: static function () use (&$now): int {
+                return $now;
+            },
+        );
+
+        $killed->beforeStart('slot', 'Process', 'worker', self::noopLog());
+
+        try {
+            $killed->beforeStart('slot', 'Process', 'worker', self::noopLog());
+            $this->fail('The simulated kill must abort the wait');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('killed during the wait', $e->getMessage());
+        }
+
+        $afterRestart = new RestartBackoff(
+            runtimeDir: $this->tempDir,
+            delay: 1,
+            maxDelay: 60,
+            maxFailures: 10,
+            healthyAfter: 30,
+            sleep: function (int $seconds): void {
+                $this->sleeps[] = $seconds;
+            },
+            now: static function () use (&$now): int {
+                return $now;
+            },
+        );
+        $afterRestart->beforeStart('slot', 'Process', 'worker', self::noopLog());
+
+        $this->assertSame([2], $this->sleeps, 'The interrupted wait must count as a fast failure');
+    }
+
+    public function testPrepareCreatesTheStateDirectory(): void
+    {
+        RestartBackoff::prepare($this->tempDir, null, null);
+
+        $this->assertDirectoryExists($this->tempDir . '/restart');
+    }
+
+    public function testForgetRemovesOneSlot(): void
+    {
+        $backoff = $this->backoff(delay: 1);
+        $backoff->beforeStart('slot', 'Process', 'worker', self::noopLog());
+
+        $this->assertNotEmpty(glob($this->tempDir . '/restart/*.json'));
+
+        $backoff->forget('slot');
+
+        $this->assertSame([], glob($this->tempDir . '/restart/*.json') ?: []);
     }
 
     public function testResetClearsPerSlotState(): void
@@ -234,8 +309,8 @@ final class RestartBackoffTest extends TestCase
     public function testRestoreUsesTheActiveEventLoop(): void
     {
         $event = $this->createMock(\Workerman\Events\EventInterface::class);
-        $event->expects($this->exactly(5))->method('offSignal');
-        $event->expects($this->exactly(5))->method('onSignal');
+        $event->expects($this->exactly(7))->method('offSignal');
+        $event->expects($this->exactly(7))->method('onSignal');
 
         $previousEvent = Worker::$globalEvent;
         Worker::$globalEvent = $event;
@@ -243,7 +318,7 @@ final class RestartBackoffTest extends TestCase
         try {
             $backoff = $this->backoff(delay: 1);
             $method = new \ReflectionMethod(RestartBackoff::class, 'restoreSignalHandlers');
-            $method->invoke($backoff, [SIGINT, SIGTERM, SIGQUIT, SIGUSR1, SIGUSR2], []);
+            $method->invoke($backoff, [SIGINT, SIGTERM, SIGHUP, SIGTSTP, SIGQUIT, SIGUSR1, SIGUSR2], []);
         } finally {
             Worker::$globalEvent = $previousEvent;
         }

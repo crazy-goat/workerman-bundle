@@ -110,6 +110,15 @@ final readonly class ServerWorker
             };
         };
 
+        $worker->onWorkerReload = function (Worker $worker) use ($serverConfig): void {
+            $this->restartBackoff->forget(sprintf(
+                'server:%s:%s:%d',
+                $serverConfig['name'],
+                (string) ($serverConfig['listen'] ?? ''),
+                $worker->id,
+            ));
+        };
+
         $worker->onWorkerStart = function (Worker $worker) use ($connectionTimeout, $kernelFactory, $keepaliveTimeout, $serverConfig): void {
             Http::requestClass(Request::class);
 
@@ -164,7 +173,12 @@ final readonly class ServerWorker
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
 
             $this->restartBackoff->beforeStart(
-                sprintf('server:%s:%d', $serverConfig['name'], $worker->id),
+                sprintf(
+                    'server:%s:%s:%d',
+                    $serverConfig['name'],
+                    (string) ($serverConfig['listen'] ?? ''),
+                    $worker->id,
+                ),
                 'HTTP server',
                 $serverConfig['name'],
                 static fn(string $message) => $worker->log($message),

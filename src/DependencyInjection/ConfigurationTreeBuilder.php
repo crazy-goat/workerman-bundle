@@ -118,7 +118,7 @@ final readonly class ConfigurationTreeBuilder
                         ->defaultValue(10)
                         ->end()
                     ->integerNode('healthy_after')
-                        ->info('A run at least this many seconds long resets the failure counter. 0 resets it on every start, so the wait stays at delay.')
+                        ->info('A run at least this many seconds long resets the failure counter. 0 treats every start as healthy and disables the backoff.')
                         ->min(0)
                         ->defaultValue(30)
                         ->end()

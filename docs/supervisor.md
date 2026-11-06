@@ -104,8 +104,11 @@ workerman:
         healthy_after: 30     # a run this long resets the counter
 ```
 
-The bundle keeps one small state file per process slot in `<runtime_dir>/restart/`.
+The bundle keeps one small state file per process slot in the `restart/`
+subdirectory of the PID file directory (`var/run/restart/` by default).
 The file holds the failure count, the last start time and whether the unhealthy line was written.
+The master creates `restart/` before it forks the workers and gives it to the
+configured `user`/`group`, so the workers can write it after dropping privileges.
 
 - The first start does not wait.
 - After one fast failure the next start waits `delay` seconds.
@@ -115,8 +118,10 @@ The file holds the failure count, the last start time and whether the unhealthy 
   `Process "Queue consumer" is unhealthy: 10 fast restarts`.
   The line is written once, not on every restart.
 - Set `delay: 0` to keep the old behaviour. `max_failures: 0` turns the line off.
-- `healthy_after: 0` resets the counter on every start, so the wait stays at `delay`.
+- `healthy_after: 0` treats every start as healthy, so the backoff never waits.
   A `max_delay` smaller than `delay` is raised to `delay`.
+- An intentional reload (manual, file monitor or a reload strategy) forgets the
+  slot's failure count, so a healthy worker that recycles is not reported as unhealthy.
 
 A process can set its own first and maximum wait with `restartDelay` and
 `maxRestartDelay`, or with the tag attributes `restart_delay` and
