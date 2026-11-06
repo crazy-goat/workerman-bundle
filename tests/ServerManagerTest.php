@@ -537,6 +537,14 @@ final class ServerManagerTest extends TestCase
     // consumeFile() — atomic read-and-remove (TOCTOU fix)
     // ──────────────────────────────────────────────
 
+    // ──────────────────────────────────────────────
+    // prepareWorkerStart() — mode flags
+    // ──────────────────────────────────────────────
+
+    /**
+     * @requires extension pcntl
+     * @requires extension posix
+     */
     public function testPrepareWorkerStartKeepsDaemonModeWhenGracefulIsAlsoSet(): void
     {
         $fixture = __DIR__ . '/Fixtures/prepare_worker_start_test.php';

@@ -154,8 +154,8 @@ The default is 2 seconds.
 Destructors and shutdown functions do not run.
 After a reload, the process starts again.
 
-Do not use the graceful option `-g` with `stop` or `reload` when you have supervised processes.
-A graceful stop or reload does not kill the process, so the process never ends.
+Do not use the graceful option `-g` with `stop`, `restart` or `reload` when you have supervised processes.
+A graceful stop, restart or reload does not kill the process, so the process never ends.
 See [#911](https://github.com/crazy-goat/workerman-bundle/issues/911).
 
 Save the state of your work often, because the process can be killed at any time.
