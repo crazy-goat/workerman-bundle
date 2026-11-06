@@ -93,7 +93,7 @@ final class SchedulerWorker
         $this->worker->log(sprintf('%s Task "%s" scheduled. Trigger: "%s"', $this->worker->name, $taskName, $trigger));
         $method = empty($serviceConfig['method']) ? '__invoke' : $serviceConfig['method'];
         $service = new ServiceMethod($serviceId, $method);
-        $this->deleteStaleTaskPid($service);
+        $this->deleteTaskPidSymlink($service);
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
@@ -358,7 +358,7 @@ final class SchedulerWorker
         fflush($fp);
 
         $childExitCode = 0;
-        register_shutdown_function(function () use (&$childExitCode, $taskName): void {
+        register_shutdown_function(function () use (&$childExitCode, $taskName, $service): void {
             // A task that calls exit() or hits a fatal error skips the
             // finally block below and would otherwise run PHP module shutdown
             // (libevent cleanup) in the fork. Take the exec hand-off here too.
@@ -375,6 +375,7 @@ final class SchedulerWorker
                 ));
             }
 
+            $this->deleteTaskPid($service);
             $this->terminateTaskChild($childExitCode);
         });
 
@@ -484,31 +485,19 @@ final class SchedulerWorker
     }
 
     /**
-     * Delete a task PID file only when no live child still holds its lock.
+     * Remove a symlink left at the task PID path.
      *
-     * A scheduler reload stops the scheduler worker but leaves a running task
-     * child alive. Unconditionally deleting its PID file would let the new
-     * scheduler create a second lock file and start an overlapping run
-     * (issue #973). If the lock is held, the file is left in place and the
-     * new scheduler skips runs until the old child ends and deletes it.
+     * A regular PID file is deliberately not deleted here: a scheduler reload
+     * leaves a running task child alive, and deleting its file would let the
+     * new scheduler lock a fresh file and overlap the old run (issue #973).
+     * An unlocked stale file is harmless — the next run locks and overwrites
+     * it. A symlink is only ever unlinked, never followed.
      */
-    private function deleteStaleTaskPid(ServiceMethod $service): void
+    private function deleteTaskPidSymlink(ServiceMethod $service): void
     {
         $pidFile = $this->getTaskPidPath($service);
-        if (!is_file($pidFile) || is_link($pidFile)) {
-            return;
-        }
-
-        $fp = @fopen($pidFile, 'c');
-        if ($fp === false) {
-            return;
-        }
-
-        if (flock($fp, LOCK_EX | LOCK_NB)) {
+        if (is_link($pidFile)) {
             @unlink($pidFile);
-            flock($fp, LOCK_UN);
         }
-
-        fclose($fp);
     }
 }

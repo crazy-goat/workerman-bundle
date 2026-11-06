@@ -64,7 +64,7 @@ final class SchedulerWorkerTaskSetupTest extends TestCase
         return (string) file_get_contents($this->tmpDir . '/workerman.log');
     }
 
-    public function testStaleTaskPidIsKeptWhileLocked(): void
+    public function testSchedulerStartKeepsALockedTaskPid(): void
     {
         $service = new ServiceMethod('test.locked.service', '__invoke');
         $pidFile = sprintf(
@@ -79,24 +79,38 @@ final class SchedulerWorkerTaskSetupTest extends TestCase
         $this->assertTrue(flock($fp, LOCK_EX | LOCK_NB));
 
         try {
-            $worker = new SchedulerWorker(new KernelFactory(fn(): KernelInterface => $this->createMock(KernelInterface::class), []), null, null, []);
-            $method = new \ReflectionMethod(SchedulerWorker::class, 'deleteStaleTaskPid');
+            $log = $this->scheduleTasks([
+                'test.locked.service' => ['schedule' => '1 second'],
+            ]);
 
-            $method->invoke($worker, $service);
             $this->assertFileExists($pidFile, 'A locked PID file belongs to a live task child and must stay');
-
+            $this->assertSame('123', file_get_contents($pidFile), 'The start path must not touch a live task PID file');
+            $this->assertStringContainsString('scheduled', $log);
+        } finally {
             flock($fp, LOCK_UN);
             fclose($fp);
-
-            $method->invoke($worker, $service);
-            $this->assertFileDoesNotExist($pidFile, 'An unlocked PID file is stale and must be removed');
-        } finally {
-            if (is_resource($fp)) {
-                flock($fp, LOCK_UN);
-                fclose($fp);
-            }
             @unlink($pidFile);
         }
+    }
+
+    public function testSchedulerStartRemovesAPidFileSymlinkWithoutFollowingIt(): void
+    {
+        $service = new ServiceMethod('test.symlink.service', '__invoke');
+        $pidFile = sprintf(
+            '%s/workerman.task.%s.pid',
+            dirname(Worker::$pidFile),
+            hash('xxh64', $service->toString()),
+        );
+        $target = $this->tmpDir . '/symlink-target';
+        file_put_contents($target, 'keep');
+        symlink($target, $pidFile);
+
+        $this->scheduleTasks([
+            'test.symlink.service' => ['schedule' => '1 second'],
+        ]);
+
+        $this->assertFileDoesNotExist($pidFile);
+        $this->assertFileExists($target, 'The symlink target must never be removed');
     }
 
     public function testStringJitterSkipsOnlyThatTask(): void
