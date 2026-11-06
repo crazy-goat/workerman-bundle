@@ -216,6 +216,102 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
     }
 
+    /**
+     * Header injection guard (#929): a header value with CR/LF must never
+     * reach the response head.
+     */
+    public function testConvertDropsHeaderValueWithCrlf(): void
+    {
+        $head = $this->convertAndGetHead([
+            'X-Evil' => ["a\r\nSet-Cookie: x=1"],
+            'X-Keep' => ['yes'],
+        ]);
+
+        $this->assertStringNotContainsString('X-Evil', $head);
+        $this->assertStringNotContainsString('Set-Cookie', $head);
+        $this->assertStringContainsString("X-Keep: yes\r\n", $head);
+        $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
+    }
+
+    /**
+     * Header injection guard (#929): a bare LF is as dangerous as CRLF.
+     */
+    public function testConvertDropsHeaderValueWithBareLf(): void
+    {
+        $head = $this->convertAndGetHead([
+            'X-Evil' => ["a\nSet-Cookie: x=1"],
+            'X-Keep' => ['yes'],
+        ]);
+
+        $this->assertStringNotContainsString('X-Evil', $head);
+        $this->assertStringNotContainsString('Set-Cookie', $head);
+        $this->assertStringContainsString("X-Keep: yes\r\n", $head);
+        $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
+    }
+
+    /**
+     * Header injection guard (#929): a header name with a colon or CR/LF
+     * must be skipped, including a bare LF.
+     */
+    public function testConvertDropsHeaderNameWithColonOrCrlf(): void
+    {
+        $head = $this->convertAndGetHead([
+            'X-Bad: name' => ['value'],
+            "X-Crlf\r\nInjected" => ['value'],
+            "X-BareLf\nInjected" => ['value'],
+            'X-Keep' => ['yes'],
+        ]);
+
+        $this->assertStringNotContainsString('X-Bad', $head);
+        $this->assertStringNotContainsString('Injected', $head);
+        $this->assertStringContainsString("X-Keep: yes\r\n", $head);
+        $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
+    }
+
+    /**
+     * Header injection guard (#929): Content-Length and Transfer-Encoding are
+     * owned by the strategy, and the comparison is case-insensitive.
+     */
+    public function testConvertDropsAppContentLengthAndTransferEncoding(): void
+    {
+        $head = $this->convertAndGetHead([
+            'content-length' => ['123'],
+            'transfer-encoding' => ['gzip'],
+            'X-Keep' => ['yes'],
+        ]);
+
+        $this->assertStringNotContainsStringIgnoringCase('Content-Length', $head);
+        $this->assertStringNotContainsStringIgnoringCase('Transfer-Encoding: gzip', $head);
+        $this->assertSame(1, substr_count(strtolower($head), 'transfer-encoding:'));
+        $this->assertStringContainsString("Transfer-Encoding: chunked\r\n", $head);
+        $this->assertStringContainsString("X-Keep: yes\r\n", $head);
+    }
+
+    /**
+     * @param array<string, string|list<string|null>> $headers
+     */
+    private function convertAndGetHead(array $headers): string
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(3))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $strategy = new StreamedResponseStrategy();
+        $streamedResponse = new StreamedResponse(function (): void {
+            echo 'content';
+        });
+
+        $strategy->convert($streamedResponse, $headers, $this->connection, '1.1');
+
+        return (string) $sendCalls[0]['data'];
+    }
+
     public function testConvertHandlesEmptyContent(): void
     {
         $this->connection->context = new \stdClass();
