@@ -81,6 +81,8 @@ final class ConfigurationTreeBuilderTest extends TestCase
         $config = $processor->process($node, [[]]);
 
         self::assertSame(2, $config['stop_timeout']);
+        self::assertFalse($config['graceful_sigterm']);
+        self::assertSame(30, $config['graceful_stop_timeout']);
         self::assertSame(30, $config['cache_warmup_timeout']);
         self::assertSame(5, $config['status_timeout']);
         self::assertSame(120, $config['connection_timeout']);
@@ -93,6 +95,39 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(500, $config['reload_strategy']['file_monitor']['max_files_per_tick']);
         self::assertFalse($config['reload_strategy']['always']['active']);
         self::assertFalse($config['reload_strategy']['memory']['active']);
+    }
+
+    public function testConfiguredTreeParsesGracefulSigterm(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [[
+            'graceful_sigterm' => true,
+            'graceful_stop_timeout' => 10,
+        ]]);
+
+        self::assertTrue($config['graceful_sigterm']);
+        self::assertSame(10, $config['graceful_stop_timeout']);
+    }
+
+    public function testConfiguredTreeRejectsNonPositiveGracefulStopTimeout(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($root->getNode(true), [['graceful_stop_timeout' => 0]]);
     }
 
     public function testConfiguredTreeParsesConnectionTimeouts(): void

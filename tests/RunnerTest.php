@@ -13,6 +13,7 @@ use CrazyGoat\WorkermanBundle\Exception\WorkermanExceptionInterface;
 use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Runner;
+use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -820,6 +821,30 @@ final class RunnerTest extends TestCase
             $this->assertSame($beforeCount + 2, $afterCount, 'Should create exactly 2 ServerWorkers (one per server config)');
         } finally {
             $this->restoreWorkerState($saved);
+        }
+    }
+
+    public function testConfigureMasterWorkerSetsGracefulSigterm(): void
+    {
+        $enabledProperty = new \ReflectionProperty(MasterWorker::class, 'gracefulSigterm');
+        $timeoutProperty = new \ReflectionProperty(MasterWorker::class, 'gracefulStopTimeout');
+        $previousEnabled = $enabledProperty->getValue();
+        $previousTimeout = $timeoutProperty->getValue();
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->invokeRunnerMethod($runner, 'configureMasterWorker', [
+                'graceful_sigterm' => true,
+                'graceful_stop_timeout' => 7,
+            ]);
+
+            self::assertTrue($enabledProperty->getValue());
+            self::assertSame(7, $timeoutProperty->getValue());
+        } finally {
+            $enabledProperty->setValue(null, $previousEnabled);
+            $timeoutProperty->setValue(null, $previousTimeout);
         }
     }
 

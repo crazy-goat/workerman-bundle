@@ -89,6 +89,7 @@ readonly class Runner implements RunnerInterface
         $this->applyWorkermanConfig($config);
         $this->warnAboutGrpcExtension();
         $this->createWorkers($config, $schedulerConfig, $processConfig);
+        $this->configureMasterWorker($config);
 
         // Run through MasterWorker so the real master PID (which is only
         // known after daemonize) gets a fingerprint — closing the daemon-mode
@@ -96,6 +97,19 @@ readonly class Runner implements RunnerInterface
         MasterWorker::runAll();
 
         return 0;
+    }
+
+    /**
+     * @param mixed[] $config
+     */
+    private function configureMasterWorker(array $config): void
+    {
+        $gracefulSigterm = $config['graceful_sigterm'] ?? false;
+        assert(is_bool($gracefulSigterm));
+        $gracefulStopTimeout = $config['graceful_stop_timeout'] ?? 30;
+        assert(is_int($gracefulStopTimeout));
+
+        MasterWorker::configureGracefulSigterm($gracefulSigterm, $gracefulStopTimeout);
     }
 
     private function createConfigLoader(): ConfigLoader

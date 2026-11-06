@@ -39,6 +39,8 @@ final class WorkermanBundle extends AbstractBundle
      *     user?: string|null,
      *     group?: string|null,
      *     stop_timeout?: int,
+     *     graceful_sigterm?: bool,
+     *     graceful_stop_timeout?: int,
      *     cache_warmup_timeout: int,
      *     status_timeout?: int,
      *     pid_file?: string,

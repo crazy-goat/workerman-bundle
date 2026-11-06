@@ -105,6 +105,8 @@ What the important lines do:
 - `KillMode=mixed` sends the signal to the main process only.
   If something is still alive after `TimeoutStopSec`, systemd sends `SIGKILL` to all the processes of the unit.
 - `TimeoutStopSec` must be at least `stop_timeout` plus 3 seconds, like the wait of the `stop` command.
+  This unit uses `KillSignal=SIGINT`, so `graceful_sigterm` does not apply.
+  If you switch to `SIGTERM` and enable `graceful_sigterm`, use at least `graceful_stop_timeout` plus 3 seconds instead.
   `stop_timeout` (default 2) is the time a running request gets to end.
   The master itself can end about 1 second after that.
   If systemd waits less, it kills the whole unit (`Result=timeout`, `status=9/KILL`).
@@ -254,6 +256,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && bin/console cache:warmup
 
 EXPOSE 8080
+STOPSIGNAL SIGQUIT
 # With trusted_hosts, send a Host header from the list (here example.com).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
     CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8080/health", false, stream_context_create(["http" => ["header" => "Host: example.com"]])) === "ok" ? 0 : 1);'
@@ -294,8 +297,9 @@ Why the file looks like this:
   An image is never changed in place, so you can also set `opcache.validate_timestamps=0`.
 - The server starts in the foreground, which is what a container needs.
   Do not use `-d`: the container would stop at once.
-- There is no `STOPSIGNAL` line.
-  Docker sends `SIGTERM`, and the master stops on `SIGTERM` like on `SIGINT` (see [stop time](#stop-time-and-graceful-stop)).
+- `STOPSIGNAL SIGQUIT` makes Docker send a graceful stop signal instead of `SIGTERM`.
+  Without this line Docker sends `SIGTERM` (Kubernetes always does); set `graceful_sigterm: true` to treat it as graceful too.
+  See [Stop time and graceful stop](#stop-time-and-graceful-stop).
 - The health check uses PHP, so you need no extra tool in the image.
 
 ### Docker Compose
@@ -307,7 +311,7 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
-    stop_grace_period: 15s
+    stop_grace_period: 35s
     read_only: true
     tmpfs:
       - /tmp
@@ -315,7 +319,8 @@ services:
       - /app/var/log:uid=33,gid=33
 ```
 
-- `stop_grace_period` must be at least `stop_timeout` plus 3 seconds.
+- `stop_grace_period` must be at least `stop_timeout` plus 3 seconds,
+  or at least `graceful_stop_timeout` plus 3 seconds when `graceful_sigterm` is on.
 - With `read_only: true`, the server needs a writable `var/run` (PID file and status file) and `var/log` (log file).
   The `tmpfs` lines give them to uid 33, which is `www-data`.
   The warm config cache stays in the image.
@@ -346,7 +351,7 @@ So do not point `log_file` to `/dev/null` if you want to see them.
 ## Stop time and graceful stop
 
 Docker and Kubernetes stop a container with `SIGTERM`.
-The master handles `SIGTERM` like `SIGINT`: a fast stop.
+By default the master handles `SIGTERM` like `SIGINT`: a fast stop.
 In the foreground the master tells the workers to stop about 1 second after the signal;
 in daemon mode it tells them at once.
 A worker then takes no new requests; a running request goes on until it ends,
@@ -354,7 +359,24 @@ or until `stop_timeout` is over.
 `stop_timeout` is the time a running request gets to end.
 It counts from the stop signal.
 Then the master kills the worker with `SIGKILL`, and the client gets an empty reply.
-This is for a stop without `-g`; graceful stop with `-g` was not tested again.
+
+Set `graceful_sigterm: true` to treat `SIGTERM` like `SIGQUIT`: a running request
+may finish before the worker stops.
+`graceful_stop_timeout` (default `30`) is the backstop: after it, the master
+kills the workers with `SIGKILL`.
+For a fast stop or reload, set `stop_timeout` longer than the longest request.
+For a graceful SIGTERM, set `graceful_stop_timeout` longer than the longest request.
+
+With supervised processes a graceful SIGTERM can only stop them through the
+backstop: their loop never dispatches `SIGQUIT` (see [Supervisor](supervisor.md#stop-and-reload)).
+Keep `graceful_sigterm` off for such apps, or set `graceful_stop_timeout` close
+to `stop_timeout`.
+
+In Docker you can also set `STOPSIGNAL SIGQUIT` in the image (the Dockerfile
+example above does); then Docker sends the graceful signal directly.
+Kubernetes always sends `SIGTERM`, so use `graceful_sigterm: true` there.
+A graceful stop with `-g` (`SIGQUIT`) has no bundle backstop; the platform stop
+time is the only limit (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
 We ran the tests again on the fixed code (8f0fb14): a route that works for 5 seconds, on a Linux host and in Docker, with the Select and `event` loops, stopped 0.5 seconds after the request began:
 
 | Setup | Result |
@@ -368,18 +390,19 @@ These results are for HTTP workers. A scheduler worker on the `event` loop has a
 
 The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)):
 a running request is no longer cut in the middle by the signal.
-A request that takes longer than `stop_timeout` is still cut.
-Set `stop_timeout` higher than your longest request.
+A request that takes longer than the active timeout is still cut:
+`stop_timeout` for a fast stop, `graceful_stop_timeout` for a graceful SIGTERM.
+Set the active timeout higher than your longest request.
 `workerman:server reload` also gives a running request `stop_timeout` seconds to end.
 But the master sends the reload signal to a worker at once, also in the foreground.
 We did not test how a PHP `sleep()` or `usleep()` in a request acts on a stop or reload.
-Set the stop time of the platform to at least `stop_timeout` plus 3 seconds:
+Set the stop time of the platform to at least `stop_timeout` plus 3 seconds,
+or at least `graceful_stop_timeout` plus 3 seconds when `graceful_sigterm` is on:
 
 - Docker: `docker stop -t` or `stop_grace_period` in Compose.
 - Kubernetes: `terminationGracePeriodSeconds`.
 
 If the platform stops earlier, it sends `SIGKILL` and the requests are cut.
-A real graceful stop with `SIGTERM` is an open request (see [issue 910](https://github.com/crazy-goat/workerman-bundle/issues/910)).
 A stop that does not end is a separate open problem (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
 
 ## Kubernetes
@@ -402,7 +425,7 @@ spec:
       labels:
         app: myapp
     spec:
-      terminationGracePeriodSeconds: 20
+      terminationGracePeriodSeconds: 35
       containers:
         - name: app
           image: registry.example.com/myapp:1.0.0
@@ -429,7 +452,9 @@ spec:
 ```
 
 - Kubernetes sends `SIGTERM` and waits `terminationGracePeriodSeconds`.
-  Keep it at least 3 seconds larger than `stop_timeout` (here 20 and 10).
+  Keep it at least 3 seconds larger than `stop_timeout`,
+  or larger than `graceful_stop_timeout` when `graceful_sigterm: true`
+  (here 35 and the default `graceful_stop_timeout` of 30).
 - The `/health` route is yours: the bundle has no health route.
   Make it cheap, and do not call a database in the liveness probe.
 - The readiness probe keeps a pod out of the service until the server answers.

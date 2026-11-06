@@ -542,6 +542,7 @@ COPY . /app
 WORKDIR /app
 RUN bin/console cache:warmup
 USER www-data
+STOPSIGNAL SIGQUIT
 CMD ["bin/console", "workerman:server", "start"]
 ```
 

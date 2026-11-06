@@ -8,13 +8,19 @@ use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E test for issue #987.
+ * E2E tests for issue #987 (async signals) and issue #910 (graceful SIGTERM).
  *
  * Symfony Console turns on pcntl_async_signals(true) and the workers inherit
  * it. A stop or reload signal then runs the Workerman handler in the middle
  * of a request, on the Select loop. The request must end first.
  *
+ * The graceful SIGTERM tests start the same server with `graceful_sigterm`
+ * enabled and check that a busy request finishes, that the
+ * `graceful_stop_timeout` backstop cuts it, and that the default fast stop is
+ * unchanged.
+ *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/987
+ * @see https://github.com/crazy-goat/workerman-bundle/issues/910
  *
  * @group e2e
  */
@@ -73,6 +79,42 @@ final class AsyncSignalsE2ETest extends TestCase
         );
     }
 
+    public function testGracefulSigtermLetsRequestFinishPastStopTimeout(): void
+    {
+        $masterPid = $this->startServer(gracefulSigterm: true, stopTimeout: 1, gracefulStopTimeout: 10);
+
+        $body = $this->requestDuring(fn(): bool => \posix_kill($masterPid, SIGTERM));
+
+        $this->assertStringContainsString('200 OK', $body);
+        $this->assertStringContainsString('done', $body);
+    }
+
+    public function testGracefulSigtermKillsAfterGracefulStopTimeout(): void
+    {
+        $masterPid = $this->startServer(gracefulSigterm: true, stopTimeout: 1, gracefulStopTimeout: 1);
+
+        $body = $this->requestDuring(fn(): bool => \posix_kill($masterPid, SIGTERM));
+
+        $this->assertStringNotContainsString('200 OK', $body, 'The graceful stop backstop must cut the request');
+        $this->assertTrue(
+            Wait::until(fn(): bool => !\proc_get_status($this->processResource())['running'], 10),
+            'The server must stop after the graceful stop timeout',
+        );
+    }
+
+    public function testSigtermWithoutGracefulOptionKeepsFastStop(): void
+    {
+        $masterPid = $this->startServer(gracefulSigterm: false, stopTimeout: 1);
+
+        $body = $this->requestDuring(fn(): bool => \posix_kill($masterPid, SIGTERM));
+
+        $this->assertStringNotContainsString('200 OK', $body, 'The default SIGTERM handling must stay a fast stop');
+        $this->assertTrue(
+            Wait::until(fn(): bool => !\proc_get_status($this->processResource())['running'], 10),
+            'The server must stop after stop_timeout',
+        );
+    }
+
     public function testRunningRequestEndsBeforeReload(): void
     {
         $masterPid = $this->startServer();
@@ -103,7 +145,7 @@ final class AsyncSignalsE2ETest extends TestCase
         return $response;
     }
 
-    private function startServer(): int
+    private function startServer(bool $gracefulSigterm = false, int $stopTimeout = 10, int $gracefulStopTimeout = 30): int
     {
         $readyFile = $this->tempDir . '/ready';
         $process = \proc_open(
@@ -114,6 +156,9 @@ final class AsyncSignalsE2ETest extends TestCase
                 (string) $this->port,
                 $readyFile,
                 $this->tempDir . '/wm',
+                $gracefulSigterm ? '1' : '0',
+                (string) $stopTimeout,
+                (string) $gracefulStopTimeout,
             ],
             [0 => ['pipe', 'r'], 1 => ['file', $this->tempDir . '/out.log', 'a'], 2 => ['file', $this->tempDir . '/err.log', 'a']],
             $pipes,

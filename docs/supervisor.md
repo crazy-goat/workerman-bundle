@@ -157,6 +157,10 @@ After a reload, the process starts again.
 Do not use the graceful option `-g` with `stop`, `restart` or `reload` when you have supervised processes.
 A graceful stop, restart or reload does not kill the process, so the process never ends.
 See [#911](https://github.com/crazy-goat/workerman-bundle/issues/911).
+The `graceful_sigterm` option has the same problem, but its
+`graceful_stop_timeout` backstop eventually kills the process with `SIGKILL`.
+Keep `graceful_sigterm` off for an app with supervised processes, or set
+`graceful_stop_timeout` close to `stop_timeout`.
 
 Save the state of your work often, because the process can be killed at any time.
 The supervisor does not use the [reload strategies](reload-strategies.md).

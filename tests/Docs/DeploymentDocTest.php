@@ -104,7 +104,7 @@ final class DeploymentDocTest extends TestCase
 
         $compose = Yaml::parse($blocks[1][1]);
         self::assertIsArray($compose);
-        self::assertSame('15s', $compose['services']['app']['stop_grace_period']);
+        self::assertSame('35s', $compose['services']['app']['stop_grace_period']);
         self::assertGreaterThanOrEqual($stopTimeout + 3, (int) $compose['services']['app']['stop_grace_period']);
 
         $deployment = Yaml::parse($blocks[1][2]);
@@ -112,7 +112,7 @@ final class DeploymentDocTest extends TestCase
         self::assertSame('Deployment', $deployment['kind']);
         $grace = $deployment['spec']['template']['spec']['terminationGracePeriodSeconds'];
         self::assertGreaterThanOrEqual($stopTimeout + 3, $grace);
-        self::assertStringContainsString(sprintf('(here %d and %d)', $grace, $stopTimeout), DocsHelper::read(self::PAGE));
+        self::assertStringContainsString('(here 35 and the default `graceful_stop_timeout` of 30)', DocsHelper::read(self::PAGE));
     }
 
     public function testGrpcVariableAndLogRulesAreOnThePage(): void
