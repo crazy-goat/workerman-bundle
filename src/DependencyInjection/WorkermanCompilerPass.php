@@ -22,6 +22,9 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class WorkermanCompilerPass implements CompilerPassInterface
 {
+    /** One year: a longer integer interval is almost certainly a mistake. */
+    private const MAX_INTERVAL_SECONDS = 31_536_000;
+
     public function process(ContainerBuilder $container): void
     {
         $tasksTagged = $container->findTaggedServiceIds('workerman.task');
@@ -110,9 +113,12 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * The jitter must be a whole number of seconds. A numeric string such as
-     * '30' (from YAML) is cast to int; anything else fails at container build
-     * time with a clear message (issue #970).
+     * Validate the task tag at container build time.
+     *
+     * The jitter must be a whole number of seconds, 0 or more. A numeric
+     * string such as '30' (from YAML) is cast to int. An integer schedule
+     * (or a digits-only string) must be 1 to MAX_INTERVAL_SECONDS. Anything
+     * else fails with a clear message (issues #970, #971, #981).
      *
      * @param array<string, mixed> $tag
      *
@@ -120,18 +126,74 @@ final class WorkermanCompilerPass implements CompilerPassInterface
      */
     private function normalizeTaskTag(string $id, array $tag): array
     {
+        $schedule = $tag['schedule'] ?? null;
+        if ($schedule !== null
+            && !is_string($schedule)
+            && !is_int($schedule)
+            && !$schedule instanceof \DateInterval
+            && !$schedule instanceof \DateTimeImmutable
+        ) {
+            throw $this->invalidSchedule($id, $schedule);
+        }
+
+        if (is_string($schedule) && preg_match('/^\s*[+-]?\d+(?:\.\d+)?\s*$/', $schedule) === 1
+            && preg_match('/^\d+$/', $schedule) !== 1
+        ) {
+            throw $this->invalidSchedule($id, $schedule);
+        }
+
+        if (is_int($schedule) || (is_string($schedule) && preg_match('/^-?\d+$/', $schedule) === 1)) {
+            $seconds = is_int($schedule) ? $schedule : (int) $schedule;
+            if ($seconds < 1 || $seconds > self::MAX_INTERVAL_SECONDS) {
+                throw $this->invalidSchedule($id, $schedule);
+            }
+            $tag['schedule'] = $seconds;
+        }
+
         $jitter = $tag['jitter'] ?? null;
-        if ($jitter === null || is_int($jitter)) {
+        if ($jitter === null) {
             return $tag;
         }
 
-        if (is_string($jitter) && preg_match('/^\d+$/', $jitter) === 1) {
-            $tag['jitter'] = (int) $jitter;
+        if (is_int($jitter)) {
+            if ($jitter < 0 || $jitter > self::MAX_INTERVAL_SECONDS) {
+                throw $this->invalidJitter($id, $jitter);
+            }
+
+            return $tag;
+        }
+
+        if (is_string($jitter) && preg_match('/^-?\d+$/', $jitter) === 1) {
+            $value = (int) $jitter;
+            if ($value < 0 || $value > self::MAX_INTERVAL_SECONDS) {
+                throw $this->invalidJitter($id, $jitter);
+            }
+            $tag['jitter'] = $value;
 
             return $tag;
         }
 
         throw new InvalidArgumentException(sprintf('The "jitter" of the task "%s" must be a whole number of seconds, got %s.', $id, get_debug_type($jitter) . ' ' . var_export($jitter, true)));
+    }
+
+    private function invalidSchedule(string $id, mixed $schedule): InvalidArgumentException
+    {
+        return new InvalidArgumentException(sprintf(
+            'The "schedule" of the task "%s" must be an integer number of seconds from 1 to %d, got %s.',
+            $id,
+            self::MAX_INTERVAL_SECONDS,
+            get_debug_type($schedule) . ' ' . var_export($schedule, true),
+        ));
+    }
+
+    private function invalidJitter(string $id, mixed $jitter): InvalidArgumentException
+    {
+        return new InvalidArgumentException(sprintf(
+            'The "jitter" of the task "%s" must be a whole number of seconds from 0 to %d, got %s.',
+            $id,
+            self::MAX_INTERVAL_SECONDS,
+            get_debug_type($jitter) . ' ' . var_export($jitter, true),
+        ));
     }
 
     /**

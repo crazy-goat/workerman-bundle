@@ -214,6 +214,10 @@ final class WorkermanCompilerPassTest extends TestCase
         yield 'text' => ['abc'];
         yield 'decimal string' => ['1.5'];
         yield 'negative string' => ['-3'];
+        yield 'negative int' => [-3];
+        yield 'too big int' => [31_536_001];
+        yield 'too big string' => ['31536001'];
+        yield 'overflowing string' => ['999999999999999999999'];
         yield 'float' => [1.5];
         yield 'bool' => [true];
     }
@@ -252,6 +256,70 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->expectExceptionMessage('"jitter" of the task "task.bad"');
 
         $this->compilerPass->process($this->container);
+    }
+
+    /**
+     * @return iterable<string, array{mixed}>
+     */
+    public static function invalidScheduleProvider(): iterable
+    {
+        yield 'zero int' => [0];
+        yield 'negative int' => [-5];
+        yield 'zero string' => ['0'];
+        yield 'negative string' => ['-5'];
+        yield 'too big int' => [31_536_001];
+        yield 'too big string' => ['31536001'];
+        yield 'php int max' => [PHP_INT_MAX];
+        yield 'overflowing string' => ['999999999999999999999999'];
+        yield 'float' => [60.0];
+        yield 'bool' => [true];
+        yield 'plus string' => ['+5'];
+        yield 'leading space' => [' 60'];
+        yield 'trailing space' => ['60 '];
+        yield 'decimal string' => ['60.0'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidScheduleProvider')]
+    public function testInvalidIntegerScheduleFailsAtContainerBuild(mixed $schedule): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+        $this->container->register('task.bad', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => $schedule]);
+
+        $this->expectException(\Symfony\Component\DependencyInjection\Exception\InvalidArgumentException::class);
+        $this->expectExceptionMessage('"schedule" of the task "task.bad"');
+
+        $this->compilerPass->process($this->container);
+    }
+
+    public function testIntegerScheduleIsCastAndBoundsAreAccepted(): void
+    {
+        $this->container->register('workerman.config_loader', \stdClass::class);
+        $this->container->register('task.min', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '1']);
+        $this->container->register('task.minInt', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => 1]);
+        $this->container->register('task.max', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => 31_536_000]);
+        $this->container->register('task.maxString', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => '31536000']);
+        $this->container->register('task.iso', \stdClass::class)
+            ->addTag('workerman.task', ['schedule' => 'PT1M']);
+
+        $this->compilerPass->process($this->container);
+
+        $config = [];
+        foreach ($this->container->getDefinition('workerman.config_loader')->getMethodCalls() as [$method, $arguments]) {
+            if ($method === 'setSchedulerConfig') {
+                $config = $arguments[0];
+            }
+        }
+
+        self::assertSame(1, $config['task.min']['schedule']);
+        self::assertSame(1, $config['task.minInt']['schedule']);
+        self::assertSame(31_536_000, $config['task.max']['schedule']);
+        self::assertSame(31_536_000, $config['task.maxString']['schedule']);
+        self::assertSame('PT1M', $config['task.iso']['schedule']);
     }
 
     public function testHandlesNoTaggedServices(): void
