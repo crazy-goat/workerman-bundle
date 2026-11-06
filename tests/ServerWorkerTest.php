@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidMiddlewareException;
+use CrazyGoat\WorkermanBundle\Exception\UnsupportedListenSchemeException;
 use CrazyGoat\WorkermanBundle\Http\HttpRequestHandler;
 use CrazyGoat\WorkermanBundle\Http\MiddlewareDispatchInterface;
 use CrazyGoat\WorkermanBundle\Http\Request;
@@ -308,26 +309,31 @@ final class ServerWorkerTest extends TestCase
         $this->assertInstanceOf(ServerWorker::class, $serverWorker);
     }
 
-    public function testWssTransportWithValidSslConfigDoesNotThrow(): void
+    /** @dataProvider provideWebSocketListenAddresses */
+    public function testWebSocketListenIsRejected(string $listen): void
     {
-        $certFile = $this->tempDir . '/cert.pem';
-        $keyFile = $this->tempDir . '/key.pem';
+        $this->expectException(UnsupportedListenSchemeException::class);
+        $this->expectExceptionMessage(sprintf(
+            'WebSocket listeners (ws://, wss://) are not supported yet in "%s". Use http:// or https://.',
+            $listen,
+        ));
 
-        $this->generateSelfSignedCert($certFile, $keyFile);
-
-        $serverWorker = new ServerWorker(
+        new ServerWorker(
             $this->createKernelFactory(),
             null,
             null,
             [
                 'name' => 'test-server',
-                'listen' => 'wss://0.0.0.0:8443',
-                'local_cert' => $certFile,
-                'local_pk' => $keyFile,
+                'listen' => $listen,
             ],
         );
+    }
 
-        $this->assertInstanceOf(ServerWorker::class, $serverWorker);
+    /** @return iterable<string, array{string}> */
+    public static function provideWebSocketListenAddresses(): iterable
+    {
+        yield 'ws' => ['ws://0.0.0.0:8080'];
+        yield 'wss' => ['wss://0.0.0.0:8443'];
     }
 
     public function testConfigureHandlerReturnsCallable(): void

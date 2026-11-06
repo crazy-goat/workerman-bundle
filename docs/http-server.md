@@ -11,7 +11,7 @@ The config keys are in the [configuration reference](configuration.md#servers).
 `listen` is required.
 A server without `listen` does not start.
 Use `http://` or `https://`, for example `http://0.0.0.0:80`.
-This page does not cover WebSocket listeners.
+WebSocket listeners (`ws://`, `wss://`) are not supported yet and are rejected at startup.
 
 For `https://` you also need `local_cert` and `local_pk`.
 The bundle checks both files before the start.

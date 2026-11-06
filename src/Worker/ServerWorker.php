@@ -225,13 +225,13 @@ final readonly class ServerWorker
 
         if (!is_string($cert) || $cert === '') {
             throw new \InvalidArgumentException(
-                'SSL configuration requires "local_cert" option for HTTPS/WSS server.',
+                'SSL configuration requires "local_cert" option for HTTPS server.',
             );
         }
 
         if (!is_string($key) || $key === '') {
             throw new \InvalidArgumentException(
-                'SSL configuration requires "local_pk" option for HTTPS/WSS server.',
+                'SSL configuration requires "local_pk" option for HTTPS server.',
             );
         }
 

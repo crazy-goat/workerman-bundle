@@ -240,7 +240,7 @@ Workerman keeps the kernel and DI container alive across requests, so stateful s
 ### README used to list `tcp://` as a supported scheme, but `ListenScheme` rejects it
 <!-- kb: id=FAQ-019 date=2026-08-09 tags=docs,listen-scheme trigger="documenting or changing the supported listen schemes" hits=0 status=active -->
 
-Older README and the `listen` node's `info()` text listed `tcp://`, but `ListenScheme::fromListen()` throws `UnsupportedListenSchemeException` for it — `tests/Worker/ListenSchemeTest.php` asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://`, `https://`, `ws://`, `wss://` work; README and `info()` now match the enum (#590). Keep them in sync unless real `tcp://` support is added.
+Older README and the `listen` node's `info()` text listed `tcp://`, but `ListenScheme::fromListen()` throws `UnsupportedListenSchemeException` for it — `tests/Worker/ListenSchemeTest.php` asserts `tcp://0.0.0.0:9090` is *invalid*. Only `http://` and `https://` work; `ws://`/`wss://` are rejected with a dedicated message until WebSocket support lands (#908, #909). README and `info()` now match the enum (#590). Keep them in sync unless real `tcp://` or WebSocket support is added.
 
 ## Scheduler / date-time
 

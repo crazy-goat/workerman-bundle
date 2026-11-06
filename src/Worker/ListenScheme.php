@@ -18,8 +18,6 @@ enum ListenScheme: string
 {
     case Http = 'http';
     case Https = 'https';
-    case Ws = 'ws';
-    case Wss = 'wss';
 
     /**
      * Parse a listen URL string and return the matching scheme.
@@ -33,15 +31,19 @@ enum ListenScheme: string
      */
     public static function fromListen(string $listen): self
     {
-        // Order matters: longer prefixes (https, wss) must be checked before
-        // shorter ones (http, ws) to avoid false-positive prefix matches.
+        // Only http:// and https:// map to enum cases. ws:// and wss:// are
+        // rejected with a dedicated message until WebSocket support lands;
+        // check them before the generic fallback so the error is actionable.
         return match (true) {
             str_starts_with($listen, 'https://') => self::Https,
-            str_starts_with($listen, 'wss://')   => self::Wss,
-            str_starts_with($listen, 'ws://')    => self::Ws,
+            str_starts_with($listen, 'wss://'),
+            str_starts_with($listen, 'ws://') => throw new UnsupportedListenSchemeException(sprintf(
+                'WebSocket listeners (ws://, wss://) are not supported yet in "%s". Use http:// or https://.',
+                $listen,
+            )),
             str_starts_with($listen, 'http://')  => self::Http,
             default => throw new UnsupportedListenSchemeException(sprintf(
-                'Unsupported listen scheme in "%s". Supported schemes: http://, https://, ws://, wss://',
+                'Unsupported listen scheme in "%s". Supported schemes: http://, https://',
                 $listen,
             )),
         };
@@ -53,28 +55,25 @@ enum ListenScheme: string
      * Workerman uses different protocol prefixes internally:
      * - http:// remains http://
      * - https:// becomes http:// (SSL is handled via transport)
-     * - ws:// becomes websocket://
-     * - wss:// becomes websocket:// (SSL is handled via transport)
      */
     public function workermanPrefix(): string
     {
         return match ($this) {
             self::Http, self::Https => 'http://',
-            self::Ws, self::Wss     => 'websocket://',
         };
     }
 
     /**
      * The Workerman transport for this scheme.
      *
-     * - http:// and ws:// use plain tcp
-     * - https:// and wss:// use ssl (requires SSL context configuration)
+     * - http:// uses plain tcp
+     * - https:// uses ssl (requires SSL context configuration)
      */
     public function transport(): string
     {
         return match ($this) {
-            self::Https, self::Wss => 'ssl',
-            self::Http, self::Ws  => 'tcp',
+            self::Https => 'ssl',
+            self::Http  => 'tcp',
         };
     }
 

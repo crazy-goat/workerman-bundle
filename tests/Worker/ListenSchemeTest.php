@@ -26,10 +26,6 @@ final class ListenSchemeTest extends TestCase
         yield 'http with hostname' => ['http://localhost:8000', ListenScheme::Http];
         yield 'https with port' => ['https://0.0.0.0:443', ListenScheme::Https];
         yield 'https with hostname' => ['https://example.com:8443', ListenScheme::Https];
-        yield 'ws with port' => ['ws://0.0.0.0:8080', ListenScheme::Ws];
-        yield 'ws with hostname' => ['ws://chat.example.com:8080', ListenScheme::Ws];
-        yield 'wss with port' => ['wss://0.0.0.0:8443', ListenScheme::Wss];
-        yield 'wss with hostname' => ['wss://chat.example.com:443', ListenScheme::Wss];
     }
 
     /** @dataProvider provideInvalidListenUrls */
@@ -37,7 +33,7 @@ final class ListenSchemeTest extends TestCase
     {
         $this->expectException(UnsupportedListenSchemeException::class);
         $this->expectExceptionMessage(sprintf(
-            'Unsupported listen scheme in "%s". Supported schemes: http://, https://, ws://, wss://',
+            'Unsupported listen scheme in "%s". Supported schemes: http://, https://',
             $listen,
         ));
 
@@ -56,6 +52,27 @@ final class ListenSchemeTest extends TestCase
         yield 'only port' => [':8080'];
     }
 
+    /** @dataProvider provideWebSocketListenUrls */
+    public function testFromListenRejectsWebSocketSchemes(string $listen): void
+    {
+        $this->expectException(UnsupportedListenSchemeException::class);
+        $this->expectExceptionMessage(sprintf(
+            'WebSocket listeners (ws://, wss://) are not supported yet in "%s". Use http:// or https://.',
+            $listen,
+        ));
+
+        ListenScheme::fromListen($listen);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function provideWebSocketListenUrls(): iterable
+    {
+        yield 'ws with port' => ['ws://0.0.0.0:8080'];
+        yield 'ws with hostname' => ['ws://chat.example.com:8080'];
+        yield 'wss with port' => ['wss://0.0.0.0:8443'];
+        yield 'wss with hostname' => ['wss://chat.example.com:443'];
+    }
+
     // --- workermanPrefix() ---
 
     /** @dataProvider providePrefixExpectations */
@@ -69,8 +86,6 @@ final class ListenSchemeTest extends TestCase
     {
         yield 'http keeps http' => [ListenScheme::Http, 'http://'];
         yield 'https becomes http' => [ListenScheme::Https, 'http://'];
-        yield 'ws becomes websocket' => [ListenScheme::Ws, 'websocket://'];
-        yield 'wss becomes websocket' => [ListenScheme::Wss, 'websocket://'];
     }
 
     // --- transport() ---
@@ -86,8 +101,6 @@ final class ListenSchemeTest extends TestCase
     {
         yield 'http uses tcp' => [ListenScheme::Http, 'tcp'];
         yield 'https uses ssl' => [ListenScheme::Https, 'ssl'];
-        yield 'ws uses tcp' => [ListenScheme::Ws, 'tcp'];
-        yield 'wss uses ssl' => [ListenScheme::Wss, 'ssl'];
     }
 
     // --- requiresSslContext() ---
@@ -103,8 +116,6 @@ final class ListenSchemeTest extends TestCase
     {
         yield 'http needs no ssl' => [ListenScheme::Http, false];
         yield 'https needs ssl' => [ListenScheme::Https, true];
-        yield 'ws needs no ssl' => [ListenScheme::Ws, false];
-        yield 'wss needs ssl' => [ListenScheme::Wss, true];
     }
 
     // --- enum value consistency ---
@@ -113,7 +124,6 @@ final class ListenSchemeTest extends TestCase
     {
         $this->assertSame('http', ListenScheme::Http->value);
         $this->assertSame('https', ListenScheme::Https->value);
-        $this->assertSame('ws', ListenScheme::Ws->value);
-        $this->assertSame('wss', ListenScheme::Wss->value);
+        $this->assertSame(['http', 'https'], array_column(ListenScheme::cases(), 'value'));
     }
 }
