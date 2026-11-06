@@ -46,6 +46,47 @@ final class WorkermanCommandTest extends KernelTestCase
         $tester->execute(['action' => ServerAction::CONNECTIONS->value]);
 
         $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('CONNECTION STATUS', $tester->getDisplay());
+        self::assertStringNotContainsString('No connection data available', $tester->getDisplay());
+    }
+
+    public function testRestartViaCliChangesMasterPidAndStartsWhenStopped(): void
+    {
+        $client = BoundedHttpClient::create();
+        $pidFile = self::bootKernel()->getProjectDir() . '/var/run/workerman.pid';
+        self::assertFileExists($pidFile);
+        $before = (int) file_get_contents($pidFile);
+        self::assertGreaterThan(0, $before, 'The live daemon must have a PID');
+        self::assertTrue(\posix_kill($before, 0), 'The recorded master PID must be alive');
+
+        try {
+            \exec(\workerman_create_console_command('restart -d') . ' 2>&1', $restartOutput, $restartCode);
+            self::assertSame(0, $restartCode, implode("\n", $restartOutput));
+            self::assertTrue($this->waitForPortUp(8888, 10), 'Server port 8888 should be up after restart');
+            $this->assertHttpReadyAfterReload($client);
+
+            $after = (int) file_get_contents($pidFile);
+            self::assertGreaterThan(0, $after, 'The restarted daemon must have a PID');
+            self::assertNotSame($before, $after, 'restart must start a new master process');
+            self::assertSame(200, $client->request('GET', 'http://127.0.0.1:8888/response_test')->getStatusCode());
+
+            \exec(\workerman_create_console_command('stop') . ' 2>&1', $stopOutput, $stopCode);
+            self::assertSame(0, $stopCode, implode("\n", $stopOutput));
+            self::assertTrue($this->waitForPortDown(8888, 5), 'Server port 8888 should be down after stop');
+
+            \exec(\workerman_create_console_command('restart -d') . ' 2>&1', $startOutput, $startCode);
+            self::assertSame(0, $startCode, implode("\n", $startOutput));
+            self::assertTrue($this->waitForPortUp(8888, 10), 'restart must start a stopped server');
+            $this->assertHttpReadyAfterReload($client);
+            self::assertSame(200, $client->request('GET', 'http://127.0.0.1:8888/response_test')->getStatusCode());
+        } finally {
+            // A failed assertion must not leave the shared daemon down for
+            // the rest of the suite.
+            if (!$this->waitForPortUp(8888, 1)) {
+                \exec(\workerman_create_console_command('start -d') . ' 2>&1');
+                $this->waitForPortUp(8888, 10);
+            }
+        }
     }
 
     public function testStopAndStartViaCli(): void
