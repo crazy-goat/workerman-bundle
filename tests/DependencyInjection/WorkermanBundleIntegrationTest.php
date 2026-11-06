@@ -74,17 +74,17 @@ final class WorkermanBundleIntegrationTest extends TestCase
     {
         $this->extension->load([[]], $this->container);
 
-        self::assertSame(2048, $this->container->getParameter('workerman.response_chunk_size'));
+        self::assertSame(8192, $this->container->getParameter('workerman.response_chunk_size'));
         self::assertSame(30, $this->container->getParameter('workerman.cache_warmup_timeout'));
     }
 
     public function testBundleConfiguresResponseChunkSize(): void
     {
         $this->extension->load([[
-            'response_chunk_size' => 4096,
+            'response_chunk_size' => 16384,
         ]], $this->container);
 
-        self::assertSame(4096, $this->container->getParameter('workerman.response_chunk_size'));
+        self::assertSame(16384, $this->container->getParameter('workerman.response_chunk_size'));
     }
 
     public function testBundleRegistersConfigLoader(): void

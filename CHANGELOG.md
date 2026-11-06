@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `response_chunk_size` now defaults to 8192 bytes (the effective minimum) in the config, `StreamedResponseStrategy` and the docs; values below 8192 are still raised to 8192, so the default no longer contradicts the documented behaviour (#913)
 - `workerman:server restart -g -d` and `start -g -d` now start in daemon mode: the daemon flag is set directly on `Worker::$daemonize` instead of relying on the first mode in the command line (#957)
 - In daemon mode the bundle now keeps file descriptor 2 on `stdout_file` (`MasterWorker::resetStd()`), so a Monolog `php://stderr` handler opened after the daemon starts writes to the stdout log instead of an eventpoll fd and no longer makes requests fail with an empty reply; `error_log()` output (with an empty `error_log` ini) now reaches the stdout log too (#990)
 - A scheduler reload no longer lets a running task overlap with a new run: a scheduler start no longer deletes a task PID file (it only removes a symlink), so a locked file blocks the new run until the old child ends, while a stale file the process can open and owns is reused; a task child removes its own PID file while it still holds the lock, including on the `exit()`/fatal-error hand-off path, so it cannot delete a newer run's file (#973)

@@ -111,7 +111,7 @@ The server sends a Symfony response in the way that fits its type.
 - A file response that Symfony made bodyless sends no file either: a `1xx`, `204` or `304` status, and the `X-Sendfile` or `X-Accel-Redirect` hand-off, where the server in front sends the file. The reply keeps the `Content-Length` that `prepare()` set — the file size for the hand-off, `0` for the empty statuses — and the file is not opened.
 
 `response_chunk_size` is the size of the chunks of a streamed response.
-The default is 2048 bytes.
+The default is 8192 bytes.
 A value below 8192 is raised to 8192.
 
 The server writes the chunks of a streamed response in one step.
