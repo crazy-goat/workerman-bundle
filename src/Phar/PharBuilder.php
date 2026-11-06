@@ -69,9 +69,6 @@ final readonly class PharBuilder
             : 'App\\Kernel';
         $this->validateKernelClass($kernelClass);
 
-        $phar = new \Phar($pharPath, 0, $pharFilename);
-        $phar->startBuffering();
-
         $excludePatterns = $this->buildExcludePatterns($buildConfig);
         $excludeFiles = $this->buildExcludeFiles($buildConfig);
         $filter = new PharFileFilter(
@@ -80,6 +77,9 @@ final readonly class PharBuilder
             $excludePatterns,
             $excludeFiles,
         );
+
+        $phar = new \Phar($pharPath, 0, $pharFilename);
+        $phar->startBuffering();
 
         $directory = new \RecursiveDirectoryIterator(
             $this->projectDir,

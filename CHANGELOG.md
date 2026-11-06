@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PharBuilder::build()` now validates `exclude_patterns` and `exclude_files` before creating the archive, so a rejected pattern no longer leaves a mapped `Phar` alias behind and a later build in the same process fails with `alias ... is already used` on PHP 8.5; `PharBuilderTest` covers the build sequence (#908)
 - `MaxJobsRebootStrategy::shouldReboot()` now requests a reload at the selected job limit, not one request later. With zero dispersion, the limit equals `requests` (#967)
 - `SfxDownloader::fetch()` now also fails fast with the directory-permissions message when a cached zip artifact sits in a destination directory that is no longer writable, instead of failing late per entry inside the extraction (a read-only directory that already holds every entry still re-extracts in place); a cached archive that does not open still reaches the poisoned-artifact cleanup path (#1052)
 - `StaticFilesMiddleware` now answers `HEAD` on a static file with headers only (`Content-Length`, `Content-Type`, `Accept-Ranges`, `ETag`, `Last-Modified`, `Cache-Control`, as for `GET`) and no body, and still returns 304 on a matching `If-None-Match`; methods other than `GET` and `HEAD` (`POST`, `PUT`, `DELETE`, ...) are passed to the application instead of returning the file, so the denylist and allowlist 404 answers now apply to `GET` and `HEAD` only (#903)
@@ -32,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- The development `composer.lock` now pins `symfony/http-foundation` 7.4.21 (was 7.4.17) to clear CVE-2026-108082, so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.46, 7.4.19 or 8.1.7 or later (#1094)
+- The development `composer.lock` now pins `symfony/config`, `symfony/filesystem`, `symfony/http-foundation` and `symfony/http-kernel` at 7.4.23 (with the matching polyfill refresh), clearing both CVE-2026-108082 and the 2026-11-04 Symfony security advisories so `composer audit` in the Lint job passes again. The CI matrix now tests Symfony 8.1 instead of 8.0: Symfony 8.0 is end of life and every 8.0.x release is in the advisory range. The `composer.json` constraints stay; applications should update `symfony/http-foundation` to 6.4.50, 7.4.23 or 8.1.11 or later (#1094, #908)
 
 ## [0.31.0] - 2026-10-06
 
