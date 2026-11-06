@@ -31,6 +31,20 @@ final class ComposerConfigTest extends TestCase
         $this->composerConfig = $config;
     }
 
+    public function testTestScriptsWaitForAllTestPorts(): void
+    {
+        foreach (['test', 'test:coverage'] as $script) {
+            self::assertArrayHasKey($script, $this->composerConfig['scripts']);
+            $commands = $this->composerConfig['scripts'][$script];
+            self::assertIsArray($commands);
+            self::assertContains(
+                'php bin/wait-for-ports.php 8888 9999 9991',
+                $commands,
+                sprintf('The %s script must wait for all three test ports', $script),
+            );
+        }
+    }
+
     public function testAbandonedPackagesReportedNotIgnored(): void
     {
         self::assertArrayHasKey('config', $this->composerConfig);

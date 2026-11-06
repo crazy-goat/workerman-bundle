@@ -10,6 +10,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class ProcessTest extends KernelTestCase
 {
+    use RequiresLiveServer;
     private string $varDir;
 
     protected function setUp(): void
@@ -137,7 +138,7 @@ final class ProcessTest extends KernelTestCase
     {
         $workerPid = $this->findProcessWorkerPid();
         if ($workerPid === null) {
-            $this->markTestSkipped('Could not locate process worker PID');
+            self::failLiveServer('Could not locate process worker PID');
         }
 
         // Record the current start-marker timestamp so we can detect a refresh.

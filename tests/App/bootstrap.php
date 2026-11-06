@@ -19,9 +19,9 @@ if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
     \pcntl_signal(\SIGUSR1, \SIG_IGN);
 }
 
+\register_shutdown_function(\workerman_stop(...));
 \workerman_start();
 \harden_test_var_tree();
-\register_shutdown_function(\workerman_stop(...));
 
 /**
  * Symfony's Runtime (debug) and Workerman's Worker::daemonize() both reset the
@@ -82,7 +82,7 @@ function workerman_start(): void
 
     // Wait for the daemon to bind its ports instead of a fixed sleep, so a
     // slow start (cold cache, loaded CI runner) does not race the first test.
-    \CrazyGoat\WorkermanBundle\Util\Wait::until(
+    $started = \CrazyGoat\WorkermanBundle\Util\Wait::until(
         static function (): bool {
             $sock = @\fsockopen('127.0.0.1', 8888, $errno, $errstr, 0.2);
             if ($sock === false) {
@@ -94,6 +94,12 @@ function workerman_start(): void
         },
         15,
     );
+
+    if (!$started) {
+        \fwrite(\STDERR, "The test daemon did not start on 127.0.0.1:8888.\n"
+            . "Check var/log/workerman.log and var/log/workerman.stdout.log.\n");
+        exit(1);
+    }
 }
 
 function workerman_stop(): void

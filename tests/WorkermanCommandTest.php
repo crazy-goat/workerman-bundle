@@ -21,6 +21,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class WorkermanCommandTest extends KernelTestCase
 {
+    use RequiresLiveServer;
     public function testInvalidAction(): void
     {
         $tester = $this->createCommandTester();
@@ -209,7 +210,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $fingerprintPath = $pidFile . '.fingerprint';
 
         if (!\is_file($pidFile)) {
-            self::markTestSkipped('Background daemon server is not running (started by phpunit bootstrap)');
+            self::failLiveServer('Background daemon server is not running (started by phpunit bootstrap)');
         }
         self::assertFileExists(
             $fingerprintPath,
@@ -247,7 +248,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $fingerprintPath = $pidFile . '.fingerprint';
 
         if (!\is_file($pidFile)) {
-            self::markTestSkipped('Background daemon server is not running (started by phpunit bootstrap)');
+            self::failLiveServer('Background daemon server is not running (started by phpunit bootstrap)');
         }
 
         $originalPid = (string) file_get_contents($pidFile);

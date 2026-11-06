@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Live-server tests now fail instead of skipping when CI sets `WORKERMAN_REQUIRE_LIVE_SERVER=1`, the test scripts wait for port 9991 too, and the bootstrap reports a daemon that did not bind its port (#925)
 - **Breaking**: `log_file` now rejects stream paths (`/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`, `/proc/self/fd/N`, `php://...`) at config time with a clear error instead of emitting a PHP warning on every log line; run the server in the foreground to send logs to stdout. See [UPGRADE.md](UPGRADE.md#log_file-rejects-stream-paths) (#985)
 - `response_chunk_size` now defaults to 8192 bytes (the effective minimum) in the config, `StreamedResponseStrategy` and the docs; values from 1 to 8191 are raised to 8192, and 0 or a negative value is rejected at config time, so the default no longer contradicts the documented behaviour (#913)
 - `workerman:server restart -g -d` and `start -g -d` now start in daemon mode: the daemon flag is set directly on `Worker::$daemonize` instead of relying on the first mode in the command line (#957)
