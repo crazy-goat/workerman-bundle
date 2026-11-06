@@ -23,9 +23,62 @@ use Workerman\Worker;
  * where daemonised deployments relied on the weak `/proc/$pid/cmdline`
  * substring fallback that accepted any process whose command line contained
  * the substring "php".
+ *
+ * It also keeps file descriptor 2 on `stdout_file` in daemon mode, so
+ * `php://stderr` logging does not write to an eventpoll fd (issue #990).
  */
 final class MasterWorker extends Worker
 {
+    /** @var list<resource> Extra stdio handles kept open for the process lifetime. */
+    private static array $stdioStreams = [];
+
+    /**
+     * Keep file descriptor 2 on the stdout file in daemon mode.
+     *
+     * Workerman's resetStd() closes STDOUT and STDERR and reopens only the
+     * stdout file (fd 1). The event loop then takes fd 2, so a Monolog
+     * php://stderr handler writes to an eventpoll fd and fails with EINVAL
+     * (issue #990). Open the stdout file again here, before the event loop is
+     * created, so fd 2 stays a writable stream. php://stderr then writes to
+     * stdout_file instead of breaking requests.
+     */
+    public static function resetStd(): void
+    {
+        foreach (self::$stdioStreams as $stream) {
+            if (is_resource($stream)) {
+                @fclose($stream);
+            }
+        }
+        self::$stdioStreams = [];
+
+        parent::resetStd();
+
+        if (!self::$daemonize || DIRECTORY_SEPARATOR !== '/') {
+            return;
+        }
+
+        // If the parent could not open stdout_file, fd 1 is free too: the
+        // first handle would land on fd 1 and leave fd 2 to the event loop.
+        // Occupy fd 1 first in that case, then open the stderr handle.
+        if (!is_resource(self::$outputStream)) {
+            $sink = @fopen('/dev/null', 'w');
+            if ($sink !== false) {
+                self::$stdioStreams[] = $sink;
+            }
+        }
+
+        $stream = @fopen(self::$stdoutFile, 'a');
+        if ($stream === false) {
+            // Keep fd 2 away from the event loop even when the configured
+            // stdout file is not writable.
+            $stream = @fopen('/dev/null', 'w');
+        }
+
+        if ($stream !== false) {
+            self::$stdioStreams[] = $stream;
+        }
+    }
+
     /**
      * Turn async signals off before the master and the workers start.
      *

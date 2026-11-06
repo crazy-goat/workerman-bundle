@@ -28,6 +28,48 @@ final class MasterWorkerTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
+    public function testResetStdKeepsFd2OnStdoutFile(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/' || !is_dir('/proc/self/fd')) {
+            self::markTestSkipped('Daemon mode and /proc/self/fd are Unix/Linux-only.');
+        }
+
+        $stdoutFile = $this->tmpDir . '/stdout.log';
+        $reportFile = $this->tmpDir . '/fd2.txt';
+        $this->runResetStdFixture($stdoutFile, $reportFile);
+
+        self::assertSame(realpath($stdoutFile), realpath((string) file_get_contents($reportFile)));
+        self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
+    }
+
+    public function testResetStdKeepsFd2OnDevNullWhenStdoutFileCannotBeOpened(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/' || !is_dir('/proc/self/fd')) {
+            self::markTestSkipped('Daemon mode and /proc/self/fd are Unix/Linux-only.');
+        }
+
+        $reportFile = $this->tmpDir . '/fd2-fallback.txt';
+        // A directory cannot be opened with fopen(..., 'a').
+        $this->runResetStdFixture($this->tmpDir, $reportFile);
+
+        self::assertSame(realpath('/dev/null'), realpath((string) file_get_contents($reportFile)));
+    }
+
+    private function runResetStdFixture(string $stdoutFile, string $reportFile): void
+    {
+        $fixture = __DIR__ . '/Fixtures/stderr_redirect_test.php';
+        $process = proc_open(
+            [PHP_BINARY, '-n', $fixture, $stdoutFile, $reportFile],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        self::assertSame(0, proc_close($process));
+    }
+
     /**
      * Regression test for issue #584: `saveMasterPid()` must write the
      * PID file AND a fingerprint describing the current (master) process.
