@@ -823,6 +823,33 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testApplyWorkermanConfigRejectsStreamLogFile(): void
+    {
+        $saved = $this->saveWorkerState();
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_stream_log_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('getProjectDir')->willReturn($tmpDir);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('cannot be a stream path "php://stderr"');
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', [
+                'pid_file' => $tmpDir . '/workerman.pid',
+                'log_file' => 'php://stderr',
+                'stdout_file' => $tmpDir . '/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 1024,
+            ]);
+        } finally {
+            $this->restoreWorkerState($saved);
+            $this->removeDir($tmpDir);
+        }
+    }
+
     public function testConfigSetsConnectionTimeouts(): void
     {
         $saved = $this->saveWorkerState();
