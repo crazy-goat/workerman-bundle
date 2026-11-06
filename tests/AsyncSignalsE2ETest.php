@@ -115,6 +115,41 @@ final class AsyncSignalsE2ETest extends TestCase
         );
     }
 
+    public function testGracefulSigquitLetsRequestFinishPastStopTimeout(): void
+    {
+        $masterPid = $this->startServer(stopTimeout: 1, gracefulStopTimeout: 10);
+
+        $body = $this->requestDuring(fn(): bool => \posix_kill($masterPid, SIGQUIT));
+
+        $this->assertStringContainsString('200 OK', $body);
+        $this->assertStringContainsString('done', $body);
+    }
+
+    public function testGracefulSigquitBackstopKillsAfterGracefulStopTimeout(): void
+    {
+        $masterPid = $this->startServer(stopTimeout: 1, gracefulStopTimeout: 1);
+
+        $body = $this->requestDuring(fn(): bool => \posix_kill($masterPid, SIGQUIT));
+
+        $this->assertStringNotContainsString('200 OK', $body, 'The graceful stop backstop must cut the request');
+        $this->assertTrue(
+            Wait::until(fn(): bool => !\proc_get_status($this->processResource())['running'], 10),
+            'The server must stop after the graceful stop timeout',
+        );
+    }
+
+    public function testGracefulSigquitBackstopKillsBlockingWorker(): void
+    {
+        $masterPid = $this->startServer(stopTimeout: 1, gracefulStopTimeout: 1, blocking: true);
+
+        \posix_kill($masterPid, SIGQUIT);
+
+        self::assertTrue(
+            Wait::until(fn(): bool => !\proc_get_status($this->processResource())['running'], 10),
+            'The backstop must end a worker whose onWorkerStart never returns',
+        );
+    }
+
     public function testRunningRequestEndsBeforeReload(): void
     {
         $masterPid = $this->startServer();
@@ -145,8 +180,12 @@ final class AsyncSignalsE2ETest extends TestCase
         return $response;
     }
 
-    private function startServer(bool $gracefulSigterm = false, int $stopTimeout = 10, int $gracefulStopTimeout = 30): int
-    {
+    private function startServer(
+        bool $gracefulSigterm = false,
+        int $stopTimeout = 10,
+        int $gracefulStopTimeout = 30,
+        bool $blocking = false,
+    ): int {
         $readyFile = $this->tempDir . '/ready';
         $process = \proc_open(
             [
@@ -159,6 +198,7 @@ final class AsyncSignalsE2ETest extends TestCase
                 $gracefulSigterm ? '1' : '0',
                 (string) $stopTimeout,
                 (string) $gracefulStopTimeout,
+                $blocking ? '1' : '0',
             ],
             [0 => ['pipe', 'r'], 1 => ['file', $this->tempDir . '/out.log', 'a'], 2 => ['file', $this->tempDir . '/err.log', 'a']],
             $pipes,

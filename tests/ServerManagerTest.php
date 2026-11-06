@@ -57,6 +57,7 @@ final class ServerManagerTest extends TestCase
         $this->configLoader->setWorkermanConfig([
             'pid_file' => $this->pidFile,
             'stop_timeout' => 0,
+            'graceful_stop_timeout' => 1,
             'status_timeout' => 3,
         ]);
         $this->processInspector = new ProcessInspector();
@@ -221,6 +222,25 @@ final class ServerManagerTest extends TestCase
 
             $this->assertTrue($result, 'stop() should return true when process is stopped');
             $this->assertFalse($this->isAlive($pid), 'Child should be dead after SIGINT');
+        } finally {
+            $this->killChildBlocking($pid);
+        }
+    }
+
+    /**
+     * @requires extension pcntl
+     * @requires extension posix
+     */
+    public function testStopGracefullyReturnsFalseWhenChildIgnoresSIGQUIT(): void
+    {
+        $pid = $this->forkChildIgnoringSignals();
+        file_put_contents($this->pidFile, (string) $pid);
+
+        try {
+            $result = $this->manager->stop(true);
+
+            $this->assertFalse($result, 'stop(true) should return false when the child ignores SIGQUIT');
+            $this->assertTrue($this->isAlive($pid), 'Child should still be alive after the graceful timeout');
         } finally {
             $this->killChildBlocking($pid);
         }

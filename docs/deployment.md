@@ -106,7 +106,7 @@ What the important lines do:
   If something is still alive after `TimeoutStopSec`, systemd sends `SIGKILL` to all the processes of the unit.
 - `TimeoutStopSec` must be at least `stop_timeout` plus 3 seconds, like the wait of the `stop` command.
   This unit uses `KillSignal=SIGINT`, so `graceful_sigterm` does not apply.
-  If you switch to `SIGTERM` and enable `graceful_sigterm`, use at least `graceful_stop_timeout` plus 3 seconds instead.
+  If you switch to `SIGTERM` and enable `graceful_sigterm`, or use `SIGQUIT`, use at least `graceful_stop_timeout` plus 3 seconds instead.
   `stop_timeout` (default 2) is the time a running request gets to end.
   The master itself can end about 1 second after that.
   If systemd waits less, it kills the whole unit (`Result=timeout`, `status=9/KILL`).
@@ -118,7 +118,7 @@ What the important lines do:
   But a `bin/console workerman:server stop` that you run by hand does: use `systemctl stop` instead.
 
 The signal `SIGQUIT` (a graceful stop) is not used here.
-There is an open report about a graceful stop that does not end (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
+A graceful stop now ends after `graceful_stop_timeout` (see [Stop time and graceful stop](#stop-time-and-graceful-stop)).
 
 Enable and start it:
 
@@ -320,7 +320,8 @@ services:
 ```
 
 - `stop_grace_period` must be at least `stop_timeout` plus 3 seconds,
-  or at least `graceful_stop_timeout` plus 3 seconds when `graceful_sigterm` is on.
+  or at least `graceful_stop_timeout` plus 3 seconds when the stop signal is
+  `SIGQUIT` or `graceful_sigterm` is on.
 - With `read_only: true`, the server needs a writable `var/run` (PID file and status file) and `var/log` (log file).
   The `tmpfs` lines give them to uid 33, which is `www-data`.
   The warm config cache stays in the image.
@@ -365,18 +366,18 @@ may finish before the worker stops.
 `graceful_stop_timeout` (default `30`) is the backstop: after it, the master
 kills the workers with `SIGKILL`.
 For a fast stop or reload, set `stop_timeout` longer than the longest request.
-For a graceful SIGTERM, set `graceful_stop_timeout` longer than the longest request.
+For a graceful stop (`-g`, or `graceful_sigterm: true`), set `graceful_stop_timeout` longer than the longest request.
 
-With supervised processes a graceful SIGTERM can only stop them through the
+With supervised processes a graceful stop can only stop them through the
 backstop: their loop never dispatches `SIGQUIT` (see [Supervisor](supervisor.md#stop-and-reload)).
-Keep `graceful_sigterm` off for such apps, or set `graceful_stop_timeout` close
+Keep `graceful_sigterm` off for such apps, and set `graceful_stop_timeout` close
 to `stop_timeout`.
 
 In Docker you can also set `STOPSIGNAL SIGQUIT` in the image (the Dockerfile
 example above does); then Docker sends the graceful signal directly.
 Kubernetes always sends `SIGTERM`, so use `graceful_sigterm: true` there.
-A graceful stop with `-g` (`SIGQUIT`) has no bundle backstop; the platform stop
-time is the only limit (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
+A graceful stop with `-g` (`SIGQUIT`) has the same `graceful_stop_timeout`
+backstop, so it ends even when a worker does not dispatch `SIGQUIT`.
 We ran the tests again on the fixed code (8f0fb14): a route that works for 5 seconds, on a Linux host and in Docker, with the Select and `event` loops, stopped 0.5 seconds after the request began:
 
 | Setup | Result |
@@ -391,19 +392,22 @@ These results are for HTTP workers. A scheduler worker on the `event` loop has a
 The old bug is fixed (see [issue 987](https://github.com/crazy-goat/workerman-bundle/issues/987)):
 a running request is no longer cut in the middle by the signal.
 A request that takes longer than the active timeout is still cut:
-`stop_timeout` for a fast stop, `graceful_stop_timeout` for a graceful SIGTERM.
+`stop_timeout` for a fast stop, `graceful_stop_timeout` for a graceful stop
+(`-g` or `graceful_sigterm`).
 Set the active timeout higher than your longest request.
 `workerman:server reload` also gives a running request `stop_timeout` seconds to end.
 But the master sends the reload signal to a worker at once, also in the foreground.
 We did not test how a PHP `sleep()` or `usleep()` in a request acts on a stop or reload.
 Set the stop time of the platform to at least `stop_timeout` plus 3 seconds,
-or at least `graceful_stop_timeout` plus 3 seconds when `graceful_sigterm` is on:
+or at least `graceful_stop_timeout` plus 3 seconds when the stop signal is
+`SIGQUIT` or `graceful_sigterm` is on:
 
 - Docker: `docker stop -t` or `stop_grace_period` in Compose.
 - Kubernetes: `terminationGracePeriodSeconds`.
 
 If the platform stops earlier, it sends `SIGKILL` and the requests are cut.
-A stop that does not end is a separate open problem (see [issue 911](https://github.com/crazy-goat/workerman-bundle/issues/911)).
+A hung daemonize intermediate process after a direct signal is tracked in
+[issue 1156](https://github.com/crazy-goat/workerman-bundle/issues/1156).
 
 ## Kubernetes
 
@@ -453,8 +457,8 @@ spec:
 
 - Kubernetes sends `SIGTERM` and waits `terminationGracePeriodSeconds`.
   Keep it at least 3 seconds larger than `stop_timeout`,
-  or larger than `graceful_stop_timeout` when `graceful_sigterm: true`
-  (here 35 and the default `graceful_stop_timeout` of 30).
+  or larger than `graceful_stop_timeout` when the stop signal is `SIGQUIT`
+  or `graceful_sigterm` is on (here 35 and the default `graceful_stop_timeout` of 30).
 - The `/health` route is yours: the bundle has no health route.
   Make it cheap, and do not call a database in the liveness probe.
 - The readiness probe keeps a pod out of the service until the server answers.

@@ -34,6 +34,7 @@ if (($argc ?? 0) < 5) {
 $gracefulSigterm = ($argv[5] ?? '0') === '1';
 $stopTimeout = (int) ($argv[6] ?? 10);
 $gracefulStopTimeout = (int) ($argv[7] ?? 30);
+$blockingWorkerEnabled = ($argv[8] ?? '0') === '1';
 
 require $autoload;
 
@@ -71,6 +72,19 @@ $worker->reusePort = false;
 $worker->onWorkerStart = static function () use ($readyFile): void {
     file_put_contents($readyFile, (string) getmypid());
 };
+if ($blockingWorkerEnabled) {
+    // A supervised-process-like worker: onWorkerStart never returns, so it
+    // never dispatches SIGQUIT (issue #911).
+    $blockingWorker = new Worker();
+    $blockingWorker->name = 'blocking-e2e';
+    $blockingWorker->count = 1;
+    $blockingWorker->onWorkerStart = static function (): void {
+        for (;;) {
+            usleep(100_000);
+        }
+    };
+}
+
 $worker->onMessage = static function (TcpConnection $connection, Request $request): void {
     // Busy work, not sleep(): a signal wakes sleep() early, so it would not
     // exercise the graceful/fast stop difference (issue #910).

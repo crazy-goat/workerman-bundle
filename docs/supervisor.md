@@ -155,12 +155,13 @@ Destructors and shutdown functions do not run.
 After a reload, the process starts again.
 
 Do not use the graceful option `-g` with `stop`, `restart` or `reload` when you have supervised processes.
-A graceful stop, restart or reload does not kill the process, so the process never ends.
+A graceful `stop` or `restart` now ends after `graceful_stop_timeout` (default
+30 seconds), then the master kills the worker with `SIGKILL`.
+Keep `graceful_stop_timeout` close to `stop_timeout` for such apps.
+A graceful `reload` (`-g`, `SIGUSR2`) still has no backstop and can hang;
+use a non-graceful reload.
 See [#911](https://github.com/crazy-goat/workerman-bundle/issues/911).
-The `graceful_sigterm` option has the same problem, but its
-`graceful_stop_timeout` backstop eventually kills the process with `SIGKILL`.
-Keep `graceful_sigterm` off for an app with supervised processes, or set
-`graceful_stop_timeout` close to `stop_timeout`.
+The `graceful_sigterm` option has the same backstop as a graceful stop.
 
 Save the state of your work often, because the process can be killed at any time.
 The supervisor does not use the [reload strategies](reload-strategies.md).

@@ -429,6 +429,17 @@ final readonly class ProcessInspector
     }
 
     /**
+     * Wait for a process to stop within an explicit number of seconds.
+     *
+     * Used for a graceful stop, where the master's own SIGKILL backstop
+     * (graceful_stop_timeout) defines the deadline.
+     */
+    public function waitForProcessToStopWithin(int $pid, int $timeout): bool
+    {
+        return Wait::until(fn(): bool => !$this->isProcessAlive($pid), $timeout + self::TIMEOUT_BUFFER);
+    }
+
+    /**
      * Whether the current platform exposes the Linux `/proc` filesystem.
      *
      * `/proc` is a Linux-only virtual filesystem. macOS, the BSDs, and
