@@ -163,6 +163,11 @@ final readonly class ServerManager
 
     private function prepareWorkerStart(ServerAction $action, bool $daemon, bool $graceful): void
     {
+        // Workerman parses the real argv first and keeps only the first mode
+        // it finds, so `restart -g -d` would lose daemon mode. Set the flag
+        // directly; parseCommand() never clears it (issue #957).
+        Worker::$daemonize = $daemon;
+
         $command = $action->value;
         if ($daemon) {
             $command .= ' -d';

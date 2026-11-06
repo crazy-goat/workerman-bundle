@@ -42,9 +42,9 @@ These are the options:
 The `-d` option has no effect on `stop` and `reload`.
 On its own, the `-g` option has no effect on `start`.
 
-Do not use `-d` and `-g` in the same command.
-Workerman reads only the first one of them.
-For example, `restart -g -d` does not run in daemon mode.
+You can use `-d` and `-g` in the same command: `-g` makes the stop or reload
+part graceful, and `-d` starts the new server in the background.
+For example, `restart -g -d` and `restart -d -g` both start a daemon.
 
 Examples:
 
@@ -55,6 +55,7 @@ bin/console workerman:server stop          # stop
 bin/console workerman:server stop -g       # graceful stop
 bin/console workerman:server restart       # restart
 bin/console workerman:server restart -d    # restart in daemon mode
+bin/console workerman:server restart -g -d # graceful restart in daemon mode
 bin/console workerman:server reload        # reload the workers (hot reload)
 bin/console workerman:server reload -g     # graceful reload
 bin/console workerman:server status        # show the status
