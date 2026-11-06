@@ -21,6 +21,8 @@ final class AsProcessTest extends TestCase
         $this->assertNull($attribute->name);
         $this->assertNull($attribute->processes);
         $this->assertNull($attribute->method);
+        $this->assertNull($attribute->restartDelay);
+        $this->assertNull($attribute->maxRestartDelay);
     }
 
     public function testConstructorWithAllParameters(): void
@@ -29,11 +31,15 @@ final class AsProcessTest extends TestCase
             name: 'my_process',
             processes: 4,
             method: 'execute',
+            restartDelay: 2,
+            maxRestartDelay: 30,
         );
 
         $this->assertSame('my_process', $attribute->name);
         $this->assertSame(4, $attribute->processes);
         $this->assertSame('execute', $attribute->method);
+        $this->assertSame(2, $attribute->restartDelay);
+        $this->assertSame(30, $attribute->maxRestartDelay);
     }
 
     public function testConstructorWithOnlyName(): void
@@ -61,7 +67,7 @@ final class AsProcessTest extends TestCase
         $this->assertNotNull($constructor, 'AsProcess must have a constructor');
 
         $params = $constructor->getParameters();
-        $this->assertCount(3, $params);
+        $this->assertCount(5, $params);
 
         // Second parameter (index 1) is $processes
         $processesParam = $params[1];
@@ -127,7 +133,7 @@ final class AsProcessTest extends TestCase
         $constructor = $reflection->getConstructor();
         $this->assertNotNull($constructor, 'AsProcess must have a constructor');
 
-        $this->assertCount(3, $constructor->getParameters(), 'AsProcess constructor must have exactly 3 parameters');
+        $this->assertCount(5, $constructor->getParameters(), 'AsProcess constructor must have exactly 5 parameters');
     }
 
     /** @depends testConstructorParameterCountIsStable */
@@ -142,7 +148,7 @@ final class AsProcessTest extends TestCase
             $constructor->getParameters(),
         );
 
-        $this->assertSame(['name', 'processes', 'method'], $names);
+        $this->assertSame(['name', 'processes', 'method', 'restartDelay', 'maxRestartDelay'], $names);
     }
 
     public function testConstructorParameterTypesAreStable(): void
@@ -157,6 +163,8 @@ final class AsProcessTest extends TestCase
             'name' => ['type' => 'string', 'allowsNull' => true],
             'processes' => ['type' => 'int', 'allowsNull' => true],
             'method' => ['type' => 'string', 'allowsNull' => true],
+            'restartDelay' => ['type' => 'int', 'allowsNull' => true],
+            'maxRestartDelay' => ['type' => 'int', 'allowsNull' => true],
         ];
 
         foreach ($params as $param) {

@@ -111,6 +111,8 @@ final readonly class ServicesConfigurator
                 'name' => $attribute->name,
                 'processes' => $attribute->processes,
                 'method' => $attribute->method,
+                'restart_delay' => $attribute->restartDelay,
+                'max_restart_delay' => $attribute->maxRestartDelay,
             ]);
         });
 

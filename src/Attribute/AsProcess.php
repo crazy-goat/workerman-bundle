@@ -21,17 +21,21 @@ namespace CrazyGoat\WorkermanBundle\Attribute;
 final class AsProcess
 {
     /**
-     * @param string|null $name       A human-readable name for the process.
-     *                                If null, the service ID is used.
-     * @param int|null    $processes  Number of child processes to spawn.
-     *                                Defaults to 1 when null.
-     * @param string|null $method     The method to call on each process start.
-     *                                Defaults to `__invoke` when null.
+     * @param string|null $name            A human-readable name for the process.
+     *                                     If null, the service ID is used.
+     * @param int|null    $processes       Number of child processes to spawn.
+     *                                     Defaults to 1 when null.
+     * @param string|null $method          The method to call on each process start.
+     *                                     Defaults to `__invoke` when null.
+     * @param int|null    $restartDelay    Override `workerman.restart.delay` for this process.
+     * @param int|null    $maxRestartDelay Override `workerman.restart.max_delay` for this process.
      */
     public function __construct(
         public ?string $name = null,
         public ?int $processes = null,
         public ?string $method = null,
+        public ?int $restartDelay = null,
+        public ?int $maxRestartDelay = null,
     ) {
     }
 }

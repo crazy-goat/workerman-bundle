@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Worker\RestartBackoff;
 use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -199,7 +200,6 @@ final class SupervisorWorkerTest extends TestCase
         );
 
         $closureVars = $this->getNewWorkerClosureVars();
-        $this->assertArrayNotHasKey('name', $closureVars['serviceConfig']);
         $this->assertSame('my_service', $closureVars['taskName']);
     }
 
@@ -216,6 +216,170 @@ final class SupervisorWorkerTest extends TestCase
         $this->assertSame('explicit-task', $closureVars['taskName']);
     }
 
+    public function testRestartBackoffRunsBeforeKernelBoot(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->exactly(2))
+            ->method('boot')
+            ->willThrowException(new \RuntimeException('boot failed'));
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        $runtimeDir = sys_get_temp_dir() . '/supervisor-backoff-' . uniqid();
+        mkdir($runtimeDir, 0700, true);
+        $logFile = $runtimeDir . '/workerman.log';
+        $logFileProperty = new \ReflectionProperty(Worker::class, 'logFile');
+        $previousLogFile = $logFileProperty->getValue();
+        $logFileProperty->setValue(null, $logFile);
+
+        try {
+            new SupervisorWorker(
+                $kernelFactory,
+                null,
+                null,
+                ['service1' => ['name' => 'test-process']],
+                ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+                $runtimeDir,
+            );
+
+            $worker = $this->getNewWorker();
+            $callable = $worker->onWorkerStart;
+            $this->assertInstanceOf(\Closure::class, $callable);
+
+            try {
+                $callable($worker);
+                $this->fail('The kernel boot exception must escape the worker start callback');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('boot failed', $e->getMessage());
+            }
+
+            $start = microtime(true);
+            try {
+                $callable($worker);
+                $this->fail('The kernel boot exception must escape the second start too');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('boot failed', $e->getMessage());
+            }
+            $elapsed = microtime(true) - $start;
+            $this->assertGreaterThan(0.8, $elapsed, 'The second start must wait before booting the kernel');
+
+            $stateFiles = glob($runtimeDir . '/restart/*.json');
+            $this->assertIsArray($stateFiles);
+            $this->assertCount(1, $stateFiles, 'The backoff state must be written before the kernel boots');
+
+            $state = json_decode((string) file_get_contents($stateFiles[0]), true);
+            $this->assertIsArray($state);
+            $this->assertSame(2, $state['failures']);
+        } finally {
+            $logFileProperty->setValue(null, $previousLogFile);
+            foreach (glob($runtimeDir . '/restart/*.json') ?: [] as $file) {
+                @unlink($file);
+            }
+            @rmdir($runtimeDir . '/restart');
+            @unlink($logFile);
+            @rmdir($runtimeDir);
+        }
+    }
+
+    public function testNegativeRestartDelayIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('restart_delay');
+
+        new SupervisorWorker(
+            $this->kernelFactory,
+            null,
+            null,
+            ['service1' => ['restart_delay' => -1]],
+        );
+    }
+
+    public function testNegativeMaxRestartDelayIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('max_restart_delay');
+
+        new SupervisorWorker(
+            $this->kernelFactory,
+            null,
+            null,
+            ['service1' => ['max_restart_delay' => -1]],
+        );
+    }
+
+    public function testOnWorkerStartClosureCarriesRestartBackoff(): void
+    {
+        new SupervisorWorker(
+            $this->kernelFactory,
+            null,
+            null,
+            ['service1' => ['name' => 'test-process', 'restart_delay' => 2, 'max_restart_delay' => 10]],
+            ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+            sys_get_temp_dir(),
+        );
+
+        $closureVars = $this->getNewWorkerClosureVars();
+        $this->assertArrayHasKey('backoff', $closureVars);
+        $this->assertInstanceOf(RestartBackoff::class, $closureVars['backoff']);
+
+        $backoff = $closureVars['backoff'];
+        $this->assertSame(2, $backoff->delayForFailures(1), 'restart_delay must override the global delay');
+        $this->assertSame(10, $backoff->delayForFailures(100), 'max_restart_delay must cap the wait');
+    }
+
+    public function testIntentionalReloadForgetsTheFailureCount(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->exactly(2))
+            ->method('boot')
+            ->willThrowException(new \RuntimeException('boot failed'));
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        $runtimeDir = sys_get_temp_dir() . '/supervisor-reload-' . uniqid();
+        mkdir($runtimeDir, 0700, true);
+        $logFileProperty = new \ReflectionProperty(Worker::class, 'logFile');
+        $previousLogFile = $logFileProperty->getValue();
+        $logFileProperty->setValue(null, $runtimeDir . '/workerman.log');
+
+        try {
+            new SupervisorWorker(
+                $kernelFactory,
+                null,
+                null,
+                ['service1' => ['name' => 'test-process']],
+                ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+                $runtimeDir,
+            );
+
+            $worker = $this->getNewWorker();
+            $callable = $worker->onWorkerStart;
+            $this->assertInstanceOf(\Closure::class, $callable);
+            $reload = $worker->onWorkerReload;
+            $this->assertInstanceOf(\Closure::class, $reload);
+
+            try {
+                $callable($worker);
+            } catch (\RuntimeException) {
+            }
+
+            $reload($worker);
+
+            $start = microtime(true);
+            try {
+                $callable($worker);
+            } catch (\RuntimeException) {
+            }
+            $this->assertLessThan(0.5, microtime(true) - $start, 'A reload must reset the failure counter');
+        } finally {
+            $logFileProperty->setValue(null, $previousLogFile);
+            foreach (glob($runtimeDir . '/restart/*') ?: [] as $file) {
+                @unlink($file);
+            }
+            @rmdir($runtimeDir . '/restart');
+            @unlink($runtimeDir . '/workerman.log');
+            @rmdir($runtimeDir);
+        }
+    }
+
     public function testOnWorkerStartClosureHasDefaultMethodWhenNotConfigured(): void
     {
         new SupervisorWorker(
@@ -226,7 +390,7 @@ final class SupervisorWorkerTest extends TestCase
         );
 
         $closureVars = $this->getNewWorkerClosureVars();
-        $this->assertArrayNotHasKey('method', $closureVars['serviceConfig']);
+        $this->assertSame('__invoke', $closureVars['method']);
     }
 
     public function testOnWorkerStartClosureCarriesExplicitMethod(): void
@@ -239,7 +403,7 @@ final class SupervisorWorkerTest extends TestCase
         );
 
         $closureVars = $this->getNewWorkerClosureVars();
-        $this->assertSame('customMethod', $closureVars['serviceConfig']['method']);
+        $this->assertSame('customMethod', $closureVars['method']);
     }
 
     public function testOnWorkerStartClosureCarriesEmptyMethodString(): void
@@ -252,7 +416,7 @@ final class SupervisorWorkerTest extends TestCase
         );
 
         $closureVars = $this->getNewWorkerClosureVars();
-        $this->assertSame('', $closureVars['serviceConfig']['method']);
+        $this->assertSame('__invoke', $closureVars['method']);
     }
 
     public function testSupervisorWorkerUsesCorrectMethodResolutionPattern(): void

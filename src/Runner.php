@@ -11,6 +11,7 @@ use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use CrazyGoat\WorkermanBundle\Worker\FileMonitorWorker;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
+use CrazyGoat\WorkermanBundle\Worker\RestartBackoff;
 use CrazyGoat\WorkermanBundle\Worker\SchedulerWorker;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use CrazyGoat\WorkermanBundle\Worker\SupervisorWorker;
@@ -290,7 +291,11 @@ readonly class Runner implements RunnerInterface
         Worker::$stdoutFile = $stdoutFile;
         Worker::$stopTimeout = $stopTimeout;
         Worker::$statusFile = (string) preg_replace('/\.pid$/', '.status', $pidFile);
-        Worker::$onMasterReload = Utils::clearOpcache(...);
+        $clearOpcache = Utils::clearOpcache(...);
+        Worker::$onMasterReload = static function () use ($pidDir, $clearOpcache): void {
+            RestartBackoff::reset($pidDir);
+            $clearOpcache();
+        };
     }
 
     /**
@@ -354,6 +359,31 @@ readonly class Runner implements RunnerInterface
     private function createWorkers(array $config, array $schedulerConfig, array $processConfig): void
     {
         assert(is_array($config['servers']));
+        $pidFile = $this->resolveRuntimePath((string) ($config['pid_file'] ?? ''));
+        $runtimeDir = $pidFile !== '' ? dirname($pidFile) : '';
+        if ($this->isStartOrRestart()) {
+            RestartBackoff::reset($runtimeDir);
+        }
+        $restartConfig = $config['restart'] ?? [];
+        assert(is_array($restartConfig));
+        $needsBackoff = (int) ($restartConfig['delay'] ?? 0) > 0;
+        if (!$needsBackoff) {
+            foreach ($processConfig as $process) {
+                if (is_array($process) && (int) ($process['restart_delay'] ?? 0) > 0) {
+                    $needsBackoff = true;
+
+                    break;
+                }
+            }
+        }
+
+        if ($needsBackoff) {
+            $restartUser = $config['user'] ?? null;
+            $restartGroup = $config['group'] ?? null;
+            assert($restartUser === null || is_string($restartUser));
+            assert($restartGroup === null || is_string($restartGroup));
+            RestartBackoff::prepare($runtimeDir, $restartUser, $restartGroup);
+        }
         foreach ($config['servers'] as $serverConfig) {
             new ServerWorker(
                 kernelFactory: $this->kernelFactory,
@@ -362,6 +392,8 @@ readonly class Runner implements RunnerInterface
                 serverConfig: $serverConfig,
                 connectionTimeout: $config['connection_timeout'] ?? 120,
                 keepaliveTimeout: $config['keepalive_timeout'] ?? 30,
+                restartConfig: $restartConfig,
+                runtimeDir: $runtimeDir,
             );
         }
 
@@ -397,6 +429,8 @@ readonly class Runner implements RunnerInterface
                 user: $config['user'],
                 group: $config['group'],
                 processConfig: $processConfig,
+                restartConfig: $restartConfig,
+                runtimeDir: $runtimeDir,
             );
         }
     }

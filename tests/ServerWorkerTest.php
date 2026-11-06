@@ -53,13 +53,16 @@ final class ServerWorkerTest extends TestCase
     {
         Timer::delAll();
 
-        $files = glob($this->tempDir . '/*');
-        if (is_array($files)) {
+        if (is_dir($this->tempDir)) {
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($this->tempDir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
             foreach ($files as $file) {
-                unlink($file);
+                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
             }
+            @rmdir($this->tempDir);
         }
-        @rmdir($this->tempDir);
     }
 
     private function createKernelFactory(): KernelFactory
@@ -334,6 +337,103 @@ final class ServerWorkerTest extends TestCase
     {
         yield 'ws' => ['ws://0.0.0.0:8080'];
         yield 'wss' => ['wss://0.0.0.0:8443'];
+    }
+
+    public function testRestartBackoffRunsBeforeKernelBoot(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->exactly(2))
+            ->method('boot')
+            ->willThrowException(new \RuntimeException('boot failed'));
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        $runtimeDir = $this->tempDir . '/runtime';
+        mkdir($runtimeDir, 0700, true);
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'backoff-server', 'listen' => 'http://127.0.0.1:0'],
+            0,
+            0,
+            ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+            $runtimeDir,
+        );
+
+        $worker = $this->findWorkerByName('[Server] backoff-server');
+        $this->assertNotNull($worker);
+        $callable = $worker->onWorkerStart;
+        $this->assertInstanceOf(\Closure::class, $callable);
+
+        try {
+            $callable($worker);
+            $this->fail('The kernel boot exception must escape the worker start callback');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boot failed', $e->getMessage());
+        }
+
+        $start = microtime(true);
+        try {
+            $callable($worker);
+            $this->fail('The kernel boot exception must escape the second start too');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boot failed', $e->getMessage());
+        }
+        $elapsed = microtime(true) - $start;
+        $this->assertGreaterThan(0.8, $elapsed, 'The second start must wait before booting the kernel');
+
+        $stateFiles = glob($runtimeDir . '/restart/*.json');
+        $this->assertIsArray($stateFiles);
+        $this->assertCount(1, $stateFiles, 'The backoff state must be written before the kernel boots');
+
+        $state = json_decode((string) file_get_contents($stateFiles[0]), true);
+        $this->assertIsArray($state);
+        $this->assertSame(2, $state['failures']);
+    }
+
+    public function testIntentionalReloadForgetsTheFailureCount(): void
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernel->expects($this->exactly(2))
+            ->method('boot')
+            ->willThrowException(new \RuntimeException('boot failed'));
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        $runtimeDir = $this->tempDir . '/runtime-reload';
+        mkdir($runtimeDir, 0700, true);
+
+        new ServerWorker(
+            $kernelFactory,
+            null,
+            null,
+            ['name' => 'reload-server', 'listen' => 'http://127.0.0.1:0'],
+            0,
+            0,
+            ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+            $runtimeDir,
+        );
+
+        $worker = $this->findWorkerByName('[Server] reload-server');
+        $this->assertNotNull($worker);
+        $callable = $worker->onWorkerStart;
+        $this->assertInstanceOf(\Closure::class, $callable);
+        $reload = $worker->onWorkerReload;
+        $this->assertInstanceOf(\Closure::class, $reload);
+
+        try {
+            $callable($worker);
+        } catch (\RuntimeException) {
+        }
+
+        $reload($worker);
+
+        $start = microtime(true);
+        try {
+            $callable($worker);
+        } catch (\RuntimeException) {
+        }
+        $this->assertLessThan(0.5, microtime(true) - $start, 'A reload must reset the failure counter');
     }
 
     public function testConfigureHandlerReturnsCallable(): void

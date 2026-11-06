@@ -461,6 +461,79 @@ final class ConfigurationTreeBuilderTest extends TestCase
         gc_collect_cycles();
     }
 
+    public function testRestartDefaultsAreOff(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [[]]);
+
+        self::assertSame([
+            'delay' => 0,
+            'max_delay' => 60,
+            'max_failures' => 10,
+            'healthy_after' => 30,
+        ], $config['restart']);
+    }
+
+    public function testRestartAcceptsValues(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [[
+            'restart' => [
+                'delay' => 2,
+                'max_delay' => 30,
+                'max_failures' => 5,
+                'healthy_after' => 60,
+            ],
+        ]]);
+
+        self::assertSame(2, $config['restart']['delay']);
+        self::assertSame(30, $config['restart']['max_delay']);
+        self::assertSame(5, $config['restart']['max_failures']);
+        self::assertSame(60, $config['restart']['healthy_after']);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, int>}>
+     */
+    public static function provideNegativeRestartOverrides(): iterable
+    {
+        foreach (['delay', 'max_delay', 'max_failures', 'healthy_after'] as $key) {
+            yield $key => [[$key => -1]];
+        }
+    }
+
+    /**
+     * @dataProvider provideNegativeRestartOverrides
+     *
+     * @param array<string, int> $override
+     */
+    public function testRestartRejectsNegativeValues(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($root->getNode(true), [['restart' => $override]]);
+    }
+
     private function createDefinitionConfigurator(): DefinitionConfigurator
     {
         $treeBuilder = new TreeBuilder('workerman');
