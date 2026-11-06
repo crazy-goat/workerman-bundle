@@ -55,6 +55,15 @@ child do not run. Put cleanup in the task method itself (for example in a
 calls `exit()` itself is reported as a successful run regardless of the exit
 code; throw an exception instead if the scheduler should log a failure.
 
+### response_chunk_size must be at least 1
+
+`response_chunk_size` now defaults to 8192 bytes, the effective minimum that
+the streamed response strategy already enforced. Values from 1 to 8191 are
+still raised to 8192. A value of `0` or a negative value now fails at
+container build; before, it was accepted and silently became 8192.
+
+**Migration:** remove the key to use the default, or set a value of at least 1.
+
 ---
 
 ## Upgrading to 0.28

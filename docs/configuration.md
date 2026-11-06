@@ -30,7 +30,7 @@ bin/console config:dump-reference workerman
 | `max_package_size` | int, bytes | `10485760` (10 MB) | The maximum size of one request. A server can replace it with its own `body_size_cap`, which can be lower or higher. See [security.md](security.md#body_size_cap-per-server). |
 | `connection_timeout` | int, seconds, minimum 0 | `120` | The maximum time to wait for a complete request. It protects against slowloris attacks. `0` turns it off. |
 | `keepalive_timeout` | int, seconds, minimum 0 | `30` | The maximum time an idle keep-alive connection stays open. `0` turns it off. |
-| `response_chunk_size` | int, bytes | `2048` | The chunk size of streamed responses. Values below 8192 are raised to 8192. See [http-server.md](http-server.md#files-and-streamed-responses). |
+| `response_chunk_size` | int, bytes, minimum 1 | `8192` | The chunk size of streamed responses. Values below 8192 are raised to 8192; 0 and negative values are rejected. See [http-server.md](http-server.md#files-and-streamed-responses). |
 | `trusted_hosts` | list of strings | `[]` | Regular expressions for allowed `Host` headers. Write them without delimiters, for example `^example\.com$`. A request with another `Host` gets a 400 error. An empty list accepts all hosts. |
 
 ## servers

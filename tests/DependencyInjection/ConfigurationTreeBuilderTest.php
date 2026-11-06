@@ -85,6 +85,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertSame(5, $config['status_timeout']);
         self::assertSame(120, $config['connection_timeout']);
         self::assertSame(30, $config['keepalive_timeout']);
+        self::assertSame(8192, $config['response_chunk_size']);
         self::assertFalse($config['reload_strategy']['max_requests']['active']);
         self::assertTrue($config['reload_strategy']['exception']['active']);
         self::assertFalse($config['reload_strategy']['file_monitor']['active']);
@@ -532,6 +533,49 @@ final class ConfigurationTreeBuilderTest extends TestCase
         $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
 
         $processor->process($root->getNode(true), [['restart' => $override]]);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, int>}>
+     */
+    public static function provideInvalidChunkSizeOverrides(): iterable
+    {
+        yield 'zero' => [['response_chunk_size' => 0]];
+        yield 'negative' => [['response_chunk_size' => -1]];
+    }
+
+    /**
+     * @dataProvider provideInvalidChunkSizeOverrides
+     *
+     * @param array<string, int> $override
+     */
+    public function testConfiguredTreeRejectsNonPositiveChunkSize(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($root->getNode(true), [[$override]]);
+    }
+
+    public function testConfiguredTreeAcceptsMinimumChunkSize(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $config = $processor->process($root->getNode(true), [['response_chunk_size' => 1]]);
+
+        self::assertSame(1, $config['response_chunk_size']);
     }
 
     private function createDefinitionConfigurator(): DefinitionConfigurator

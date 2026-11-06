@@ -38,7 +38,7 @@ final class ServicesConfiguratorTest extends TestCase
     {
         $this->configurator->configure($this->getDefaultConfig(), $this->container);
 
-        self::assertSame(2048, $this->container->getParameter('workerman.response_chunk_size'));
+        self::assertSame(8192, $this->container->getParameter('workerman.response_chunk_size'));
         self::assertSame(30, $this->container->getParameter('workerman.cache_warmup_timeout'));
         self::assertSame([], $this->container->getParameter('workerman.trusted_hosts'));
     }
@@ -89,6 +89,12 @@ final class ServicesConfiguratorTest extends TestCase
         self::assertTrue($this->container->hasDefinition('workerman.binary_file_response_strategy'));
         self::assertTrue($this->container->hasDefinition('workerman.streamed_response_strategy'));
         self::assertTrue($this->container->hasDefinition('workerman.default_response_strategy'));
+
+        self::assertSame(
+            8192,
+            $this->container->getDefinition('workerman.streamed_response_strategy')->getArgument(0),
+            'The strategy must receive the configured chunk size',
+        );
     }
 
     public function testConfigureEnablesAlwaysRebootStrategy(): void
@@ -183,7 +189,7 @@ final class ServicesConfiguratorTest extends TestCase
             'log_file' => '%kernel.project_dir%/var/log/workerman.log',
             'stdout_file' => '%kernel.project_dir%/var/log/workerman.stdout.log',
             'max_package_size' => 10 * 1024 * 1024,
-            'response_chunk_size' => 2048,
+            'response_chunk_size' => 8192,
             'trusted_hosts' => [],
             'servers' => [],
             'reload_strategy' => [
