@@ -280,6 +280,32 @@ final class SupervisorWorkerTest extends TestCase
         }
     }
 
+    public function testNegativeRestartDelayIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('restart_delay');
+
+        new SupervisorWorker(
+            $this->kernelFactory,
+            null,
+            null,
+            ['service1' => ['restart_delay' => -1]],
+        );
+    }
+
+    public function testNegativeMaxRestartDelayIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('max_restart_delay');
+
+        new SupervisorWorker(
+            $this->kernelFactory,
+            null,
+            null,
+            ['service1' => ['max_restart_delay' => -1]],
+        );
+    }
+
     public function testOnWorkerStartClosureCarriesRestartBackoff(): void
     {
         new SupervisorWorker(

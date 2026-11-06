@@ -99,7 +99,7 @@ final readonly class ConfigurationTreeBuilder
     {
         $node
             ->arrayNode('restart')
-                ->info('Restart backoff for supervised processes and for HTTP workers whose kernel boot fails. Set delay to 0 to turn it off.')
+                ->info('Restart backoff for supervised processes and for HTTP workers that exit fast (for example when the kernel boot fails). Set delay to 0 to turn it off.')
                 ->addDefaultsIfNotSet()
                 ->children()
                     ->integerNode('delay')

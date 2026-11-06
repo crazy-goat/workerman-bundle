@@ -92,7 +92,8 @@ The bundle also writes the log line `[Process] "<name>" started` each time a pro
 ## Restart delay
 
 The restart delay stops a broken process from starting again many times a second.
-It works for supervised processes and for HTTP workers whose kernel boot fails.
+It works for supervised processes and for HTTP workers that exit fast,
+for example when the kernel boot fails.
 
 ```yaml
 # config/packages/workerman.yaml

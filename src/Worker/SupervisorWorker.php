@@ -43,6 +43,12 @@ final readonly class SupervisorWorker
             assert(is_string($method));
             $restartDelay = isset($serviceConfig['restart_delay']) ? (int) $serviceConfig['restart_delay'] : null;
             $maxRestartDelay = isset($serviceConfig['max_restart_delay']) ? (int) $serviceConfig['max_restart_delay'] : null;
+            if ($restartDelay !== null && $restartDelay < 0) {
+                throw new \InvalidArgumentException(sprintf('Process "%s" has a negative restart_delay.', $taskName));
+            }
+            if ($maxRestartDelay !== null && $maxRestartDelay < 0) {
+                throw new \InvalidArgumentException(sprintf('Process "%s" has a negative max_restart_delay.', $taskName));
+            }
             $backoff = RestartBackoff::fromConfig($runtimeDir, $restartConfig, $restartDelay, $maxRestartDelay);
             $stateKey = sprintf('process:%s::%s', $serviceId, $method);
             $worker = new Worker();

@@ -720,6 +720,76 @@ final class RunnerTest extends TestCase
         }
     }
 
+    public function testCreateWorkersResetsRestartStateOnStart(): void
+    {
+        $saved = $this->saveWorkerState();
+        $command = Worker::$command;
+        $previousOnMasterReload = Worker::$onMasterReload;
+        $previousPidFile = Worker::$pidFile;
+        $previousStdoutFile = Worker::$stdoutFile;
+        $previousStatusFile = Worker::$statusFile;
+        $previousStopTimeout = Worker::$stopTimeout;
+        $tmpDir = sys_get_temp_dir() . '/workerman_runner_restart_' . uniqid();
+        mkdir($tmpDir . '/restart', 0700, true);
+        $stateFile = $tmpDir . '/restart/state.json';
+        $temporaryFile = $tmpDir . '/restart/state.json.123.tmp';
+        file_put_contents($stateFile, '{}');
+        file_put_contents($temporaryFile, '{}');
+
+        try {
+            Worker::$command = 'start';
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('isDebug')->willReturn(false);
+            $kernel->method('getProjectDir')->willReturn($tmpDir);
+            $runner = new Runner(new KernelFactory(fn(): KernelInterface => $kernel, []));
+
+            $config = [
+                'pid_file' => $tmpDir . '/workerman.pid',
+                'log_file' => $tmpDir . '/workerman.log',
+                'stdout_file' => $tmpDir . '/workerman.stdout.log',
+                'stop_timeout' => 2,
+                'max_package_size' => 1024,
+                'user' => null,
+                'group' => null,
+                'restart' => ['delay' => 1, 'max_delay' => 60, 'max_failures' => 10, 'healthy_after' => 30],
+                'servers' => [],
+                'reload_strategy' => [
+                    'file_monitor' => ['active' => false, 'source_dir' => [], 'file_pattern' => []],
+                ],
+            ];
+
+            $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
+            $this->invokeRunnerMethod($runner, 'createWorkers', $config, [], []);
+
+            $this->assertFileDoesNotExist($stateFile);
+            $this->assertFileDoesNotExist($temporaryFile);
+            $this->assertDirectoryExists($tmpDir . '/restart');
+
+            file_put_contents($stateFile, '{}');
+            $onMasterReload = Worker::$onMasterReload;
+            $this->assertInstanceOf(\Closure::class, $onMasterReload);
+            $onMasterReload();
+            $this->assertFileDoesNotExist($stateFile);
+        } finally {
+            Worker::$command = $command;
+            Worker::$onMasterReload = $previousOnMasterReload;
+            Worker::$pidFile = $previousPidFile;
+            Worker::$stdoutFile = $previousStdoutFile;
+            Worker::$statusFile = $previousStatusFile;
+            Worker::$stopTimeout = $previousStopTimeout;
+            $this->restoreWorkerState($saved);
+            foreach (glob($tmpDir . '/restart/*') ?: [] as $file) {
+                @unlink($file);
+            }
+            @rmdir($tmpDir . '/restart');
+            @unlink($tmpDir . '/workerman.pid');
+            @unlink($tmpDir . '/workerman.log');
+            @unlink($tmpDir . '/workerman.stdout.log');
+            @unlink($tmpDir . '/workerman.status');
+            @rmdir($tmpDir);
+        }
+    }
+
     public function testCreateWorkersWithMultipleServersCreatesServerWorkers(): void
     {
         $saved = $this->saveWorkerState();

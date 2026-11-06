@@ -366,7 +366,18 @@ readonly class Runner implements RunnerInterface
         }
         $restartConfig = $config['restart'] ?? [];
         assert(is_array($restartConfig));
-        if ((int) ($restartConfig['delay'] ?? 0) > 0) {
+        $needsBackoff = (int) ($restartConfig['delay'] ?? 0) > 0;
+        if (!$needsBackoff) {
+            foreach ($processConfig as $process) {
+                if (is_array($process) && (int) ($process['restart_delay'] ?? 0) > 0) {
+                    $needsBackoff = true;
+
+                    break;
+                }
+            }
+        }
+
+        if ($needsBackoff) {
             $restartUser = $config['user'] ?? null;
             $restartGroup = $config['group'] ?? null;
             assert($restartUser === null || is_string($restartUser));

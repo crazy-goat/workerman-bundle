@@ -118,8 +118,13 @@ final readonly class RestartBackoff
     public function forget(string $key): void
     {
         $path = $this->statePath($key, false);
-        if ($path !== null) {
-            @unlink($path);
+        if ($path === null) {
+            return;
+        }
+
+        @unlink($path);
+        foreach (glob($path . '.*.tmp') ?: [] as $temporary) {
+            @unlink($temporary);
         }
     }
 
@@ -142,6 +147,12 @@ final readonly class RestartBackoff
 
         if ($group !== null && $group !== '') {
             @chgrp($directory, $group);
+        }
+
+        if (($user !== null && $user !== '') || ($group !== null && $group !== '')) {
+            // A root master may have created the PID directory as 0700 root;
+            // the worker then cannot traverse into the chowned leaf.
+            @chmod(dirname($directory), 0711);
         }
     }
 
@@ -173,6 +184,10 @@ final readonly class RestartBackoff
 
         $delay = $this->delay;
         for ($i = 1; $i < $failures && $delay < $this->maxDelay; $i++) {
+            if ($delay > intdiv($this->maxDelay, 2)) {
+                return $this->maxDelay;
+            }
+
             $delay *= 2;
         }
 

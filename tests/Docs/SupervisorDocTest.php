@@ -55,9 +55,9 @@ final class SupervisorDocTest extends TestCase
             self::assertIsArray($parsed);
             if (!isset($parsed['services'])) {
                 // Top-level examples (for example the restart config) do not
-                // define services; only those `workerman:` blocks may skip the
+                // define services; only a pure `workerman:` block may skip the
                 // tag-attribute contract.
-                self::assertArrayHasKey('workerman', $parsed);
+                self::assertSame([], array_diff(array_keys($parsed), ['workerman']));
                 continue;
             }
             foreach ($parsed['services'] as $definition) {
