@@ -30,7 +30,7 @@ final readonly class StreamedResponseStrategy implements RequestMethodAwareRespo
     private const MIN_CHUNK_SIZE = 8192;
 
     public function __construct(
-        private int $chunkSize = 8192,
+        private int $chunkSize = self::MIN_CHUNK_SIZE,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }

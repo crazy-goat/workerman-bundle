@@ -112,7 +112,8 @@ The server sends a Symfony response in the way that fits its type.
 
 `response_chunk_size` is the size of the chunks of a streamed response.
 The default is 8192 bytes.
-A value below 8192 is raised to 8192.
+Values below 8192 are raised to 8192.
+0 and negative values are rejected.
 
 The server writes the chunks of a streamed response in one step.
 A slow client cannot take data in between.

@@ -89,6 +89,12 @@ final class ServicesConfiguratorTest extends TestCase
         self::assertTrue($this->container->hasDefinition('workerman.binary_file_response_strategy'));
         self::assertTrue($this->container->hasDefinition('workerman.streamed_response_strategy'));
         self::assertTrue($this->container->hasDefinition('workerman.default_response_strategy'));
+
+        self::assertSame(
+            8192,
+            $this->container->getDefinition('workerman.streamed_response_strategy')->getArgument(0),
+            'The strategy must receive the configured chunk size',
+        );
     }
 
     public function testConfigureEnablesAlwaysRebootStrategy(): void
