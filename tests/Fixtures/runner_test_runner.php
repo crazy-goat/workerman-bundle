@@ -1,9 +1,9 @@
 <?php
 
 /**
- * Standalone test runner for Runner fork error handling.
+ * Standalone test runner for Runner::warmUpCache() fork error handling.
  *
- * Runs outside PHPUnit process to avoid inheriting output buffers,
+ * Runs outside the PHPUnit process to avoid inheriting output buffers,
  * shutdown functions, and other PHPUnit state that interferes with
  * pcntl_fork() + exit() behavior.
  *
@@ -17,6 +17,12 @@
 
 declare(strict_types=1);
 
+use CrazyGoat\WorkermanBundle\ConfigLoader;
+use CrazyGoat\WorkermanBundle\Exception\CacheWarmupException;
+use CrazyGoat\WorkermanBundle\KernelFactory;
+use CrazyGoat\WorkermanBundle\Runner;
+use CrazyGoat\WorkermanBundle\Test\StuckChildRunner;
+
 /** @var int<1, max> $argc */
 /** @var list<string> $argv */
 
@@ -27,8 +33,47 @@ if ($argc < 2) {
 
 $testName = $argv[1];
 
-// Wait::until() is used by some test functions below.
 require __DIR__ . '/../../vendor/autoload.php';
+
+final readonly class ExitCodeRunner extends Runner
+{
+    protected function fork(): int
+    {
+        $pid = \pcntl_fork();
+        if ($pid === 0) {
+            exit(3);
+        }
+
+        return $pid;
+    }
+}
+
+final readonly class UnexpectedSignalRunner extends Runner
+{
+    protected function fork(): int
+    {
+        $pid = \pcntl_fork();
+        if ($pid === 0) {
+            // The parent process may ignore SIGUSR1; reset it so the child
+            // is really killed by the signal.
+            \pcntl_signal(\SIGUSR1, \SIG_DFL);
+            \posix_kill((int) \getmypid(), \SIGUSR1);
+            exit(0);
+        }
+
+        return $pid;
+    }
+}
+
+final readonly class InvalidPidRunner extends Runner
+{
+    protected function fork(): int
+    {
+        // Never a child of this process; pcntl_waitpid() returns -1 (ECHILD).
+        return \posix_getpid();
+    }
+}
+
 
 function fail(string $message): never
 {
@@ -43,13 +88,10 @@ function pass(): never
 }
 
 match ($testName) {
-    'child_boot_exception' => testChildBootException(),
-    'child_normal_exit' => testChildNormalExit(),
-    'child_exit_nonzero' => testChildExitNonzero(),
-    'signal_killed_child' => testSignalKilledChild(),
-    'child_success_sigkill' => testChildSuccessSigkill(),
-    'child_error_sigterm' => testChildErrorSigterm(),
-    'timeout_kills_child' => testTimeoutKillsChild(),
+    'warmup_boot_failure_sigterm' => testWarmupBootFailureSigterm(),
+    'warmup_exit_code_nonzero' => testWarmupExitCodeNonzero(),
+    'warmup_unexpected_signal' => testWarmupUnexpectedSignal(),
+    'warmup_wait_failed' => testWarmupWaitFailed(),
     'warmup_timeout_kicks_in' => testWarmupTimeoutKicksIn(),
     default => (function () use ($testName): never {
         fwrite(STDERR, "Unknown test: $testName\n");
@@ -58,235 +100,116 @@ match ($testName) {
 };
 
 /**
- * Test: Child process throws exception during boot.
- * Verifies that:
- * 1. Exception message is written to STDERR
- * 2. Child exits with code 1
- * 3. Parent detects non-zero exit and throws RuntimeException
+ * Kernel boot throws in the child, which then SIGTERMs itself. The parent
+ * must throw the SIGTERM-specific message and the child message must be on
+ * stderr.
  */
-function testChildBootException(): void
+function testWarmupBootFailureSigterm(): void
 {
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
+    $tmpDir = sys_get_temp_dir() . '/workerman_warmup_boot_' . uniqid();
+    mkdir($tmpDir, 0700, true);
+
+    try {
+        $configLoader = makeConfigLoader($tmpDir);
+        $kernelFactory = new KernelFactory(
+            static fn(): never => throw new \RuntimeException('Boot failed intentionally'),
+            [],
+        );
+        $runner = new Runner($kernelFactory, 5);
+
         try {
-            throw new \RuntimeException('Boot failed intentionally');
-        } catch (\Throwable $e) {
-            fwrite(STDERR, $e->getMessage() . PHP_EOL);
-            exit(1);
+            runWarmup($runner, $configLoader);
+            fail('Expected CacheWarmupException for a failed kernel boot');
+        } catch (CacheWarmupException $e) {
+            if (!str_contains($e->getMessage(), 'child signaled failure via SIGTERM')) {
+                fail('Unexpected exception message: ' . $e->getMessage());
+            }
         }
-    }
-
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (!pcntl_wifexited($status)) {
-        fail('Child should have exited normally (not killed by signal)');
-    }
-    if (pcntl_wexitstatus($status) !== 1) {
-        fail('Child should have exited with code 1');
+    } finally {
+        removeDir($tmpDir);
     }
 
     pass();
 }
 
 /**
- * Test: Child process exits normally with code 0.
- * Parent should NOT throw.
+ * The child exits with a non-zero code; the parent must report that code.
  */
-function testChildNormalExit(): void
+function testWarmupExitCodeNonzero(): void
 {
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        exit(0);
-    }
+    $tmpDir = sys_get_temp_dir() . '/workerman_warmup_exit_' . uniqid();
+    mkdir($tmpDir, 0700, true);
 
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (!pcntl_wifexited($status)) {
-        fail('Child should have exited normally');
-    }
-    if (pcntl_wexitstatus($status) !== 0) {
-        fail('Child should have exited with code 0');
+    try {
+        $configLoader = makeConfigLoader($tmpDir);
+        $runner = new ExitCodeRunner(unusedKernelFactory(), 5);
+
+        try {
+            runWarmup($runner, $configLoader);
+            fail('Expected CacheWarmupException for a non-zero exit code');
+        } catch (CacheWarmupException $e) {
+            if (!str_contains($e->getMessage(), 'exit code 3')) {
+                fail('Unexpected exception message: ' . $e->getMessage());
+            }
+        }
+    } finally {
+        removeDir($tmpDir);
     }
 
     pass();
 }
 
 /**
- * Test: Child process exits with non-zero code.
- * Verifies parent correctly detects this via pcntl_wifexited + pcntl_wexitstatus.
+ * The child is killed by a signal other than SIGTERM or SIGKILL; the parent
+ * must report the unexpected signal.
  */
-function testChildExitNonzero(): void
+function testWarmupUnexpectedSignal(): void
 {
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        exit(42);
-    }
+    $tmpDir = sys_get_temp_dir() . '/workerman_warmup_signal_' . uniqid();
+    mkdir($tmpDir, 0700, true);
 
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (!pcntl_wifexited($status)) {
-        fail('Child should have exited normally');
-    }
-    if (pcntl_wexitstatus($status) !== 42) {
-        fail('Child should have exited with code 42');
+    try {
+        $configLoader = makeConfigLoader($tmpDir);
+        $runner = new UnexpectedSignalRunner(unusedKernelFactory(), 5);
+
+        try {
+            runWarmup($runner, $configLoader);
+            fail('Expected CacheWarmupException for an unexpected signal');
+        } catch (CacheWarmupException $e) {
+            if (!str_contains($e->getMessage(), 'unexpected signal ' . SIGUSR1)) {
+                fail('Unexpected exception message: ' . $e->getMessage());
+            }
+        }
+    } finally {
+        removeDir($tmpDir);
     }
 
     pass();
 }
 
 /**
- * Test: Child process is killed by signal.
- * Verifies our check order is correct: pcntl_wifexited BEFORE pcntl_wexitstatus.
+ * pcntl_waitpid() fails: the PID is a real process that is not a child, so
+ * the call returns -1 (ECHILD) even when other children exist.
  */
-function testSignalKilledChild(): void
+function testWarmupWaitFailed(): void
 {
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        sleep(60);
-        exit(0);
-    }
+    $tmpDir = sys_get_temp_dir() . '/workerman_warmup_wait_' . uniqid();
+    mkdir($tmpDir, 0700, true);
 
-    // Wait until the child process is scheduled by the kernel before signalling.
-    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
-    posix_kill($pid, SIGTERM);
+    try {
+        $configLoader = makeConfigLoader($tmpDir);
+        $runner = new InvalidPidRunner(unusedKernelFactory(), 5);
 
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (pcntl_wifexited($status)) {
-        fail('Child should NOT appear as exited normally (was killed by signal)');
-    }
-    if (!pcntl_wifsignaled($status)) {
-        fail('Child should appear as killed by signal');
-    }
-
-    pass();
-}
-
-/**
- * Test: Child process uses posix_kill(getmypid(), SIGKILL) for success.
- * Verifies parent recognizes SIGKILL as success (cache warmup completed).
- */
-function testChildSuccessSigkill(): void
-{
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        // Simulate successful cache warmup, then self-kill with SIGKILL
-        posix_kill((int) getmypid(), SIGKILL);
-        exit(0); // unreachable
-    }
-
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (pcntl_wifexited($status)) {
-        fail('Child should NOT appear as exited normally (was killed by signal)');
-    }
-    if (!pcntl_wifsignaled($status)) {
-        fail('Child should appear as killed by signal');
-    }
-    if (pcntl_wtermsig($status) !== SIGKILL) {
-        fail('Child should have been killed by SIGKILL (9), got ' . pcntl_wtermsig($status));
-    }
-
-    pass();
-}
-
-/**
- * Test: Child process uses posix_kill(getmypid(), SIGTERM) for error.
- * Verifies parent recognizes SIGTERM as failure (cache warmup failed).
- */
-function testChildErrorSigterm(): void
-{
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        fwrite(STDERR, "Error message\n");
-        // Simulate failed cache warmup, then self-kill with SIGTERM
-        posix_kill((int) getmypid(), SIGTERM);
-        exit(0); // unreachable
-    }
-
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (pcntl_wifexited($status)) {
-        fail('Child should NOT appear as exited normally (was killed by signal)');
-    }
-    if (!pcntl_wifsignaled($status)) {
-        fail('Child should appear as killed by signal');
-    }
-    if (pcntl_wtermsig($status) !== SIGTERM) {
-        fail('Child should have been killed by SIGTERM (15), got ' . pcntl_wtermsig($status));
-    }
-
-    pass();
-}
-
-/**
- * Test: Timeout kills child that doesn't finish in time.
- * Verifies parent correctly waits with WNOHANG and kills child on timeout.
- */
-function testTimeoutKillsChild(): void
-{
-    $pid = pcntl_fork();
-    if ($pid === -1) {
-        fail('Fork failed');
-    }
-    if ($pid === 0) {
-        // Child sleeps forever (simulates stuck cache warmup)
-        sleep(120);
-        exit(0); // unreachable
-    }
-
-    // Confirm the child is still alive (simulating a timeout check before SIGKILL).
-    \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
-
-    // Child should still be alive, kill it with SIGKILL (simulating timeout behavior)
-    posix_kill($pid, SIGKILL);
-
-    $status = 0;
-    $waitResult = pcntl_wait($status);
-    if ($waitResult === -1) {
-        fail('pcntl_wait returned -1');
-    }
-    if (!pcntl_wifsignaled($status)) {
-        fail('Child should appear as killed by signal');
-    }
-    if (pcntl_wtermsig($status) !== SIGKILL) {
-        fail('Child should have been killed by SIGKILL, got ' . pcntl_wtermsig($status));
+        try {
+            runWarmup($runner, $configLoader);
+            fail('Expected CacheWarmupException when waitpid fails');
+        } catch (CacheWarmupException $e) {
+            if (!str_contains($e->getMessage(), 'Failed to wait for cache warmup process')) {
+                fail('Unexpected exception message: ' . $e->getMessage());
+            }
+        }
+    } finally {
+        removeDir($tmpDir);
     }
 
     pass();
@@ -302,36 +225,19 @@ function testTimeoutKillsChild(): void
  */
 function testWarmupTimeoutKicksIn(): void
 {
-    require __DIR__ . '/../../vendor/autoload.php';
-
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_timeout_' . uniqid();
     mkdir($tmpDir, 0700, true);
 
     try {
-        $configLoader = new \CrazyGoat\WorkermanBundle\ConfigLoader(
-            projectDir: $tmpDir,
-            cacheDir: $tmpDir . '/var/cache/test',
-            isDebug: false,
-        );
-
-        if ($configLoader->isFresh()) {
-            fail('ConfigLoader must not be fresh (cache file should not exist)');
-        }
-
-        $kernelFactory = new \CrazyGoat\WorkermanBundle\KernelFactory(
-            static fn(): \Symfony\Component\HttpKernel\KernelInterface => throw new \RuntimeException('not used'),
-            [],
-        );
-
-        $runner = new \CrazyGoat\WorkermanBundle\Test\StuckChildRunner($kernelFactory, 1);
+        $configLoader = makeConfigLoader($tmpDir);
+        $runner = new StuckChildRunner(unusedKernelFactory(), 1);
 
         $start = microtime(true);
 
         try {
-            $ref = new \ReflectionMethod($runner, 'warmUpCache');
-            $ref->invoke($runner, $configLoader);
+            runWarmup($runner, $configLoader);
             fail('Expected CacheWarmupException for cache warmup timeout');
-        } catch (\CrazyGoat\WorkermanBundle\Exception\CacheWarmupException $e) {
+        } catch (CacheWarmupException $e) {
             $elapsed = microtime(true) - $start;
 
             if (!str_contains($e->getMessage(), 'Cache warmup timed out after 1 seconds')) {
@@ -340,9 +246,8 @@ function testWarmupTimeoutKicksIn(): void
 
             // Should fire roughly at the 1s deadline. Allow generous slack
             // for slow CI but fail loudly if it took way too long.
-            // Note: Runner uses time() (whole seconds) for the deadline, so
-            // the timeout can fire anywhere between ~0.1s and ~1.1s after
-            // start depending on when time() ticks over.
+            // Wait::until() uses microtime(true), so the timeout fires
+            // shortly after the 1s deadline (about 1.0-1.25s).
             if ($elapsed > 3.0) {
                 fail(sprintf('Timeout fired too late: %.2fs (expected ~1s)', $elapsed));
             }
@@ -351,21 +256,54 @@ function testWarmupTimeoutKicksIn(): void
             }
         }
     } finally {
-        if (is_dir($tmpDir)) {
-            $files = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($tmpDir, \RecursiveDirectoryIterator::SKIP_DOTS),
-                \RecursiveIteratorIterator::CHILD_FIRST,
-            );
-            foreach ($files as $file) {
-                if ($file->isDir()) {
-                    rmdir($file->getRealPath());
-                } else {
-                    unlink($file->getRealPath());
-                }
-            }
-            rmdir($tmpDir);
-        }
+        removeDir($tmpDir);
     }
 
     pass();
+}
+
+function makeConfigLoader(string $tmpDir): ConfigLoader
+{
+    $configLoader = new ConfigLoader(
+        projectDir: $tmpDir,
+        cacheDir: $tmpDir . '/var/cache/test',
+        isDebug: false,
+    );
+
+    if ($configLoader->isFresh()) {
+        fail('ConfigLoader must not be fresh (cache file should not exist)');
+    }
+
+    return $configLoader;
+}
+
+function unusedKernelFactory(): KernelFactory
+{
+    return new KernelFactory(
+        static fn(): never => throw new \RuntimeException('not used'),
+        [],
+    );
+}
+
+function runWarmup(Runner $runner, ConfigLoader $configLoader): void
+{
+    $ref = new \ReflectionMethod($runner, 'warmUpCache');
+    $ref->invoke($runner, $configLoader);
+}
+
+function removeDir(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    $files = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+        \RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($files as $file) {
+        $file->isDir() ? rmdir($file->getRealPath()) : unlink($file->getRealPath());
+    }
+    rmdir($dir);
 }

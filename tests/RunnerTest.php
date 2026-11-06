@@ -131,66 +131,126 @@ final class RunnerTest extends TestCase
     }
 
     /**
-     * Test: Child process throws exception during boot.
-     * Verifies that exception message is written to STDERR and child exits with code 1.
+     * A kernel boot that throws makes the child SIGTERM itself; the real
+     * Runner::warmUpCache() must report the SIGTERM failure and the child
+     * message must reach stderr.
      */
-    public function testChildBootExceptionWritesToStderrAndExitsNonZero(): void
+    public function testWarmupBootFailureThrowsSigtermMessage(): void
     {
-        $this->runIsolatedTest('child_boot_exception');
+        $output = $this->runIsolatedTest('warmup_boot_failure_sigterm');
+
+        self::assertStringContainsString('Boot failed intentionally', $output['stderr']);
     }
 
     /**
-     * Test: Child process exits normally with code 0.
-     * Parent should not detect failure.
+     * A child that exits with a non-zero code must be reported with that code.
      */
-    public function testChildNormalExitDoesNotTriggerFailure(): void
+    public function testWarmupNonZeroExitCodeThrows(): void
     {
-        $this->runIsolatedTest('child_normal_exit');
+        $this->runIsolatedTest('warmup_exit_code_nonzero');
     }
 
     /**
-     * Test: Child process exits with non-zero code.
-     * Parent should detect non-zero exit via pcntl_wifexited + pcntl_wexitstatus.
+     * A child killed by a signal other than SIGTERM/SIGKILL must be reported.
      */
-    public function testChildExitNonzeroIsDetected(): void
+    public function testWarmupUnexpectedSignalThrows(): void
     {
-        $this->runIsolatedTest('child_exit_nonzero');
+        $this->runIsolatedTest('warmup_unexpected_signal');
     }
 
     /**
-     * Test: Child process is killed by signal.
-     * Verifies pcntl_wifexited returns false for signal-killed children.
+     * A failing pcntl_waitpid() must be reported, not treated as a timeout.
      */
-    public function testSignalKilledChildIsDetected(): void
+    public function testWarmupWaitFailureThrows(): void
     {
-        $this->runIsolatedTest('signal_killed_child');
+        $this->runIsolatedTest('warmup_wait_failed');
     }
 
     /**
-     * Test: Child process uses posix_kill(getmypid(), SIGKILL) for success.
-     * Verifies parent recognizes SIGKILL as success (cache warmup completed).
+     * The waitpid-failure branch runs in-process: the subclass returns a PID
+     * that is never a child, so pcntl_waitpid() returns -1.
      */
-    public function testChildSuccessSigkillIsRecognizedAsSuccess(): void
+    public function testWarmupWaitFailureThrowsInProcess(): void
     {
-        $this->runIsolatedTest('child_success_sigkill');
+        $tmpDir = sys_get_temp_dir() . '/workerman_warmup_wait_inproc_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $configLoader = new ConfigLoader(
+                projectDir: $tmpDir,
+                cacheDir: $tmpDir . '/var/cache/test',
+                isDebug: false,
+            );
+            $runner = new WaitFailedRunner(new KernelFactory(
+                static fn(): KernelInterface => throw new \RuntimeException('not used'),
+                [],
+            ));
+
+            $this->expectException(CacheWarmupException::class);
+            $this->expectExceptionMessage('Failed to wait for cache warmup process');
+
+            $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+        } finally {
+            $this->removeDir($tmpDir);
+        }
     }
 
     /**
-     * Test: Child process uses posix_kill(getmypid(), SIGTERM) for error.
-     * Verifies parent recognizes SIGTERM as failure (cache warmup failed).
+     * The SIGTERM branch runs in-process: the child boots a throwing kernel
+     * and kills itself, without calling exit().
      */
-    public function testChildErrorSigtermIsRecognizedAsError(): void
+    public function testWarmupBootFailureThrowsSigtermMessageInProcess(): void
     {
-        $this->runIsolatedTest('child_error_sigterm');
+        $tmpDir = sys_get_temp_dir() . '/workerman_warmup_boot_inproc_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $configLoader = new ConfigLoader(
+                projectDir: $tmpDir,
+                cacheDir: $tmpDir . '/var/cache/test',
+                isDebug: false,
+            );
+            $runner = new Runner(new KernelFactory(
+                static fn(): KernelInterface => throw new \RuntimeException('Boot failed intentionally'),
+                [],
+            ), 5);
+
+            $this->expectException(CacheWarmupException::class);
+            $this->expectExceptionMessage('child signaled failure via SIGTERM');
+
+            $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+        } finally {
+            $this->removeDir($tmpDir);
+        }
     }
 
     /**
-     * Test: Timeout kills child that doesn't finish in time.
-     * Verifies parent correctly waits with WNOHANG and kills child on timeout.
+     * The unexpected-signal branch runs in-process: the child kills itself
+     * with SIGUSR1, without calling exit().
      */
-    public function testTimeoutKillsChild(): void
+    public function testWarmupUnexpectedSignalThrowsInProcess(): void
     {
-        $this->runIsolatedTest('timeout_kills_child');
+        $tmpDir = sys_get_temp_dir() . '/workerman_warmup_signal_inproc_' . uniqid();
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $configLoader = new ConfigLoader(
+                projectDir: $tmpDir,
+                cacheDir: $tmpDir . '/var/cache/test',
+                isDebug: false,
+            );
+            $runner = new UnexpectedSignalRunner(new KernelFactory(
+                static fn(): KernelInterface => throw new \RuntimeException('not used'),
+                [],
+            ), 5);
+
+            $this->expectException(CacheWarmupException::class);
+            $this->expectExceptionMessage('unexpected signal ' . SIGUSR1);
+
+            $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
+        } finally {
+            $this->removeDir($tmpDir);
+        }
     }
 
     /**
@@ -1502,8 +1562,10 @@ final class RunnerTest extends TestCase
      * making exit() hang indefinitely. The pcntl and posix
      * extensions are loaded explicitly when this PHP needs a shared module for them
      * (see IsolatedPhp, #823).
+     *
+     * @return array{stdout: string, stderr: string}
      */
-    private function runIsolatedTest(string $testName): void
+    private function runIsolatedTest(string $testName): array
     {
         $this->assertFileExists(self::RUNNER_SCRIPT, 'Test runner script must exist');
 
@@ -1546,7 +1608,9 @@ final class RunnerTest extends TestCase
             ),
         );
 
-        $this->assertStringContainsString('PASS', $stdout);
+        self::assertStringContainsString('PASS', (string) $stdout);
+
+        return ['stdout' => (string) $stdout, 'stderr' => (string) $stderr];
     }
 }
 
@@ -1565,6 +1629,29 @@ final readonly class FastChildRunner extends Runner
         $pid = \pcntl_fork();
         if ($pid === 0) {
             \posix_kill((int) \getmypid(), \SIGKILL);
+            exit(0);
+        }
+
+        return $pid;
+    }
+}
+
+final readonly class WaitFailedRunner extends Runner
+{
+    protected function fork(): int
+    {
+        return \posix_getpid();
+    }
+}
+
+final readonly class UnexpectedSignalRunner extends Runner
+{
+    protected function fork(): int
+    {
+        $pid = \pcntl_fork();
+        if ($pid === 0) {
+            \pcntl_signal(\SIGUSR1, \SIG_DFL);
+            \posix_kill((int) \getmypid(), \SIGUSR1);
             exit(0);
         }
 
