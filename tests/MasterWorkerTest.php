@@ -30,33 +30,29 @@ final class MasterWorkerTest extends TestCase
 
     public function testResetStdKeepsFd2OnStdoutFile(): void
     {
-        if (DIRECTORY_SEPARATOR !== '/') {
-            self::markTestSkipped('Daemon mode and fd 2 redirection are Unix-only.');
+        if (DIRECTORY_SEPARATOR !== '/' || !is_dir('/proc/self/fd')) {
+            self::markTestSkipped('Daemon mode and /proc/self/fd are Unix/Linux-only.');
         }
 
         $stdoutFile = $this->tmpDir . '/stdout.log';
         $reportFile = $this->tmpDir . '/fd2.txt';
         $this->runResetStdFixture($stdoutFile, $reportFile);
 
-        self::assertSame($stdoutFile, (string) file_get_contents($reportFile));
+        self::assertSame(realpath($stdoutFile), realpath((string) file_get_contents($reportFile)));
         self::assertSame("stderr-line\n", (string) file_get_contents($stdoutFile));
     }
 
     public function testResetStdKeepsFd2OnDevNullWhenStdoutFileCannotBeOpened(): void
     {
-        if (DIRECTORY_SEPARATOR !== '/') {
-            self::markTestSkipped('Daemon mode and fd 2 redirection are Unix-only.');
-        }
-
-        if (!is_dir('/proc/self/fd')) {
-            self::markTestSkipped('/proc/self/fd is not available.');
+        if (DIRECTORY_SEPARATOR !== '/' || !is_dir('/proc/self/fd')) {
+            self::markTestSkipped('Daemon mode and /proc/self/fd are Unix/Linux-only.');
         }
 
         $reportFile = $this->tmpDir . '/fd2-fallback.txt';
         // A directory cannot be opened with fopen(..., 'a').
         $this->runResetStdFixture($this->tmpDir, $reportFile);
 
-        self::assertSame('/dev/null', (string) file_get_contents($reportFile));
+        self::assertSame(realpath('/dev/null'), realpath((string) file_get_contents($reportFile)));
     }
 
     private function runResetStdFixture(string $stdoutFile, string $reportFile): void

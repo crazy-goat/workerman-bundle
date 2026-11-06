@@ -86,9 +86,11 @@ monolog:
 
 We ran this in Docker, and `docker logs` showed the lines of `$logger->info()` and the exception of a controller.
 
-In daemon mode, `php://stderr` writes to `stdout_file`.
+A handler that opens `php://stderr` after the daemon starts (Monolog opens it on the first record)
+writes to `stdout_file`.
 The bundle keeps file descriptor 2 on that file, so a Monolog stream handler does not
 break requests (see [issue 990](https://github.com/crazy-goat/workerman-bundle/issues/990)).
+A stream opened before `start -d` keeps the original stderr.
 Use a file when you want the app log separate from the stdout output:
 
 ```yaml
