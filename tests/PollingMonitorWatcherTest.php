@@ -414,6 +414,62 @@ final class PollingMonitorWatcherTest extends TestCase
         self::assertGreaterThan(1, $ticks, 'A budget of 2 over 5 files must require more than one tick');
     }
 
+    /**
+     * A later source dir must not starve when an earlier dir fills the
+     * per-tick budget on its own.  Before the fix, every tick restarted
+     * at the first dir, so the first dir was re-scanned, consumed the
+     * whole budget, and the second dir's parked iterator never got
+     * another turn — a change in the second dir was never detected.
+     * The sweep now rotates: a tick resumes at the dir the previous
+     * tick stopped in.
+     */
+    public function testLaterSourceDirIsReachedWhenFirstDirFillsBudget(): void
+    {
+        $dirA = $this->tempDir . '/a';
+        $dirB = $this->tempDir . '/b';
+        \mkdir($dirA, 0700);
+        \mkdir($dirB, 0700);
+        // Two matching files in A fill the per-tick budget of 2 on their
+        // own; B holds a single matching file.
+        \file_put_contents($dirA . '/a1.php', '<?php');
+        \file_put_contents($dirA . '/a2.php', '<?php');
+        \file_put_contents($dirB . '/b1.php', '<?php');
+        \clearstatcache();
+
+        $worker = $this->createMock(Worker::class);
+        $worker->name = 'test';
+
+        $watcher = $this->createWatcher(
+            $worker,
+            [$dirA, $dirB],
+            ['*.php'],
+            null,
+            PollingMonitorWatcher::DEFAULT_POLLING_INTERVAL,
+            2,
+        );
+        // Future lastMTime so no file triggers a reload — the watcher
+        // just walks both trees, which is what the starvation is about.
+        $this->setLastMTime($watcher, \time() + 3600);
+
+        // Tick 1: A is scanned (budget consumed) and B's iterator is
+        // created but parked before its first entry — B is starving.
+        $this->invokeCheckFileSystemChanges($watcher);
+        $this->assertNotEmpty($this->getIterators($watcher), 'Tick 1 must leave B parked mid-sweep at a budget of 2');
+
+        // Drive further ticks: with rotation the sweep must reach B and
+        // converge within a bounded number of ticks (3 suffice: B, then
+        // A parked, then A + B). Without rotation it never converges,
+        // because every tick re-scans A first.
+        $ticks = 1;
+        while ($this->getIterators($watcher) !== [] && $ticks < 6) {
+            $this->invokeCheckFileSystemChanges($watcher);
+            ++$ticks;
+        }
+
+        $this->assertSame([], $this->getIterators($watcher), 'The sweep across both source dirs must complete within a bounded number of ticks');
+        self::assertGreaterThan(1, $ticks, 'A budget of 2 over 3 files must require more than one tick');
+    }
+
     public function testMaxFilesPerTickRespectsBound(): void
     {
         for ($i = 0; $i < 600; $i++) {

@@ -23,6 +23,21 @@ class PollingMonitorWatcher extends FileMonitorWatcher
     private array $iterators = [];
 
     /**
+     * Position of the source dir the next tick starts at.
+     *
+     * A tick that runs out of budget parks the iterator of the dir it
+     * stopped in; the next tick resumes at that dir instead of
+     * restarting at the first dir. Without this, a first dir that fills
+     * the budget on its own is re-scanned on every tick and later dirs
+     * starve — their parked iterators never get another turn.
+     *
+     * This is a position into the source-dir list, not a dir key: the
+     * parent constructor filters out non-existent dirs, so the keys of
+     * $sourceDir may not be sequential.
+     */
+    private int $sweepStart = 0;
+
+    /**
      * @param string[] $sourceDir
      * @param string[] $filePattern
      */
@@ -54,8 +69,15 @@ class PollingMonitorWatcher extends FileMonitorWatcher
     private function checkFileSystemChanges(): void
     {
         $filesProcessed = 0;
+        $dirKeys = \array_keys($this->sourceDir);
+        $dirCount = \count($dirKeys);
 
-        foreach ($this->sourceDir as $dirIdx => $dir) {
+        // Visit the dirs in rotated order, starting at the dir the
+        // previous tick stopped in, so a later dir is reached even when
+        // an earlier dir fills the per-tick budget on its own.
+        for ($offset = 0; $offset < $dirCount; $offset++) {
+            $dirIdx = $dirKeys[($this->sweepStart + $offset) % $dirCount];
+            $dir = $this->sourceDir[$dirIdx];
             $iterator = $this->iterators[$dirIdx] ?? null;
             if ($iterator === null) {
                 $iterator = $this->createRecursiveIterator(
@@ -73,6 +95,10 @@ class PollingMonitorWatcher extends FileMonitorWatcher
                     // first one after a resume — so the tick bound is real.
                     $filesProcessed++;
                     if ($filesProcessed > $this->maxFilesPerTick) {
+                        // Park the sweep here: the next tick resumes at
+                        // this dir instead of re-scanning earlier dirs.
+                        $this->sweepStart = ($this->sweepStart + $offset) % $dirCount;
+
                         return;
                     }
 
@@ -120,6 +146,10 @@ class PollingMonitorWatcher extends FileMonitorWatcher
             // Iterator exhausted — this dir's sweep is complete.
             unset($this->iterators[$dirIdx]);
         }
+
+        // Every dir was visited: the sweep is complete, so the next tick
+        // starts a fresh sweep at the first dir again.
+        $this->sweepStart = 0;
     }
 
     /**
@@ -129,5 +159,6 @@ class PollingMonitorWatcher extends FileMonitorWatcher
     private function resetSweep(): void
     {
         $this->iterators = [];
+        $this->sweepStart = 0;
     }
 }
