@@ -356,14 +356,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertSame($controller, $controllerProperty->getValue($handler));
     }
 
-    public function testRebootStrategyIsSetCorrectly(): void
-    {
-        $this->assertFalse($this->rebootStrategy->shouldReboot);
-
-        $this->rebootStrategy->shouldReboot = true;
-        $this->assertTrue($this->rebootStrategy->shouldReboot);
-    }
-
     // ──────────────────────────────────────────────
     // __invoke() — happy path: response is sent
     // ──────────────────────────────────────────────
@@ -614,28 +606,6 @@ final class HttpRequestHandlerTest extends TestCase
     // Reboot path — terminate before reload
     // ──────────────────────────────────────────────
 
-    public function testInvokeRebootPathCallsTerminateSynchronously(): void
-    {
-        $this->rebootStrategy->shouldReboot = true;
-
-        $connection = new MockTcpConnection();
-        $request = new Request(self::HTTP11);
-
-        // Utils::reload() sends SIGUSR1 which behaves differently per environment.
-        // We just verify terminate was called synchronously before the reload attempt.
-        try {
-            ($this->handler)($connection, $request);
-        } catch (\Throwable) {
-            // posix_kill may fail in non-Workerman environment, that's fine
-        }
-
-        $this->assertTrue(
-            $this->kernel->terminateCalled,
-            'Kernel terminate should be called synchronously during reboot path',
-        );
-        $this->assertGreaterThanOrEqual(1, $this->kernel->terminateCount);
-    }
-
     public function testInvokeRebootPathCalledOnEveryRequest(): void
     {
         $connection = new MockTcpConnection();
@@ -648,6 +618,90 @@ final class HttpRequestHandlerTest extends TestCase
             $this->kernel->terminateCalled,
             'Kernel terminate should be called on every request (no more timer deferral)',
         );
+    }
+
+    public function testInvokeRebootPathSendsExactlyOneSignal(): void
+    {
+        $this->rebootStrategy->shouldReboot = true;
+
+        $connection = new MockTcpConnection();
+        $request = new Request(self::HTTP11);
+
+        $signals = $this->countReloadSignals(function () use ($connection, $request): void {
+            ($this->handler)($connection, $request);
+        });
+
+        $this->assertSame(
+            1,
+            $signals,
+            'A shouldReboot() verdict must reach Utils::reload() exactly once per request',
+        );
+        $this->assertTrue($this->kernel->terminateCalled, 'Terminate still runs on the reboot path');
+    }
+
+    public function testInvokeWithoutRebootVerdictSendsNoSignal(): void
+    {
+        $this->rebootStrategy->shouldReboot = false;
+
+        $connection = new MockTcpConnection();
+        $request = new Request(self::HTTP11);
+
+        $signals = $this->countReloadSignals(function () use ($connection, $request): void {
+            ($this->handler)($connection, $request);
+        });
+
+        $this->assertSame(0, $signals, 'A false shouldReboot() verdict must not send SIGUSR1');
+    }
+
+    public function testInvokeErrorPathStillSendsTheReloadSignal(): void
+    {
+        $this->rebootStrategy->shouldReboot = true;
+        $this->handler->withMiddlewares($this->throwingMiddleware(new \RuntimeException('middleware boom')));
+
+        $connection = new MockTcpConnection();
+        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+
+        $signals = $this->countReloadSignals(function () use ($connection, $request): void {
+            ($this->handler)($connection, $request);
+        });
+
+        $this->assertNotEmpty($connection->sentData, 'The error path must still send a response');
+        $this->assertStringContainsString('500', $connection->sentData[0]);
+        $this->assertSame(
+            1,
+            $signals,
+            'The reboot check must run after a handled throwable, so the signal is not lost',
+        );
+    }
+
+    /**
+     * Run $callback with a SIGUSR1 counter installed and return the number of
+     * signals received. The previous handler — SIG_IGN from the test bootstrap
+     * — is restored afterwards so a signal sent by a later test cannot kill
+     * PHPUnit.
+     *
+     * @param callable(): void $callback
+     */
+    private function countReloadSignals(callable $callback): int
+    {
+        if (!\extension_loaded('pcntl') || !\extension_loaded('posix') || !\defined('SIGUSR1')) {
+            self::markTestSkipped('pcntl, posix and the SIGUSR1 constant are required.');
+        }
+
+        $count = 0;
+        $previousHandler = \pcntl_signal_get_handler(\SIGUSR1);
+        \pcntl_signal(\SIGUSR1, static function () use (&$count): void {
+            ++$count;
+        });
+
+        try {
+            $callback();
+            \pcntl_signal_dispatch();
+        } finally {
+            \pcntl_signal(\SIGUSR1, $previousHandler);
+        }
+
+        return $count;
     }
 
     // ──────────────────────────────────────────────
@@ -1417,35 +1471,6 @@ final class HttpRequestHandlerTest extends TestCase
         $handler($connection, $request);
 
         $this->assertNotEmpty($connection->sentData, 'Handler must send an error response on the failure path');
-        $this->assertStringContainsString('500', $connection->sentData[0]);
-    }
-
-    public function testRebootCheckStillRunsWhenPipelineThrows(): void
-    {
-        // Acceptance criteria: the reboot strategy must be consulted on the
-        // failure path. Using a mock with expects(once())->shouldReboot()
-        // proves the handler reached the reboot check after doTerminate().
-        $strategy = $this->createMock(RebootStrategyInterface::class);
-        $strategy->expects($this->once())->method('shouldReboot')->willReturn(true);
-
-        $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
-        $handler->withMiddlewares(
-            $this->throwingMiddleware(new \RuntimeException('boom')),
-        );
-
-        $connection = new MockTcpConnection();
-        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
-
-        // Utils::reload() sends SIGUSR1 which may fail outside Workerman;
-        // the mock assertion proves the check ran regardless.
-        try {
-            $handler($connection, $request);
-        } catch (\Throwable) {
-            // posix_kill may fail in test env — the strategy mock already
-            // asserted shouldReboot() was called.
-        }
-
         $this->assertStringContainsString('500', $connection->sentData[0]);
     }
 
