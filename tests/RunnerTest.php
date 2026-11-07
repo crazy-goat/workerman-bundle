@@ -1502,6 +1502,45 @@ final class RunnerTest extends TestCase
         }
     }
 
+    /**
+     * getCacheDir() must see APP_CACHE_DIR set by the lazy kernel factory
+     * closure on its own, regardless of call order (#1166). Before the fix
+     * it read the variable before the kernel existed, so only the
+     * getProjectDir()-first order inside createConfigLoader() saved it.
+     */
+    public function testGetCacheDirSeesAppCacheDirSetByTheLazyKernelFactory(): void
+    {
+        $hadAppCacheDir = \array_key_exists('APP_CACHE_DIR', $_SERVER);
+        $savedAppCacheDir = $_SERVER['APP_CACHE_DIR'] ?? null;
+        unset($_SERVER['APP_CACHE_DIR']);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('getProjectDir')->willReturn('/tmp/project');
+            $kernel->method('getEnvironment')->willReturn('test');
+            $kernel->method('isDebug')->willReturn(false);
+
+            $kernelFactory = new KernelFactory(static function () use ($kernel): KernelInterface {
+                $_SERVER['APP_CACHE_DIR'] = '/tmp/project/var/cache/ports-18888-19999-19991-abc';
+
+                return $kernel;
+            }, []);
+
+            $cacheDir = $this->invokeRunnerMethod(new Runner($kernelFactory), 'getCacheDir');
+
+            self::assertSame(
+                '/tmp/project/var/cache/ports-18888-19999-19991-abc/test',
+                $cacheDir,
+            );
+        } finally {
+            if ($hadAppCacheDir && \is_string($savedAppCacheDir)) {
+                $_SERVER['APP_CACHE_DIR'] = $savedAppCacheDir;
+            } else {
+                unset($_SERVER['APP_CACHE_DIR']);
+            }
+        }
+    }
+
     public function testApplyWorkermanConfigCreatesDirectoriesWithMode0700(): void
     {
         $saved = $this->saveWorkerState();
