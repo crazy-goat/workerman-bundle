@@ -334,7 +334,7 @@ services:
 In the foreground, the server writes each log line to stdout.
 `docker logs` and `kubectl logs` show it, so you do not need a log file.
 By default the server also writes the same lines to `var/log/workerman.log` inside the container.
-Workerman 5.1.4 and newer cut it when it gets too big (see [Logging and monitoring](logging-monitoring.md#the-workerman-log)).
+Workerman 5.2 or newer cuts it when it gets too big (see [Logging and monitoring](logging-monitoring.md#the-workerman-log)).
 
 `log_file` must be a file path that Workerman can append to and stat.
 `/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2`, `/dev/tty`,
