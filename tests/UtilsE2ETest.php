@@ -81,6 +81,68 @@ PHP,
         self::assertSame(0, $exitCode, 'Utils::reload() should send SIGUSR1 in a subprocess.');
     }
 
+    public function testReloadAllWorkersSendsSigusr1ToParentProcess(): void
+    {
+        $signalReceived = false;
+        $previousHandler = \pcntl_signal_get_handler(SIGUSR1);
+
+        \pcntl_signal(SIGUSR1, static function () use (&$signalReceived): void {
+            $signalReceived = true;
+        });
+
+        try {
+            $scriptFile = $this->tempDir . '/test_reload_all_workers.php';
+            \file_put_contents(
+                $scriptFile,
+                \sprintf(
+                    <<<'PHP'
+<?php
+require %s;
+
+$signalReceived = false;
+pcntl_async_signals(true);
+pcntl_signal(SIGUSR1, function () use (&$signalReceived) {
+    $signalReceived = true;
+});
+
+\CrazyGoat\WorkermanBundle\Utils::reload(reloadAllWorkers: true);
+
+usleep(200000);
+pcntl_signal_dispatch();
+
+exit($signalReceived ? 1 : 0);
+PHP,
+                    \var_export($this->autoloadPath, true),
+                ),
+            );
+
+            $exitCode = $this->runPhpScript($scriptFile);
+
+            \CrazyGoat\WorkermanBundle\Util\Wait::until(
+                static function () use (&$signalReceived): bool {
+                    \pcntl_signal_dispatch();
+
+                    return $signalReceived;
+                },
+                1,
+                initialDelayMs: 10,
+                maxDelayMs: 10,
+            );
+
+            self::assertSame(
+                0,
+                $exitCode,
+                'The child process must not receive the SIGUSR1 sent by reload(reloadAllWorkers: true).',
+            );
+            self::assertTrue(
+                $signalReceived,
+                'Utils::reload(reloadAllWorkers: true) should send SIGUSR1 to the parent process.',
+            );
+        } finally {
+            \pcntl_signal(SIGUSR1, $previousHandler);
+        }
+    }
+
     public function testDeprecatedRebootStillWorksInSubprocess(): void
     {
         $scriptFile = $this->tempDir . '/test_reboot_deprecated.php';
