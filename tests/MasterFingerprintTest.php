@@ -121,6 +121,66 @@ final class MasterFingerprintTest extends TestCase
         $this->assertFileExists($path);
     }
 
+    public function testWriteToThrowsWhenDirectoryCannotBeCreated(): void
+    {
+        $readOnlyDir = $this->makeReadOnlyDir();
+        $path = $readOnlyDir . '/missing/test.fingerprint';
+
+        try {
+            $thrown = null;
+            try {
+                (new MasterFingerprint(1234, 5678, 1000))->writeTo($path);
+            } catch (\RuntimeException $e) {
+                $thrown = $e;
+            }
+
+            $this->assertNotNull($thrown, 'writeTo() must throw when the directory cannot be created');
+            $this->assertStringContainsString('Unable to create directory', $thrown->getMessage());
+            $this->assertSame([], $this->tempFilesIn($readOnlyDir));
+        } finally {
+            chmod($readOnlyDir, 0700);
+        }
+    }
+
+    public function testWriteToThrowsWhenTempFileCannotBeCreated(): void
+    {
+        $readOnlyDir = $this->makeReadOnlyDir();
+        $path = $readOnlyDir . '/test.fingerprint';
+
+        try {
+            $thrown = null;
+            try {
+                (new MasterFingerprint(1234, 5678, 1000))->writeTo($path);
+            } catch (\RuntimeException $e) {
+                $thrown = $e;
+            }
+
+            $this->assertNotNull($thrown, 'writeTo() must throw when the temp file cannot be created');
+            $this->assertStringContainsString('Unable to create fingerprint temp file', $thrown->getMessage());
+            $this->assertSame([], $this->tempFilesFor($path));
+        } finally {
+            chmod($readOnlyDir, 0700);
+        }
+    }
+
+    public function testWriteToRemovesTempFileWhenRenameFails(): void
+    {
+        $target = $this->tmpDir . '/existing-directory';
+        mkdir($target, 0700);
+
+        $thrown = null;
+        try {
+            (new MasterFingerprint(1234, 5678, 1000))->writeTo($target);
+        } catch (\RuntimeException $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, 'writeTo() must throw when the target is an existing directory');
+        $this->assertStringContainsString('Unable to rename fingerprint temp file', $thrown->getMessage());
+        $this->assertSame([], $this->tempFilesFor($target));
+        $this->assertDirectoryExists($target);
+    }
+
     public function testReadFromReturnsNullWhenFileDoesNotExist(): void
     {
         $path = $this->tmpDir . '/nonexistent.fingerprint';
@@ -183,6 +243,55 @@ final class MasterFingerprintTest extends TestCase
         $this->assertSame($captured->pid, $loaded->pid);
         $this->assertSame($captured->startTime, $loaded->startTime);
         $this->assertSame($captured->uid, $loaded->uid);
+    }
+
+    /**
+     * Create a directory inside the test temp dir that denies writes.
+     *
+     * Returns a read-only directory, or skips the test on Windows and when
+     * running as root (where the permission bits do not apply).
+     */
+    private function makeReadOnlyDir(): string
+    {
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $this->markTestSkipped('Permission test requires POSIX');
+        }
+
+        if (\function_exists('posix_getuid') && \posix_getuid() === 0) {
+            $this->markTestSkipped('Permission test cannot work as root');
+        }
+
+        $dir = $this->tmpDir . '/read-only-' . \bin2hex(\random_bytes(4));
+        mkdir($dir, 0700, true);
+        chmod($dir, 0500);
+
+        if (is_writable($dir)) {
+            chmod($dir, 0700);
+            $this->markTestSkipped('Directory is still writable after chmod');
+        }
+
+        return $dir;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tempFilesFor(string $path): array
+    {
+        return $this->tempFilesIn(\dirname($path), \basename($path));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tempFilesIn(string $directory, ?string $basename = null): array
+    {
+        $pattern = $basename === null
+            ? $directory . '/.*.tmp'
+            : $directory . '/.' . $basename . '.*.tmp';
+        $files = \glob($pattern);
+
+        return \is_array($files) ? $files : [];
     }
 
     private function removeDir(string $path): void

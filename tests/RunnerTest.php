@@ -39,6 +39,47 @@ final class RunnerTest extends TestCase
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/runner_test_runner.php';
     private const RUNNER_SOURCE = __DIR__ . '/../src/Runner.php';
 
+    private mixed $savedGrpcEnv = null;
+
+    private mixed $savedGrpcGetenv = false;
+
+    private bool $hadGrpcEnv = false;
+
+    private string $savedLogFile = '';
+
+    /** @var list<string> */
+    private array $tempLogFiles = [];
+
+    protected function setUp(): void
+    {
+        $this->savedLogFile = Worker::$logFile;
+        $this->hadGrpcEnv = \array_key_exists('GRPC_ENABLE_FORK_SUPPORT', $_ENV);
+        $this->savedGrpcEnv = $_ENV['GRPC_ENABLE_FORK_SUPPORT'] ?? null;
+        $this->savedGrpcGetenv = \getenv('GRPC_ENABLE_FORK_SUPPORT');
+    }
+
+    protected function tearDown(): void
+    {
+        Worker::$logFile = $this->savedLogFile;
+
+        if ($this->hadGrpcEnv) {
+            $_ENV['GRPC_ENABLE_FORK_SUPPORT'] = $this->savedGrpcEnv;
+        } else {
+            unset($_ENV['GRPC_ENABLE_FORK_SUPPORT']);
+        }
+
+        if (\is_string($this->savedGrpcGetenv)) {
+            \putenv('GRPC_ENABLE_FORK_SUPPORT=' . $this->savedGrpcGetenv);
+        } else {
+            \putenv('GRPC_ENABLE_FORK_SUPPORT');
+        }
+
+        foreach ($this->tempLogFiles as $file) {
+            @\unlink($file);
+        }
+        $this->tempLogFiles = [];
+    }
+
     public function testForkFailureThrowsCacheWarmupException(): void
     {
         $kernelFactory = new KernelFactory(
@@ -309,6 +350,109 @@ final class RunnerTest extends TestCase
                 $this->removeDir($tmpDir);
             }
         }
+    }
+
+    public function testGrpcWarningRecommendsForkSupportWhenNotSet(): void
+    {
+        $logFile = $this->tempLogPath();
+        $this->setGrpcForkSupport(null);
+        Worker::$logFile = $logFile;
+
+        $this->invokeRunnerMethod($this->createRunnerWithGrpc(true), 'warnAboutGrpcExtension');
+
+        $this->assertStringContainsString(
+            'GRPC_ENABLE_FORK_SUPPORT is not set',
+            (string) file_get_contents($logFile),
+        );
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function grpcForkSupportEnabledProvider(): iterable
+    {
+        yield '1' => ['1'];
+        yield 'true' => ['true'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('grpcForkSupportEnabledProvider')]
+    public function testGrpcWarningDescribesSigkillWhenForkSupportEnabled(string $value): void
+    {
+        $logFile = $this->tempLogPath();
+        $this->setGrpcForkSupport($value);
+        Worker::$logFile = $logFile;
+
+        $this->invokeRunnerMethod($this->createRunnerWithGrpc(true), 'warnAboutGrpcExtension');
+
+        $this->assertStringContainsString(
+            'terminated with SIGKILL on completion',
+            (string) file_get_contents($logFile),
+        );
+    }
+
+    public function testNoGrpcWarningWhenExtensionIsNotLoaded(): void
+    {
+        $logFile = $this->tempLogPath();
+        $this->setGrpcForkSupport(null);
+        Worker::$logFile = $logFile;
+
+        $this->invokeRunnerMethod($this->createRunnerWithGrpc(false), 'warnAboutGrpcExtension');
+
+        $this->assertFileDoesNotExist($logFile);
+    }
+
+    public function testGrpcWarningWritesNothingWithoutLogFile(): void
+    {
+        $this->setGrpcForkSupport(null);
+        Worker::$logFile = '';
+
+        ob_start();
+        try {
+            $this->invokeRunnerMethod($this->createRunnerWithGrpc(true), 'warnAboutGrpcExtension');
+            $output = ob_get_clean();
+        } catch (\Throwable $e) {
+            ob_end_clean();
+
+            throw $e;
+        }
+
+        $this->assertSame('', $output);
+    }
+
+    public function testGrpcLoadedReflectsTheLoadedExtension(): void
+    {
+        $method = new \ReflectionMethod(Runner::class, 'grpcLoaded');
+
+        $this->assertSame(\extension_loaded('grpc'), $method->invoke(null));
+    }
+
+    private function createRunnerWithGrpc(bool $loaded): Runner
+    {
+        $kernel = $this->createMock(KernelInterface::class);
+        $kernelFactory = new KernelFactory(fn(): KernelInterface => $kernel, []);
+
+        return $loaded ? new GrpcLoadedRunner($kernelFactory) : new GrpcNotLoadedRunner($kernelFactory);
+    }
+
+    private function setGrpcForkSupport(?string $value): void
+    {
+        if ($value === null) {
+            unset($_ENV['GRPC_ENABLE_FORK_SUPPORT']);
+            \putenv('GRPC_ENABLE_FORK_SUPPORT');
+
+            return;
+        }
+
+        $_ENV['GRPC_ENABLE_FORK_SUPPORT'] = $value;
+        \putenv('GRPC_ENABLE_FORK_SUPPORT=' . $value);
+    }
+
+    private function tempLogPath(): string
+    {
+        $path = \sys_get_temp_dir() . '/workerman_runner_grpc_' . \bin2hex(\random_bytes(6)) . '.log';
+        $this->tempLogFiles[] = $path;
+
+        return $path;
     }
 
     /**
@@ -1700,5 +1844,21 @@ final readonly class UnexpectedSignalRunner extends Runner
         }
 
         return $pid;
+    }
+}
+
+final readonly class GrpcLoadedRunner extends Runner
+{
+    protected static function grpcLoaded(): bool
+    {
+        return true;
+    }
+}
+
+final readonly class GrpcNotLoadedRunner extends Runner
+{
+    protected static function grpcLoaded(): bool
+    {
+        return false;
     }
 }

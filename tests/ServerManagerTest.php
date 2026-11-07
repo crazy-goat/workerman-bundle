@@ -137,6 +137,121 @@ final class ServerManagerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    // writeMasterFingerprint()
+    // ──────────────────────────────────────────────
+
+    public function testWriteMasterFingerprintSkipsWithoutPidFile(): void
+    {
+        $this->configLoader->setWorkermanConfig(['pid_file' => '']);
+        $logger = new ServerManagerRecordingLogger();
+        $manager = $this->createManagerWithLogger($logger);
+
+        $this->invokeWriteMasterFingerprint($manager, false);
+
+        $this->assertFileDoesNotExist($this->pidFile . '.fingerprint');
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('info', $logger->records[0]['level']);
+        $this->assertStringContainsString('No pid_file configured; skipping master fingerprint', $logger->records[0]['message']);
+    }
+
+    public function testWriteMasterFingerprintSkipsInDaemonMode(): void
+    {
+        $logger = new ServerManagerRecordingLogger();
+        $manager = $this->createManagerWithLogger($logger);
+
+        $this->invokeWriteMasterFingerprint($manager, true);
+
+        $this->assertFileDoesNotExist($this->pidFile . '.fingerprint');
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('info', $logger->records[0]['level']);
+        $this->assertStringContainsString('Daemon mode: skipping launcher fingerprint', $logger->records[0]['message']);
+    }
+
+    public function testWriteMasterFingerprintWritesSidecarWith0600Permissions(): void
+    {
+        $logger = new ServerManagerRecordingLogger();
+        $manager = $this->createManagerWithLogger($logger);
+
+        $this->invokeWriteMasterFingerprint($manager, false);
+
+        $path = $this->pidFile . '.fingerprint';
+        $this->assertFileExists($path);
+        $this->assertMatchesRegularExpression('/^\d+\|\d+\|\d+$/', (string) file_get_contents($path));
+        $this->assertSame([], $logger->records, 'A successful write must not log a failure');
+
+        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+            $this->assertSame(0600, fileperms($path) & 0777, 'Fingerprint file must have 0600 permissions');
+        }
+    }
+
+    public function testWriteMasterFingerprintLogsWarningWhenDirectoryIsNotWritable(): void
+    {
+        $readOnlyDir = $this->makeReadOnlyDir();
+        $pidFile = $readOnlyDir . '/workerman.pid';
+        $this->configLoader->setWorkermanConfig(['pid_file' => $pidFile]);
+        $logger = new ServerManagerRecordingLogger();
+        $manager = $this->createManagerWithLogger($logger);
+
+        try {
+            $this->invokeWriteMasterFingerprint($manager, false);
+
+            $this->assertFileDoesNotExist($pidFile . '.fingerprint');
+            $this->assertSame([], glob($readOnlyDir . '/.*.tmp') ?: []);
+            $this->assertCount(1, $logger->records);
+            $this->assertSame('warning', $logger->records[0]['level']);
+            $this->assertStringContainsString(
+                'Failed to write master fingerprint; falling back to cmdline check',
+                $logger->records[0]['message'],
+            );
+        } finally {
+            chmod($readOnlyDir, 0700);
+        }
+    }
+
+    private function createManagerWithLogger(ServerManagerRecordingLogger $logger): ServerManager
+    {
+        return new ServerManager(
+            $this->kernel,
+            $this->configLoader,
+            $this->processInspector,
+            $this->statusFileReader,
+            $logger,
+        );
+    }
+
+    private function invokeWriteMasterFingerprint(ServerManager $manager, bool $daemon): void
+    {
+        (new \ReflectionMethod($manager, 'writeMasterFingerprint'))->invoke($manager, $daemon);
+    }
+
+    /**
+     * Create a directory inside the test temp dir that denies writes.
+     *
+     * Skips on Windows and as root, where the permission bits do not apply.
+     */
+    private function makeReadOnlyDir(): string
+    {
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $this->markTestSkipped('Permission test requires POSIX');
+        }
+
+        if (\function_exists('posix_getuid') && \posix_getuid() === 0) {
+            $this->markTestSkipped('Permission test cannot work as root');
+        }
+
+        $dir = $this->tmpDir . '/read-only-' . \bin2hex(\random_bytes(4));
+        mkdir($dir, 0700, true);
+        chmod($dir, 0500);
+
+        if (is_writable($dir)) {
+            chmod($dir, 0700);
+            $this->markTestSkipped('Directory is still writable after chmod');
+        }
+
+        return $dir;
+    }
+
+    // ──────────────────────────────────────────────
     // isRunning()
     // ──────────────────────────────────────────────
 
@@ -1445,5 +1560,20 @@ PHP;
         }
 
         @rmdir($path);
+    }
+}
+
+final class ServerManagerRecordingLogger extends \Psr\Log\AbstractLogger
+{
+    /** @var list<array{level: string, message: string, context: array<mixed>}> */
+    public array $records = [];
+
+    public function log($level, string|\Stringable $message, array $context = []): void
+    {
+        $this->records[] = [
+            'level' => (string) $level,
+            'message' => (string) $message,
+            'context' => $context,
+        ];
     }
 }

@@ -330,7 +330,7 @@ readonly class Runner implements RunnerInterface
      */
     private function warnAboutGrpcExtension(): void
     {
-        if (!\extension_loaded('grpc')) {
+        if (!static::grpcLoaded()) {
             return;
         }
 
@@ -342,6 +342,17 @@ readonly class Runner implements RunnerInterface
         }
 
         $this->logStartupWarning('[WARN] grpc extension detected: supervised processes and forked task children are terminated with SIGKILL on completion because grpc_shutdown() can hang in forked children — destructors and shutdown functions are skipped for them. See docs/troubleshooting.md "gRPC Extension and Fork Safety".');
+    }
+
+    /**
+     * Whether the grpc extension is loaded.
+     *
+     * Extracted as a seam so tests can exercise the start-up warnings on
+     * hosts (and CI) where grpc is not installed.
+     */
+    protected static function grpcLoaded(): bool
+    {
+        return \extension_loaded('grpc');
     }
 
     /**
