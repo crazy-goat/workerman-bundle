@@ -107,7 +107,16 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         if ($this->isAllowlistExtensionMismatch($request->path())) {
-            return new Response(404);
+            // Fail open (DEC-013): the prefilter must never shadow an app
+            // route. Only answer 404 when the path resolves to an existing
+            // file; a disallowed extension with no file on disk falls
+            // through to the application (issue #1118).
+            $filePath = $this->getPublicPathFile($request);
+            if ($filePath !== false && is_file($filePath)) {
+                return new Response(404);
+            }
+
+            return $next($request);
         }
 
         $filePath = $this->getPublicPathFile($request);
