@@ -16,7 +16,10 @@ declare(strict_types=1);
  * exponential backoff — a daemon that is already ready costs one
  * check, a slow one is observed within the backoff cap.
  *
- * Usage: php bin/wait-for-ports.php <port> [<port> ...] [--timeout=<seconds>]
+ * Usage: php bin/wait-for-ports.php <port> [<port> ...] [--host=<host>] [--timeout=<seconds>]
+ *
+ * --host defaults to 127.0.0.1 and accepts an IPv6 literal with or without
+ * brackets (brackets are added when missing).
  *
  * Exit codes:
  *   0 = all ports accept connections
@@ -27,11 +30,14 @@ declare(strict_types=1);
 $argv = $_SERVER['argv'] ?? [];
 
 $ports = [];
+$host = '127.0.0.1';
 $timeoutSeconds = 15;
 
 foreach (array_slice($argv, 1) as $arg) {
     if (preg_match('/^--timeout=(\d+(?:\.\d+)?)$/', $arg, $m) === 1) {
         $timeoutSeconds = (float) $m[1];
+    } elseif (preg_match('/^--host=(.+)$/', $arg, $m) === 1) {
+        $host = $m[1];
     } elseif (ctype_digit($arg)) {
         $ports[] = (int) $arg;
     } else {
@@ -41,15 +47,19 @@ foreach (array_slice($argv, 1) as $arg) {
 }
 
 if ($ports === []) {
-    fwrite(STDERR, "Usage: php bin/wait-for-ports.php <port> [<port> ...] [--timeout=<seconds>]\n");
+    fwrite(STDERR, "Usage: php bin/wait-for-ports.php <port> [<port> ...] [--host=<host>] [--timeout=<seconds>]\n");
     exit(2);
+}
+
+if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+    $host = '[' . $host . ']';
 }
 
 require __DIR__ . '/../vendor/autoload.php';
 
-$check = static function () use ($ports): bool {
+$check = static function () use ($ports, $host): bool {
     foreach ($ports as $port) {
-        $sock = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+        $sock = @fsockopen($host, $port, $errno, $errstr, 0.2);
         if ($sock === false) {
             return false;
         }
@@ -63,7 +73,8 @@ $ready = CrazyGoat\WorkermanBundle\Util\Wait::until($check, (int) ceil($timeoutS
 
 if (!$ready) {
     fwrite(STDERR, sprintf(
-        "Daemon did not become ready on port(s) %s within %s seconds.\n",
+        "Daemon did not become ready on %s port(s) %s within %s seconds.\n",
+        $host,
         implode(', ', array_map(strval(...), $ports)),
         $timeoutSeconds,
     ));

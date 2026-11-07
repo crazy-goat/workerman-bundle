@@ -4,11 +4,14 @@
 declare(strict_types=1);
 
 use CrazyGoat\WorkermanBundle\Test\App\Kernel;
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\ConsoleOutput;
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
+
+TestPorts::applyCacheDir(dirname(__DIR__, 2));
 
 $kernel = new Kernel('test', true);
 $kernel->boot();

@@ -161,9 +161,9 @@ inside `runAll()` (feof() on null).
 `Symfony\Runtime\GenericRuntime::__construct()` calls `umask(0o000)` in debug, and `Workerman\Worker::daemonize()` calls `umask(0)` before forking workers, so setting `umask(0077)` at the top of `tests/App/index.php` (or before starting the daemon) is overwritten before the kernel writes `var/cache`/`var/log`. `tests/App/bootstrap.php` pins the umask for the PHPUnit process and calls `harden_test_var_tree()` **after** `workerman_start()` to chmod the daemon's tree (drop group/other bits on dirs, group/other write on files). See #778.
 
 ### "Address already in use" when running `composer test`
-<!-- kb: id=FAQ-009 date=2026-08-08 tags=tests,ports,daemon trigger="composer test fails with connection errors on 8888/9999/9991" hits=0 status=promoted gate="AGENTS.md + docs/troubleshooting.md § Ports used by the test suite document 8888/9999/9991 and php tests/App/index.php stop" -->
+<!-- kb: id=FAQ-009 date=2026-11-07 tags=tests,ports,daemon trigger="composer test fails with connection errors or 'Address already in use' on the test ports" hits=0 status=promoted gate="AGENTS.md + docs/troubleshooting.md § Ports used by the test suite document WMB_PORT_HTTP/SECOND/THIRD and php tests/App/index.php stop; tests/TestPortsTest.php covers the resolution" -->
 
-Promoted — ports 8888/9999/9991 and `php tests/App/index.php stop` are documented in `AGENTS.md` and `docs/troubleshooting.md` § "Ports used by the test suite".
+Promoted — ports default to 8888/9999/9991 and are overridden with `WMB_PORT_HTTP`/`WMB_PORT_SECOND`/`WMB_PORT_THIRD` (resolved by `tests/App/TestPorts.php`); `php tests/App/index.php stop` clears a stale daemon.
 
 ### How the test suite works
 <!-- kb: id=FAQ-010 date=2026-08-08 tags=tests,coverage trigger="running or debugging the test suite" hits=0 status=promoted gate="composer.json test scripts + AGENTS.md" -->

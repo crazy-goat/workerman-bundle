@@ -55,15 +55,19 @@ or relaxing the PHPStan level to make a check pass is forbidden; report the conf
 
 ## Tests and ports
 
-- `composer test` boots a real Workerman daemon on ports **8888**, **9999** and **9991**
-  (hard-coded in `tests/App/Kernel.php`; only the listen address can be set, with
-  `WMB_LISTEN_ADDR`). "Address already in use" means a stale daemon: `php tests/App/index.php stop`.
-  On slow hosts raise `COMPOSER_PROCESS_TIMEOUT`.
-- Because of the fixed ports, two worktrees cannot run `composer test` on the same host at the
-  same time; run the suites one after another with `composer test` on the host (recommended).
-  `bin/docker-test-worktree <path>` isolates parallel runs in containers and mounts the shared
-  `.git` common dir read-only, so it works for a real linked worktree too; `bin/docker-test`
-  works for a normal checkout. Lint does not run in the image (it has no
+- `composer test` boots a real Workerman daemon on ports **8888**, **9999** and **9991** by
+  default. `tests/App/TestPorts.php` is the single source for the kernel, the readiness
+  checks, the wait script and every HTTP test client; override a port with `WMB_PORT_HTTP`,
+  `WMB_PORT_SECOND` or `WMB_PORT_THIRD` (1..65535). The listen address is `WMB_LISTEN_ADDR`
+  (default `127.0.0.1`). "Address already in use" means a stale daemon:
+  `php tests/App/index.php stop`. On slow hosts raise `COMPOSER_PROCESS_TIMEOUT`.
+- Two worktrees can run `composer test` on the same host at the same time when each uses
+  its own port set, e.g. in the second worktree:
+  `WMB_PORT_HTTP=18888 WMB_PORT_SECOND=19999 WMB_PORT_THIRD=19991 composer test`.
+  Override all three: a partial override can still collide with the first worktree.
+  `bin/docker-test-worktree <path>` isolates parallel runs in containers and mounts the
+  shared `.git` common dir read-only, so it works for a real linked worktree too;
+  `bin/docker-test` works for a normal checkout. Lint does not run in the image (it has no
   `shellcheck`/`hadolint`); run `bin/lint.sh` on the host.
   Details: [CONTRIBUTING.md](CONTRIBUTING.md).
 - `UtilsTest` signal tests need `pcntl` and `posix`; without them set

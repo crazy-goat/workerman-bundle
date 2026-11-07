@@ -61,11 +61,12 @@ The installer asks git where the hooks folder is (`git rev-parse --git-path hook
    ```
 
    Note: `composer test` boots a real Workerman daemon binding ports **8888**, **9999**
-   and **9991** for end-to-end HTTP tests. The port numbers are hardcoded in
-   `tests/App/Kernel.php` and cannot be overridden via environment variables.
-   The listen **address** can be overridden with `WMB_LISTEN_ADDR`
-   (default `127.0.0.1`) — see ["Parallel test runs across git
-   worktrees"](#parallel-test-runs-across-git-worktrees).
+   and **9991** by default for end-to-end HTTP tests. Override them with
+   `WMB_PORT_HTTP`, `WMB_PORT_SECOND` and `WMB_PORT_THIRD` (1..65535); the defaults
+   and the resolution live in `tests/App/TestPorts.php`, which the kernel,
+   bootstrap and every test client share. The listen **address** can be overridden
+   with `WMB_LISTEN_ADDR` (default `127.0.0.1`) — see ["Parallel test runs across
+   git worktrees"](#parallel-test-runs-across-git-worktrees).
 
    To run the suite with code coverage locally, you need a coverage driver such
    as PCOV or Xdebug installed and enabled:
@@ -81,6 +82,7 @@ The installer asks git where the hooks folder is (`git rev-parse --git-path hook
 
    > **Troubleshooting "Address already in use"**
    > - Find the process occupying the port: `lsof -i :8888` or `ss -tlnp | grep 8888`
+   >   (replace the port with your `WMB_PORT_*` override when you use one)
    > - Stop the conflicting service or kill the process (e.g. `kill <PID>`)
    > - If a previous test run was interrupted, a Workerman daemon may still be
    >   running in the background. Stop it manually:
@@ -197,10 +199,12 @@ bin/docker-test test:coverage      # composer test:coverage
 bin/docker-test coverage:check     # composer coverage:check
 ```
 
-The test daemon binds ports **8888**, **9999** and **9991** inside the
-container on `127.0.0.1` — no `-p` port forwarding is needed. The `@requires
-extension inotify` tests use the container's own `/tmp`, not the bind mount,
-so they work as on CI.
+The test daemon binds ports **8888**, **9999** and **9991** by default inside
+the container on `127.0.0.1` — no `-p` port forwarding is needed. This helper
+does not forward host `WMB_PORT_*` overrides, so it always uses the defaults
+inside; host runs and `bin/docker-test-worktree` accept and forward them. The
+`@requires extension inotify` tests use the container's own `/tmp`, not the
+bind mount, so they work as on CI.
 
 #### Live-server skips
 
@@ -214,12 +218,25 @@ negatives, `phar.readonly` when the run does not pass `-d phar.readonly=0`);
 
 #### Parallel test runs across git worktrees
 
-Because the daemon and phpunit run **inside the same container**, each
-container gets its own network namespace — its own loopback. `127.0.0.1:8888`
-in container A is a different stack from `127.0.0.1:8888` in container B, so
-N parallel worktree containers are collision-free by construction: no `-p`
-publishing, no code change. Build the image once (it is source-agnostic;
-source is bind-mounted) and run one container per worktree:
+There are two supported ways to run worktrees in parallel.
+
+**On the host**, give every worktree its own port set. The defaults stay
+8888/9999/9991, so the first worktree needs no changes; start the second with
+all three overrides:
+
+```bash
+WMB_PORT_HTTP=18888 WMB_PORT_SECOND=19999 WMB_PORT_THIRD=19991 composer test
+```
+
+Each worktree has its own `var/` (daemon PID file, config cache), so only the
+ports are shared. The helper resolves the same variables for the daemon, the
+wait script and every test client.
+
+**In containers**, each run gets its own network namespace — its own loopback.
+`127.0.0.1:8888` in container A is a different stack from `127.0.0.1:8888` in
+container B, so N parallel worktree containers are collision-free by
+construction: no `-p` publishing, no code change. Build the image once (it is
+source-agnostic; source is bind-mounted) and run one container per worktree:
 
 ```bash
 bin/docker-test-worktree ../wmb-feature
@@ -254,17 +271,18 @@ worktree, so concurrent runs never fight over a name.
 
 To `curl` a worktree's test server from the host for manual debugging, use
 the ephemeral publish flow: `bin/docker-test-worktree <path> --publish`
-starts **only the daemon** in a detached container with
-`-p 127.0.0.1::8888 -p 127.0.0.1::9999 -p 127.0.0.1::9991`, so Docker assigns
-each container a random free host port — guaranteed unique even with several
-published containers running at once — prints the `docker port` mappings and
-blocks until you press Ctrl-C (which stops the daemon). Point curl at the
-printed host ports while it runs; the test suite is not executed in this mode.
-This requires the daemon to accept connections on the bridge interface, so the
-helper also sets `WMB_LISTEN_ADDR=0.0.0.0`; `tests/App/Kernel.php` reads it
-and falls back to `127.0.0.1` when unset, which keeps plain local runs and
-non-publish Docker runs byte-identical to before. Port **numbers** stay fixed
-— container network isolation removes any need to change them.
+starts **only the daemon** in a detached container with ephemeral host mappings
+for the three test ports (defaults `8888`/`9999`/`9991`, or the `WMB_PORT_*`
+values exported on the host), so Docker assigns each container a random free
+host port — guaranteed unique even with several published containers running
+at once — prints the `docker port` mappings and blocks until you press Ctrl-C
+(which stops the daemon). Point curl at the printed host ports while it runs;
+the test suite is not executed in this mode. This requires the daemon to
+accept connections on the bridge interface, so the helper also sets
+`WMB_LISTEN_ADDR=0.0.0.0`; `tests/App/TestPorts.php` reads it and falls back to
+`127.0.0.1` when unset, which keeps plain local runs and non-publish Docker
+runs byte-identical to before. Inside a container, network isolation removes
+any need to change the port numbers.
 
 Running many containers at once multiplies CPU/memory use; on constrained
 hosts cap it per container with e.g. `--cpus`/`--memory` via a plain

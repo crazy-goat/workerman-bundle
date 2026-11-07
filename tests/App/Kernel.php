@@ -18,6 +18,22 @@ final class Kernel extends BaseKernel
 {
     use MicroKernelTrait;
 
+    /**
+     * Honour the bundle's APP_CACHE_DIR base directory. The test app entry
+     * points (index.php, console and bootstrap.php) point it at a per-port
+     * cache for non-default WMB_PORT_* values, because Symfony caches the
+     * resolved listen addresses.
+     */
+    public function getCacheDir(): string
+    {
+        $cacheDir = $_SERVER['APP_CACHE_DIR'] ?? null;
+        if (\is_string($cacheDir) && $cacheDir !== '') {
+            return $cacheDir . '/' . $this->environment;
+        }
+
+        return parent::getCacheDir();
+    }
+
     public function registerBundles(): iterable
     {
         return [
@@ -41,14 +57,14 @@ final class Kernel extends BaseKernel
                 'servers' => [
                     [
                         'name' => 'Test server with files',
-                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':8888',
+                        'listen' => TestPorts::listen(TestPorts::http()),
                         'processes' => 1,
                         'serve_files' => true,
                         'root_dir' => '%kernel.project_dir%/tests/data/',
                     ],
                     [
                         'name' => 'Test server no files',
-                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':9999',
+                        'listen' => TestPorts::listen(TestPorts::second()),
                         'processes' => 1,
                         'serve_files' => false,
                         'middlewares' => [
@@ -57,7 +73,7 @@ final class Kernel extends BaseKernel
                     ],
                     [
                         'name' => 'Test server middleware dispatch contract',
-                        'listen' => 'http://' . (getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1') . ':9991',
+                        'listen' => TestPorts::listen(TestPorts::third()),
                         'processes' => 1,
                         'serve_files' => false,
                         'middlewares' => [

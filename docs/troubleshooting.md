@@ -262,13 +262,29 @@ The bundle logs a warning, `Streamed response was cut`, and closes the connectio
 ## Ports used by the test suite
 
 `composer test` boots a real Workerman daemon that binds **127.0.0.1:8888**,
-**127.0.0.1:9999** and **127.0.0.1:9991** (the last is the middleware
-dispatch-contract server). The port numbers are hardcoded in
-`tests/App/Kernel.php`; the listen *address* can be overridden with
-`WMB_LISTEN_ADDR` (default `127.0.0.1`).
+**127.0.0.1:9999** and **127.0.0.1:9991** by default (the last is the
+middleware dispatch-contract server). `tests/App/TestPorts.php` is the single
+source for the kernel, the bootstrap readiness check, the wait script and every
+test client. Override a port with `WMB_PORT_HTTP`, `WMB_PORT_SECOND` or
+`WMB_PORT_THIRD` (1..65535); the listen *address* is `WMB_LISTEN_ADDR`
+(default `127.0.0.1`).
+
+To run two worktrees on the same host, give the second worktree its own set and
+override all three ports so no default is left behind:
+
+```bash
+WMB_PORT_HTTP=18888 WMB_PORT_SECOND=19999 WMB_PORT_THIRD=19991 composer test
+```
+
+A non-default set compiles into its own `var/cache/ports-<ports>-<address-hash>`
+directory, so changing either the ports or `WMB_LISTEN_ADDR` gets a fresh
+container. The default set keeps `var/cache/<env>`: after changing only
+`WMB_LISTEN_ADDR` with the default ports, stop the daemon and remove
+`var/cache/<env>` so the new bind address is not masked by the cached one.
 
 "Address already in use" during `composer test` means one of the three ports
-is held by a stale daemon or an unrelated service. Find and free it:
+is held by a stale daemon or an unrelated service. Find and free it (replace
+the ports with your `WMB_PORT_*` values when you use overrides):
 
 ```bash
 lsof -i :8888 -i :9999 -i :9991   # or: ss -tlnp | grep -E '8888|9999|9991'

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use GuzzleHttp\Client;
 
 use function PHPUnit\Framework\assertIsArray;
@@ -16,9 +17,14 @@ final class MiddlewareTest extends WebTestCase
 
     protected function setUp(): void
     {
-        $socket = @fsockopen('127.0.0.1', 9999, $errorCode, $errorMessage, 1);
+        $socket = @fsockopen(TestPorts::connectHost(), TestPorts::second(), $errorCode, $errorMessage, 1);
         if ($socket === false) {
-            self::failLiveServer(sprintf('Live Workerman server is not running on 127.0.0.1:9999 (%s)', $errorMessage));
+            self::failLiveServer(sprintf(
+                'Live Workerman server is not running on %s:%d (%s)',
+                TestPorts::connectHost(),
+                TestPorts::second(),
+                $errorMessage,
+            ));
         }
         fclose($socket);
     }
@@ -73,7 +79,7 @@ final class MiddlewareTest extends WebTestCase
     private function createResponse(string $method, array $options = [], ?Client $client = null): array
     {
         $client ??= $this->createHttpClient();
-        $response = $client->request($method, 'http://127.0.0.1:9999/request_test', $options);
+        $response = $client->request($method, TestPorts::url(TestPorts::second(), '/request_test'), $options);
 
         $result = json_decode((string) $response->getBody(), true);
         assertIsArray($result);

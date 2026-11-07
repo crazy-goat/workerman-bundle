@@ -2,8 +2,10 @@
 #
 # docker-test-worktree — run the workerman-bundle test suite in a git worktree
 # inside its own container. Each container has its own network namespace, i.e.
-# its own loopback, so N parallel worktree containers can never clash on ports
-# 8888/9999/9991 — no -p publishing and no code change needed.
+# its own loopback, so N parallel worktree containers can never clash on the
+# test ports (8888/9999/9991 by default, overridable with WMB_PORT_HTTP,
+# WMB_PORT_SECOND and WMB_PORT_THIRD) — no -p publishing and no code change
+# needed.
 #
 # Volume and container names are derived from the worktree basename, so
 # parallel runs stay isolated: vendor/ is per-worktree (branches may pin
@@ -22,11 +24,12 @@ usage: docker-test-worktree [WORKTREE_PATH] [--publish] [--coverage]
 
 Run 'composer test' in ${IMAGE} with the given git worktree bind-mounted.
 Each run gets its own container (own network namespace), so parallel
-worktrees never collide on ports 8888/9999/9991.
+worktrees never collide on the test ports (default 8888/9999/9991). Host
+WMB_PORT_* values are forwarded into the container when set.
 
   WORKTREE_PATH  path to the worktree (default: \$PWD)
   --publish      start ONLY the Workerman daemon in a detached container with
-                 ephemeral host mappings (-p 127.0.0.1::8888/9999/9991) and
+                 ephemeral host mappings for the test ports and
                  WMB_LISTEN_ADDR=0.0.0.0, print the 'docker port' mappings,
                  then wait for Ctrl-C and stop the daemon. For manual curl
                  debugging from the host; no test suite is executed.
@@ -93,6 +96,20 @@ WORKTREE="$(cd "$WORKTREE" && pwd)" || die "cannot enter worktree: $WORKTREE"
 BASENAME="$(basename "$WORKTREE")"
 VENDOR_VOL="wmb-vendor-${BASENAME}"
 
+PORT_HTTP="${WMB_PORT_HTTP:-8888}"
+PORT_SECOND="${WMB_PORT_SECOND:-9999}"
+PORT_THIRD="${WMB_PORT_THIRD:-9991}"
+
+validate_port() {
+  local name=$1 value=$2
+  if [[ ! "$value" =~ ^[0-9]{1,5}$ ]] || (( 10#$value < 1 || 10#$value > 65535 )); then
+    die "$name must be a TCP port number between 1 and 65535, got '$value'"
+  fi
+}
+validate_port WMB_PORT_HTTP "$PORT_HTTP"
+validate_port WMB_PORT_SECOND "$PORT_SECOND"
+validate_port WMB_PORT_THIRD "$PORT_THIRD"
+
 # A Symfony env cache stores ABSOLUTE paths. A cache written inside the
 # container holds /app/... paths and poisons host runs ("mkdir(): Read-only
 # file system" on /app/var/run), and vice versa a host-written cache trips the
@@ -136,16 +153,17 @@ fi
 
 RUN_ARGS=(docker run --rm --name "wmb-${BASENAME}" \
   -v "${WORKTREE}":/app \
-  -v "${VENDOR_VOL}":/app/vendor)
+  -v "${VENDOR_VOL}":/app/vendor \
+  -e WMB_PORT_HTTP -e WMB_PORT_SECOND -e WMB_PORT_THIRD)
 if [[ -n "$COMMON_DIR" ]]; then
   RUN_ARGS+=(-v "${COMMON_DIR}:${COMMON_DIR}:ro")
 fi
 
 if [[ "$PUBLISH" == 1 ]]; then
   RUN_ARGS+=(
-    -p 127.0.0.1::8888
-    -p 127.0.0.1::9999
-    -p 127.0.0.1::9991
+    -p "127.0.0.1::${PORT_HTTP}"
+    -p "127.0.0.1::${PORT_SECOND}"
+    -p "127.0.0.1::${PORT_THIRD}"
     -e WMB_LISTEN_ADDR=0.0.0.0
     -d
     "$IMAGE" sh -c 'if [ -L /app/var/cache ]; then echo "docker-test-worktree: refusing to clean symlinked /app/var/cache" >&2; exit 1; fi; rm -rf /app/var/cache/*; composer install --no-scripts --no-interaction && APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
@@ -168,17 +186,30 @@ if [[ "$PUBLISH" == 1 ]]; then
   # so the mappings we print are immediately usable. Bail out with a clear
   # error instead of printing dead mappings when it never comes up.
   ready=0
+  probe_output=""
   for _ in $(seq 1 30); do
-    if docker exec "wmb-${BASENAME}" php -r '
-exit((int) (!@fsockopen("127.0.0.1", 8888, $e, $s, 1)
-  || !@fsockopen("127.0.0.1", 9999, $e, $s, 1)
-  || !@fsockopen("127.0.0.1", 9991, $e, $s, 1)));' >/dev/null 2>&1; then
+    if probe_output=$(docker exec "wmb-${BASENAME}" php -r '
+require "/app/vendor/autoload.php";
+$ports = CrazyGoat\WorkermanBundle\Test\App\TestPorts::all();
+$host = CrazyGoat\WorkermanBundle\Test\App\TestPorts::connectHost();
+foreach ($ports as $port) {
+    $sock = @fsockopen($host, $port, $e, $s, 1);
+    if ($sock === false) {
+        exit(1);
+    }
+    fclose($sock);
+}
+exit(0);' 2>&1); then
       ready=1
       break
     fi
     sleep 1
   done
   if [[ "$ready" != 1 ]]; then
+    if [[ -n "$probe_output" ]]; then
+      echo "docker-test-worktree: readiness probe error:" >&2
+      echo "$probe_output" >&2
+    fi
     echo "docker-test-worktree: daemon did not become ready within 30s; recent logs:" >&2
     docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | tr -d '\r' | sed 's/^/  /' >&2 || true
     die "daemon failed to start in wmb-${BASENAME}; container removed (check vendor/ state of this worktree)"

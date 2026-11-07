@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Command\ServerAction;
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
@@ -62,29 +63,29 @@ final class WorkermanCommandTest extends KernelTestCase
         try {
             \exec(\workerman_create_console_command('restart -d') . ' 2>&1', $restartOutput, $restartCode);
             self::assertSame(0, $restartCode, implode("\n", $restartOutput));
-            self::assertTrue($this->waitForPortUp(8888, 10), 'Server port 8888 should be up after restart');
+            self::assertTrue($this->waitForPortUp(TestPorts::http(), 10), sprintf('Server port %d should be up after restart', TestPorts::http()));
             $this->assertHttpReadyAfterReload($client);
 
             $after = (int) file_get_contents($pidFile);
             self::assertGreaterThan(0, $after, 'The restarted daemon must have a PID');
             self::assertNotSame($before, $after, 'restart must start a new master process');
-            self::assertSame(200, $client->request('GET', 'http://127.0.0.1:8888/response_test')->getStatusCode());
+            self::assertSame(200, $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'))->getStatusCode());
 
             \exec(\workerman_create_console_command('stop') . ' 2>&1', $stopOutput, $stopCode);
             self::assertSame(0, $stopCode, implode("\n", $stopOutput));
-            self::assertTrue($this->waitForPortDown(8888, 5), 'Server port 8888 should be down after stop');
+            self::assertTrue($this->waitForPortDown(TestPorts::http(), 5), sprintf('Server port %d should be down after stop', TestPorts::http()));
 
             \exec(\workerman_create_console_command('restart -d') . ' 2>&1', $startOutput, $startCode);
             self::assertSame(0, $startCode, implode("\n", $startOutput));
-            self::assertTrue($this->waitForPortUp(8888, 10), 'restart must start a stopped server');
+            self::assertTrue($this->waitForPortUp(TestPorts::http(), 10), 'restart must start a stopped server');
             $this->assertHttpReadyAfterReload($client);
-            self::assertSame(200, $client->request('GET', 'http://127.0.0.1:8888/response_test')->getStatusCode());
+            self::assertSame(200, $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'))->getStatusCode());
         } finally {
             // A failed assertion must not leave the shared daemon down for
             // the rest of the suite.
-            if (!$this->waitForPortUp(8888, 1)) {
+            if (!$this->waitForPortUp(TestPorts::http(), 1)) {
                 \exec(\workerman_create_console_command('start -d') . ' 2>&1');
-                $this->waitForPortUp(8888, 10);
+                $this->waitForPortUp(TestPorts::http(), 10);
             }
         }
     }
@@ -94,16 +95,16 @@ final class WorkermanCommandTest extends KernelTestCase
         $client = BoundedHttpClient::create();
 
         // Server is running (started by bootstrap.php) — verify HTTP works.
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         self::assertSame(200, $response->getStatusCode());
 
         // Stop via console command.
         \shell_exec(\workerman_create_console_command('stop'));
-        self::assertTrue($this->waitForPortDown(8888, 5), 'Server port 8888 should be down after stop');
+        self::assertTrue($this->waitForPortDown(TestPorts::http(), 5), sprintf('Server port %d should be down after stop', TestPorts::http()));
 
         // Server should be down.
         try {
-            $client->request('GET', 'http://127.0.0.1:8888/response_test');
+            $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
             self::fail('Expected connection to fail after stop');
         } catch (ConnectException) {
         }
@@ -119,13 +120,13 @@ final class WorkermanCommandTest extends KernelTestCase
             \proc_close($process);
         }
 
-        self::assertTrue($this->waitForPortUp(8888, 10), 'Server port 8888 should be back up after restart');
+        self::assertTrue($this->waitForPortUp(TestPorts::http(), 10), sprintf('Server port %d should be back up after restart', TestPorts::http()));
 
         // The port is open before every worker is ready, so wait for the first 200 with bounded probes.
         $this->assertHttpReadyAfterReload($client);
 
         // Server should be back up.
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('hello from test controller', (string) $response->getBody());
     }
@@ -144,7 +145,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
     public function testReloadHttpReadinessRetriesTransientTransportFailures(): void
     {
-        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $request = new Request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         $handler = new MockHandler([
             new ConnectException('Connection refused', $request),
             new NetworkTimeoutException('Operation timed out', $request),
@@ -162,7 +163,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
     public function testReloadHttpReadinessFailsWhenTransportFailurePersists(): void
     {
-        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $request = new Request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         $handler = new MockHandler([
             new NetworkException('Connection reset by peer', $request),
             new Response(200),
@@ -194,7 +195,7 @@ final class WorkermanCommandTest extends KernelTestCase
 
     public function testReloadHttpReadinessDoesNotRetryUnexpectedTransportError(): void
     {
-        $request = new Request('GET', 'http://127.0.0.1:8888/response_test');
+        $request = new Request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         $error = new RequestException('Malformed response', $request);
         $handler = new MockHandler([$error, new Response(200)]);
         $this->expectExceptionObject($error);
@@ -211,7 +212,7 @@ final class WorkermanCommandTest extends KernelTestCase
         $lastError = 'none';
         $ready = Wait::until(static function () use ($client, &$lastError): bool {
             try {
-                $response = $client->request('GET', 'http://127.0.0.1:8888/response_test', [
+                $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'), [
                     ...BoundedHttpClient::OPTIONS,
                     'allow_redirects' => false,
                 ]);
@@ -350,7 +351,7 @@ final class WorkermanCommandTest extends KernelTestCase
     private function waitForPortUp(int $port, int $timeoutSeconds): bool
     {
         return Wait::until(static function () use ($port): bool {
-            $sock = @\fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+            $sock = @\fsockopen(TestPorts::connectHost(), $port, $errno, $errstr, 0.2);
 
             if ($sock !== false) {
                 \fclose($sock);
@@ -365,7 +366,7 @@ final class WorkermanCommandTest extends KernelTestCase
     private function waitForPortDown(int $port, int $timeoutSeconds): bool
     {
         return Wait::until(static function () use ($port): bool {
-            $sock = @\fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+            $sock = @\fsockopen(TestPorts::connectHost(), $port, $errno, $errstr, 0.2);
             if ($sock !== false) {
                 \fclose($sock);
 

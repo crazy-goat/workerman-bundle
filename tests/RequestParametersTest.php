@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Psr7\MultipartStream;
 
@@ -58,7 +59,7 @@ final class RequestParametersTest extends KernelTestCase
                 cookies: [
                     'test-cookie-1' => '94bt5trqjfqe6seo0',
                 ],
-                domain: '127.0.0.1',
+                domain: TestPorts::connectHost(),
             ),
         ]);
 
@@ -358,7 +359,7 @@ final class RequestParametersTest extends KernelTestCase
     private function createResponse(string $method, array $options = [], string $path = '/request_test'): array
     {
         $client = BoundedHttpClient::create();
-        $response = $client->request($method, 'http://127.0.0.1:8888' . $path, $options);
+        $response = $client->request($method, TestPorts::url(TestPorts::http(), $path), $options);
 
         $result = json_decode((string) $response->getBody(), true);
         assertIsArray($result);
