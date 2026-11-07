@@ -451,6 +451,90 @@ final class StreamedResponseStrategyTest extends TestCase
     }
 
     /**
+     * Issue #1114: a 304 StreamedResponse must send only the head — no
+     * Transfer-Encoding: chunked, no chunks, no chunked terminator — and
+     * must never execute the stream callback. RFC 9112 §6.3: a 304 response
+     * ends at the first blank line after the headers and has no body.
+     */
+    public function testBodylessStatus304SendsHeadOnlyWithNoTransferEncoding(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(1))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $callbackRan = false;
+        $streamedResponse = new StreamedResponse(function () use (&$callbackRan): void {
+            $callbackRan = true;
+            echo 'must not run for 304';
+        }, Response::HTTP_NOT_MODIFIED);
+
+        $strategy = new StreamedResponseStrategy();
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.1');
+
+        $this->assertFalse($callbackRan, '304 must not execute the stream callback');
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(304, $workermanResponse->getStatusCode());
+
+        $this->assertCount(1, $sendCalls, '304 must send only the head — no chunks, no chunked terminator');
+        $this->assertStringStartsWith('HTTP/1.1 304 Not Modified', $sendCalls[0]['data']);
+        $this->assertStringNotContainsString('Transfer-Encoding', $sendCalls[0]['data']);
+        $this->assertTrue($sendCalls[0]['raw']);
+        $this->assertSame('', explode("\r\n\r\n", (string) $sendCalls[0]['data'], 2)[1] ?? '', '304 must not emit a body after the head terminator');
+
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue($this->connection->context->responseSentDirectly);
+    }
+
+    /**
+     * Issue #1114: a 204 StreamedResponse must send only the head — no
+     * Transfer-Encoding: chunked (RFC 9112 §6.1 forbids it in a 204
+     * response), no chunks, no chunked terminator — and must never execute
+     * the stream callback.
+     */
+    public function testBodylessStatus204SendsHeadOnlyWithNoTransferEncoding(): void
+    {
+        $this->connection->context = new \stdClass();
+
+        $sendCalls = [];
+        $this->connection
+            ->expects($this->exactly(1))
+            ->method('send')
+            ->willReturnCallback(function (mixed $data, bool $raw = false) use (&$sendCalls): void {
+                $sendCalls[] = ['data' => $data, 'raw' => $raw];
+            });
+
+        $callbackRan = false;
+        $streamedResponse = new StreamedResponse(function () use (&$callbackRan): void {
+            $callbackRan = true;
+            echo 'must not run for 204';
+        }, Response::HTTP_NO_CONTENT);
+
+        $strategy = new StreamedResponseStrategy();
+
+        $workermanResponse = $strategy->convert($streamedResponse, [], $this->connection, '1.1');
+
+        $this->assertFalse($callbackRan, '204 must not execute the stream callback');
+        $this->assertSame('', $workermanResponse->rawBody());
+        $this->assertSame(204, $workermanResponse->getStatusCode());
+
+        $this->assertCount(1, $sendCalls, '204 must send only the head — no chunks, no chunked terminator');
+        $this->assertStringStartsWith('HTTP/1.1 204 No Content', $sendCalls[0]['data']);
+        $this->assertStringNotContainsString('Transfer-Encoding', $sendCalls[0]['data']);
+        $this->assertTrue($sendCalls[0]['raw']);
+        $this->assertSame('', explode("\r\n\r\n", (string) $sendCalls[0]['data'], 2)[1] ?? '', '204 must not emit a body after the head terminator');
+
+        $this->assertInstanceOf(\stdClass::class, $this->connection->context);
+        $this->assertTrue($this->connection->context->responseSentDirectly);
+    }
+
+    /**
      * Issue #621: an HTTP/1.1 streamed response to a client that sent
      * `Connection: close` must echo `Connection: close` in the head (alongside
      * `Transfer-Encoding: chunked`). The socket is closed anyway by
