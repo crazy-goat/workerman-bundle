@@ -590,6 +590,30 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
+    /**
+     * The mid-sweep reload signal must stay inside the fixture (#1126).
+     * When the watcher detects the change it calls Utils::reload(true),
+     * which sends SIGUSR1 to the fixture's parent. Before the fix the
+     * fixture only ignored SIGUSR1 in itself, so this run terminated the
+     * PHPUnit parent. The fixture now supervises the sweep in a child
+     * process and fails unless exactly one reload signal arrives there,
+     * so reaching this assertion proves the parent survived and the
+     * signal was contained.
+     */
+    public function testMidSweepReloadSignalDoesNotReachTestRunner(): void
+    {
+        $autoloadPath = \realpath(__DIR__ . '/../vendor/autoload.php');
+        if ($autoloadPath === false) {
+            self::markTestSkipped('vendor/autoload.php not found.');
+        }
+
+        $scriptFile = __DIR__ . '/Fixtures/polling_watcher_mid_sweep_runner.php';
+
+        $exitCode = $this->runPhpScript($scriptFile, [$this->tempDir, $autoloadPath]);
+
+        self::assertSame(0, $exitCode, 'Mid-sweep reload must not terminate the parent process.');
+    }
+
     public function testFileAtEndOfNextSweepIsDetectedOnSecondTick(): void
     {
         $autoloadPath = \realpath(__DIR__ . '/../vendor/autoload.php');
