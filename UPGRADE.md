@@ -24,6 +24,23 @@ forward-looking view; past migrations live in the sections below.
 
 ---
 
+## Upgrading to 0.33
+
+### Workerman 5.2 or newer is required
+
+The bundle now requires `workerman/workerman: ^5.2` instead of `^5.0`.
+Workerman 5.1.4 added the 10 MB `workerman.log` cut-off
+(`Worker::$logFileMaxSize`) that the logging and deployment docs describe, and
+CI tests the 5.2 line. A Workerman 5.0.x install therefore behaved differently
+from what the docs promised, and no test covered it.
+
+**Migration:** run `composer update workerman/workerman` and make sure the
+installed version is 5.2 or newer. If you pinned Workerman below 5.2 in your
+own `composer.json`, raise the constraint. There is no code change on your
+side; the bundle only calls APIs that exist in 5.2.
+
+---
+
 ## Upgrading to 0.32
 
 ### WebSocket listeners are rejected

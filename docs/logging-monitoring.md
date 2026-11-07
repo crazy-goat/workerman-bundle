@@ -42,10 +42,10 @@ Each line has the time, the process ID and the message (a warning at the start h
 In the foreground, the server writes the same lines to the console.
 In daemon mode (`start -d`), it writes only to the file.
 
-Workerman 5.1.4 and newer cut the file by itself when it gets bigger than 10 MB.
-They keep the second half.
+The bundle requires Workerman 5.2 or newer.
+Workerman cuts the file by itself when it gets bigger than 10 MB.
+It keeps the second half.
 You cannot change this size in the bundle config.
-Older versions of Workerman 5 never cut the file, so rotate it.
 
 A process that fails again and again writes many lines.
 In our test, a process that threw an error at once wrote 2 MB in 30 seconds.
@@ -178,7 +178,7 @@ Put it in `/etc/logrotate.d/myapp`:
   If the directory is group-writable, `logrotate` refuses to rotate. Then add `su www-data www-data` to the block.
 - Use `copytruncate` for `stdout_file` and for Monolog stream handlers.
   They keep the file open, so after `mv` they would still write to the moved file.
-- Workerman 5.1.4 and newer cut `workerman.log` at 10 MB, so there you only need rotation to keep old lines.
+- Workerman 5.2 or newer cuts `workerman.log` at 10 MB, so there you only need rotation to keep old lines.
 - For the Monolog files, you can also use the Monolog handler type `rotating_file`.
 
 We did not run `logrotate` itself.
