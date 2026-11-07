@@ -149,6 +149,56 @@ final class BinDirectoryTest extends TestCase
         $this->assertFileExists($this->projectDir . '/bin/wait-for-ports.php');
     }
 
+    public function testWaitForTestPortsScriptExists(): void
+    {
+        $this->assertFileExists($this->projectDir . '/bin/wait-for-test-ports.php');
+    }
+
+    public function testWaitForTestPortsReportsAnInvalidPortOverride(): void
+    {
+        $output = [];
+        $code = null;
+        exec(
+            'env WMB_PORT_HTTP=abc ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->projectDir . '/bin/wait-for-test-ports.php') . ' 2>&1',
+            $output,
+            $code,
+        );
+
+        $this->assertNotSame(0, $code, 'invalid WMB_PORT_* must fail the readiness check');
+        $this->assertStringContainsString(
+            'WMB_PORT_HTTP must be a TCP port number between 1 and 65535',
+            implode("\n", $output),
+        );
+    }
+
+    public function testWaitForPortsConnectsToTheConfiguredHost(): void
+    {
+        $server = @stream_socket_server('tcp://127.0.0.2:0', $errorCode, $errorMessage);
+        if ($server === false) {
+            $this->markTestSkipped(sprintf('127.0.0.2 is not available: %s (%d)', $errorMessage, $errorCode));
+        }
+
+        try {
+            $name = stream_socket_get_name($server, false);
+            $this->assertIsString($name);
+            $port = (int) substr($name, (int) strrpos($name, ':') + 1);
+
+            $output = [];
+            $code = null;
+            exec(
+                escapeshellarg(PHP_BINARY) . ' '
+                . escapeshellarg($this->projectDir . '/bin/wait-for-ports.php') . ' '
+                . escapeshellarg((string) $port) . ' --host=127.0.0.2 --timeout=1 2>&1',
+                $output,
+                $code,
+            );
+
+            $this->assertSame(0, $code, implode("\n", $output));
+        } finally {
+            fclose($server);
+        }
+    }
+
     /**
      * bin/wait-for-ports.php polls TCP ports until they accept connections.
      * It replaces the fixed `sleep 1` in the composer test scripts (#592).

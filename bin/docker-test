@@ -28,8 +28,9 @@ Run a command in the ${IMAGE} image with the working tree bind-mounted.
 
 The working tree is bind-mounted at /app; vendor/ and var/ are persisted in
 the ${VENDOR_VOL} and ${VAR_VOL} named volumes so dependencies and artifacts
-survive between runs. Ports 8888/9999 are in-container (127.0.0.1), so no -p
-is needed.
+survive between runs. Ports 8888/9999/9991 are in-container (127.0.0.1), so no
+-p is needed. WMB_PORT_* overrides are not forwarded by this helper; use the
+defaults here, or bin/docker-test-worktree when you need custom ports.
 
 On Linux, build with --build-arg APP_UID=\$(id -u) --build-arg APP_GID=\$(id -g)
 so bind-mounted files are owned by your host user. macOS/Windows Docker Desktop

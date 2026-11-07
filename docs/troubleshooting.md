@@ -276,6 +276,12 @@ override all three ports so no default is left behind:
 WMB_PORT_HTTP=18888 WMB_PORT_SECOND=19999 WMB_PORT_THIRD=19991 composer test
 ```
 
+A non-default set compiles into its own `var/cache/ports-<ports>-<address-hash>`
+directory, so changing either the ports or `WMB_LISTEN_ADDR` gets a fresh
+container. The default set keeps `var/cache/<env>`: after changing only
+`WMB_LISTEN_ADDR` with the default ports, stop the daemon and remove
+`var/cache/<env>` so the new bind address is not masked by the cached one.
+
 "Address already in use" during `composer test` means one of the three ports
 is held by a stale daemon or an unrelated service. Find and free it (replace
 the ports with your `WMB_PORT_*` values when you use overrides):

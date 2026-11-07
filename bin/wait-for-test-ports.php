@@ -11,6 +11,9 @@ declare(strict_types=1);
  * spelling the ports out in composer.json: the WMB_PORT_* overrides and their
  * defaults stay in one place and do not depend on shell expansion.
  *
+ * The connect host follows WMB_LISTEN_ADDR (wildcards map to loopback), so
+ * the readiness check reaches the daemon on a non-default bind address too.
+ *
  * Usage: php bin/wait-for-test-ports.php [--timeout=<seconds>]
  */
 
@@ -24,6 +27,7 @@ $extra = \is_array($args) ? \array_slice($args, 1) : [];
 $_SERVER['argv'] = [
     'wait-for-ports.php',
     ...\array_map(\strval(...), TestPorts::all()),
+    '--host=' . TestPorts::connectHost(),
     ...$extra,
 ];
 

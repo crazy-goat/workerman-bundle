@@ -128,7 +128,11 @@ final class TestPortsTest extends TestCase
 
     public function testDefaultPortsKeepTheHistoricalCacheDir(): void
     {
+        \putenv('WMB_LISTEN_ADDR=0.0.0.0');
+
         self::assertNull(TestPorts::cacheDir(\dirname(__DIR__)));
+        TestPorts::applyCacheDir(\dirname(__DIR__));
+        self::assertArrayNotHasKey('APP_CACHE_DIR', $_SERVER);
     }
 
     public function testCacheDirIsIsolatedPerPortSet(): void
@@ -139,13 +143,33 @@ final class TestPortsTest extends TestCase
         \putenv('WMB_PORT_SECOND=19999');
         \putenv('WMB_PORT_THIRD=19991');
         $cacheDir = TestPorts::cacheDir($projectDir);
+        $hostHash = \substr(\sha1('127.0.0.1'), 0, 8);
 
-        self::assertSame($projectDir . '/var/cache/ports-18888-19999-19991', $cacheDir);
+        self::assertSame($projectDir . '/var/cache/ports-18888-19999-19991-' . $hostHash, $cacheDir);
 
-        $_SERVER['APP_CACHE_DIR'] = $cacheDir;
+        TestPorts::applyCacheDir($projectDir);
+        self::assertSame($cacheDir, $_SERVER['APP_CACHE_DIR'] ?? null);
         $kernel = new Kernel('test', true);
         self::assertSame($cacheDir . '/test', $kernel->getCacheDir());
         self::assertSame($kernel->getProjectDir() . '/var/cache/test', $this->kernelCacheDirWithoutOverride());
+    }
+
+    public function testCacheDirChangesWithTheBindAddress(): void
+    {
+        $projectDir = \dirname(__DIR__);
+        \putenv('WMB_PORT_HTTP=18888');
+        \putenv('WMB_PORT_SECOND=19999');
+        \putenv('WMB_PORT_THIRD=19991');
+
+        \putenv('WMB_LISTEN_ADDR=127.0.0.1');
+        $loopback = TestPorts::cacheDir($projectDir);
+
+        \putenv('WMB_LISTEN_ADDR=0.0.0.0');
+        $wildcard = TestPorts::cacheDir($projectDir);
+
+        self::assertNotNull($loopback);
+        self::assertNotNull($wildcard);
+        self::assertNotSame($loopback, $wildcard, 'the cache must not be reused across WMB_LISTEN_ADDR changes');
     }
 
     private function kernelCacheDirWithoutOverride(): string
@@ -171,20 +195,58 @@ final class TestPortsTest extends TestCase
         self::assertSame('http://127.0.0.1:9999/dispatch_count_test', TestPorts::url(TestPorts::second(), '/dispatch_count_test'));
     }
 
-    public function testUrlUsesLoopbackForTheIpv6WildcardAddress(): void
+    public function testUrlUsesIpv6LoopbackForTheIpv6WildcardAddress(): void
     {
         \putenv('WMB_LISTEN_ADDR=::');
 
         self::assertSame('::', TestPorts::host());
-        self::assertSame('127.0.0.1', TestPorts::connectHost());
+        self::assertSame('[::1]', TestPorts::connectHost());
         self::assertSame('http://[::]:9991', TestPorts::listen(TestPorts::third()));
+        self::assertSame('http://[::1]:9991', TestPorts::url(TestPorts::third()));
     }
 
     public function testUrlBracketsAnExplicitIpv6Address(): void
     {
         \putenv('WMB_LISTEN_ADDR=::1');
 
+        self::assertSame('::1', TestPorts::host());
+        self::assertSame('[::1]', TestPorts::connectHost());
+        self::assertSame('http://[::1]:8888', TestPorts::listen(TestPorts::http()));
         self::assertSame('http://[::1]:8888/response_test', TestPorts::url(TestPorts::http(), '/response_test'));
+    }
+
+    /**
+     * fsockopen() rejects a bare IPv6 literal; the value connectHost() returns
+     * must be usable by the readiness probe and every raw-socket test client.
+     */
+    public function testConnectHostIsUsableWithFsockopenOnIpv6(): void
+    {
+        $server = @\stream_socket_server('tcp://[::1]:0', $errorCode, $errorMessage);
+        if ($server === false) {
+            self::markTestSkipped(sprintf('IPv6 loopback is not available: %s (%d)', $errorMessage, $errorCode));
+        }
+
+        try {
+            $name = \stream_socket_get_name($server, false);
+            self::assertIsString($name);
+            $port = (int) \substr($name, (int) \strrpos($name, ':') + 1);
+
+            \putenv('WMB_LISTEN_ADDR=::1');
+            self::assertSame('[::1]', TestPorts::connectHost());
+
+            $socket = @\fsockopen(TestPorts::connectHost(), $port, $errorCode, $errorMessage, 1);
+            self::assertIsResource($socket, sprintf(
+                'fsockopen(%s:%d) must connect to the IPv6 listener (%s)',
+                TestPorts::connectHost(),
+                $port,
+                $errorMessage,
+            ));
+            if (\is_resource($socket)) {
+                \fclose($socket);
+            }
+        } finally {
+            \fclose($server);
+        }
     }
 
     public function testUrlKeepsAnExplicitConnectAddress(): void

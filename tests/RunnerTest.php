@@ -1458,6 +1458,50 @@ final class RunnerTest extends TestCase
         }
     }
 
+    /**
+     * The test app sets APP_CACHE_DIR lazily from the kernel factory closure.
+     * createConfigLoader() must therefore build the ConfigLoader from the
+     * value that closure wrote, i.e. getProjectDir() must run before
+     * getCacheDir(). A reorder would silently reuse var/cache/<env> and the
+     * daemon would bind the previously cached ports (#868).
+     */
+    public function testCreateConfigLoaderSeesAppCacheDirSetByTheLazyKernelFactory(): void
+    {
+        $hadAppCacheDir = \array_key_exists('APP_CACHE_DIR', $_SERVER);
+        $savedAppCacheDir = $_SERVER['APP_CACHE_DIR'] ?? null;
+        unset($_SERVER['APP_CACHE_DIR']);
+
+        try {
+            $kernel = $this->createMock(KernelInterface::class);
+            $kernel->method('getProjectDir')->willReturn('/tmp/project');
+            $kernel->method('getEnvironment')->willReturn('test');
+            $kernel->method('isDebug')->willReturn(false);
+
+            $kernelFactory = new KernelFactory(static function () use ($kernel): KernelInterface {
+                $_SERVER['APP_CACHE_DIR'] = '/tmp/project/var/cache/ports-18888-19999-19991-abc';
+
+                return $kernel;
+            }, []);
+
+            $loader = $this->invokeRunnerMethod(new Runner($kernelFactory), 'createConfigLoader');
+            $cache = (new \ReflectionProperty(ConfigLoader::class, 'cache'))->getValue($loader);
+            if (!$cache instanceof \Symfony\Component\Config\ConfigCache) {
+                self::fail('ConfigLoader must hold a ConfigCache');
+            }
+
+            self::assertSame(
+                '/tmp/project/var/cache/ports-18888-19999-19991-abc/test/workerman/config.cache.php',
+                $cache->getPath(),
+            );
+        } finally {
+            if ($hadAppCacheDir && \is_string($savedAppCacheDir)) {
+                $_SERVER['APP_CACHE_DIR'] = $savedAppCacheDir;
+            } else {
+                unset($_SERVER['APP_CACHE_DIR']);
+            }
+        }
+    }
+
     public function testApplyWorkermanConfigCreatesDirectoriesWithMode0700(): void
     {
         $saved = $this->saveWorkerState();

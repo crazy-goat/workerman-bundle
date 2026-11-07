@@ -100,6 +100,16 @@ PORT_HTTP="${WMB_PORT_HTTP:-8888}"
 PORT_SECOND="${WMB_PORT_SECOND:-9999}"
 PORT_THIRD="${WMB_PORT_THIRD:-9991}"
 
+validate_port() {
+  local name=$1 value=$2
+  if [[ ! "$value" =~ ^[0-9]{1,5}$ ]] || (( 10#$value < 1 || 10#$value > 65535 )); then
+    die "$name must be a TCP port number between 1 and 65535, got '$value'"
+  fi
+}
+validate_port WMB_PORT_HTTP "$PORT_HTTP"
+validate_port WMB_PORT_SECOND "$PORT_SECOND"
+validate_port WMB_PORT_THIRD "$PORT_THIRD"
+
 # A Symfony env cache stores ABSOLUTE paths. A cache written inside the
 # container holds /app/... paths and poisons host runs ("mkdir(): Read-only
 # file system" on /app/var/run), and vice versa a host-written cache trips the
@@ -176,8 +186,9 @@ if [[ "$PUBLISH" == 1 ]]; then
   # so the mappings we print are immediately usable. Bail out with a clear
   # error instead of printing dead mappings when it never comes up.
   ready=0
+  probe_output=""
   for _ in $(seq 1 30); do
-    if docker exec "wmb-${BASENAME}" php -r '
+    if probe_output=$(docker exec "wmb-${BASENAME}" php -r '
 require "/app/vendor/autoload.php";
 $ports = CrazyGoat\WorkermanBundle\Test\App\TestPorts::all();
 $host = CrazyGoat\WorkermanBundle\Test\App\TestPorts::connectHost();
@@ -188,13 +199,17 @@ foreach ($ports as $port) {
     }
     fclose($sock);
 }
-exit(0);' >/dev/null 2>&1; then
+exit(0);' 2>&1); then
       ready=1
       break
     fi
     sleep 1
   done
   if [[ "$ready" != 1 ]]; then
+    if [[ -n "$probe_output" ]]; then
+      echo "docker-test-worktree: readiness probe error:" >&2
+      echo "$probe_output" >&2
+    fi
     echo "docker-test-worktree: daemon did not become ready within 30s; recent logs:" >&2
     docker logs --tail 20 "wmb-${BASENAME}" 2>&1 | tr -d '\r' | sed 's/^/  /' >&2 || true
     die "daemon failed to start in wmb-${BASENAME}; container removed (check vendor/ state of this worktree)"

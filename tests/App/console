@@ -11,10 +11,7 @@ use Symfony\Component\Console\Output\ConsoleOutput;
 
 require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
-$testCacheDir = TestPorts::cacheDir(dirname(__DIR__, 2));
-if ($testCacheDir !== null) {
-    $_SERVER['APP_CACHE_DIR'] = $testCacheDir;
-}
+TestPorts::applyCacheDir(dirname(__DIR__, 2));
 
 $kernel = new Kernel('test', true);
 $kernel->boot();

@@ -199,11 +199,12 @@ bin/docker-test test:coverage      # composer test:coverage
 bin/docker-test coverage:check     # composer coverage:check
 ```
 
-The test daemon binds ports **8888**, **9999** and **9991** by default inside the
-container on `127.0.0.1` (override with `WMB_PORT_*`) — no `-p` port forwarding
-is needed. The `@requires
-extension inotify` tests use the container's own `/tmp`, not the bind mount,
-so they work as on CI.
+The test daemon binds ports **8888**, **9999** and **9991** by default inside
+the container on `127.0.0.1` — no `-p` port forwarding is needed. This helper
+does not forward host `WMB_PORT_*` overrides, so it always uses the defaults
+inside; host runs and `bin/docker-test-worktree` accept and forward them. The
+`@requires extension inotify` tests use the container's own `/tmp`, not the
+bind mount, so they work as on CI.
 
 #### Live-server skips
 

@@ -57,7 +57,9 @@ final class TestPorts
      * defaults (which keep the historical `var/cache/<env>` layout).
      *
      * Symfony caches the resolved listen addresses, so a run with WMB_PORT_*
-     * overrides must not reuse the container written for another port set.
+     * overrides must not reuse the container written for another port set or
+     * another WMB_LISTEN_ADDR. The short host hash keeps the directory name
+     * portable while covering both values.
      */
     public static function cacheDir(string $projectDir): ?string
     {
@@ -66,7 +68,19 @@ final class TestPorts
             return null;
         }
 
-        return $projectDir . '/var/cache/ports-' . \implode('-', $ports);
+        return $projectDir . '/var/cache/ports-' . \implode('-', $ports) . '-' . self::hostHash();
+    }
+
+    /**
+     * Point APP_CACHE_DIR at the per-set directory when the defaults are not
+     * in use. Entry points call this before the kernel is created.
+     */
+    public static function applyCacheDir(string $projectDir): void
+    {
+        $cacheDir = self::cacheDir($projectDir);
+        if ($cacheDir !== null) {
+            $_SERVER['APP_CACHE_DIR'] = $cacheDir;
+        }
     }
 
     /**
@@ -78,14 +92,23 @@ final class TestPorts
     }
 
     /**
-     * Address a client uses to reach the daemon. A wildcard bind address
-     * (0.0.0.0 or ::) is not routable, so clients use loopback instead.
+     * Address a client uses to reach the daemon. Wildcard binds are not
+     * routable, so clients use loopback; IPv6 literals are bracketed because
+     * that is the form fsockopen() and URLs accept.
      */
     public static function connectHost(): string
     {
         $host = self::host();
 
-        return \in_array($host, ['0.0.0.0', '::'], true) ? '127.0.0.1' : $host;
+        if ($host === '0.0.0.0') {
+            return '127.0.0.1';
+        }
+
+        if ($host === '::') {
+            $host = '::1';
+        }
+
+        return self::formatHost($host);
     }
 
     /**
@@ -101,7 +124,7 @@ final class TestPorts
      */
     public static function url(int $port, string $path = ''): string
     {
-        return 'http://' . self::formatHost(self::connectHost()) . ':' . self::portOrFail($port) . $path;
+        return 'http://' . self::connectHost() . ':' . self::portOrFail($port) . $path;
     }
 
     private static function formatHost(string $host): string
@@ -111,6 +134,11 @@ final class TestPorts
         }
 
         return $host;
+    }
+
+    private static function hostHash(): string
+    {
+        return \substr(\sha1(self::host()), 0, 8);
     }
 
     private static function resolve(string $name, int $default): int

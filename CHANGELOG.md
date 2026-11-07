@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The test daemon ports are configurable with `WMB_PORT_HTTP`, `WMB_PORT_SECOND` and `WMB_PORT_THIRD` (defaults unchanged: 8888, 9999 and 9991). `tests/App/TestPorts.php` is the single source for the kernel, the readiness checks, the wait script and every test client, so parallel host worktrees no longer clash; `bin/docker-test-worktree --publish` forwards the overrides and maps the resolved ports; see `AGENTS.md` and `CONTRIBUTING.md` (#868)
+- The test daemon ports are configurable with `WMB_PORT_HTTP`, `WMB_PORT_SECOND` and `WMB_PORT_THIRD` (defaults unchanged: 8888, 9999 and 9991). `tests/App/TestPorts.php` is the single source for the kernel, the readiness checks, the wait script and every test client, so parallel host worktrees no longer clash; the readiness check follows `WMB_LISTEN_ADDR` and supports bracketed IPv6, a custom port set caches per bind address, and `bin/docker-test-worktree --publish` forwards the overrides and maps the resolved ports; see `AGENTS.md` and `CONTRIBUTING.md` (#868)
 
 ### Fixed
 

@@ -12,10 +12,7 @@ umask(0077);
 
 include __DIR__ . '/../../vendor/autoload.php';
 
-$testCacheDir = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::cacheDir(\dirname(__DIR__, 2));
-if ($testCacheDir !== null) {
-    $_SERVER['APP_CACHE_DIR'] = $testCacheDir;
-}
+\CrazyGoat\WorkermanBundle\Test\App\TestPorts::applyCacheDir(\dirname(__DIR__, 2));
 
 // PollingMonitorWatcher tests call Utils::reload(reloadAllWorkers: true) which
 // sends SIGUSR1 to posix_getppid() — the PHPUnit parent process. Ignore it.

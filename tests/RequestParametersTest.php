@@ -59,7 +59,7 @@ final class RequestParametersTest extends KernelTestCase
                 cookies: [
                     'test-cookie-1' => '94bt5trqjfqe6seo0',
                 ],
-                domain: '127.0.0.1',
+                domain: TestPorts::connectHost(),
             ),
         ]);
 
