@@ -88,7 +88,7 @@ This section documents the differences between [crazy-goat/workerman-bundle](htt
 - PHP 8.2 or newer.
 - `ext-pcntl` and `ext-posix`.
 - Symfony 6.4, 7 or 8.
-- Workerman 5.
+- Workerman 5.2 or newer.
 - Linux or macOS. Windows is not supported.
 
 Optional: `ext-event`, `ext-inotify`, `ext-zip` and `dragonmantank/cron-expression`.

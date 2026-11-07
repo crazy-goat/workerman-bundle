@@ -13,7 +13,7 @@ You need all of these:
 | `ext-pcntl` | any |
 | `ext-posix` | any |
 | Symfony | 6.4, 7 or 8 |
-| Workerman | 5 (Composer installs it for you) |
+| Workerman | 5.2 or newer (Composer installs it for you) |
 | Operating system | Linux or macOS |
 
 Windows is not supported.
