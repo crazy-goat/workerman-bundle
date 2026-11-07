@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Exception\StaticFileMiddlewareException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
@@ -93,6 +94,14 @@ final class StaticFilesMiddlewareTest extends TestCase
                 rmdir($siblingDir);
             }
         }
+    }
+
+    public function testMissingRootDirectoryThrows(): void
+    {
+        $this->expectException(StaticFileMiddlewareException::class);
+        $this->expectExceptionMessage('Root directory does not exist');
+
+        new StaticFilesMiddleware('/no/such/dir');
     }
 
     public function testSymlinkEscapingBlocked(): void
@@ -450,6 +459,42 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertArrayHasKey($indexOf($oldest), $cache(), 'The most recently used entry must survive eviction');
         $this->assertArrayNotHasKey($indexOf($secondOldest), $cache(), 'The least-recently-used entry must be evicted');
         $this->assertCount($maxSize, $cache(), 'Cache must stay bounded at CACHE_MAX_SIZE');
+    }
+
+    public function testStaleCacheEntryIsRemovedAndPathResolvedAgain(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+        $next = fn(Request $req): Response => new Response(404);
+
+        // Warm the positive cache with the existing file.
+        $this->assertSame(200, $middleware($this->createRequest('/test.txt'), $next)->getStatusCode());
+
+        $cacheIndex = '/test.txt' . "\0" . '0' . "\0" . realpath($this->rootDirectory);
+        $cache = &StaticFilesRealPathCache::all();
+        $this->assertArrayHasKey($cacheIndex, $cache);
+        $this->assertSame($this->rootDirectory . '/test.txt', $cache[$cacheIndex]['path']);
+
+        $ttlReflection = new \ReflectionClassConstant(StaticFilesMiddleware::class, 'CACHE_TTL');
+        $ttl = $ttlReflection->getValue();
+        assert(is_int($ttl));
+
+        // Age the entry past CACHE_TTL and delete the file: a stale hit would
+        // still serve it, a re-probe must fall through to the next handler.
+        $cache[$cacheIndex]['time'] = time() - $ttl - 1;
+        unlink($this->rootDirectory . '/test.txt');
+
+        $called = false;
+        $nextTracking = function (Request $req) use (&$called): Response {
+            $called = true;
+
+            return new Response(404);
+        };
+
+        $response = $middleware($this->createRequest('/test.txt'), $nextTracking);
+
+        $this->assertSame(404, $response->getStatusCode());
+        $this->assertTrue($called, 'The stale entry must be discarded and the path probed again');
+        $this->assertFalse($cache[$cacheIndex]['path'], 'A re-probe of the deleted file must store a negative entry');
     }
 
     public function testImplausiblyLongPathSkippedFromCacheButStillServed(): void
@@ -1428,6 +1473,19 @@ final class StaticFilesMiddlewareTest extends TestCase
         $response304 = $middleware($requestWithEtag, $next);
 
         $this->assertEquals(304, $response304->getStatusCode());
+    }
+
+    public function testNotModifiedWhenIfNoneMatchWildcard(): void
+    {
+        $middleware = new StaticFilesMiddleware($this->rootDirectory);
+
+        $request = $this->createRequest('/test.txt');
+        $request->setHeader('If-None-Match', '*');
+
+        $response = $middleware($request, fn(): Response => new Response(404));
+
+        $this->assertSame(304, $response->getStatusCode());
+        $this->assertSame('', $response->rawBody(), 'A 304 response must not carry a body');
     }
 
     public function testNotModifiedWhenIfModifiedSinceFresh(): void
