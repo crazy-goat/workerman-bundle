@@ -81,6 +81,90 @@ PHP,
         self::assertSame(0, $exitCode, 'Utils::reload() should send SIGUSR1 in a subprocess.');
     }
 
+    public function testReloadReturnsTrueInSubprocess(): void
+    {
+        $scriptFile = $this->tempDir . '/test_reload_returns_true.php';
+        \file_put_contents(
+            $scriptFile,
+            \sprintf(
+                <<<'PHP'
+<?php
+require %s;
+
+$signalReceived = false;
+pcntl_signal(SIGUSR1, function () use (&$signalReceived) {
+    $signalReceived = true;
+});
+
+$result = \CrazyGoat\WorkermanBundle\Utils::reload();
+pcntl_signal_dispatch();
+
+exit($result && $signalReceived ? 0 : 1);
+PHP,
+                \var_export($this->autoloadPath, true),
+            ),
+        );
+
+        $exitCode = $this->runPhpScript($scriptFile);
+        self::assertSame(0, $exitCode, 'Utils::reload() should return true when the signal is delivered.');
+    }
+
+    public function testReloadAllWorkersReportsFailedSignalWhenParentIsGone(): void
+    {
+        if (\function_exists('posix_getuid') && posix_getuid() === 0) {
+            self::markTestSkipped('Root can signal PID 1, so the failed-signal path cannot be exercised here.');
+        }
+
+        $scriptFile = $this->tempDir . '/test_reload_parent_gone.php';
+        \file_put_contents(
+            $scriptFile,
+            \sprintf(
+                <<<'PHP'
+<?php
+require %s;
+
+$pid = pcntl_fork();
+if ($pid === -1) {
+    echo "FORK_FAILED\n";
+    exit(2);
+}
+if ($pid > 0) {
+    // Parent exits at once so the child is reparented to PID 1, a process
+    // a non-root user cannot signal.
+    exit(0);
+}
+
+// Orphaned child: only ever signal PID 1. Any other reparenting target
+// (a subreaper) is left alone so no unrelated process is signalled.
+usleep(200000);
+$ppid = posix_getppid();
+if ($ppid !== 1) {
+    echo "PPID:$ppid\n";
+    exit(3);
+}
+
+$result = \CrazyGoat\WorkermanBundle\Utils::reload(reloadAllWorkers: true);
+echo $result ? "RESULT:true\n" : "RESULT:false\n";
+exit($result ? 1 : 0);
+PHP,
+                \var_export($this->autoloadPath, true),
+            ),
+        );
+
+        $run = $this->runPhpScriptCapturing($scriptFile);
+        if (\str_contains($run['stdout'], 'PPID:')) {
+            self::markTestSkipped('The orphan was reparented to a subreaper instead of PID 1.');
+        }
+
+        self::assertSame(0, $run['exitCode'], 'Utils::reload(reloadAllWorkers: true) should return false when the parent is gone.');
+        self::assertStringContainsString('RESULT:false', $run['stdout']);
+        self::assertStringContainsString(
+            'Utils::reload() could not send SIGUSR1',
+            $run['stderr'],
+            'A failed reload must be visible in the error log.',
+        );
+    }
+
     public function testReloadAllWorkersSendsSigusr1ToParentProcess(): void
     {
         $signalReceived = false;
@@ -215,5 +299,37 @@ PHP,
         }
 
         return $exitCode;
+    }
+
+    /**
+     * @return array{exitCode: int, stdout: string, stderr: string}
+     */
+    private function runPhpScriptCapturing(string $scriptFile): array
+    {
+        $proc = \proc_open(
+            ['php', $scriptFile],
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes,
+        );
+
+        if (!\is_resource($proc)) {
+            $this->fail('Failed to start subprocess.');
+        }
+
+        \fclose($pipes[0]);
+        $stdout = \stream_get_contents($pipes[1]);
+        \fclose($pipes[1]);
+        $stderr = \stream_get_contents($pipes[2]);
+        \fclose($pipes[2]);
+
+        return [
+            'exitCode' => \proc_close($proc),
+            'stdout' => \is_string($stdout) ? $stdout : '',
+            'stderr' => \is_string($stderr) ? $stderr : '',
+        ];
     }
 }
