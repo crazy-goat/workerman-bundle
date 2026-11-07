@@ -12,6 +12,11 @@ umask(0077);
 
 include __DIR__ . '/../../vendor/autoload.php';
 
+$testCacheDir = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::cacheDir(\dirname(__DIR__, 2));
+if ($testCacheDir !== null) {
+    $_SERVER['APP_CACHE_DIR'] = $testCacheDir;
+}
+
 // PollingMonitorWatcher tests call Utils::reload(reloadAllWorkers: true) which
 // sends SIGUSR1 to posix_getppid() — the PHPUnit parent process. Ignore it.
 if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
@@ -82,9 +87,12 @@ function workerman_start(): void
 
     // Wait for the daemon to bind its ports instead of a fixed sleep, so a
     // slow start (cold cache, loaded CI runner) does not race the first test.
+    $host = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::connectHost();
+    $port = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::http();
+
     $started = \CrazyGoat\WorkermanBundle\Util\Wait::until(
-        static function (): bool {
-            $sock = @\fsockopen('127.0.0.1', 8888, $errno, $errstr, 0.2);
+        static function () use ($host, $port): bool {
+            $sock = @\fsockopen($host, $port, $errno, $errstr, 0.2);
             if ($sock === false) {
                 return false;
             }
@@ -96,8 +104,12 @@ function workerman_start(): void
     );
 
     if (!$started) {
-        \fwrite(\STDERR, "The test daemon did not start on 127.0.0.1:8888.\n"
-            . "Check var/log/workerman.log and var/log/workerman.stdout.log.\n");
+        \fwrite(\STDERR, \sprintf(
+            "The test daemon did not start on %s:%d.\n"
+            . "Check var/log/workerman.log and var/log/workerman.stdout.log.\n",
+            $host,
+            $port,
+        ));
         exit(1);
     }
 }

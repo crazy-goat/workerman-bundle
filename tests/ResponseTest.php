@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class ResponseTest extends KernelTestCase
@@ -12,7 +13,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
 
         $this->assertSame('hello from test controller', (string) $response->getBody());
         $this->assertSame(200, $response->getStatusCode());
@@ -22,7 +23,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test_not_exist');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test_not_exist'));
 
         $this->assertSame(404, $response->getStatusCode());
     }
@@ -31,7 +32,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:8888/readme.txt');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/readme.txt'));
 
         $this->assertSame('Test for serve files option', (string) $response->getBody());
         $this->assertSame(200, $response->getStatusCode());
@@ -41,7 +42,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/readme.txt');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/readme.txt'));
         $this->assertSame(404, $response->getStatusCode());
     }
 
@@ -49,7 +50,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_json');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_json'));
         $this->assertSame(200, $response->getStatusCode());
 
         self::assertTrue($response->hasHeader('Content-Type'));
@@ -60,7 +61,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file'));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertFalse($response->hasHeader('Content-Range'));
@@ -78,7 +79,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('HEAD', 'http://127.0.0.1:9999/response_test_file');
+        $response = $client->request('HEAD', TestPorts::url(TestPorts::second(), '/response_test_file'));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('', (string) $response->getBody(), 'HEAD must not send the file body');
@@ -97,7 +98,7 @@ final class ResponseTest extends KernelTestCase
         $client = BoundedHttpClient::create();
 
         // Request only first 5 bytes
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file'), [
             'headers' => [
                 'Range' => 'bytes=0-4',
             ],
@@ -117,7 +118,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create(['timeout' => 20]);
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file_big'));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertFalse($response->hasHeader('Content-Range'));
@@ -129,7 +130,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create(['timeout' => 20]);
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file_big'), [
             'headers' => ['Range' => 'bytes=16-47'],
         ]);
 
@@ -142,7 +143,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create(['timeout' => 20]);
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_big', [
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file_big'), [
             'headers' => ['Range' => 'bytes=100-'],
         ]);
 
@@ -155,7 +156,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file', [
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file'), [
             'headers' => ['Range' => 'bytes=5-'],
         ]);
 
@@ -170,7 +171,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_file_delete');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file_delete'));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertStringContainsString('Delete me after download!', (string) $response->getBody());
@@ -182,7 +183,7 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:8888/response_test_streamed_binary');
+        $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test_streamed_binary'));
 
         $this->assertContains($response->getStatusCode(), [200, 206]);
         $this->assertStringContainsString('Test file download content', (string) $response->getBody());
@@ -199,7 +200,7 @@ final class ResponseTest extends KernelTestCase
 
         $client = BoundedHttpClient::create();
 
-        $response = $client->request('GET', 'http://127.0.0.1:9999/response_test_temp_file');
+        $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_temp_file'));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertStringContainsString('Temp file object content', (string) $response->getBody());
@@ -263,8 +264,13 @@ final class ResponseTest extends KernelTestCase
      */
     private function rawGet(string $path): string
     {
-        $socket = @fsockopen('127.0.0.1', 9999, $errorCode, $errorMessage, 2);
-        $this->assertIsResource($socket, sprintf('Cannot connect to the test server on 127.0.0.1:9999 (%s)', $errorMessage));
+        $socket = @fsockopen(TestPorts::connectHost(), TestPorts::second(), $errorCode, $errorMessage, 2);
+        $this->assertIsResource($socket, sprintf(
+            'Cannot connect to the test server on %s:%d (%s)',
+            TestPorts::connectHost(),
+            TestPorts::second(),
+            $errorMessage,
+        ));
         assert(is_resource($socket));
 
         try {

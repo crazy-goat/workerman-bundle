@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
@@ -19,7 +20,7 @@ final class BoundedHttpClientTest extends TestCase
     {
         $handler = new MockHandler([new Response(200)]);
 
-        BoundedHttpClient::create([], $handler)->request('GET', 'http://127.0.0.1:8888/response_test');
+        BoundedHttpClient::create([], $handler)->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
 
         $options = $handler->getLastOptions();
         self::assertSame(1, $options['timeout']);
@@ -31,7 +32,7 @@ final class BoundedHttpClientTest extends TestCase
     {
         $handler = new MockHandler([new Response(200)]);
 
-        BoundedHttpClient::create(['timeout' => 20], $handler)->request('GET', 'http://127.0.0.1:9999/response_test_file_big');
+        BoundedHttpClient::create(['timeout' => 20], $handler)->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file_big'));
 
         $options = $handler->getLastOptions();
         self::assertSame(20, $options['timeout']);

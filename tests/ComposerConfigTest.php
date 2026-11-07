@@ -38,9 +38,14 @@ final class ComposerConfigTest extends TestCase
             $commands = $this->composerConfig['scripts'][$script];
             self::assertIsArray($commands);
             self::assertContains(
+                'php bin/wait-for-test-ports.php',
+                $commands,
+                sprintf('The %s script must wait for all three test ports through TestPorts', $script),
+            );
+            self::assertNotContains(
                 'php bin/wait-for-ports.php 8888 9999 9991',
                 $commands,
-                sprintf('The %s script must wait for all three test ports', $script),
+                sprintf('The %s script must not hard-code the default test ports', $script),
             );
         }
     }

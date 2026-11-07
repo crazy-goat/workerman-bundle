@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -163,11 +164,38 @@ final class BinDirectoryTest extends TestCase
 
     public function testWaitForPortsTimesOutOnUnreachablePort(): void
     {
+        $port = $this->unusedPort();
         $output = [];
         $code = null;
-        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->projectDir . '/bin/wait-for-ports.php') . ' 19999 --timeout=1 2>&1', $output, $code);
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($this->projectDir . '/bin/wait-for-ports.php') . ' ' . escapeshellarg((string) $port) . ' --timeout=1 2>&1', $output, $code);
         $this->assertSame(1, $code, 'wait-for-ports.php must exit 1 on timeout');
         $this->assertStringContainsString('did not become ready', implode("\n", $output));
+    }
+
+    /**
+     * A port the OS just handed out and that is not one of the test daemon
+     * ports: hard-coding 19999 broke the suite when WMB_PORT_* used it.
+     */
+    private function unusedPort(): int
+    {
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+            if ($socket === false) {
+                self::fail(sprintf('Cannot allocate a test port: %s (%d)', $errorMessage, $errorCode));
+            }
+            $name = stream_socket_get_name($socket, false);
+            fclose($socket);
+            if ($name === false) {
+                continue;
+            }
+
+            $port = (int) substr($name, (int) strrpos($name, ':') + 1);
+            if (!in_array($port, TestPorts::all(), true)) {
+                return $port;
+            }
+        }
+
+        self::fail('Cannot allocate a port outside the configured test ports');
     }
 
     public function testReadmeDisambiguatesBinConsole(): void

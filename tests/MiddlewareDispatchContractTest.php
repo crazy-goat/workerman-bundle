@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
@@ -15,8 +16,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * macOS, so this contract test guards the whole dispatch-count class of bugs
  * forever, regardless of OS.
  *
- * The implementation uses a dedicated dispatch-count server (port 9991)
- * configured with a single counting middleware
+ * The implementation uses a dedicated dispatch-count server (the third test
+ * port, 9991 by default) configured with a single counting middleware
  * ({@see \CrazyGoat\WorkermanBundle\Test\App\DispatchCountMiddleware}).
  * On every __invoke the middleware increments a shared counter file under
  * flock() and exposes the current count via the X-Dispatch-Count response
@@ -29,8 +30,6 @@ final class MiddlewareDispatchContractTest extends WebTestCase
 {
     use RequiresLiveServer;
 
-    private const SERVER_HOST = '127.0.0.1';
-    private const SERVER_PORT = 9991;
     private const PROBE_PATH = '/dispatch_count_test';
     private const COUNTER_FILE = __DIR__ . '/../var/dispatch_count';
 
@@ -49,12 +48,12 @@ final class MiddlewareDispatchContractTest extends WebTestCase
 
         file_put_contents(self::COUNTER_FILE, '0');
 
-        $socket = @fsockopen(self::SERVER_HOST, self::SERVER_PORT, $errorCode, $errorMessage, 1);
+        $socket = @fsockopen(TestPorts::connectHost(), TestPorts::third(), $errorCode, $errorMessage, 1);
         if ($socket === false) {
             self::failLiveServer(sprintf(
                 'Live Workerman contract server is not running on %s:%d (%s)',
-                self::SERVER_HOST,
-                self::SERVER_PORT,
+                TestPorts::connectHost(),
+                TestPorts::third(),
                 $errorMessage,
             ));
         }
@@ -78,7 +77,7 @@ final class MiddlewareDispatchContractTest extends WebTestCase
     public function testMiddlewareRunsExactlyOncePerRequest(): void
     {
         $client = BoundedHttpClient::create();
-        $response = $client->request('GET', sprintf('http://%s:%d%s', self::SERVER_HOST, self::SERVER_PORT, self::PROBE_PATH));
+        $response = $client->request('GET', TestPorts::url(TestPorts::third(), self::PROBE_PATH));
 
         $statusCode = $response->getStatusCode();
         $headers = $response->getHeaders();
@@ -119,7 +118,7 @@ final class MiddlewareDispatchContractTest extends WebTestCase
         $client = BoundedHttpClient::create();
 
         for ($i = 1; $i <= 2; $i++) {
-            $response = $client->request('GET', sprintf('http://%s:%d%s', self::SERVER_HOST, self::SERVER_PORT, self::PROBE_PATH));
+            $response = $client->request('GET', TestPorts::url(TestPorts::third(), self::PROBE_PATH));
             self::assertSame(200, $response->getStatusCode(), sprintf('Request #%d failed with status %d', $i, $response->getStatusCode()));
             self::assertSame((string) $i, $response->getHeaderLine('X-Dispatch-Count'), sprintf(
                 'Request #%d should observe dispatch count %d, observed %s',
