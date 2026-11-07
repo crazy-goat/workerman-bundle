@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Test coverage: `SfxDownloader` extraction rollback now covers a mid-extraction failure on a later entry (the extracted entries and their auto-created parent directories are removed, the pre-existing tree is left alone), the `error_log()` warnings for a symlink, an empty directory and a file that cleanup cannot remove, and the short-write guard in `writeStream()` ([#933](https://github.com/crazy-goat/workerman-bundle/issues/933))
 - Test coverage: the `ProcessStartEvent`, `TaskStartEvent` and `ProcessErrorEvent` getters, including `ProcessErrorEvent::setError()`, and the `Utils::reload(reloadAllWorkers: true)` parent-process signal path now run in CI (#942)
 - Test coverage: `MasterFingerprint::writeTo()` directory-create, temp-open, chmod, write and rename failures are covered, including temp-file cleanup (the `fclose() === false` condition cannot be forced through a user stream wrapper without a production seam); `ServerManager::writeMasterFingerprint()` skip, success and failure paths and the grpc start-up warnings are covered ([#941](https://github.com/crazy-goat/workerman-bundle/issues/941))
 - Test coverage: `StaticFilesMiddleware` now tests a missing root directory, an `If-None-Match: *` request and the refresh of an expired realpath cache entry ([#940](https://github.com/crazy-goat/workerman-bundle/issues/940))

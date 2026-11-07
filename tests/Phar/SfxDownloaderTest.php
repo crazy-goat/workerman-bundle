@@ -818,6 +818,284 @@ final class SfxDownloaderTest extends TestCase
     }
 
     /**
+     * A mid-extraction failure that is not caused by zip-slip validation —
+     * here the third entry targets a pre-existing, non-writable directory —
+     * must still remove the entries already extracted and the parent
+     * directories they created (issue #933).
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipRollsBackEntriesWhenLaterEntryCannotBeExtracted(): void
+    {
+        $dir = $this->tempDir . '/dest';
+        mkdir($dir, 0755, true);
+        $blocked = $dir . '/blocked';
+        mkdir($blocked, 0755, true);
+
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'gooddir/goodfile.bin' => 'good-content',
+            'standalone.bin' => 'standalone-content',
+            'blocked/third.bin' => 'third-content',
+        ]);
+
+        // extractTo() needs write permission on the target directory to
+        // create a new file; 0500 fails the third entry mid-extraction.
+        chmod($blocked, 0500);
+        if (is_writable($blocked)) {
+            chmod($blocked, 0755);
+            self::markTestSkipped('Cannot simulate a failed extraction: the directory stays writable (running as root?).');
+        }
+
+        try {
+            // extractTo() emits a PHP warning for the deliberate permission
+            // failure; suppress it so the test output stays clean.
+            @(new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $dir,
+            );
+            self::fail('Expected a RuntimeException when the third entry cannot be extracted.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Failed to extract entry "blocked/third.bin"', $e->getMessage());
+        } finally {
+            chmod($blocked, 0755);
+        }
+
+        // The poisoned archive must be removed.
+        self::assertFileDoesNotExist($zipPath);
+
+        // Entries 1 and 2, and the "gooddir/" parent created for entry 1,
+        // must be rolled back — no partial tree may remain. The pre-existing
+        // "blocked/" directory is not ours and must survive.
+        self::assertFileDoesNotExist($dir . '/gooddir/goodfile.bin');
+        self::assertDirectoryDoesNotExist($dir . '/gooddir');
+        self::assertFileDoesNotExist($dir . '/standalone.bin');
+        self::assertSame(['.', '..', 'blocked'], scandir($dir));
+    }
+
+    /**
+     * When the rollback cannot remove an already-extracted file because its
+     * parent directory is no longer writable, the failure must be surfaced
+     * via error_log(): the rethrown extraction exception says nothing about
+     * the leftover file (issue #933).
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedFile(): void
+    {
+        $dir = $this->tempDir . '/dest';
+        $locked = $dir . '/locked';
+        mkdir($locked, 0755, true);
+        // A pre-existing writable file lets extractTo() overwrite it in
+        // place even though the containing directory is read-only.
+        file_put_contents($locked . '/goodfile.bin', 'pre-existing');
+        $blocked = $dir . '/blocked';
+        mkdir($blocked, 0755, true);
+
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'locked/goodfile.bin' => 'replaced-content',
+            'blocked/newfile.bin' => 'new-content',
+        ]);
+
+        chmod($locked, 0500);
+        chmod($blocked, 0500);
+        if (is_writable($locked) || is_writable($blocked)) {
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+        }
+
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
+        try {
+            try {
+                @(new SfxDownloader())->fetch(
+                    'https://example.invalid/phpmicro.sfx.zip',
+                    $dir,
+                );
+                self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
+            }
+        } finally {
+            ini_restore('error_log');
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+        }
+
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertStringContainsString(
+            sprintf('Unable to remove extracted file "%s"', $locked . '/goodfile.bin'),
+            $logContent,
+            'The error_log should contain the cleanup warning for the file that stayed on disk.',
+        );
+
+        // The cleanup failed, so the file must still be there.
+        self::assertFileExists($locked . '/goodfile.bin');
+    }
+
+    /**
+     * The same cleanup warning for an empty directory: rmdir() fails because
+     * its parent is read-only, and an empty directory can never disappear on
+     * its own, so the operator must be told that it stayed behind
+     * (issue #933).
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedDirectory(): void
+    {
+        $dir = $this->tempDir . '/dest';
+        $locked = $dir . '/locked';
+        mkdir($locked . '/empty', 0755, true);
+        $blocked = $dir . '/blocked';
+        mkdir($blocked, 0755, true);
+
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        // An already-existing directory entry: extractTo() accepts it, and
+        // rollback cannot rmdir() it because "locked/" is read-only.
+        $zip->addEmptyDir('locked/empty');
+        $zip->addFromString('blocked/newfile.bin', 'new-content');
+        $zip->close();
+
+        chmod($locked, 0500);
+        chmod($blocked, 0500);
+        if (is_writable($locked) || is_writable($blocked)) {
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+        }
+
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
+        try {
+            try {
+                @(new SfxDownloader())->fetch(
+                    'https://example.invalid/phpmicro.sfx.zip',
+                    $dir,
+                );
+                self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
+            }
+        } finally {
+            ini_restore('error_log');
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+        }
+
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertStringContainsString(
+            sprintf('Unable to remove extracted directory "%s"', $locked . '/empty'),
+            $logContent,
+            'The error_log should contain the cleanup warning for the empty directory that stayed on disk.',
+        );
+
+        // The cleanup failed, so the directory must still be there.
+        self::assertDirectoryExists($locked . '/empty');
+    }
+
+    /**
+     * The cleanup warning must also fire for a symlink that is a tracked
+     * entry and cannot be unlinked: extractTo() writes through a pre-existing
+     * symlink whose target stays inside the destination, so the entry is
+     * extracted but stays a link that a read-only parent prevents removing
+     * (issue #933).
+     *
+     * @requires extension zip
+     */
+    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedSymlink(): void
+    {
+        $dir = $this->tempDir . '/dest';
+        $locked = $dir . '/locked';
+        mkdir($locked, 0755, true);
+        file_put_contents($dir . '/real.bin', 'original');
+        if (!@symlink('../real.bin', $locked . '/link.bin')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+        $blocked = $dir . '/blocked';
+        mkdir($blocked, 0755, true);
+
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'locked/link.bin' => 'replaced-content',
+            'blocked/newfile.bin' => 'new-content',
+        ]);
+
+        chmod($locked, 0500);
+        chmod($blocked, 0500);
+        if (is_writable($locked) || is_writable($blocked)) {
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+        }
+
+        $logFile = $this->tempDir . '/error.log';
+        ini_set('error_log', $logFile);
+        try {
+            try {
+                @(new SfxDownloader())->fetch(
+                    'https://example.invalid/phpmicro.sfx.zip',
+                    $dir,
+                );
+                self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
+            }
+        } finally {
+            ini_restore('error_log');
+            chmod($locked, 0755);
+            chmod($blocked, 0755);
+        }
+
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertStringContainsString(
+            sprintf('Unable to remove extracted symlink "%s"', $locked . '/link.bin'),
+            $logContent,
+            'The error_log should contain the cleanup warning for the symlink that stayed on disk.',
+        );
+
+        // The cleanup failed, so the symlink must still be there.
+        self::assertTrue(is_link($locked . '/link.bin'));
+    }
+
+    /**
+     * A filesystem that accepts only part of a write must abort the download
+     * instead of leaving a truncated artifact. No local filesystem can be
+     * made to short-write on demand, so a user stream wrapper reports a
+     * one-byte-short write (issue #933).
+     */
+    public function testWriteStreamThrowsWhenWriteIsShort(): void
+    {
+        $shortWriteDir = $this->tempDir . '/shortwrite';
+        mkdir($shortWriteDir, 0755, true);
+        ShortWriteStreamWrapper::register($shortWriteDir);
+
+        $in = fopen('php://memory', 'wb');
+        self::assertIsResource($in);
+        fwrite($in, 'downloaded-bytes');
+        rewind($in);
+
+        try {
+            $this->invokePrivateSfxMethod('writeStream', $in, 'shortwrite://dest');
+            self::fail('Expected a RuntimeException for the short write.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Failed to write to "shortwrite://dest" (short write).', $e->getMessage());
+        }
+
+        // The failed write must remove the partial artifact even though the
+        // stream wrapper accepted the bytes it reported.
+        self::assertFileDoesNotExist($shortWriteDir . '/dest');
+    }
+
+    /**
      * @requires extension zip
      */
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void
@@ -1512,6 +1790,114 @@ final class FailingUnlinkStreamWrapper
     public function stream_seek(int $offset, int $whence = SEEK_SET): bool
     {
         return is_resource($this->handle) && fseek($this->handle, $offset, $whence) === 0;
+    }
+
+    public function stream_close(): void
+    {
+        if (is_resource($this->handle)) {
+            fclose($this->handle);
+            $this->handle = null;
+        }
+    }
+}
+
+/**
+ * Stream wrapper whose writes always report one byte less than the data it
+ * was handed, exercising the short-write guard in writeStream(). A local
+ * filesystem cannot be forced to short-write on demand.
+ *
+ * Registered for the "shortwrite://" protocol; paths map to a real directory
+ * under the registered base so the wrapper is a faithful file stream apart
+ * from the short write.
+ */
+final class ShortWriteStreamWrapper
+{
+    private const PROTOCOL = 'shortwrite';
+
+    private static bool $registered = false;
+
+    private static string $baseDir = '';
+
+    /**
+     * Set by PHP's stream layer on every wrapper instance; declared so PHP 8.2+ does not report a dynamic property.
+     *
+     * @var resource|null
+     */
+    public $context;
+
+    /** @var resource|null */
+    private $handle;
+
+    public static function register(string $baseDir): void
+    {
+        self::$baseDir = rtrim($baseDir, '/');
+        if (!self::$registered) {
+            if (!@stream_wrapper_register(self::PROTOCOL, self::class)) {
+                throw new \RuntimeException('Unable to register the short-write stream wrapper.');
+            }
+            self::$registered = true;
+        }
+    }
+
+    private function realPath(string $path): string
+    {
+        $inner = preg_replace('#^' . self::PROTOCOL . '://#', '', $path);
+
+        return self::$baseDir . '/' . ltrim((string) $inner, '/');
+    }
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        $real = $this->realPath($path);
+        $handle = fopen($real, $mode);
+        if (!is_resource($handle)) {
+            return false;
+        }
+        $this->handle = $handle;
+        if (($options & STREAM_USE_PATH) === STREAM_USE_PATH) {
+            $openedPath = $real;
+        }
+
+        return true;
+    }
+
+    public function stream_write(string $data): int
+    {
+        // Write the chunk for real (so the stream is consistent), but report
+        // one byte less: fwrite() returns this count, which writeStream()
+        // compares against the chunk length.
+        $written = is_resource($this->handle) ? fwrite($this->handle, $data) : false;
+        if ($written === false) {
+            return 0;
+        }
+
+        return max(0, $written - 1);
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+
+    public function unlink(string $path): bool
+    {
+        return @unlink($this->realPath($path));
+    }
+
+    /**
+     * @return array<int, mixed>|false
+     */
+    public function url_stat(string $path): array|false
+    {
+        $real = $this->realPath($path);
+        if (!is_file($real)) {
+            return false;
+        }
+
+        /** @var array<int, mixed>|false $stat */
+        $stat = stat($real);
+
+        return $stat;
     }
 
     public function stream_close(): void
