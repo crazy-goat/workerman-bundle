@@ -227,6 +227,16 @@ bin/docker-test-worktree ../wmb-bugfix      # run these concurrently,
 bin/docker-test-worktree ../wmb-refactor    # no port clashes possible
 ```
 
+A linked worktree's `.git` is a file pointing at the main checkout's
+`.git/worktrees/<name>`, outside the bind mount. The helper mounts that common
+git directory read-only at its host path inside the container, so tests that
+shell out to `git ls-files` (`MarkdownLinkTest`, `LintScopeTest`) work. It also
+removes every `var/cache/<env>` (whole env, including the kernel container
+cache) before and after a run, so a container-written cache cannot poison the
+next host run. `var/cache` must be a real directory: the helper refuses a
+symlinked one, so cleanup cannot follow it outside the worktree; a symlinked
+`var/cache/<env>` is removed as a link and its target survives.
+
 Two rules keep parallel runs safe:
 
 - **Never share `var/` across containers** — including the `wmb-var` named

@@ -61,10 +61,11 @@ or relaxing the PHPStan level to make a check pass is forbidden; report the conf
   On slow hosts raise `COMPOSER_PROCESS_TIMEOUT`.
 - Because of the fixed ports, two worktrees cannot run `composer test` on the same host at the
   same time; run the suites one after another with `composer test` on the host (recommended).
-  `bin/docker-test-worktree <path>` is meant to isolate parallel runs but is known to be broken
-  for real git worktrees (the `.git` file points to a host path), so do not rely on it.
-  `bin/docker-test` works for a normal checkout. Lint does not run in the image (it has no `shellcheck`/`hadolint`); run
-  `bin/lint.sh` on the host. Details: [CONTRIBUTING.md](CONTRIBUTING.md).
+  `bin/docker-test-worktree <path>` isolates parallel runs in containers and mounts the shared
+  `.git` common dir read-only, so it works for a real linked worktree too; `bin/docker-test`
+  works for a normal checkout. Lint does not run in the image (it has no
+  `shellcheck`/`hadolint`); run `bin/lint.sh` on the host.
+  Details: [CONTRIBUTING.md](CONTRIBUTING.md).
 - `UtilsTest` signal tests need `pcntl` and `posix`; without them set
   `WORKERMAN_ALLOW_PCNTL_SKIP=1` (CI never skips them).
 - `bin/` scripts have PHPUnit coverage (`tests/BinDirectoryTest.php`,
