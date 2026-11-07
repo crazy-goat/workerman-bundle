@@ -88,21 +88,58 @@ for ((i = 1; i <= $#; i++)); do
   esac
 done
 
-# The workerman config cache (var/cache/dev/workerman/config.cache.php) stores
-# ABSOLUTE paths. A cache written inside the container holds /app/... paths and
-# poisons host runs ("mkdir(): Read-only file system" on /app/var/run), and
-# vice versa a host-written cache trips the container's ownership guard. The
-# file is a plain Symfony cache: always safe to delete, rebuilt on next start.
-rm -f "$WORKTREE"/var/cache/dev/workerman/config.cache.php* 2>/dev/null || true
-
 WORKTREE="$(cd "$WORKTREE" && pwd)" || die "cannot enter worktree: $WORKTREE"
 [[ -f "$WORKTREE/composer.json" ]] || die "not a composer project: $WORKTREE"
 BASENAME="$(basename "$WORKTREE")"
 VENDOR_VOL="wmb-vendor-${BASENAME}"
 
+# A Symfony env cache stores ABSOLUTE paths. A cache written inside the
+# container holds /app/... paths and poisons host runs ("mkdir(): Read-only
+# file system" on /app/var/run), and vice versa a host-written cache trips the
+# container's ownership guard. Removing only the workerman config cache is not
+# enough: it leaves the environment's kernel container cache warm, so
+# Runner::warmUpCache() skips the warmers and the next boot fails with
+# "Configuration not available". Drop the whole env cache (it is generated
+# data, rebuilt on next start) before and after the run, including on failure.
+# A symlinked var/cache could point outside the worktree, so refuse it; inside
+# it, a symlinked env dir is removed as a link (no trailing slash) and its
+# target survives.
+if [[ -L "$WORKTREE/var/cache" ]]; then
+  die "refusing to clean symlinked var/cache: $WORKTREE/var/cache"
+fi
+clean_config_cache() {
+  rm -rf "$WORKTREE"/var/cache/* 2>/dev/null || true
+}
+clean_config_cache
+trap clean_config_cache EXIT
+
+# A linked worktree's `.git` is a file pointing at
+# <main>/.git/worktrees/<name>, outside the worktree. Mount that common dir
+# read-only at the same absolute path so git commands such as `git ls-files`
+# work inside the container. The output may be relative (`.git` in the main
+# checkout) and must be resolved against the worktree before comparing.
+# The probe clears the caller's git env: an exported GIT_DIR/GIT_WORK_TREE or
+# GIT_COMMON_DIR would otherwise point it at another repository (or fail).
+COMMON_DIR=""
+WORKTREE_REAL="$(cd "$WORKTREE" && pwd -P)"
+if git_common="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR git -C "$WORKTREE" rev-parse --git-common-dir 2>/dev/null)"; then
+  if [[ "$git_common" != /* ]]; then
+    git_common="$WORKTREE_REAL/$git_common"
+  fi
+  if [[ -d "$git_common" ]]; then
+    git_common="$(cd "$git_common" && pwd -P)"
+    if [[ "$git_common" != "$WORKTREE_REAL" && "$git_common" != "$WORKTREE_REAL"/* ]]; then
+      COMMON_DIR="$git_common"
+    fi
+  fi
+fi
+
 RUN_ARGS=(docker run --rm --name "wmb-${BASENAME}" \
   -v "${WORKTREE}":/app \
   -v "${VENDOR_VOL}":/app/vendor)
+if [[ -n "$COMMON_DIR" ]]; then
+  RUN_ARGS+=(-v "${COMMON_DIR}:${COMMON_DIR}:ro")
+fi
 
 if [[ "$PUBLISH" == 1 ]]; then
   RUN_ARGS+=(
@@ -111,13 +148,14 @@ if [[ "$PUBLISH" == 1 ]]; then
     -p 127.0.0.1::9991
     -e WMB_LISTEN_ADDR=0.0.0.0
     -d
-    "$IMAGE" sh -c 'rm -f /app/var/cache/dev/workerman/config.cache.php*; composer install --no-scripts --no-interaction && APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
+    "$IMAGE" sh -c 'if [ -L /app/var/cache ]; then echo "docker-test-worktree: refusing to clean symlinked /app/var/cache" >&2; exit 1; fi; rm -rf /app/var/cache/*; composer install --no-scripts --no-interaction && APP_RUNTIME=CrazyGoat\WorkermanBundle\Runtime php tests/App/index.php restart -d; exec tail -f /dev/null'
   )
   # Install the stop-trap BEFORE the container exists: any early exit or
   # signal must remove the detached container, otherwise the name wmb-<base>
   # is blocked for the next run and the published ports leak.
   cleanup() {
     docker rm -f "wmb-${BASENAME}" >/dev/null 2>&1 || true
+    clean_config_cache
   }
   trap 'echo "docker-test-worktree: stopping wmb-${BASENAME}" >&2; cleanup' INT TERM EXIT
 

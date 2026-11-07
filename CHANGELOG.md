@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `bin/docker-test-worktree` now works in a real linked git worktree: it mounts the repository's common `.git` dir (from `git rev-parse --git-common-dir`, resolved when relative, with the caller's git environment cleared) read-only at its host path so `git ls-files` succeeds in the container, removes the whole `var/cache/<env>` (all envs, not only the workerman config cache) before and after a run (also on failure), refuses a symlinked `var/cache` and removes a symlinked env dir as a link so cleanup never follows it outside the worktree, and the image reuses an existing group when the host GID is taken (macOS GID 20), so `groupadd` no longer fails (#867)
+
 ## [0.32.0] - 2026-11-06
 
 ### Added

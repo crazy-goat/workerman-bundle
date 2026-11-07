@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 final class BinDirectoryTest extends TestCase
 {
     /** Ignore the global and system git config and the git env of the caller: the test must not touch the developer's hooks. */
-    private const CLEAN_GIT_ENV = 'env -u GIT_DIR -u GIT_WORK_TREE GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ';
+    private const CLEAN_GIT_ENV = 'env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ';
 
     private string $projectDir;
 
@@ -22,7 +22,7 @@ final class BinDirectoryTest extends TestCase
     protected function tearDown(): void
     {
         foreach ($this->sandboxes as $sandbox) {
-            exec('rm -rf ' . escapeshellarg($sandbox) . ' ' . escapeshellarg($sandbox . '-wt'));
+            exec('rm -rf ' . escapeshellarg($sandbox) . ' ' . escapeshellarg($sandbox . '-wt') . ' ' . escapeshellarg($sandbox . '-other') . ' ' . escapeshellarg($sandbox . '-out'));
         }
 
         $this->sandboxes = [];
@@ -304,6 +304,324 @@ final class BinDirectoryTest extends TestCase
             foreach (['proof_of_work', 'pick-issue.php', 'gh-branch', 'findings-coder.md', 'findings-review.md', 'process-changelog', 'process-notices'] as $removed) {
                 $this->assertStringNotContainsString($removed, $content, $file . ' still mentions the removed ' . $removed);
             }
+        }
+    }
+
+    /**
+     * A linked worktree's `.git` is a file pointing at the main checkout's
+     * `.git/worktrees/<name>`. The container mounts only the worktree, so the
+     * helper must mount that common dir read-only at the same absolute path
+     * (including paths with spaces) or `git ls-files` fails inside (#867).
+     */
+    public function testDockerTestWorktreeMountsTheGitCommonDirOfALinkedWorktree(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $worktree = $sandbox . '-wt';
+        $git = self::CLEAN_GIT_ENV . 'git -C ' . escapeshellarg($sandbox) . ' ';
+        exec($git . 'worktree add -q --detach ' . escapeshellarg($worktree) . ' 2>&1', $gitOutput, $gitCode);
+        $this->assertSame(0, $gitCode, implode("\n", $gitOutput));
+
+        $commonDir = realpath($sandbox . '/.git');
+        $this->assertNotFalse($commonDir);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $stateLog = $sandbox . '/docker-state.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($worktree, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $stateLog,
+            'FAKE_DOCKER_WORKTREE' => $worktree,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $args = file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $this->assertIsArray($args, 'fake docker must record its arguments');
+        $this->assertContains($commonDir . ':' . $commonDir . ':ro', $args, 'the common .git dir must be mounted read-only');
+        $this->assertContains($worktree . ':/app', $args);
+    }
+
+    /**
+     * The common-dir probe must not inherit the caller's git environment. An
+     * exported GIT_DIR/GIT_COMMON_DIR pointing at another repository would
+     * otherwise make the helper mount that repo (or nothing) instead of the
+     * worktree's real common dir (#867).
+     */
+    public function testDockerTestWorktreeIgnoresTheCallersGitEnvironment(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $worktree = $sandbox . '-wt';
+        $git = self::CLEAN_GIT_ENV . 'git -C ' . escapeshellarg($sandbox) . ' ';
+        exec($git . 'worktree add -q --detach ' . escapeshellarg($worktree) . ' 2>&1', $gitOutput, $gitCode);
+        $this->assertSame(0, $gitCode, implode("\n", $gitOutput));
+
+        $other = $sandbox . '-other';
+        $this->initGitRepository($other);
+        $otherGitDir = realpath($other . '/.git');
+        $this->assertNotFalse($otherGitDir);
+
+        $commonDir = realpath($sandbox . '/.git');
+        $this->assertNotFalse($commonDir);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($worktree, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $worktree,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+            'GIT_DIR' => $otherGitDir,
+            'GIT_WORK_TREE' => $other,
+            'GIT_COMMON_DIR' => $otherGitDir,
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $args = file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $this->assertIsArray($args);
+        $this->assertContains($commonDir . ':' . $commonDir . ':ro', $args, 'the real common .git dir must be mounted despite the caller git env');
+        $this->assertNotContains($otherGitDir . ':' . $otherGitDir . ':ro', $args, 'the caller GIT_DIR must not be mounted');
+    }
+
+    /**
+     * `git rev-parse --git-common-dir` returns a relative `.git` in the main
+     * checkout. It is inside the worktree bind mount already, so mounting it
+     * again would only shadow it.
+     */
+    public function testDockerTestWorktreeDoesNotMountAGitDirInsideTheWorktree(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $commonDir = realpath($sandbox . '/.git');
+        $this->assertNotFalse($commonDir);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $args = file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $this->assertIsArray($args);
+        $this->assertNotContains($commonDir . ':' . $commonDir . ':ro', $args);
+    }
+
+    /**
+     * The cache file stores absolute paths. Every env has one, and a cache
+     * written by the container must not survive the run (#867).
+     */
+    public function testDockerTestWorktreeCleansEveryEnvironmentCacheAroundTheRun(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+        $this->writeWorkermanCaches($sandbox);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $stateLog = $sandbox . '/docker-state.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $stateLog,
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '1',
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $state = (string) file_get_contents($stateLog);
+        foreach (['dev', 'test', 'prod'] as $env) {
+            $this->assertStringContainsString('cache-' . $env . '-before=absent', $state, 'the cache must be removed before the container starts');
+        }
+        $this->assertWorkermanCachesAreGone($sandbox);
+    }
+
+    public function testDockerTestWorktreeCleansTheCacheWhenTheContainerFails(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+        $this->writeWorkermanCaches($sandbox);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $stateLog = $sandbox . '/docker-state.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $stateLog,
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '1',
+            'FAKE_DOCKER_EXIT' => '1',
+        ]);
+
+        $this->assertSame(1, $code, $output);
+        $this->assertWorkermanCachesAreGone($sandbox);
+    }
+
+    /**
+     * `rm -rf var/cache/<env>/` follows a symlinked env dir and deletes its
+     * target. The cleanup must remove the link itself; a plain
+     * `rm -rf var/cache/*` does that, the trailing slash does not (#867).
+     */
+    public function testDockerTestWorktreeDoesNotFollowASymlinkedEnvironmentCache(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $outside = $sandbox . '-out';
+        $this->assertTrue(mkdir($outside . '/dev', 0o775, true));
+        $this->assertNotFalse(file_put_contents($outside . '/dev/protected.txt', 'keep'));
+
+        $this->assertTrue(mkdir($sandbox . '/var/cache', 0o775, true));
+        $this->assertTrue(symlink($outside . '/dev', $sandbox . '/var/cache/dev'));
+
+        $binDir = $sandbox . '/fake-bin';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $sandbox . '/docker-args.log',
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $this->assertFalse(is_link($sandbox . '/var/cache/dev'), 'the symlinked env dir must be removed as a link');
+        $this->assertFileExists($outside . '/dev/protected.txt', 'cleanup must not delete the symlink target');
+    }
+
+    /**
+     * A symlinked var/cache itself can point anywhere. The helper must refuse
+     * it before the first cleanup instead of deleting the target's contents.
+     */
+    public function testDockerTestWorktreeRefusesASymlinkedCacheDirectory(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $outside = $sandbox . '-out';
+        $this->assertTrue(mkdir($outside . '/dev', 0o775, true));
+        $this->assertNotFalse(file_put_contents($outside . '/dev/protected.txt', 'keep'));
+
+        $this->assertTrue(mkdir($sandbox . '/var', 0o775, true));
+        $this->assertTrue(symlink($outside, $sandbox . '/var/cache'));
+
+        $binDir = $sandbox . '/fake-bin';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $sandbox . '/docker-args.log',
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+        ]);
+
+        $this->assertNotSame(0, $code, $output);
+        $this->assertStringContainsString('refusing to clean symlinked var/cache', $output);
+        $this->assertFileExists($outside . '/dev/protected.txt', 'refusing must delete nothing');
+    }
+
+    private function initGitRepository(string $dir): void
+    {
+        $this->assertTrue(mkdir($dir, 0o775, true));
+        $this->assertNotFalse(file_put_contents($dir . '/composer.json', "{}\n"));
+
+        $git = self::CLEAN_GIT_ENV . 'git -C ' . escapeshellarg($dir) . ' ';
+        exec($git . 'init -q 2>&1 && ' . $git . '-c user.name=t -c user.email=t@example.com add composer.json 2>&1 && ' . $git . '-c user.name=t -c user.email=t@example.com commit -q -m init 2>&1', $output, $code);
+        $this->assertSame(0, $code, implode("\n", $output));
+    }
+
+    /**
+     * A fake `docker` that records its arguments and simulates the container
+     * writing the config cache into the bind mount.
+     */
+    private function makeFakeDocker(string $binDir): void
+    {
+        $this->assertTrue(mkdir($binDir, 0o775, true));
+        $script = <<<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${FAKE_DOCKER_ARGS_LOG}"
+if [[ "$1" == "image" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" ]]; then
+  for env in dev test prod; do
+    if [[ -e "${FAKE_DOCKER_WORKTREE}/var/cache/${env}/workerman/config.cache.php" ]]; then
+      echo "cache-${env}-before=present" >> "${FAKE_DOCKER_STATE_LOG}"
+    else
+      echo "cache-${env}-before=absent" >> "${FAKE_DOCKER_STATE_LOG}"
+    fi
+  done
+  if [[ "${FAKE_DOCKER_WRITE_CACHE:-0}" == "1" ]]; then
+    for env in dev test prod; do
+      mkdir -p "${FAKE_DOCKER_WORKTREE}/var/cache/${env}/workerman"
+      : > "${FAKE_DOCKER_WORKTREE}/var/cache/${env}/workerman/config.cache.php"
+    done
+  fi
+fi
+exit "${FAKE_DOCKER_EXIT:-0}"
+SH;
+        $this->assertNotFalse(file_put_contents($binDir . '/docker', $script));
+        $this->assertTrue(chmod($binDir . '/docker', 0o755));
+    }
+
+    /**
+     * @param array<string, string> $environment
+     *
+     * @return array{0: int, 1: string}
+     */
+    private function runDockerTestWorktree(string $worktree, string $binDir, array $environment): array
+    {
+        $prefix = self::CLEAN_GIT_ENV . 'PATH=' . escapeshellarg($binDir . ':' . getenv('PATH')) . ' ';
+        foreach ($environment as $name => $value) {
+            $prefix .= $name . '=' . escapeshellarg($value) . ' ';
+        }
+
+        $output = [];
+        exec($prefix . 'bash ' . escapeshellarg($this->projectDir . '/bin/docker-test-worktree') . ' ' . escapeshellarg($worktree) . ' 2>&1', $output, $code);
+
+        return [$code, implode("\n", $output)];
+    }
+
+    private function writeWorkermanCaches(string $dir): void
+    {
+        foreach (['dev', 'test', 'prod'] as $env) {
+            $cacheDir = $dir . '/var/cache/' . $env . '/workerman';
+            $this->assertTrue(mkdir($cacheDir, 0o775, true));
+            $this->assertNotFalse(file_put_contents($cacheDir . '/config.cache.php', 'stale'));
+            // A warm kernel container cache makes Runner::warmUpCache() skip
+            // the warmers, so the config cache must not be deleted alone.
+            $this->assertNotFalse(file_put_contents($dir . '/var/cache/' . $env . '/ContainerSentinel.php.meta', 'warm'));
+        }
+    }
+
+    private function assertWorkermanCachesAreGone(string $dir): void
+    {
+        foreach (['dev', 'test', 'prod'] as $env) {
+            $this->assertFileDoesNotExist($dir . '/var/cache/' . $env . '/workerman/config.cache.php');
+            $this->assertFileDoesNotExist($dir . '/var/cache/' . $env . '/ContainerSentinel.php.meta', 'the whole env cache must be removed, not only the workerman file');
         }
     }
 }

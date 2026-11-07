@@ -59,15 +59,19 @@ WORKDIR /app
 
 # Non-root user `app` with configurable UID/GID. Created before the source
 # copy so the image can run as app without root, matching the production
-# guidance in docs/security.md ("Containerised deployments").
-RUN groupadd -g "${APP_GID}" app \
-    && useradd -l -u "${APP_UID}" -g app -m -s /bin/bash app
+# guidance in docs/security.md ("Containerised deployments"). macOS reports
+# the same low GIDs the Debian base already uses (20 is dialout, 20/staff on
+# macOS), so reuse an existing group with that GID instead of failing in
+# groupadd; the user's primary GID is what matters, not the group name.
+RUN getent group "${APP_GID}" >/dev/null \
+    || groupadd -g "${APP_GID}" app \
+    && useradd -l -u "${APP_UID}" -g "${APP_GID}" -m -s /bin/bash app
 
 # Copy the repository and install dependencies. --no-scripts skips the
 # post-install git-hook installer (no host git repo inside the build) and
 # --prefer-dist matches CI. The image is self-contained: no bind mount is
 # required to run the suite, though one is recommended for iteration.
-COPY --chown=app:app . /app
+COPY --chown="${APP_UID}:${APP_GID}" . /app
 RUN composer install --no-scripts --prefer-dist --no-interaction
 
 # Entrypoint fixes named-volume ownership (Docker creates wmb-var/wmb-vendor

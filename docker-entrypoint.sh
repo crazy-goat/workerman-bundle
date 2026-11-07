@@ -19,7 +19,11 @@ set -e
 mkdir -p /app/var
 
 # Fix ownership of the named-volume mount points so the app user can write.
-chown -R app:app /app/var /app/vendor 2>/dev/null || true
+# Use numeric IDs: on macOS the app user's GID (20, staff) already exists in
+# the base image as dialout, so there is no `app` group to name here.
+app_uid="$(id -u app)"
+app_gid="$(id -g app)"
+chown -R "${app_uid}:${app_gid}" /app/var /app/vendor 2>/dev/null || true
 
 # Drop to the app user and exec the command.
 exec runuser -u app -- "$@"
