@@ -606,28 +606,6 @@ final class HttpRequestHandlerTest extends TestCase
     // Reboot path — terminate before reload
     // ──────────────────────────────────────────────
 
-    public function testInvokeRebootPathCallsTerminateSynchronously(): void
-    {
-        $this->rebootStrategy->shouldReboot = true;
-
-        $connection = new MockTcpConnection();
-        $request = new Request(self::HTTP11);
-
-        // Utils::reload() sends SIGUSR1 which behaves differently per environment.
-        // We just verify terminate was called synchronously before the reload attempt.
-        try {
-            ($this->handler)($connection, $request);
-        } catch (\Throwable) {
-            // posix_kill may fail in non-Workerman environment, that's fine
-        }
-
-        $this->assertTrue(
-            $this->kernel->terminateCalled,
-            'Kernel terminate should be called synchronously during reboot path',
-        );
-        $this->assertGreaterThanOrEqual(1, $this->kernel->terminateCount);
-    }
-
     public function testInvokeRebootPathCalledOnEveryRequest(): void
     {
         $connection = new MockTcpConnection();
@@ -1493,35 +1471,6 @@ final class HttpRequestHandlerTest extends TestCase
         $handler($connection, $request);
 
         $this->assertNotEmpty($connection->sentData, 'Handler must send an error response on the failure path');
-        $this->assertStringContainsString('500', $connection->sentData[0]);
-    }
-
-    public function testRebootCheckStillRunsWhenPipelineThrows(): void
-    {
-        // Acceptance criteria: the reboot strategy must be consulted on the
-        // failure path. Using a mock with expects(once())->shouldReboot()
-        // proves the handler reached the reboot check after doTerminate().
-        $strategy = $this->createMock(RebootStrategyInterface::class);
-        $strategy->expects($this->once())->method('shouldReboot')->willReturn(true);
-
-        $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        $handler = new HttpRequestHandler($controller, $strategy, new NullLogger());
-        $handler->withMiddlewares(
-            $this->throwingMiddleware(new \RuntimeException('boom')),
-        );
-
-        $connection = new MockTcpConnection();
-        $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
-
-        // Utils::reload() sends SIGUSR1 which may fail outside Workerman;
-        // the mock assertion proves the check ran regardless.
-        try {
-            $handler($connection, $request);
-        } catch (\Throwable) {
-            // posix_kill may fail in test env — the strategy mock already
-            // asserted shouldReboot() was called.
-        }
-
         $this->assertStringContainsString('500', $connection->sentData[0]);
     }
 

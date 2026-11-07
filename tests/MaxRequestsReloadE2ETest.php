@@ -78,7 +78,11 @@ final class MaxRequestsReloadE2ETest extends TestCase
         $this->assertSame($firstPid, $this->requestPid(), 'Request 3 must still be served by the old worker');
 
         $this->assertTrue(
-            Wait::until(fn(): bool => $this->readWorkerPid() !== $firstPid, 10),
+            Wait::until(function () use ($firstPid): bool {
+                $pid = $this->readWorkerPid();
+
+                return $pid > 0 && $pid !== $firstPid;
+            }, 10),
             'The worker must be replaced after the third request reaches max_requests',
         );
 
@@ -147,8 +151,14 @@ final class MaxRequestsReloadE2ETest extends TestCase
 
         $status = \proc_get_status($process);
         if (!$ready || $status['running'] === false) {
+            // A live-but-silent child never closes its end of the pipe, so a
+            // blocking read would hang the suite instead of reporting the
+            // failure. Drain non-blocking, then stop the child before failing.
+            \stream_set_blocking($pipes[1], false);
+            \stream_set_blocking($pipes[2], false);
             $stderr = \stream_get_contents($pipes[2]) ?: '';
             $stdout = \stream_get_contents($pipes[1]) ?: '';
+            $this->stopWorker();
             $this->fail(sprintf(
                 "Worker did not become ready within 15s.\nstderr: %s\nstdout: %s",
                 $stderr,
