@@ -16,6 +16,7 @@ use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
+use CrazyGoat\WorkermanBundle\Utils;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -156,51 +157,98 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
-    public function testReusePortTrueDoesNotThrow(): void
+    public function testReusePortTrueIsAppliedToWorker(): void
     {
-        $serverWorker = new ServerWorker(
+        new ServerWorker(
             $this->createKernelFactory(),
             null,
             null,
             [
-                'name' => 'test-server',
+                'name' => 'reuse-port-true-935',
                 'listen' => 'http://127.0.0.1:8081',
                 'reuse_port' => true,
             ],
         );
 
-        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should accept reuse_port=true');
+        $worker = $this->findWorkerByName('[Server] reuse-port-true-935');
+        $this->assertNotNull($worker, 'ServerWorker should accept reuse_port=true');
+        $this->assertTrue($worker->reusePort, 'reuse_port=true must be copied to the Worker');
     }
 
-    public function testReusePortFalseDoesNotThrow(): void
+    public function testReusePortFalseIsAppliedToWorker(): void
     {
-        $serverWorker = new ServerWorker(
+        new ServerWorker(
             $this->createKernelFactory(),
             null,
             null,
             [
-                'name' => 'test-server',
+                'name' => 'reuse-port-false-935',
                 'listen' => 'http://127.0.0.1:8082',
                 'reuse_port' => false,
             ],
         );
 
-        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should accept reuse_port=false');
+        $worker = $this->findWorkerByName('[Server] reuse-port-false-935');
+        $this->assertNotNull($worker, 'ServerWorker should accept reuse_port=false');
+        $this->assertFalse($worker->reusePort, 'reuse_port=false must be copied to the Worker');
     }
 
     public function testReusePortDefaultsToFalse(): void
     {
-        $serverWorker = new ServerWorker(
+        new ServerWorker(
             $this->createKernelFactory(),
             null,
             null,
             [
-                'name' => 'test-server',
+                'name' => 'reuse-port-default-935',
                 'listen' => 'http://127.0.0.1:8083',
             ],
         );
 
-        $this->assertInstanceOf(ServerWorker::class, $serverWorker, 'ServerWorker should work without reuse_port key');
+        $worker = $this->findWorkerByName('[Server] reuse-port-default-935');
+        $this->assertNotNull($worker, 'ServerWorker should work without reuse_port key');
+        $this->assertFalse($worker->reusePort, 'reuse_port must default to false');
+    }
+
+    public function testWorkerCopiesUserGroupCountTransportAndListenAddress(): void
+    {
+        new ServerWorker(
+            $this->createKernelFactory(),
+            'www-data',
+            'www-data',
+            [
+                'name' => 'worker-settings-935',
+                'listen' => 'http://127.0.0.1:8088',
+                'processes' => 4,
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] worker-settings-935');
+        $this->assertNotNull($worker);
+        $this->assertSame('www-data', $worker->user);
+        $this->assertSame('www-data', $worker->group);
+        $this->assertSame(4, $worker->count);
+        $this->assertSame('tcp', $worker->transport);
+        $this->assertSame('http://127.0.0.1:8088', $worker->getSocketName());
+    }
+
+    public function testWorkerDefaultsProcessesToDoubleCpuCount(): void
+    {
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'worker-defaults-935',
+                'listen' => 'http://127.0.0.1:8089',
+            ],
+        );
+
+        $worker = $this->findWorkerByName('[Server] worker-defaults-935');
+        $this->assertNotNull($worker);
+        $this->assertSame(Utils::cpuCount() * 2, $worker->count, 'processes must default to twice the CPU count');
+        $this->assertSame('', $worker->user, 'a missing user must become an empty string');
+        $this->assertSame('', $worker->group, 'a missing group must become an empty string');
     }
 
     public function testNonRegularCertPathThrowsException(): void
@@ -290,26 +338,47 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
-    public function testCorrectSslConfigurationDoesNotThrow(): void
+    public function testHttpsWorkerUsesSslTransportAndTlsContext(): void
     {
         $certFile = $this->tempDir . '/cert.pem';
         $keyFile = $this->tempDir . '/key.pem';
 
         $this->generateSelfSignedCert($certFile, $keyFile);
 
-        $serverWorker = new ServerWorker(
+        new ServerWorker(
             $this->createKernelFactory(),
             null,
             null,
             [
-                'name' => 'test-server',
+                'name' => 'ssl-context-935',
                 'listen' => 'https://0.0.0.0:8443',
                 'local_cert' => $certFile,
                 'local_pk' => $keyFile,
+                'processes' => 2,
             ],
         );
 
-        $this->assertInstanceOf(ServerWorker::class, $serverWorker);
+        $worker = $this->findWorkerByName('[Server] ssl-context-935');
+        $this->assertNotNull($worker);
+        $this->assertSame('ssl', $worker->transport);
+        $this->assertSame('http://0.0.0.0:8443', $worker->getSocketName());
+        $this->assertSame(2, $worker->count);
+
+        $sslOptions = $this->getWorkerSocketContextOptions($worker)['ssl'] ?? null;
+        if (!\is_array($sslOptions)) {
+            $this->fail('An HTTPS worker must create an SSL stream context');
+        }
+
+        $this->assertSame(
+            ['local_cert' => $certFile, 'local_pk' => $keyFile],
+            $sslOptions,
+            'The TLS context must contain only the configured certificate and key',
+        );
+        $this->assertArrayNotHasKey(
+            'verify_peer',
+            $sslOptions,
+            'ServerWorker must not enable client-certificate verification',
+        );
     }
 
     /** @dataProvider provideWebSocketListenAddresses */
@@ -1450,6 +1519,22 @@ final class ServerWorkerTest extends TestCase
         }
 
         return null;
+    }
+
+    /**
+     * The Worker keeps its stream context in a protected property, so read the
+     * options exactly as Workerman does when it creates the listening socket.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function getWorkerSocketContextOptions(Worker $worker): array
+    {
+        $context = (new \ReflectionProperty(Worker::class, 'socketContext'))->getValue($worker);
+        if (!\is_resource($context)) {
+            $this->fail('The Worker must have a stream context when a listen address is configured');
+        }
+
+        return stream_context_get_options($context);
     }
 
     /**
