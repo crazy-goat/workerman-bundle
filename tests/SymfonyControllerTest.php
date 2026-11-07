@@ -10,6 +10,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -916,6 +917,46 @@ final class SymfonyControllerTest extends TestCase
 
         $controller(new Request("GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"), $this->connection);
         $controller->terminateIfNeeded();
+    }
+
+    public function testServicesResetterFailureIsLoggedAndDoesNotBreakNextRequest(): void
+    {
+        $exception = new \RuntimeException('reset failed');
+
+        $resetCalls = 0;
+        $resetter = $this->createMock(ResetInterface::class);
+        $resetter->expects($this->exactly(2))
+            ->method('reset')
+            ->willReturnCallback(static function () use (&$resetCalls, $exception): never {
+                ++$resetCalls;
+
+                throw $exception;
+            });
+
+        $container = $this->createMock(\Symfony\Component\DependencyInjection\ContainerInterface::class);
+        $container->method('has')->with('services_resetter')->willReturn(true);
+        $container->method('get')->with('services_resetter')->willReturn($resetter);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('error')->with(
+            'Failed to reset services',
+            $this->callback(static fn(array $context): bool => $context['exception'] === 'reset failed'
+                && $context['file'] === $exception->getFile()
+                && $context['line'] === $exception->getLine()),
+        );
+
+        $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'), $container);
+        $controller = new SymfonyController($kernel, $this->createResponseConverter(), $logger);
+
+        for ($requestNumber = 1; $requestNumber <= 2; ++$requestNumber) {
+            $response = $controller(new Request("GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"), $this->connection);
+
+            $this->assertSame(200, $response->getStatusCode(), "Request $requestNumber must succeed");
+            $this->assertSame('OK', $response->rawBody(), "Request $requestNumber must return the kernel response");
+            $controller->terminateIfNeeded();
+        }
+
+        $this->assertSame(2, $resetCalls, 'The resetter must run once per request');
     }
 
     public function testResponseHeadersAreConverted(): void
