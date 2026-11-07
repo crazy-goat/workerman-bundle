@@ -534,16 +534,17 @@ final class RequestConverter
 
     /**
      * Convert a single file entry array to an UploadedFile, after asserting
-     * all required fields are present.
+     * all required fields are present and have the expected scalar types.
      *
      * @param string               $fieldName The form field name
      * @param array<string, mixed> $file      The file entry array
      *
-     * @throws FileUploadValidationException if required fields are missing
+     * @throws FileUploadValidationException if required fields are missing or mistyped
      */
     private static function processFileEntry(string $fieldName, array $file): UploadedFile
     {
         FileUploadValidator::assertRequiredFields($fieldName, $file);
+        FileUploadValidator::assertFieldTypes($fieldName, $file);
 
         $type = $file['type'] ?? 'application/octet-stream';
         $error = $file['error'] ?? \UPLOAD_ERR_OK;
