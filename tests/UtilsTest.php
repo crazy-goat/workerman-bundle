@@ -15,6 +15,8 @@ final class UtilsTest extends TestCase
     /** @var list<string> */
     private array $roots = [];
 
+    private bool $touchedSigusr1Handler = false;
+
     public function testIsWindows(): void
     {
         $expected = \DIRECTORY_SEPARATOR !== '/';
@@ -143,6 +145,14 @@ final class UtilsTest extends TestCase
             @rmdir($root);
         }
         $this->roots = [];
+
+        if ($this->touchedSigusr1Handler && \extension_loaded('pcntl') && \defined('SIGUSR1')) {
+            $this->assertSame(
+                \SIG_IGN,
+                \pcntl_signal_get_handler(\SIGUSR1),
+                'SIGUSR1 must keep the SIG_IGN handler installed by tests/App/bootstrap.php.',
+            );
+        }
     }
 
     public function testClearOpcacheDoesNotThrow(): void
@@ -183,6 +193,9 @@ final class UtilsTest extends TestCase
         }
 
         $signalReceived = false;
+        $previousHandler = \pcntl_signal_get_handler(SIGUSR1);
+        $this->touchedSigusr1Handler = true;
+
         \pcntl_signal(SIGUSR1, static function () use (&$signalReceived): void {
             $signalReceived = true;
         });
@@ -192,7 +205,7 @@ final class UtilsTest extends TestCase
             \pcntl_signal_dispatch();
             $this->assertTrue($signalReceived, 'reload() should send SIGUSR1 signal.');
         } finally {
-            \pcntl_signal(SIGUSR1, SIG_DFL);
+            \pcntl_signal(SIGUSR1, $previousHandler);
         }
     }
 
@@ -201,6 +214,9 @@ final class UtilsTest extends TestCase
         if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
             $this->markTestSkipped('pcntl and posix extensions are required for this test.');
         }
+
+        $previousHandler = \pcntl_signal_get_handler(SIGUSR1);
+        $this->touchedSigusr1Handler = true;
 
         \pcntl_signal(SIGUSR1, static fn(): null => null);
 
@@ -223,7 +239,7 @@ final class UtilsTest extends TestCase
             $this->assertTrue($deprecationTriggered, 'reboot() should trigger a deprecation notice.');
         } finally {
             \restore_error_handler();
-            \pcntl_signal(SIGUSR1, SIG_DFL);
+            \pcntl_signal(SIGUSR1, $previousHandler);
         }
     }
 
@@ -234,6 +250,9 @@ final class UtilsTest extends TestCase
         }
 
         $signalReceived = false;
+        $previousHandler = \pcntl_signal_get_handler(SIGUSR1);
+        $this->touchedSigusr1Handler = true;
+
         \pcntl_signal(SIGUSR1, static function () use (&$signalReceived): void {
             $signalReceived = true;
         });
@@ -246,7 +265,7 @@ final class UtilsTest extends TestCase
             $this->assertTrue($signalReceived, 'reboot() should delegate to reload() and send SIGUSR1.');
         } finally {
             \restore_error_handler();
-            \pcntl_signal(SIGUSR1, SIG_DFL);
+            \pcntl_signal(SIGUSR1, $previousHandler);
         }
     }
 }
