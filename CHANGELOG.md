@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage: the `ProcessStartEvent`, `TaskStartEvent` and `ProcessErrorEvent` getters, including `ProcessErrorEvent::setError()`, and the `Utils::reload(reloadAllWorkers: true)` parent-process signal path now run in CI (#942)
 - Test coverage: `MasterFingerprint::writeTo()` directory-create, temp-open, chmod, write and rename failures are covered, including temp-file cleanup (the `fclose() === false` condition cannot be forced through a user stream wrapper without a production seam); `ServerManager::writeMasterFingerprint()` skip, success and failure paths and the grpc start-up warnings are covered ([#941](https://github.com/crazy-goat/workerman-bundle/issues/941))
 - Test coverage: `StaticFilesMiddleware` now tests a missing root directory, an `If-None-Match: *` request and the refresh of an expired realpath cache entry ([#940](https://github.com/crazy-goat/workerman-bundle/issues/940))
+- Test coverage: a `services_resetter` whose `reset()` throws is covered over two requests — both responses stay correct, the error is logged with the exception message, file and line, and the resetter runs once per request — and `ServerManager::prepareWorkerStart()` is covered for `start`, `start -d` and `restart -d -g`, including `Worker::$command`, daemon mode and the reset of signal handlers to `SIG_DFL` ([#939](https://github.com/crazy-goat/workerman-bundle/issues/939))
 
 ### Fixed
 

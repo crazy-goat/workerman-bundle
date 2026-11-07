@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
+use CrazyGoat\WorkermanBundle\Command\ServerAction;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\Exception\ServerAlreadyRunningException;
 use CrazyGoat\WorkermanBundle\Exception\ServerNotRunningException;
@@ -13,12 +14,33 @@ use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Workerman\Worker;
 
 final class ServerManagerTest extends TestCase
 {
+    /**
+     * Signals reset by prepareWorkerStart(); their handlers are restored after
+     * every test so an in-process call cannot leak into the rest of the suite.
+     *
+     * @var list<int>
+     */
+    private const MANAGED_SIGNALS = [
+        \SIGINT,
+        \SIGTERM,
+        \SIGHUP,
+        \SIGTSTP,
+        \SIGQUIT,
+        \SIGUSR1,
+        \SIGUSR2,
+        \SIGIOT,
+        \SIGIO,
+        \SIGPIPE,
+    ];
+
     private string $tmpDir;
     private string $pidFile;
     private string $statusFile;
@@ -35,6 +57,15 @@ final class ServerManagerTest extends TestCase
     private mixed $savedEnvTimeout = null;
 
     private mixed $savedGetenvTimeout = null;
+
+    private string $savedWorkerCommand = '';
+
+    private bool $savedWorkerDaemonize = false;
+
+    /**
+     * @var array<int, callable|int>
+     */
+    private array $savedSignalHandlers = [];
 
     protected function setUp(): void
     {
@@ -80,6 +111,14 @@ final class ServerManagerTest extends TestCase
         unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR], $_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
         $this->savedGetenvTimeout = getenv(CacheWarmupTimeoutConfig::ENV_VAR);
         putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+
+        $this->savedWorkerCommand = Worker::$command;
+        $this->savedWorkerDaemonize = Worker::$daemonize;
+        if (\function_exists('pcntl_signal_get_handler')) {
+            foreach (self::MANAGED_SIGNALS as $signal) {
+                $this->savedSignalHandlers[$signal] = \pcntl_signal_get_handler($signal);
+            }
+        }
     }
 
     protected function tearDown(): void
@@ -101,6 +140,16 @@ final class ServerManagerTest extends TestCase
             putenv(CacheWarmupTimeoutConfig::ENV_VAR . '=' . $this->savedGetenvTimeout);
         } else {
             putenv(CacheWarmupTimeoutConfig::ENV_VAR);
+        }
+
+        Worker::$command = $this->savedWorkerCommand;
+        Worker::$daemonize = $this->savedWorkerDaemonize;
+
+        foreach ($this->savedSignalHandlers as $signal => $handler) {
+            // PHP ignores SIGPIPE at the OS level but pcntl reports SIG_DFL
+            // for it, so re-applying the saved value would arm the default
+            // action and a later write to a closed socket would kill PHPUnit.
+            \pcntl_signal($signal, $signal === \SIGPIPE ? \SIG_IGN : $handler);
         }
     }
 
@@ -704,6 +753,55 @@ final class ServerManagerTest extends TestCase
         $this->assertSame('restart -d -g', $result[0]['command']);
         $this->assertFalse($result[1]['daemon'], 'start -g must stay in the foreground');
         $this->assertSame('start -g', $result[1]['command']);
+    }
+
+    /**
+     * @return iterable<string, array{ServerAction, bool, bool, string}>
+     */
+    public static function prepareWorkerStartProvider(): iterable
+    {
+        yield 'start in the foreground' => [ServerAction::START, false, false, 'start'];
+        yield 'start in daemon mode' => [ServerAction::START, true, false, 'start -d'];
+        yield 'restart in daemon mode with graceful stop' => [ServerAction::RESTART, true, true, 'restart -d -g'];
+    }
+
+    /**
+     * Workerman parses the raw argv and keeps the first mode it finds, so the
+     * command string must carry the daemon flag before the graceful flag.
+     *
+     * @requires extension pcntl
+     */
+    #[DataProvider('prepareWorkerStartProvider')]
+    public function testPrepareWorkerStartBuildsWorkerCommand(
+        ServerAction $action,
+        bool $daemon,
+        bool $graceful,
+        string $expectedCommand,
+    ): void {
+        $method = new \ReflectionMethod($this->manager, 'prepareWorkerStart');
+        $method->invoke($this->manager, $action, $daemon, $graceful);
+
+        $this->assertSame($expectedCommand, Worker::$command);
+        $this->assertSame($daemon, Worker::$daemonize);
+    }
+
+    /**
+     * A stale SIGUSR1 handler from a previous command must not survive into
+     * the next Workerman run, otherwise a reload signal can reach the old
+     * process handler.
+     *
+     * @requires extension pcntl
+     */
+    public function testPrepareWorkerStartResetsSignalHandlersToDefault(): void
+    {
+        \pcntl_signal(\SIGUSR1, static function (): void {
+        });
+        $this->assertIsCallable(\pcntl_signal_get_handler(\SIGUSR1), 'The test handler must be installed');
+
+        $method = new \ReflectionMethod($this->manager, 'prepareWorkerStart');
+        $method->invoke($this->manager, ServerAction::START, false, false);
+
+        $this->assertSame(\SIG_DFL, \pcntl_signal_get_handler(\SIGUSR1));
     }
 
     public function testConsumeFileReturnsContentAndRemovesTempFile(): void
