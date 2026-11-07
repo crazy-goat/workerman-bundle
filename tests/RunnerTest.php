@@ -360,9 +360,12 @@ final class RunnerTest extends TestCase
 
         $this->invokeRunnerMethod($this->createRunnerWithGrpc(true), 'warnAboutGrpcExtension');
 
-        $this->assertStringContainsString(
-            'GRPC_ENABLE_FORK_SUPPORT is not set',
-            (string) file_get_contents($logFile),
+        $log = (string) file_get_contents($logFile);
+        $this->assertStringContainsString('GRPC_ENABLE_FORK_SUPPORT is not set', $log);
+        $this->assertStringNotContainsString(
+            'terminated with SIGKILL on completion',
+            $log,
+            'The not-set branch must return before the SIGKILL warning (FAQ-007: exactly one warning)',
         );
     }
 
@@ -384,9 +387,12 @@ final class RunnerTest extends TestCase
 
         $this->invokeRunnerMethod($this->createRunnerWithGrpc(true), 'warnAboutGrpcExtension');
 
-        $this->assertStringContainsString(
-            'terminated with SIGKILL on completion',
-            (string) file_get_contents($logFile),
+        $log = (string) file_get_contents($logFile);
+        $this->assertStringContainsString('terminated with SIGKILL on completion', $log);
+        $this->assertStringNotContainsString(
+            'GRPC_ENABLE_FORK_SUPPORT is not set',
+            $log,
+            'The enabled branch must not also emit the not-set warning (FAQ-007: exactly one warning)',
         );
     }
 
