@@ -136,10 +136,27 @@ final class Utils
      *                               process, which reloads all workers. When
      *                               false (default), only the current process
      *                               is signalled.
+     *
+     * @return bool True when the signal was delivered. False when
+     *              posix_kill() could not signal the target process (dead
+     *              or unpermitted parent). A failed signal is reported with
+     *              error_log() so the reload is never silent; reload stays
+     *              best-effort and never throws.
      */
-    public static function reload(bool $reloadAllWorkers = false): void
+    public static function reload(bool $reloadAllWorkers = false): bool
     {
-        posix_kill($reloadAllWorkers ? posix_getppid() : posix_getpid(), SIGUSR1);
+        $pid = $reloadAllWorkers ? posix_getppid() : posix_getpid();
+        if (posix_kill($pid, SIGUSR1)) {
+            return true;
+        }
+
+        error_log(\sprintf(
+            'Utils::reload() could not send SIGUSR1 to process %d (%s); the reload did not happen.',
+            $pid,
+            $reloadAllWorkers ? 'parent process (reloadAllWorkers: true)' : 'current process',
+        ));
+
+        return false;
     }
 
     /**

@@ -188,10 +188,44 @@ final class UtilsTest extends TestCase
         });
 
         try {
-            Utils::reload();
+            $result = Utils::reload();
             \pcntl_signal_dispatch();
+            $this->assertTrue($result, 'reload() should return true when the signal is delivered.');
             $this->assertTrue($signalReceived, 'reload() should send SIGUSR1 signal.');
         } finally {
+            \pcntl_signal(SIGUSR1, SIG_DFL);
+        }
+    }
+
+    public function testReloadReturnsTrueWithoutWarningWhenSignalDelivered(): void
+    {
+        if (!extension_loaded('pcntl') || !extension_loaded('posix')) {
+            $this->markTestSkipped('pcntl and posix extensions are required for this test.');
+        }
+
+        \pcntl_signal(SIGUSR1, static fn(): null => null);
+
+        $warningRaised = false;
+        \set_error_handler(
+            static function (int $errno) use (&$warningRaised): bool {
+                // DEC-017: the failure path must use error_log(), never
+                // trigger_error(E_USER_WARNING), so no error handler may
+                // fire on either path.
+                if ($errno === \E_USER_WARNING) {
+                    $warningRaised = true;
+                }
+
+                return false;
+            },
+        );
+
+        try {
+            $result = Utils::reload();
+            \pcntl_signal_dispatch();
+            $this->assertTrue($result, 'reload() should return true when the signal is delivered.');
+            $this->assertFalse($warningRaised, 'reload() must not raise E_USER_WARNING on success.');
+        } finally {
+            \restore_error_handler();
             \pcntl_signal(SIGUSR1, SIG_DFL);
         }
     }
