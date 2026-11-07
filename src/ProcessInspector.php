@@ -25,9 +25,22 @@ final readonly class ProcessInspector
      */
     private const TIMEOUT_BUFFER = 3;
 
+    /** @var \Closure(list<string>): (array{output: list<string>, exitCode: int}|null) */
+    private \Closure $psRunner;
+
+    private string $osFamily;
+
+    /**
+     * @param \Closure(list<string>): (array{output: list<string>, exitCode: int}|null)|null $psRunner Test seam: replaces the real `ps` process.
+     * @param string|null                                                                    $osFamily Test seam: overrides PHP_OS_FAMILY.
+     */
     public function __construct(
         private LoggerInterface $logger = new NullLogger(),
+        ?\Closure $psRunner = null,
+        ?string $osFamily = null,
     ) {
+        $this->psRunner = $psRunner ?? $this->execPs(...);
+        $this->osFamily = $osFamily ?? PHP_OS_FAMILY;
     }
 
     /**
@@ -100,10 +113,18 @@ final readonly class ProcessInspector
      *   verified via `posix_getuid()` of the current process as a
      *   best-effort match (cross-process UID read requires `/proc`).
      *
-     * Fail-closed: a snapshot read that fails or comes back empty, an
-     * unreadable UID, an unreadable start time, or a process that dies
+     * Fail-closed: on Linux a snapshot read that fails or comes back empty,
+     * an unreadable UID, an unreadable start time, or a process that dies
      * mid-verification (state `Z` or null) each cause the function to
      * refuse (return false), never to succeed.
+     *
+     * The one deliberate exception is the non-Linux identity check: when
+     * `ps`/`exec()` is unavailable (or its output is unrecognised), the
+     * process is treated as alive by {@see isAliveNonLinux()}, and because
+     * only the current process UID can be compared the fingerprint matches.
+     * Refusing instead would make `stop` unable to signal a live master on
+     * hosts with `exec()` disabled; identity is unverifiable there, so this
+     * availability-over-strictness trade-off is intentional.
      */
     public function matchesFingerprint(int $pid, MasterFingerprint $fingerprint): bool
     {
@@ -327,7 +348,9 @@ final readonly class ProcessInspector
      */
     private function readParentPidViaPs(int $pid): int
     {
-        if (!\function_exists('exec')) {
+        $result = ($this->psRunner)(['-o', 'ppid=', '-p', (string) $pid]);
+
+        if ($result === null) {
             $this->logger->warning('Cannot read parent PID: exec() is disabled; treating as no parent', [
                 'pid' => $pid,
             ]);
@@ -335,9 +358,8 @@ final readonly class ProcessInspector
             return 0;
         }
 
-        $output = [];
-        $exitCode = 0;
-        @exec('ps -o ppid= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+        $output = $result['output'];
+        $exitCode = $result['exitCode'];
 
         if ($exitCode === 126 || $exitCode === 127) {
             $this->logger->warning('Cannot read parent PID: ps command not available', [
@@ -378,7 +400,9 @@ final readonly class ProcessInspector
      */
     private function readProcessCommandViaPs(int $pid): ?string
     {
-        if (!\function_exists('exec')) {
+        $result = ($this->psRunner)(['-ww', '-o', 'args=', '-p', (string) $pid]);
+
+        if ($result === null) {
             $this->logger->warning('Cannot inspect process command: exec() is disabled', [
                 'pid' => $pid,
             ]);
@@ -386,9 +410,8 @@ final readonly class ProcessInspector
             return null;
         }
 
-        $output = [];
-        $exitCode = 0;
-        @exec('ps -ww -o args= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+        $output = $result['output'];
+        $exitCode = $result['exitCode'];
 
         if ($exitCode === 126 || $exitCode === 127) {
             $this->logger->warning('Cannot inspect process command: ps command not available', [
@@ -448,7 +471,34 @@ final readonly class ProcessInspector
      */
     private function isLinux(): bool
     {
-        return PHP_OS_FAMILY === 'Linux';
+        return $this->osFamily === 'Linux';
+    }
+
+    /**
+     * Run `ps` with the given arguments.
+     *
+     * Returns the captured output lines and exit code, or null when `exec()`
+     * is unavailable (the caller then logs and fails closed). `exec()` is
+     * disabled by some shared hosts, so the check stays here rather than in
+     * every caller.
+     *
+     * @param list<string> $arguments
+     *
+     * @return array{output: list<string>, exitCode: int}|null
+     *
+     * @phpstan-impure
+     */
+    private function execPs(array $arguments): ?array
+    {
+        if (!\function_exists('exec')) {
+            return null;
+        }
+
+        $output = [];
+        $exitCode = 0;
+        @\exec('ps ' . \implode(' ', $arguments) . ' 2>/dev/null', $output, $exitCode);
+
+        return ['output' => $output, 'exitCode' => $exitCode];
     }
 
     /**
@@ -642,7 +692,9 @@ final readonly class ProcessInspector
      */
     private function readProcessStateViaPs(int $pid): ?string
     {
-        if (!\function_exists('exec')) {
+        $result = ($this->psRunner)(['-o', 'stat=', '-p', (string) $pid]);
+
+        if ($result === null) {
             $this->logger->warning('Cannot inspect process state: exec() is disabled; treating process as alive', [
                 'pid' => $pid,
             ]);
@@ -650,9 +702,8 @@ final readonly class ProcessInspector
             return null;
         }
 
-        $output = [];
-        $exitCode = 0;
-        @exec('ps -o stat= -p ' . $pid . ' 2>/dev/null', $output, $exitCode);
+        $output = $result['output'];
+        $exitCode = $result['exitCode'];
 
         if ($exitCode === 126 || $exitCode === 127) {
             $this->logger->warning('Cannot inspect process state: ps command not available; treating process as alive', [

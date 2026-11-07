@@ -1501,6 +1501,552 @@ PHP;
     }
 
     // ──────────────────────────────────────────────
+    // Issue #932: non-Linux ps paths with an injectable runner
+    // ──────────────────────────────────────────────
+
+    /**
+     * Build a `ps` result for the injectable runner.
+     *
+     * @param list<string> $output
+     *
+     * @return array{output: list<string>, exitCode: int}
+     */
+    private function psResult(array $output, int $exitCode = 0): array
+    {
+        return ['output' => $output, 'exitCode' => $exitCode];
+    }
+
+    /**
+     * Build an inspector whose non-Linux paths run against a fake `ps`.
+     *
+     * The family is forced to Darwin so these tests exercise the non-Linux
+     * code on Linux CI.
+     *
+     * @param array{output: list<string>, exitCode: int}|null $result
+     */
+    private function inspectorWithPsResult(?array $result): ProcessInspector
+    {
+        /** @var \Closure(array<mixed>): (array{output: list<string>, exitCode: int}|null) $runner */
+        $runner = static fn(array $arguments): ?array => $result;
+
+        return new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+    }
+
+    private function invokeInspectorPrivateMethod(ProcessInspector $inspector, string $name, int $pid): mixed
+    {
+        $method = (new ReflectionClass($inspector))->getMethod($name);
+
+        return $method->invoke($inspector, $pid);
+    }
+
+    private function currentPid(): int
+    {
+        $pid = \getmypid();
+        $this->assertIsInt($pid);
+
+        return $pid;
+    }
+
+    public function testReadProcessStateViaPsUsesTheRealPsByDefault(): void
+    {
+        if (!\function_exists('exec')) {
+            $this->markTestSkipped('exec() is disabled, cannot test the default ps runner');
+        }
+
+        $inspector = new ProcessInspector(osFamily: 'Darwin');
+
+        $state = $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', $this->currentPid());
+
+        $this->assertIsString($state);
+        // `ps -o stat=` must print the state token only, never the `STAT`
+        // header. Losing the trailing `=` (e.g. `ps -o stat`) prepends the
+        // header, turns the state into "STAT" and silently disables the
+        // zombie check (#651).
+        $this->assertNotSame('STAT', $state, 'The state query must suppress the ps header');
+        $this->assertMatchesRegularExpression(
+            '/^[A-Z][A-Za-z+<>]*$/',
+            $state,
+            'The default runner must return a parsed ps state token, not a header or free text',
+        );
+        $this->assertFalse(
+            str_starts_with($state, 'Z'),
+            'The current test process must not be reported as a zombie',
+        );
+    }
+
+    public function testGetParentPidNonLinuxPassesTheExactPsArgv(): void
+    {
+        /** @var list<list<string>> $calls */
+        $calls = [];
+        $runner = function (array $arguments) use (&$calls): array {
+            $calls[] = $arguments;
+
+            return $this->psResult(['42']);
+        };
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        $this->assertSame(42, $inspector->getParentPid(123));
+        $this->assertSame([['-o', 'ppid=', '-p', '123']], $calls);
+    }
+
+    public function testIsProcessAliveNonLinuxPassesTheExactPsArgv(): void
+    {
+        $pid = $this->currentPid();
+        /** @var list<list<string>> $calls */
+        $calls = [];
+        $runner = function (array $arguments) use (&$calls): array {
+            $calls[] = $arguments;
+
+            return $this->psResult(['S']);
+        };
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        $this->assertTrue($inspector->isProcessAlive($pid));
+        $this->assertSame([['-o', 'stat=', '-p', (string) $pid]], $calls);
+    }
+
+    public function testIsWorkermanMasterTitleNonLinuxPassesTheExactPsArgv(): void
+    {
+        $pid = $this->currentPid();
+        /** @var list<list<string>> $calls */
+        $calls = [];
+        $runner = function (array $arguments) use (&$calls): array {
+            $calls[] = $arguments;
+
+            return $arguments[1] === 'args=' ? $this->psResult(['garbage output']) : $this->psResult(['S']);
+        };
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        // Public entry point: no fingerprint falls back to the title check.
+        // Garbage output only reaches the title check; no signal is sent.
+        $inspector->killOrphanedIntermediateFork($pid);
+
+        $this->assertSame([
+            ['-o', 'stat=', '-p', (string) $pid],
+            ['-ww', '-o', 'args=', '-p', (string) $pid],
+        ], $calls);
+    }
+
+    public function testReadParentPidViaPsReturnsParsedPpid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['  4242 ']));
+
+        $this->assertSame(
+            4242,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 123),
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroForEmptyOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 123),
+            'An empty ps result must read as "no parent"',
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroForGarbageOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['not-a-pid']));
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 123),
+            'Unparseable ps output must read as "no parent"',
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroWhenPsIsUnavailable(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 123),
+            'A missing ps must read as "no parent"',
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroWhenPsIsNotInstalled(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 127));
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 123),
+            'ps exit 127 must read as "no parent"',
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroWhenPsFailsOnSignalablePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', $this->currentPid()),
+            'A failed ps on a still-signalable PID must read as "no parent"',
+        );
+    }
+
+    public function testReadParentPidViaPsReturnsZeroWhenPsFailsOnGonePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertSame(
+            0,
+            $this->invokeInspectorPrivateMethod($inspector, 'readParentPidViaPs', 999_999_999),
+            'A failed ps on an unsignalable PID must read as "no parent"',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsTrimmedCommand(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['  WorkerMan: master process  start.php  ']));
+
+        $this->assertSame(
+            'WorkerMan: master process  start.php',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 123),
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsEmptyForEmptyOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertSame(
+            '',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 123),
+            'An empty ps result must read as "process gone"',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsGarbageWithoutMatchingMasterTitle(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['garbage output']));
+
+        $command = $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 123);
+
+        $this->assertSame('garbage output', $command);
+        $this->assertFalse(
+            str_contains($command, 'WorkerMan: master process'),
+            'Garbage output must not be mistaken for a Workerman master',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsNullWhenPsIsUnavailable(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 123),
+            'A missing ps must fail closed',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsNullWhenPsIsNotInstalled(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 127));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 123),
+            'ps exit 127 must fail closed',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsNullWhenPsFailsOnSignalablePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', $this->currentPid()),
+            'A failed ps on a still-signalable PID must fail closed',
+        );
+    }
+
+    public function testReadProcessCommandViaPsReturnsEmptyWhenPsFailsOnGonePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertSame(
+            '',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessCommandViaPs', 999_999_999),
+            'A failed ps on an unsignalable PID must read as "process gone"',
+        );
+    }
+
+    public function testIsWorkermanMasterTitleNonLinuxReturnsTrueForMasterCommand(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['WorkerMan: master process start.php']));
+
+        $this->assertTrue(
+            $this->invokeInspectorPrivateMethod($inspector, 'isWorkermanMasterTitle', 123),
+        );
+    }
+
+    public function testIsWorkermanMasterTitleNonLinuxReturnsFalseForEmptyCommand(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isWorkermanMasterTitle', 123),
+            'An empty ps command must not match the master title',
+        );
+    }
+
+    public function testIsWorkermanMasterTitleNonLinuxReturnsFalseForGarbageCommand(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['garbage output']));
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isWorkermanMasterTitle', 123),
+            'Garbage output must not match the master title',
+        );
+    }
+
+    public function testIsWorkermanMasterTitleNonLinuxReturnsFalseWhenPsIsUnavailable(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isWorkermanMasterTitle', 123),
+            'A missing ps must fail closed (no match)',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsTrimmedState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([' R+ ']));
+
+        $this->assertSame(
+            'R+',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsEmptyForEmptyOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertSame(
+            '',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+            'An empty ps result must read as "process gone"',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsZombieState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['Z']));
+
+        $this->assertSame(
+            'Z',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsGarbageState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['garbage']));
+
+        $this->assertSame(
+            'garbage',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+            'Unparseable ps output must be surfaced, not silently turned into a state',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsNullWhenPsIsUnavailable(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+            'A missing ps must fail closed by treating the process as alive',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsNullWhenPsIsNotInstalled(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 127));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 123),
+            'ps exit 127 must fail closed by treating the process as alive',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsNullWhenPsFailsOnSignalablePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', $this->currentPid()),
+            'A failed ps on a still-signalable PID must fail closed',
+        );
+    }
+
+    public function testReadProcessStateViaPsReturnsEmptyWhenPsFailsOnGonePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertSame(
+            '',
+            $this->invokeInspectorPrivateMethod($inspector, 'readProcessStateViaPs', 999_999_999),
+            'A failed ps on an unsignalable PID must read as "process gone"',
+        );
+    }
+
+    public function testIsAliveNonLinuxReturnsTrueForRunningState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['S']));
+
+        $this->assertTrue(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+        );
+    }
+
+    public function testIsAliveNonLinuxReturnsFalseForZombieState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['Z']));
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+            'A zombie must not be alive',
+        );
+    }
+
+    public function testIsAliveNonLinuxReturnsFalseForZombieStateWithFlags(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['Z+']));
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+            'A zombie with ps state flags must not be alive',
+        );
+    }
+
+    public function testIsAliveNonLinuxReturnsFalseForEmptyState(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertFalse(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+            'An empty state means the process is gone',
+        );
+    }
+
+    public function testIsAliveNonLinuxTreatsGarbageStateAsAlive(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['garbage']));
+
+        $this->assertTrue(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+            'An unrecognised state must fail closed by treating the process as alive',
+        );
+    }
+
+    public function testIsAliveNonLinuxTreatsMissingPsAsAlive(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertTrue(
+            $this->invokeInspectorPrivateMethod($inspector, 'isAliveNonLinux', 999_999_999),
+            'A missing ps must fail closed by treating the process as alive',
+        );
+    }
+
+    public function testMatchesFingerprintNonLinuxReturnsTrueForLiveProcessWithMatchingUid(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $inspector = $this->inspectorWithPsResult($this->psResult(['S']));
+
+        $this->assertTrue($inspector->matchesFingerprint($pid, $fingerprint));
+    }
+
+    public function testMatchesFingerprintNonLinuxReturnsFalseForEmptyPsState(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertFalse(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'An empty ps state must fail closed (no match)',
+        );
+    }
+
+    public function testMatchesFingerprintNonLinuxReturnsFalseForZombie(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $inspector = $this->inspectorWithPsResult($this->psResult(['Z']));
+
+        $this->assertFalse(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'A zombie must fail closed (no match)',
+        );
+    }
+
+    public function testMatchesFingerprintNonLinuxReturnsFalseForUidMismatch(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid() + 1);
+        $inspector = $this->inspectorWithPsResult($this->psResult(['S']));
+
+        $this->assertFalse(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'A UID mismatch must fail closed (no match)',
+        );
+    }
+
+    /**
+     * Deliberate trade-off, pinned on purpose: on non-Linux POSIX an
+     * unavailable `ps`/`exec()` is treated as "alive", and the only UID the
+     * code can compare is the current process's. Identity is therefore
+     * unverifiable, but refusing here would make `stop` unable to signal a
+     * live master on hosts where `exec()` is disabled. The callers accept
+     * this availability-over-strictness choice; the check is not silently
+     * untested.
+     */
+    public function testMatchesFingerprintNonLinuxTreatsMissingPsAsMatchByDesign(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertTrue(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'ps unavailable: treated as alive and matched by design so stop still works with exec() disabled',
+        );
+    }
+
+    /**
+     * Same deliberate trade-off as the missing-`ps` case: an unrecognised
+     * state is treated as alive by {@see ProcessInspector::isAliveNonLinux()},
+     * so the fingerprint matches. This pins the current documented behaviour
+     * instead of leaving the branch untested.
+     */
+    public function testMatchesFingerprintNonLinuxTreatsGarbageStateAsMatchByDesign(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $inspector = $this->inspectorWithPsResult($this->psResult(['garbage']));
+
+        $this->assertTrue(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'Garbage ps state: treated as alive and matched by design (availability over strictness)',
+        );
+    }
+
+    // ──────────────────────────────────────────────
     // Issue #567: bounded /proc reads + fail-closed snapshot
     // ──────────────────────────────────────────────
 
