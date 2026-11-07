@@ -468,8 +468,13 @@ readonly class Runner implements RunnerInterface
 
     private function getCacheDir(): string
     {
+        // Resolve the kernel first: the factory closure may set APP_CACHE_DIR
+        // (the test app does), and reading the variable before the kernel
+        // exists would miss it. getEnvironment() creates the kernel.
+        $environment = $this->kernelFactory->getEnvironment();
+
         if (isset($_SERVER['APP_CACHE_DIR']) && $_SERVER['APP_CACHE_DIR'] !== '') {
-            return $_SERVER['APP_CACHE_DIR'] . '/' . $this->kernelFactory->getEnvironment();
+            return $_SERVER['APP_CACHE_DIR'] . '/' . $environment;
         }
 
         return $this->kernelFactory->getCacheDir();
