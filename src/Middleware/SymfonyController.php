@@ -205,7 +205,7 @@ final class SymfonyController
         } catch (\Throwable $e) {
             $this->logger?->error(
                 'Failed to reset services',
-                ['exception' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()],
+                ['exception' => $e],
             );
         }
     }
