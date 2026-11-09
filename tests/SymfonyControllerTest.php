@@ -919,6 +919,11 @@ final class SymfonyControllerTest extends TestCase
         $controller->terminateIfNeeded();
     }
 
+    /**
+     * Issue #1189: a reset failure must log the Throwable itself under the
+     * `exception` context key (PSR-3), so loggers such as Monolog keep the
+     * stack trace — not only the exception message, file and line.
+     */
     public function testServicesResetterFailureIsLoggedAndDoesNotBreakNextRequest(): void
     {
         $exception = new \RuntimeException('reset failed');
@@ -940,9 +945,8 @@ final class SymfonyControllerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->exactly(2))->method('error')->with(
             'Failed to reset services',
-            $this->callback(static fn(array $context): bool => $context['exception'] === 'reset failed'
-                && $context['file'] === $exception->getFile()
-                && $context['line'] === $exception->getLine()),
+            $this->callback(static fn(array $context): bool => $context['exception'] === $exception
+                && !isset($context['file'], $context['line'])),
         );
 
         $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'), $container);
