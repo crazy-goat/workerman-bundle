@@ -1706,6 +1706,66 @@ PHP;
         );
     }
 
+    public function testReadUidViaPsReturnsParsedUid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['  1000 ']));
+
+        $this->assertSame(
+            1000,
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', 123),
+        );
+    }
+
+    public function testReadUidViaPsReturnsNullForEmptyOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([]));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', 123),
+            'An empty ps result must read as "UID unreadable"',
+        );
+    }
+
+    public function testReadUidViaPsReturnsNullForGarbageOutput(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult(['not-a-uid']));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', 123),
+            'Unparseable ps output must read as "UID unreadable"',
+        );
+    }
+
+    public function testReadUidViaPsReturnsNullWhenPsIsUnavailable(): void
+    {
+        $inspector = $this->inspectorWithPsResult(null);
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', 123),
+            'A missing ps must read as "UID unreadable"',
+        );
+    }
+
+    public function testReadUidViaPsReturnsNullWhenPsIsNotInstalled(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 127));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', 123),
+            'ps exit 127 must read as "UID unreadable"',
+        );
+    }
+
+    public function testReadUidViaPsReturnsNullWhenPsFailsOnSignalablePid(): void
+    {
+        $inspector = $this->inspectorWithPsResult($this->psResult([], 1));
+
+        $this->assertNull(
+            $this->invokeInspectorPrivateMethod($inspector, 'readUidViaPs', $this->currentPid()),
+            'A failed ps on a still-signalable PID must read as "UID unreadable"',
+        );
+    }
+
     public function testReadProcessCommandViaPsReturnsTrimmedCommand(): void
     {
         $inspector = $this->inspectorWithPsResult($this->psResult(['  WorkerMan: master process  start.php  ']));
@@ -2004,6 +2064,80 @@ PHP;
         $this->assertFalse(
             $inspector->matchesFingerprint($pid, $fingerprint),
             'A UID mismatch must fail closed (no match)',
+        );
+    }
+
+    /**
+     * Issue #1188: the non-Linux fingerprint check must compare the UID
+     * of the target PID (read via `ps -o uid=`), not the caller's own
+     * UID. The exact `ps` argv is pinned, like the other call sites.
+     */
+    public function testMatchesFingerprintNonLinuxReturnsTrueForMatchingTargetUid(): void
+    {
+        $pid = $this->currentPid();
+        $uid = \posix_getuid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, $uid);
+        /** @var list<list<string>> $calls */
+        $calls = [];
+        $runner = function (array $arguments) use (&$calls, $uid): array {
+            $calls[] = $arguments;
+
+            return $arguments[1] === 'uid=' ? $this->psResult([(string) $uid]) : $this->psResult(['S']);
+        };
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        $this->assertTrue($inspector->matchesFingerprint($pid, $fingerprint));
+        $this->assertSame([
+            ['-o', 'stat=', '-p', (string) $pid],
+            ['-o', 'uid=', '-p', (string) $pid],
+        ], $calls);
+    }
+
+    /**
+     * Issue #1188: a different process that reused the recorded PID and
+     * runs under another UID must not match the fingerprint. Before the
+     * fix the caller's own UID was compared, so this case matched.
+     */
+    public function testMatchesFingerprintNonLinuxReturnsFalseForDifferentTargetUid(): void
+    {
+        $pid = $this->currentPid();
+        $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $runner = (fn(array $arguments): array => $arguments[1] === 'uid='
+            ? $this->psResult([(string) (\posix_getuid() + 1)])
+            : $this->psResult(['S']));
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        $this->assertFalse(
+            $inspector->matchesFingerprint($pid, $fingerprint),
+            'A PID reused by a process under a different UID must not match the fingerprint',
+        );
+    }
+
+    /**
+     * Issue #1188: when `ps` cannot read the target UID, the check falls
+     * back to the current process UID — the documented
+     * availability-over-strictness trade-off for hosts with `exec()`
+     * disabled. The fallback still refuses a UID mismatch.
+     */
+    public function testMatchesFingerprintNonLinuxFallsBackToCallerUidWhenTargetUidUnreadable(): void
+    {
+        $pid = $this->currentPid();
+        $runner = (fn(array $arguments): ?array => $arguments[1] === 'uid=' ? null : $this->psResult(['S']));
+
+        $inspector = new ProcessInspector(psRunner: $runner, osFamily: 'Darwin');
+
+        $matching = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid());
+        $this->assertTrue(
+            $inspector->matchesFingerprint($pid, $matching),
+            'An unreadable target UID falls back to the caller UID so stop still works with exec() disabled',
+        );
+
+        $mismatching = new \CrazyGoat\WorkermanBundle\MasterFingerprint($pid, 0, \posix_getuid() + 1);
+        $this->assertFalse(
+            $inspector->matchesFingerprint($pid, $mismatching),
+            'The caller-UID fallback must still refuse a UID mismatch',
         );
     }
 
