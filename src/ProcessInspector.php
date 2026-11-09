@@ -109,9 +109,14 @@ final readonly class ProcessInspector
      *   `/proc/{pid}/status` once (UID) — two bounded /proc reads per
      *   call — and reasons over that single snapshot.
      * - Non-Linux POSIX: PID + UID verification only (start time is
-     *   recorded as 0 and the start-time check is skipped). UID is
-     *   verified via `posix_getuid()` of the current process as a
-     *   best-effort match (cross-process UID read requires `/proc`).
+     *   recorded as 0 and the start-time check is skipped). The UID is
+     *   read from the target PID via `ps -o uid= -p <pid>` (#1188):
+     *   comparing the caller's own UID instead let a different process
+     *   that reused the recorded PID pass the check whenever it ran
+     *   under the same user. When `ps` cannot read the target UID, the
+     *   current process UID is used as a documented fallback (see
+     *   below); start time stays unavailable, so this is PID + UID
+     *   verification, not full identity.
      *
      * Fail-closed: on Linux a snapshot read that fails or comes back empty,
      * an unreadable UID, an unreadable start time, or a process that dies
@@ -121,10 +126,10 @@ final readonly class ProcessInspector
      * The one deliberate exception is the non-Linux identity check: when
      * `ps`/`exec()` is unavailable (or its output is unrecognised), the
      * process is treated as alive by {@see isAliveNonLinux()}, and because
-     * only the current process UID can be compared the fingerprint matches.
-     * Refusing instead would make `stop` unable to signal a live master on
-     * hosts with `exec()` disabled; identity is unverifiable there, so this
-     * availability-over-strictness trade-off is intentional.
+     * the target UID cannot be read the current process UID is compared
+     * instead. Refusing instead would make `stop` unable to signal a live
+     * master on hosts with `exec()` disabled; identity is unverifiable
+     * there, so this availability-over-strictness trade-off is intentional.
      */
     public function matchesFingerprint(int $pid, MasterFingerprint $fingerprint): bool
     {
@@ -160,21 +165,34 @@ final readonly class ProcessInspector
         }
 
         // Non-Linux: PID + UID verification only. Start time is recorded
-        // as 0 and the start-time check is skipped. Cross-process UID
-        // read requires /proc which is unavailable, so UID is verified
-        // via posix_getuid() of the current process as a best-effort
-        // match. The isProcessAlive() call below uses the non-Linux
+        // as 0 and the start-time check is skipped. The UID is read from
+        // the target PID via `ps` (#1188) — comparing the caller's own
+        // UID instead let a different process that reused the recorded
+        // PID pass the check whenever it ran under the same user. When
+        // `ps` cannot read the target UID, the current process UID is
+        // used as a documented fallback (see readUidViaPs()): identity
+        // is unverifiable there, but refusing would make `stop` unable
+        // to signal a live master on hosts with `exec()` disabled. The
+        // isProcessAlive() call below uses the non-Linux
         // pcntl_waitpid/ps path (isAliveNonLinux), unchanged.
         if (!$this->isProcessAlive($pid)) {
             return false;
         }
 
-        $currentUid = \posix_getuid();
-        if ($currentUid !== $fingerprint->uid) {
-            $this->logger->warning('Current process UID does not match master fingerprint; refusing to signal', [
+        $targetUid = $this->readUidViaPs($pid);
+        if ($targetUid === null) {
+            $this->logger->warning('Cannot read UID of target process; falling back to current process UID for fingerprint verification', [
                 'pid' => $pid,
                 'expected_uid' => $fingerprint->uid,
-                'actual_uid' => $currentUid,
+            ]);
+            $targetUid = \posix_getuid();
+        }
+
+        if ($targetUid !== $fingerprint->uid) {
+            $this->logger->warning('Process UID does not match master fingerprint; refusing to signal', [
+                'pid' => $pid,
+                'expected_uid' => $fingerprint->uid,
+                'actual_uid' => $targetUid,
             ]);
 
             return false;
@@ -335,6 +353,71 @@ final readonly class ProcessInspector
         }
 
         return str_contains($command, 'WorkerMan: master process');
+    }
+
+    /**
+     * Read the UID of the given PID via `ps -o uid= -p <pid>` on
+     * non-Linux POSIX.
+     *
+     * Returns the target process UID, or null when it cannot be
+     * determined (process gone, unparseable output, or `ps`
+     * unavailable). The caller falls back to the current process UID
+     * in that case — the documented availability-over-strictness
+     * trade-off for hosts with `exec()` disabled — so a null here
+     * never silently becomes a match on its own.
+     *
+     * @phpstan-impure
+     */
+    private function readUidViaPs(int $pid): ?int
+    {
+        $result = ($this->psRunner)(['-o', 'uid=', '-p', (string) $pid]);
+
+        if ($result === null) {
+            $this->logger->warning('Cannot read process UID: exec() is disabled', [
+                'pid' => $pid,
+            ]);
+
+            return null;
+        }
+
+        $output = $result['output'];
+        $exitCode = $result['exitCode'];
+
+        if ($exitCode === 126 || $exitCode === 127) {
+            $this->logger->warning('Cannot read process UID: ps command not available', [
+                'pid' => $pid,
+                'exit_code' => $exitCode,
+            ]);
+
+            return null;
+        }
+
+        if ($exitCode !== 0) {
+            if (posix_kill($pid, 0)) {
+                $this->logger->warning('Cannot read process UID: ps exited non-zero on a signalable PID', [
+                    'pid' => $pid,
+                    'exit_code' => $exitCode,
+                ]);
+            }
+
+            return null;
+        }
+
+        if ($output === []) {
+            return null;
+        }
+
+        $candidate = trim($output[0]);
+        if (!\ctype_digit($candidate)) {
+            $this->logger->warning('Cannot read process UID: ps output is not a numeric UID', [
+                'pid' => $pid,
+                'output' => $candidate,
+            ]);
+
+            return null;
+        }
+
+        return (int) $candidate;
     }
 
     /**
