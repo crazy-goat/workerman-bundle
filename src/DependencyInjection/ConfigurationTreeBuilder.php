@@ -168,6 +168,7 @@ final readonly class ConfigurationTreeBuilder
                             ->end()
                         ->integerNode('processes')
                             ->info('Number of webserver worker processes. Default: number of CPUs * 2. The container CPU limit is respected.')
+                            ->min(1)
                             ->defaultNull()
                             ->end()
                         ->booleanNode('reuse_port')

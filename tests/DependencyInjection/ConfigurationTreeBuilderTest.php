@@ -319,6 +319,71 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertNull($config['servers'][1]['body_size_cap']);
     }
 
+    /**
+     * @return iterable<string, array{array<string, int|string>}>
+     */
+    public static function provideInvalidServerProcessesOverrides(): iterable
+    {
+        yield 'zero' => [['name' => 'web', 'listen' => 'http://0.0.0.0:80', 'processes' => 0]];
+        yield 'negative' => [['name' => 'web', 'listen' => 'http://0.0.0.0:80', 'processes' => -1]];
+    }
+
+    /**
+     * Regression guard for #1182: `processes: 0` and negatives used to pass
+     * validation and were then silently clamped to one worker by Workerman,
+     * hiding a typo. One field per process() call (FAQ-035).
+     *
+     * @dataProvider provideInvalidServerProcessesOverrides
+     *
+     * @param array<string, int|string> $override
+     */
+    public function testConfiguredTreeRejectsNonPositiveServerProcesses(array $override): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+
+        $processor->process($node, [[
+            'servers' => [$override],
+        ]]);
+    }
+
+    public function testConfiguredTreeAcceptsMinimumServerProcesses(): void
+    {
+        $configurator = $this->createDefinitionConfigurator();
+        (new ConfigurationTreeBuilder())->configure($configurator);
+
+        $root = $configurator->rootNode();
+        self::assertInstanceOf(ArrayNodeDefinition::class, $root);
+
+        $processor = new Processor();
+        $node = $root->getNode(true);
+
+        $config = $processor->process($node, [[
+            'servers' => [
+                [
+                    'name' => 'web',
+                    'listen' => 'http://0.0.0.0:80',
+                    'processes' => 1,
+                ],
+                [
+                    'name' => 'other',
+                    'listen' => 'http://0.0.0.0:8080',
+                ],
+            ],
+        ]]);
+
+        self::assertSame(1, $config['servers'][0]['processes']);
+        self::assertNull($config['servers'][1]['processes']);
+    }
+
     public function testConfiguredTreeValidatesRequiredServerName(): void
     {
         $configurator = $this->createDefinitionConfigurator();

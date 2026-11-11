@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `servers.*.processes` values below 1 are now rejected at config validation: `0` and negative values used to pass and were then silently clamped to one worker by Workerman, hiding a typo (#1182)
 - `bin/docker-test-worktree` now works in a real linked git worktree: it mounts the repository's common `.git` dir (from `git rev-parse --git-common-dir`, resolved when relative, with the caller's git environment cleared) read-only at its host path so `git ls-files` succeeds in the container, removes the whole `var/cache/<env>` (all envs, not only the workerman config cache) before and after a run (also on failure), refuses a symlinked `var/cache` and removes a symlinked env dir as a link so cleanup never follows it outside the worktree, and the image reuses an existing group when the host GID is taken (macOS GID 20), so `groupadd` no longer fails (#867)
 - `UtilsTest` now restores the SIGUSR1 handler it saved instead of resetting it to `SIG_DFL`, and its `tearDown()` asserts that the bootstrap's `SIG_IGN` guard is still in place, so a later test that sends SIGUSR1 can no longer kill PHPUnit under a random test order ([#915](https://github.com/crazy-goat/workerman-bundle/issues/915))
 
