@@ -299,6 +299,43 @@ final readonly class ServerWorker
             );
         }
 
+        $certContents = file_get_contents($cert);
+        if ($certContents === false) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate file could not be read: %s', $cert),
+            );
+        }
+
+        // openssl_x509_read() warns on unparseable input; the failure is
+        // already mapped to a clear InvalidArgumentException below, so the
+        // low-level warning must not reach the operator's error log.
+        $x509 = @\openssl_x509_read($certContents);
+        if ($x509 === false) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate is not a valid X.509 certificate: %s', $cert),
+            );
+        }
+
+        $keyContents = file_get_contents($key);
+        if ($keyContents === false) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL private key file could not be read: %s', $key),
+            );
+        }
+
+        $privateKey = \openssl_pkey_get_private($keyContents);
+        if ($privateKey === false) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL private key is not a valid private key: %s', $key),
+            );
+        }
+
+        if (!\openssl_x509_check_private_key($x509, $privateKey)) {
+            throw new \InvalidArgumentException(
+                sprintf('SSL certificate and private key do not match: %s and %s', $cert, $key),
+            );
+        }
+
         return [
             'ssl' => [
                 'local_cert' => $cert,
