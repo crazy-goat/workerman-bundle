@@ -381,6 +381,83 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
+    public function testMismatchedCertAndKeyThrowsException(): void
+    {
+        $certFile = $this->tempDir . '/cert.pem';
+        $keyFile = $this->tempDir . '/key.pem';
+        $otherKeyFile = $this->tempDir . '/other-key.pem';
+
+        $this->generateSelfSignedCert($certFile, $keyFile);
+        $this->generatePrivateKey($otherKeyFile);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('do not match');
+        $this->expectExceptionMessage($certFile);
+        $this->expectExceptionMessage($otherKeyFile);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $certFile,
+                'local_pk' => $otherKeyFile,
+            ],
+        );
+    }
+
+    public function testUnparseableCertThrowsException(): void
+    {
+        $certFile = $this->tempDir . '/cert.pem';
+        $keyFile = $this->tempDir . '/key.pem';
+
+        file_put_contents($certFile, "this is not a certificate\n");
+        $this->generatePrivateKey($keyFile);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('not a valid X.509 certificate');
+        $this->expectExceptionMessage($certFile);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $certFile,
+                'local_pk' => $keyFile,
+            ],
+        );
+    }
+
+    public function testUnparseableKeyThrowsException(): void
+    {
+        $certFile = $this->tempDir . '/cert.pem';
+        $keyFile = $this->tempDir . '/key.pem';
+
+        $this->generateSelfSignedCert($certFile, $keyFile);
+        file_put_contents($keyFile, "this is not a private key\n");
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('not a valid private key');
+        $this->expectExceptionMessage($keyFile);
+
+        new ServerWorker(
+            $this->createKernelFactory(),
+            null,
+            null,
+            [
+                'name' => 'test-server',
+                'listen' => 'https://0.0.0.0:8443',
+                'local_cert' => $certFile,
+                'local_pk' => $keyFile,
+            ],
+        );
+    }
+
     /** @dataProvider provideWebSocketListenAddresses */
     public function testWebSocketListenIsRejected(string $listen): void
     {
@@ -1666,6 +1743,18 @@ final class ServerWorkerTest extends TestCase
 
         if (!\openssl_x509_export_to_file($x509, $certFile)) {
             throw new \RuntimeException('Failed to export certificate');
+        }
+    }
+
+    private function generatePrivateKey(string $keyFile): void
+    {
+        $privkey = \openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        if ($privkey === false) {
+            throw new \RuntimeException('Failed to generate private key');
+        }
+
+        if (!\openssl_pkey_export_to_file($privkey, $keyFile)) {
+            throw new \RuntimeException('Failed to export private key');
         }
     }
 }
