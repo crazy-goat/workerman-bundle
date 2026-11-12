@@ -4,7 +4,7 @@ includes:
 parameters:
 	level: 8
 	cognitive_complexity:
-		function: 40
+		function: 30
 		class: 150
 	treatPhpDocTypesAsCertain: false
 	bootstrapFiles:

@@ -15,7 +15,7 @@ final class CognitiveComplexityGateTest extends TestCase
 
     private const EXTENSION = 'vendor/tomasvotruba/cognitive-complexity/config/extension.neon';
 
-    private const FUNCTION_LIMIT_CEILING = 40;
+    private const FUNCTION_LIMIT_CEILING = 30;
 
     private const CLASS_LIMIT_CEILING = 150;
 
