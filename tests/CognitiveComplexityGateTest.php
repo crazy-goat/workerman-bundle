@@ -61,10 +61,23 @@ final class CognitiveComplexityGateTest extends TestCase
         self::assertStringNotContainsStringIgnoringCase('baseline', $config, 'No PHPStan baseline: violations are refactored, not recorded');
         self::assertStringNotContainsString('complexity.', $config, 'No complexity.* identifier may be ignored');
         self::assertDoesNotMatchRegularExpression('/cognitive complexity/i', $config, 'No complexity message may be ignored');
+        self::assertStringNotContainsString('excludePaths', $config, 'No path may be excluded from analysis');
+
+        preg_match_all('/^[ \t]+(?:-[ \t]+)?(?:message|messages|identifier|identifiers|rawMessage):.*$/m', $config, $ignores);
+        self::assertSame(
+            [
+                "message: '#never returns string so it can be removed from the return type#'",
+                "message: '#Call to method.*on a separate line has no effect#'",
+            ],
+            array_map(trim(...), $ignores[0]),
+            'ignoreErrors may only hold the reviewed entries; a new ignore must not be able to silence the complexity rules',
+        );
     }
 
     public function testNoOtherPhpstanConfigIsTracked(): void
     {
+        self::assertSame([self::CONFIG], $this->gitLsFiles([self::CONFIG]), 'git ls-files must work for this check to mean anything');
+
         foreach (['phpstan.neon', 'phpstan.dist.neon'] as $config) {
             self::assertSame([], $this->gitLsFiles([$config]), $config . ' takes precedence over ' . self::CONFIG . ' in bin/lint.sh and must not be tracked');
         }
