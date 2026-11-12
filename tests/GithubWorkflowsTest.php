@@ -222,6 +222,23 @@ final class GithubWorkflowsTest extends TestCase
 
     public function testMatrixRewriteExclusionsCoverOffSchemeSymfonyPackages(): void
     {
+        $constraints = $this->symfonyConstraints();
+        $frameworkConstraint = $this->dominantConstraint($constraints);
+        [$onScheme, $offScheme] = $this->partitionByConstraint($constraints, $frameworkConstraint);
+
+        $steps = $this->symfonyRewriteSteps();
+        $exclusions = $this->sedExclusions($steps);
+
+        $this->assertOffSchemePackagesAreExcluded($offScheme, $exclusions, $constraints, $frameworkConstraint);
+        $this->assertExclusionsTargetOnlyOffSchemePackages($exclusions, $offScheme, $onScheme);
+        $this->assertRewriteClassMatchesEveryPackage($steps, $constraints);
+    }
+
+    /**
+     * @return non-empty-array<string, string>
+     */
+    private function symfonyConstraints(): array
+    {
         $composerPath = __DIR__ . '/../composer.json';
         self::assertFileExists($composerPath);
 
@@ -243,6 +260,14 @@ final class GithubWorkflowsTest extends TestCase
         }
         self::assertNotEmpty($constraints, 'composer.json must require at least one symfony/* package');
 
+        return $constraints;
+    }
+
+    /**
+     * @param non-empty-array<string, string> $constraints
+     */
+    private function dominantConstraint(array $constraints): string
+    {
         $counts = array_count_values(array_values($constraints));
         arsort($counts);
         $orderedCounts = array_values($counts);
@@ -260,6 +285,15 @@ final class GithubWorkflowsTest extends TestCase
             'One symfony/* constraint must dominate so the framework scheme is unambiguous',
         );
 
+        return (string) $frameworkConstraint;
+    }
+
+    /**
+     * @param array<string, string> $constraints
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    private function partitionByConstraint(array $constraints, string $frameworkConstraint): array
+    {
         $offScheme = [];
         $onScheme = [];
         foreach ($constraints as $package => $constraint) {
@@ -270,6 +304,14 @@ final class GithubWorkflowsTest extends TestCase
             }
         }
 
+        return [$onScheme, $offScheme];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function symfonyRewriteSteps(): array
+    {
         $matched = preg_match_all(
             '/^      - name: Update Symfony constraints in composer\.json\n(?:^        .*\n)+?^          sed -i.*$/m',
             $this->workflowContent,
@@ -282,8 +324,17 @@ final class GithubWorkflowsTest extends TestCase
             'At least one "Update Symfony constraints in composer.json" step with a sed rewrite must exist',
         );
 
+        return $steps[0];
+    }
+
+    /**
+     * @param list<string> $steps
+     * @return list<string>
+     */
+    private function sedExclusions(array $steps): array
+    {
         $exclusions = [];
-        foreach ($steps[0] as $step) {
+        foreach ($steps as $step) {
             preg_match_all('/\/([^\/\n]+)\/!s\//', $step, $found);
             foreach ($found[1] as $needle) {
                 self::assertNotFalse(
@@ -294,16 +345,19 @@ final class GithubWorkflowsTest extends TestCase
             }
         }
 
+        return $exclusions;
+    }
+
+    /**
+     * @param list<string> $offScheme
+     * @param list<string> $exclusions
+     * @param array<string, string> $constraints
+     */
+    private function assertOffSchemePackagesAreExcluded(array $offScheme, array $exclusions, array $constraints, string $frameworkConstraint): void
+    {
         foreach ($offScheme as $package) {
-            $covered = false;
-            foreach ($exclusions as $needle) {
-                if (preg_match('/' . $needle . '/', $package) === 1) {
-                    $covered = true;
-                    break;
-                }
-            }
             $this->assertTrue(
-                $covered,
+                $this->anyPatternMatches($exclusions, [$package]),
                 sprintf(
                     'symfony package "%s" (%s) is off the framework scheme (%s) but no sed /needle/! exclusion covers it',
                     $package,
@@ -312,17 +366,18 @@ final class GithubWorkflowsTest extends TestCase
                 ),
             );
         }
+    }
 
+    /**
+     * @param list<string> $exclusions
+     * @param list<string> $offScheme
+     * @param list<string> $onScheme
+     */
+    private function assertExclusionsTargetOnlyOffSchemePackages(array $exclusions, array $offScheme, array $onScheme): void
+    {
         foreach ($exclusions as $needle) {
-            $matchesOffScheme = false;
-            foreach ($offScheme as $package) {
-                if (preg_match('/' . $needle . '/', $package) === 1) {
-                    $matchesOffScheme = true;
-                    break;
-                }
-            }
             $this->assertTrue(
-                $matchesOffScheme,
+                $this->anyPatternMatches([$needle], $offScheme),
                 sprintf('sed exclusion "/%s/!" matches no off-scheme symfony/* package; remove or retarget it', $needle),
             );
 
@@ -334,23 +389,38 @@ final class GithubWorkflowsTest extends TestCase
                 );
             }
         }
+    }
 
-        $rewriteClass = null;
-        foreach ($steps[0] as $step) {
-            preg_match_all('/(\[[a-z0-9\-^]+\])/', $step, $classes);
-            foreach ($classes[1] as $class) {
-                if (str_contains($class, 'a-z')) {
-                    $rewriteClass = $class;
-                    break 2;
+    /**
+     * @param list<string> $patterns
+     * @param list<string> $subjects
+     */
+    private function anyPatternMatches(array $patterns, array $subjects): bool
+    {
+        foreach ($patterns as $pattern) {
+            foreach ($subjects as $subject) {
+                if (preg_match('/' . $pattern . '/', $subject) === 1) {
+                    return true;
                 }
             }
         }
+
+        return false;
+    }
+
+    /**
+     * @param list<string> $steps
+     * @param array<string, string> $constraints
+     */
+    private function assertRewriteClassMatchesEveryPackage(array $steps, array $constraints): void
+    {
+        $rewriteClass = $this->rewriteCharacterClass($steps);
         self::assertNotNull(
             $rewriteClass,
             'The "Update Symfony constraints in composer.json" step must contain a symfony\/[...] rewrite character class',
         );
 
-        foreach ($constraints as $package => $constraint) {
+        foreach (array_keys($constraints) as $package) {
             $name = substr($package, strlen('symfony/'));
             self::assertMatchesRegularExpression(
                 sprintf('/^%s+$/', $rewriteClass),
@@ -362,5 +432,22 @@ final class GithubWorkflowsTest extends TestCase
                 ),
             );
         }
+    }
+
+    /**
+     * @param list<string> $steps
+     */
+    private function rewriteCharacterClass(array $steps): ?string
+    {
+        foreach ($steps as $step) {
+            preg_match_all('/(\[[a-z0-9\-^]+\])/', $step, $classes);
+            foreach ($classes[1] as $class) {
+                if (str_contains($class, 'a-z')) {
+                    return $class;
+                }
+            }
+        }
+
+        return null;
     }
 }
