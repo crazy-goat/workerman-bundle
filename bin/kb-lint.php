@@ -78,51 +78,78 @@ function parseFrontMatter(string $line): array
             continue;
         }
 
-        $keyStart = $i;
-        while ($i < $length && (ctype_alpha($spec[$i]) || $spec[$i] === '_')) {
-            $i++;
-        }
-        $key = substr($spec, $keyStart, $i - $keyStart);
+        $pair = readFrontMatterPair($spec, $i);
+        $error = $pair['error'] ?? frontMatterPairError($pairs, $pair['key'], $pair['value']);
 
-        if ($key === '' || $i >= $length || $spec[$i] !== '=') {
-            return ['pairs' => [], 'error' => 'malformed front matter: expected key=value at offset ' . $keyStart];
+        if ($error !== null) {
+            return ['pairs' => [], 'error' => $error];
         }
 
-        $i++;
-
-        if ($i < $length && $spec[$i] === '"') {
-            $i++;
-            $valueStart = $i;
-            while ($i < $length && $spec[$i] !== '"') {
-                $i++;
-            }
-
-            if ($i >= $length) {
-                return ['pairs' => [], 'error' => sprintf('unterminated quoted value for "%s"', $key)];
-            }
-
-            $value = substr($spec, $valueStart, $i - $valueStart);
-            $i++;
-        } else {
-            $valueStart = $i;
-            while ($i < $length && !ctype_space($spec[$i])) {
-                $i++;
-            }
-            $value = substr($spec, $valueStart, $i - $valueStart);
-        }
-
-        if (isset($pairs[$key])) {
-            return ['pairs' => [], 'error' => sprintf('duplicate front-matter key "%s"', $key)];
-        }
-
-        if (str_contains($value, '-->')) {
-            return ['pairs' => [], 'error' => sprintf('front-matter value for "%s" must not contain "-->"', $key)];
-        }
-
-        $pairs[$key] = $value;
+        $pairs[$pair['key']] = $pair['value'];
+        $i = $pair['end'];
     }
 
     return ['pairs' => $pairs, 'error' => null];
+}
+
+/**
+ * @return array{key: string, value: string, end: int, error: ?string}
+ */
+function readFrontMatterPair(string $spec, int $keyStart): array
+{
+    $length = \strlen($spec);
+    $i = $keyStart;
+    while ($i < $length && (ctype_alpha($spec[$i]) || $spec[$i] === '_')) {
+        $i++;
+    }
+    $key = substr($spec, $keyStart, $i - $keyStart);
+
+    if ($key === '' || $i >= $length || $spec[$i] !== '=') {
+        return ['key' => $key, 'value' => '', 'end' => $i, 'error' => 'malformed front matter: expected key=value at offset ' . $keyStart];
+    }
+
+    $i++;
+
+    if ($i < $length && $spec[$i] === '"') {
+        return readQuotedFrontMatterValue($spec, $key, $i + 1);
+    }
+
+    $valueStart = $i;
+    while ($i < $length && !ctype_space($spec[$i])) {
+        $i++;
+    }
+
+    return ['key' => $key, 'value' => substr($spec, $valueStart, $i - $valueStart), 'end' => $i, 'error' => null];
+}
+
+/**
+ * @return array{key: string, value: string, end: int, error: ?string}
+ */
+function readQuotedFrontMatterValue(string $spec, string $key, int $valueStart): array
+{
+    $closingQuote = strpos($spec, '"', $valueStart);
+
+    if ($closingQuote === false) {
+        return ['key' => $key, 'value' => '', 'end' => \strlen($spec), 'error' => sprintf('unterminated quoted value for "%s"', $key)];
+    }
+
+    return ['key' => $key, 'value' => substr($spec, $valueStart, $closingQuote - $valueStart), 'end' => $closingQuote + 1, 'error' => null];
+}
+
+/**
+ * @param array<string, string> $pairs
+ */
+function frontMatterPairError(array $pairs, string $key, string $value): ?string
+{
+    if (isset($pairs[$key])) {
+        return sprintf('duplicate front-matter key "%s"', $key);
+    }
+
+    if (str_contains($value, '-->')) {
+        return sprintf('front-matter value for "%s" must not contain "-->"', $key);
+    }
+
+    return null;
 }
 
 /**
@@ -162,134 +189,192 @@ function indexFootprint(array $lines, array $index): int
  */
 function parseFile(string $relative, string $absolute): array
 {
-    $lines = readLines($absolute);
-    /** @var list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries */
-    $entries = [];
-    $errors = [];
-    $index = null;
-    $firstSection = null;
-    $staleHeading = null;
-    $inFence = false;
-    $indexStart = null;
-    $current = null;
-    /** @var list<string>|null $currentBody */
-    $currentBody = null;
+    return (new KbFileParser($relative, readLines($absolute)))->parse();
+}
 
-    foreach ($lines as $offset => $line) {
+final class KbFileParser
+{
+    /** @var list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> */
+    private array $entries = [];
+
+    /** @var list<string> */
+    private array $errors = [];
+
+    /** @var array{start: int, end: int, body: list<string>, footprint: int}|null */
+    private ?array $index = null;
+
+    private ?int $firstSection = null;
+
+    private ?int $staleHeading = null;
+
+    private bool $inFence = false;
+
+    private ?int $indexStart = null;
+
+    private ?int $currentEntry = null;
+
+    /**
+     * @param list<string> $lines
+     */
+    public function __construct(
+        private readonly string $relative,
+        private readonly array $lines,
+    ) {
+    }
+
+    /**
+     * @return array{
+     *     entries: list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}>,
+     *     errors: list<string>,
+     *     lines: int,
+     *     index: ?array{start: int, end: int, body: list<string>, footprint: int},
+     *     first_section: ?int,
+     *     index_heading: ?int
+     * }
+     */
+    public function parse(): array
+    {
+        foreach ($this->lines as $offset => $line) {
+            $this->parseLine($offset, $line);
+        }
+
+        if ($this->indexStart !== null) {
+            $this->errors[] = sprintf('%s:%d: tag index start marker is never closed', $this->relative, $this->indexStart);
+        }
+
+        if ($this->index !== null) {
+            $this->index['footprint'] = indexFootprint($this->lines, $this->index);
+        }
+
+        return [
+            'entries' => array_map($this->withoutFrontMatterLine(...), $this->entries),
+            'errors' => $this->errors,
+            'lines' => $this->countLines(),
+            'index' => $this->index,
+            'first_section' => $this->firstSection,
+            'index_heading' => $this->staleHeading,
+        ];
+    }
+
+    private function parseLine(int $offset, string $line): void
+    {
         $number = $offset + 1;
         $trimmed = trim($line);
 
         if (str_starts_with($trimmed, '```')) {
-            $inFence = !$inFence;
+            $this->inFence = !$this->inFence;
         }
 
-        if (!$inFence && $trimmed === INDEX_START) {
-            $indexStart = $number;
+        if (!$this->inFence && $trimmed === INDEX_START) {
+            $this->indexStart = $number;
 
-            continue;
+            return;
         }
 
-        if (!$inFence && $trimmed === INDEX_END) {
-            if ($indexStart === null) {
-                $errors[] = sprintf('%s:%d: tag index end marker without a start marker', $relative, $number);
+        if (!$this->inFence && $trimmed === INDEX_END) {
+            $this->closeIndex($number);
 
-                continue;
-            }
-
-            if ($index !== null) {
-                $errors[] = sprintf('%s:%d: more than one tag index block — keep exactly one', $relative, $number);
-                $indexStart = null;
-
-                continue;
-            }
-
-            $index = [
-                'start' => $indexStart,
-                'end' => $number,
-                'body' => \array_slice($lines, $indexStart, $number - $indexStart - 1),
-                'footprint' => 0,
-            ];
-            $indexStart = null;
-
-            continue;
+            return;
         }
 
-        if ($inFence || !str_starts_with($trimmed, '#')) {
-            if ($currentBody !== null) {
-                $currentBody[] = $line;
-            }
+        if ($this->inFence || !str_starts_with($trimmed, '#')) {
+            $this->appendToCurrentEntry($line);
 
-            continue;
+            return;
         }
 
-        if (preg_match('/^(#{1,3})\s+(.*)$/', $trimmed, $matches) !== 1) {
-            continue;
+        if (preg_match('/^(#{1,3})\s+(.*)$/', $trimmed, $matches) === 1) {
+            $this->openHeading($offset, $matches[1], trim($matches[2]));
+        }
+    }
+
+    private function closeIndex(int $number): void
+    {
+        if ($this->indexStart === null) {
+            $this->errors[] = sprintf('%s:%d: tag index end marker without a start marker', $this->relative, $number);
+
+            return;
         }
 
-        if ($matches[1] === '##' && $firstSection === null) {
-            $firstSection = $number;
+        if ($this->index !== null) {
+            $this->errors[] = sprintf('%s:%d: more than one tag index block — keep exactly one', $this->relative, $number);
+            $this->indexStart = null;
+
+            return;
         }
 
-        if ($staleHeading === null && trim($matches[2]) === 'Tag index') {
-            $staleHeading = $number;
+        $this->index = [
+            'start' => $this->indexStart,
+            'end' => $number,
+            'body' => \array_slice($this->lines, $this->indexStart, $number - $this->indexStart - 1),
+            'footprint' => 0,
+        ];
+        $this->indexStart = null;
+    }
+
+    private function appendToCurrentEntry(string $line): void
+    {
+        if ($this->currentEntry !== null) {
+            $this->entries[$this->currentEntry]['body'][] = $line;
+        }
+    }
+
+    private function openHeading(int $offset, string $level, string $title): void
+    {
+        $number = $offset + 1;
+
+        if ($level === '##' && $this->firstSection === null) {
+            $this->firstSection = $number;
         }
 
-        $current = null;
-        unset($currentBody);
-        $currentBody = null;
-
-        if ($matches[1] !== '###') {
-            continue;
+        if ($this->staleHeading === null && $title === 'Tag index') {
+            $this->staleHeading = $number;
         }
 
-        $title = trim($matches[2]);
-        $metaLine = $lines[$offset + 1] ?? '';
-        $parsed = parseFrontMatter($metaLine);
+        $this->currentEntry = null;
+
+        if ($level !== '###') {
+            return;
+        }
+
+        $parsed = parseFrontMatter($this->lines[$offset + 1] ?? '');
 
         if ($parsed['error'] !== null) {
-            $errors[] = sprintf('%s:%d: "%s": %s', $relative, $number + 1, $title, $parsed['error']);
+            $this->errors[] = sprintf('%s:%d: "%s": %s', $this->relative, $number + 1, $title, $parsed['error']);
         }
 
-        $entries[] = [
-            'file' => $relative,
+        $this->entries[] = [
+            'file' => $this->relative,
             'line' => $number,
             'title' => $title,
             'meta' => $parsed['pairs'],
             'body' => [],
         ];
-        $current = $title;
-        $currentBody = &$entries[\count($entries) - 1]['body'];
+        $this->currentEntry = \count($this->entries) - 1;
     }
 
-    if ($indexStart !== null) {
-        $errors[] = sprintf('%s:%d: tag index start marker is never closed', $relative, $indexStart);
-    }
-
-    if ($index !== null) {
-        $index['footprint'] = indexFootprint($lines, $index);
-    }
-
-    foreach ($entries as $key => $entry) {
-        $body = $entry['body'];
-        if ($body !== [] && str_starts_with(trim($body[0]), '<!--')) {
-            $body = array_slice($body, 1);
+    /**
+     * @param array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>} $entry
+     * @return array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}
+     */
+    private function withoutFrontMatterLine(array $entry): array
+    {
+        if ($entry['body'] !== [] && str_starts_with(trim($entry['body'][0]), '<!--')) {
+            $entry['body'] = \array_slice($entry['body'], 1);
         }
-        $entries[$key]['body'] = $body;
+
+        return $entry;
     }
 
-    $lineCount = \count($lines);
-    if ($lineCount > 0 && end($lines) === '') {
-        $lineCount--;
-    }
+    private function countLines(): int
+    {
+        $lineCount = \count($this->lines);
+        if ($lineCount > 0 && $this->lines[$lineCount - 1] === '') {
+            $lineCount--;
+        }
 
-    return [
-        'entries' => $entries,
-        'errors' => $errors,
-        'lines' => $lineCount,
-        'index' => $index,
-        'first_section' => $firstSection,
-        'index_heading' => $staleHeading,
-    ];
+        return $lineCount;
+    }
 }
 
 /**
@@ -298,13 +383,29 @@ function parseFile(string $relative, string $absolute): array
  */
 function validateEntry(array $entry, string $prefix): array
 {
-    $errors = [];
     $meta = $entry['meta'];
     $where = sprintf('%s:%d: "%s"', $entry['file'], $entry['line'], $entry['title']);
 
     if ($meta === []) {
-        return $errors;
+        return [];
     }
+
+    return [
+        ...frontMatterKeyErrors($meta, $where),
+        ...identityErrors($meta, $where, $prefix),
+        ...tagErrors($meta['tags'] ?? '', $where),
+        ...lifecycleErrors($meta, $where),
+        ...promotedEntryErrors($entry, $where),
+    ];
+}
+
+/**
+ * @param array<string, string> $meta
+ * @return list<string>
+ */
+function frontMatterKeyErrors(array $meta, string $where): array
+{
+    $errors = [];
 
     foreach (REQUIRED_KEYS as $key) {
         if (!isset($meta[$key]) || trim($meta[$key]) === '') {
@@ -318,6 +419,17 @@ function validateEntry(array $entry, string $prefix): array
         }
     }
 
+    return $errors;
+}
+
+/**
+ * @param array<string, string> $meta
+ * @return list<string>
+ */
+function identityErrors(array $meta, string $where, string $prefix): array
+{
+    $errors = [];
+
     $id = $meta['id'] ?? '';
     if ($id !== '' && preg_match('/^' . $prefix . '-\d{3}$/', $id) !== 1) {
         $errors[] = sprintf('%s: id "%s" must match %s-NNN', $where, $id, $prefix);
@@ -328,21 +440,42 @@ function validateEntry(array $entry, string $prefix): array
         $errors[] = sprintf('%s: date "%s" is not an ISO-8601 calendar date (YYYY-MM-DD)', $where, $date);
     }
 
-    $tags = $meta['tags'] ?? '';
-    if ($tags !== '') {
-        $seen = [];
-        foreach (explode(',', $tags) as $tag) {
-            if (preg_match('/^[a-z0-9][a-z0-9-]*$/', $tag) !== 1) {
-                $errors[] = sprintf('%s: tag "%s" must be lowercase [a-z0-9-]', $where, $tag);
+    return $errors;
+}
 
-                continue;
-            }
-            if (isset($seen[$tag])) {
-                $errors[] = sprintf('%s: tag "%s" is repeated', $where, $tag);
-            }
-            $seen[$tag] = true;
-        }
+/**
+ * @return list<string>
+ */
+function tagErrors(string $tags, string $where): array
+{
+    if ($tags === '') {
+        return [];
     }
+
+    $errors = [];
+    $seen = [];
+    foreach (explode(',', $tags) as $tag) {
+        if (preg_match('/^[a-z0-9][a-z0-9-]*$/', $tag) !== 1) {
+            $errors[] = sprintf('%s: tag "%s" must be lowercase [a-z0-9-]', $where, $tag);
+
+            continue;
+        }
+        if (isset($seen[$tag])) {
+            $errors[] = sprintf('%s: tag "%s" is repeated', $where, $tag);
+        }
+        $seen[$tag] = true;
+    }
+
+    return $errors;
+}
+
+/**
+ * @param array<string, string> $meta
+ * @return list<string>
+ */
+function lifecycleErrors(array $meta, string $where): array
+{
+    $errors = [];
 
     $hits = $meta['hits'] ?? '';
     if ($hits !== '' && preg_match('/^\d+$/', $hits) !== 1) {
@@ -359,20 +492,33 @@ function validateEntry(array $entry, string $prefix): array
         );
     }
 
-    if ($status === 'promoted') {
-        if (($meta['gate'] ?? '') === '') {
-            $errors[] = sprintf('%s: a promoted entry must name the gate that replaced it (gate="…")', $where);
-        }
+    return $errors;
+}
 
-        $bodyLines = \count(array_filter($entry['body'], static fn(string $line): bool => trim($line) !== ''));
-        if ($bodyLines > PROMOTED_MAX_BODY_LINES) {
-            $errors[] = sprintf(
-                '%s: a promoted entry collapses to at most %d line(s) plus its gate link, found %d',
-                $where,
-                PROMOTED_MAX_BODY_LINES,
-                $bodyLines,
-            );
-        }
+/**
+ * @param array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>} $entry
+ * @return list<string>
+ */
+function promotedEntryErrors(array $entry, string $where): array
+{
+    if (($entry['meta']['status'] ?? '') !== 'promoted') {
+        return [];
+    }
+
+    $errors = [];
+
+    if (($entry['meta']['gate'] ?? '') === '') {
+        $errors[] = sprintf('%s: a promoted entry must name the gate that replaced it (gate="…")', $where);
+    }
+
+    $bodyLines = \count(array_filter($entry['body'], static fn(string $line): bool => trim($line) !== ''));
+    if ($bodyLines > PROMOTED_MAX_BODY_LINES) {
+        $errors[] = sprintf(
+            '%s: a promoted entry collapses to at most %d line(s) plus its gate link, found %d',
+            $where,
+            PROMOTED_MAX_BODY_LINES,
+            $bodyLines,
+        );
     }
 
     return $errors;
