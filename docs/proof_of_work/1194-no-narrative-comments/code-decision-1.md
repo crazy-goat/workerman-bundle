@@ -153,6 +153,7 @@ subprocess, with a sandbox config that enables only this rule.
      `testSecurityDocsWarnAboutForwardedHeaderReInjection`;
    - the new `NoNarrativeCommentsFixerTest` entries.
 
-   `composer test` runs 2932 tests.
+   `composer test` runs 2936 tests; Markdown tests add one data set per tracked `.md` file, so the two
+   proof-of-work files count too.
 8. **Docblocks whose only content was a description, before an `@internal`-like test affordance**
    (`reset()` methods), now read just `@internal`. "Production code must not call this" is gone.
