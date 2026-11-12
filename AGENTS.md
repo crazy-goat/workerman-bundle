@@ -17,6 +17,7 @@ in `tests/RequestConverterTest.php` is the only exception.
 | `tests/` | PHPUnit tests; most sit flat in `tests/`, named after the class. `tests/App/` is the test application |
 | `benchmarks/` | PHPBench subjects (`composer bench`) |
 | `e2e/` | Minimal Symfony app used by the PHAR/binary build tests |
+| `tools/` | Contributor tooling loaded by the linters: the `CrazyGoat/no_narrative_comments` PHP-CS-Fixer rule (see CONTRIBUTING.md) |
 | `bin/` | Lint script, worktree scripts, `pick-issue.sh`, project tools (see [bin/README.md](bin/README.md)) |
 | `docs/` | Product docs (`build-packaging.md`, `security.md`, `troubleshooting.md`), process docs, `helpers/` knowledge base |
 | `.pi/agents/` | Prompts of the coder and review subagents |
