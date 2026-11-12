@@ -42,7 +42,7 @@ composer bench           # PHPBench
 `LINT_SKIP_AUDIT=1`, which the pre-push hook sets: audit needs the network and a new advisory
 would block every push; CI always audits), PHP-CS-Fixer (dry run),
 PHPStan (**level 8**), Rector (dry run), `bin/kb-lint.php`, `bin/check-changelog.php`,
-`bin/check-exception-usage.php`, `shellcheck` on every shell script (including extensionless
+`bin/check-exception-usage.php`, `bin/check-test-annotations.php`, `shellcheck` on every shell script (including extensionless
 ones such as `bin/docker-test`) and `hadolint` on the Dockerfile. It runs every step and fails
 if any step failed. `shellcheck` and `hadolint` must be installed; a missing tool is a failure.
 `bin/pick-issue.sh`, `bin/worktree.sh` and `bin/worktree-done.sh` are byte-identical copies of

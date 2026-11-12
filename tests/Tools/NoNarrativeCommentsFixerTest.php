@@ -562,6 +562,7 @@ final class NoNarrativeCommentsFixerTest extends TestCase
                      *
                      * @BeforeMethods({"setUp"})
                      * @Revs(1000)
+                     * @Bench\Iterations(5)
                      */
                     final class ABench
                     {
@@ -594,6 +595,7 @@ final class NoNarrativeCommentsFixerTest extends TestCase
                      *
                      * @BeforeMethods({"setUp"})
                      * @Revs(1000)
+                     * @Bench\Iterations(5)
                      */
                     final class ABench
                     {

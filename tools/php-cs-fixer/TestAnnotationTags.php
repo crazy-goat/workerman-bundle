@@ -12,7 +12,7 @@ final class TestAnnotationTags
         'depends', 'dependsExternal', 'dependsOnClass', 'doesNotPerformAssertions', 'excludeGlobalVariableFromBackup',
         'excludeStaticPropertyFromBackup', 'group', 'ignoreDeprecations', 'large', 'medium', 'postCondition', 'preCondition',
         'preserveGlobalState', 'requires', 'runClassInSeparateProcess', 'runInSeparateProcess', 'runTestsInSeparateProcesses',
-        'small', 'test', 'testdox', 'testWith', 'ticket', 'uses', 'usesClass', 'usesFunction',
+        'small', 'test', 'testdox', 'testWith', 'ticket', 'uses', 'usesClass', 'usesDefaultClass', 'usesFunction',
     ];
 
     public const PHPBENCH = [
@@ -23,9 +23,11 @@ final class TestAnnotationTags
 
     public static function regex(): string
     {
-        $names = array_map(static fn(string $tag): string => preg_quote($tag, '~'), [...self::PHPUNIT, ...self::PHPBENCH]);
+        $quote = static fn(string $tag): string => preg_quote($tag, '~');
+        $phpunit = implode('|', array_map($quote, self::PHPUNIT));
+        $phpbench = implode('|', array_map($quote, self::PHPBENCH));
 
-        return '~(?:^|[\s*])@(' . implode('|', $names) . ')(?![\w-])~m';
+        return '~(?:^|[\s*])@(?:(' . $phpunit . ')|(?:\\\\?[A-Za-z_][A-Za-z0-9_]*\\\\)*(' . $phpbench . '))(?![\w-])~m';
     }
 
     public static function find(string $docComment): ?string
@@ -34,6 +36,6 @@ final class TestAnnotationTags
             return null;
         }
 
-        return $match[1];
+        return ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? null);
     }
 }
