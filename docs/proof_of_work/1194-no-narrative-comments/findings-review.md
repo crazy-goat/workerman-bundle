@@ -34,3 +34,22 @@ Status of the round-1 findings after round 2 (verified, evidence in review-2.md 
 | R2-F4 | tools/php-cs-fixer/NoNarrativeCommentsFixer.php:304 | `<?php /* x */ echo 1;` → `<?php  echo 1;` (double space; `T_OPEN_TAG` does not round-trip in `joinsSafely()`); only when the rule runs alone, the full config rewrites the open-tag line | nit | open (optional nit, not done) |
 | R2-F5 | bin/lint.sh:59 | An F6 unparsable-type failure shows only the file name at `-v`; the reason needs `-vv` | nit | fixed (round 3): bin/lint.sh runs php-cs-fixer with -vv, reason printed |
 | R2-F6 | tests/Tools/NoTestDocAnnotationsTest.php | The annotation scan is a PHPUnit test, not a `bin/lint.sh` step (DEC-008); `composer lint` stays green while a skipped docblock keeps narrative | nit | fixed (round 3): bin/check-test-annotations.php as the `test-annotations` lint step, bin/README.md, tests/TestAnnotationsLintTest.php |
+
+## Round 3 (review-critical, HEAD 85cf648)
+
+Status of findings open after round 2 (evidence in review-3.md §2):
+
+| # | round-3 status |
+|---|---|
+| R1-F3 | still present: maintainer decision, deferred |
+| R1-F4 | still present: merger's KB edit, deferred |
+| R2-F1 | fixed: namespaced/aliased/FQCN PHPBench tags match; tested in matcher, fixer case and lint-script data sets |
+| R2-F2 | fixed: `usesDefaultClass` added; list-sync test derived from PHPUnit's `AnnotationParser`; cannot skip on CI (`phpunit ^10.4`, lock 10.5.64), 0 skips locally |
+| R2-F4 | still present: accepted nit (only when the rule runs alone) |
+| R2-F5 | fixed: `bin/lint.sh:59` uses `-vv`; reason verified in `composer lint` output |
+| R2-F6 | fixed: `bin/check-test-annotations.php` is the `test-annotations` lint step |
+
+| # | file:line | what is wrong | severity | status |
+|---|---|---|---|---|
+| R3-F1 | tools/php-cs-fixer/TestAnnotationTags.php:30 | The PHPBench regex over-matches: `@Assert\NotBlank` → `Assert`, `@Bench\Revs\Extra` → `Revs`, `@ORM\Subject` → `Subject`. It fails closed (lint fails, docblock kept); no instance in repo. Optional fix: `(?![\w\\-])` + matcher test | nit | open (round 3) |
+| R3-F2 | bin/check-test-annotations.php:78-88 | An unreadable directory throws from `RecursiveDirectoryIterator`, giving exit 255 with a stack trace instead of exit 2; still non-zero | nit | open (round 3) |
