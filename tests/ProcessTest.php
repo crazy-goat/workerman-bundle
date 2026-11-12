@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Test\App\ProcessMarkerPaths;
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class ProcessTest extends KernelTestCase
@@ -130,10 +131,9 @@ final class ProcessTest extends KernelTestCase
      * must result in graceful exit and supervisor restart. The start-event
      * marker must be refreshed after the kill, proving the supervisor
      * detected the death and respawned the worker.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testProcessSurvivesSigtermAndIsRestartedBySupervisor(): void
     {
         $workerPid = $this->findProcessWorkerPid();
@@ -175,10 +175,9 @@ final class ProcessTest extends KernelTestCase
     /**
      * Find the PID of the [Process] worker by reading the master PID file
      * and scanning its children via /proc (Linux) or ps (macOS/BSD).
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     private function findProcessWorkerPid(): int|null
     {
         $pidFile = $this->varDir . '/run/workerman.pid';
@@ -198,10 +197,8 @@ final class ProcessTest extends KernelTestCase
         return $this->findWorkerPidViaPs($masterPid);
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     private function findWorkerPidViaProc(int $masterPid): int|null
     {
         $entries = @scandir('/proc');
@@ -238,10 +235,8 @@ final class ProcessTest extends KernelTestCase
         return null;
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     private function findWorkerPidViaPs(int $masterPid): int|null
     {
         $psOutput = @shell_exec('ps -o pid,ppid,command -ax 2>/dev/null');

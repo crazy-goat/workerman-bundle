@@ -5,21 +5,20 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Benchmark;
 
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
-use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
-use PhpBench\Benchmark\Metadata\Annotations\Iterations;
-use PhpBench\Benchmark\Metadata\Annotations\Revs;
-use PhpBench\Benchmark\Metadata\Annotations\Warmup;
+use PhpBench\Attributes\BeforeMethods;
+use PhpBench\Attributes\Iterations;
+use PhpBench\Attributes\Revs;
+use PhpBench\Attributes\Warmup;
 
 /**
  * Benchmark MemoryRebootStrategy::shouldReboot — the per-request check that
  * decides whether a worker should be gracefully restarted based on memory
  * consumption.
- *
- * @BeforeMethods("init")
- * @Revs(1000)
- * @Iterations(5)
- * @Warmup(1)
  */
+#[BeforeMethods('init')]
+#[Revs(1000)]
+#[Iterations(5)]
+#[Warmup(1)]
 final class MemoryRebootStrategyBench
 {
     private MemoryRebootStrategy $strategyBelowLimit;

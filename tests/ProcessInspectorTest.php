@@ -7,6 +7,8 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\ProcessInspector;
 use CrazyGoat\WorkermanBundle\Util\ProcStatParser;
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -142,10 +144,9 @@ final class ProcessInspectorTest extends TestCase
      *
      * Forks a child, kills it (leaving a zombie until reaped), and asserts
      * that `isProcessAlive()` correctly reports the zombie as dead.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsProcessAliveReturnsFalseForDeadProcess(): void
     {
         $pid = pcntl_fork();
@@ -180,10 +181,9 @@ final class ProcessInspectorTest extends TestCase
     /**
      * Regression test for issue #530: `isProcessAlive()` must return true
      * for a running child on every POSIX platform.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsProcessAliveReturnsTrueForRunningProcess(): void
     {
         $pid = pcntl_fork();
@@ -218,10 +218,9 @@ final class ProcessInspectorTest extends TestCase
      * state (e.g. `S`/`R`) and must be reported as alive.
      *
      * Uses the parent process's PID (always non-child) as the test target.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsProcessAliveReturnsTrueForNonChildProcess(): void
     {
         $parentPid = posix_getppid();
@@ -256,10 +255,9 @@ final class ProcessInspectorTest extends TestCase
      * this test process's perspective. SIGKILL (not `exit()`) is used so
      * the test cannot hang in extension shutdown handlers on grpc hosts
      * (see ProcessTerminator).
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsProcessAliveReturnsFalseForNonChildZombie(): void
     {
         $marker = \sys_get_temp_dir() . '/workerman_zombie_' . \bin2hex(\random_bytes(4));
@@ -316,10 +314,9 @@ final class ProcessInspectorTest extends TestCase
     /**
      * Regression test for issue #530: `isProcessAlive()` must return false
      * for a non-existent PID on every POSIX platform.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsProcessAliveReturnsFalseForNonExistentPid(): void
     {
         $this->assertFalse($this->inspector->isProcessAlive(0));
@@ -332,11 +329,10 @@ final class ProcessInspectorTest extends TestCase
      * Regression test for issue #722: `getParentPid()` must return the
      * parent PID on non-Linux platforms via `ps -o ppid=` instead of the
      * old Linux-only `return 0` fallback (issues #530/#722).
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetParentPidReturnsParentOnNonLinux(): void
     {
         $pid = pcntl_fork();
@@ -370,11 +366,10 @@ final class ProcessInspectorTest extends TestCase
      * the PPid from `/proc/{pid}/stat` field 4 instead of slurping the
      * whole `/proc/{pid}/status` (~1 KB) with a multiline regex — the
      * exact pattern eliminated from `isProcessAlive()` in #567.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetParentPidReturnsParentOnLinux(): void
     {
         $pid = pcntl_fork();
@@ -412,11 +407,10 @@ final class ProcessInspectorTest extends TestCase
      *
      * The comm name is the basename of the executed file, so the child
      * execs a copy of `sleep` renamed to a name with spaces and parens.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetParentPidHandlesCommWithSpacesAndParensOnLinux(): void
     {
         $sleep = \is_file('/bin/sleep') ? '/bin/sleep' : '/usr/bin/sleep';
@@ -457,15 +451,13 @@ final class ProcessInspectorTest extends TestCase
     // ──────────────────────────────────────────────
     // Fingerprint verification (issue #327)
     // ──────────────────────────────────────────────
-
     /**
      * Regression test for issue #327: `matchesFingerprint()` must return
      * true for the current process when given a fingerprint captured
      * from the current process.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testMatchesFingerprintReturnsTrueForCurrentProcess(): void
     {
         $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
@@ -482,10 +474,9 @@ final class ProcessInspectorTest extends TestCase
      *
      * Uses a forked child as the "wrong" PID — the child is alive but
      * its PID is different from the fingerprint's PID.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testMatchesFingerprintReturnsFalseForDifferentPid(): void
     {
         $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
@@ -544,10 +535,9 @@ final class ProcessInspectorTest extends TestCase
     /**
      * Regression test for issue #327: `isMasterRunning()` with a valid
      * fingerprint must return true for the current process.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsMasterRunningWithValidFingerprint(): void
     {
         $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
@@ -566,10 +556,9 @@ final class ProcessInspectorTest extends TestCase
      * This is the core security test: an unrelated co-located process
      * whose PID happens to be alive must not be misidentified as the
      * Workerman master.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsMasterRunningWithFingerprintRejectsUnrelatedProcess(): void
     {
         $fingerprint = \CrazyGoat\WorkermanBundle\MasterFingerprint::capture();
@@ -605,10 +594,9 @@ final class ProcessInspectorTest extends TestCase
      * "php", which made the check vacuous — every PHP process matched,
      * including the caller itself. On non-Linux hosts the old code
      * returned true unconditionally; it now fails closed.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsMasterRunningWithoutFingerprintRejectsPlainPhpProcess(): void
     {
         $pid = pcntl_fork();
@@ -646,11 +634,10 @@ final class ProcessInspectorTest extends TestCase
      * `cli_set_process_title()`, whose effect on /proc/$pid/cmdline
      * varies by PHP build (PHP >= 8.5 keeps the original argv on some
      * builds) — execve is kernel behaviour, identical everywhere.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsMasterRunningWithoutFingerprintAcceptsWorkermanMasterTitle(): void
     {
         $pid = $this->forkChildWithMasterTitle();
@@ -670,11 +657,10 @@ final class ProcessInspectorTest extends TestCase
      * Regression test for issue #584: `killOrphanedIntermediateFork()`
      * without a fingerprint must kill a process carrying the Workerman
      * master title.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithoutFingerprintKillsMasterTitleProcess(): void
     {
         $pid = $this->forkChildWithMasterTitle();
@@ -783,11 +769,10 @@ PHP;
      * Forks a child, captures its fingerprint, then calls
      * `killOrphanedIntermediateFork()` with the child's PID and the
      * fingerprint. The child must be killed.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithMatchingFingerprintKillsProcess(): void
     {
         $pid = pcntl_fork();
@@ -832,11 +817,10 @@ PHP;
      * This is the core negative test from the issue: an unrelated
      * co-located process whose command line contains "WorkerMan" must
      * not be signaled.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillUnrelatedProcess(): void
     {
         $pid = pcntl_fork();
@@ -884,11 +868,10 @@ PHP;
      * carries the Workerman master title. A forked child's cmdline
      * contains "php" but not that title, so the legacy check does NOT
      * kill it.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithoutFingerprintUsesLegacyCheck(): void
     {
         $pid = pcntl_fork();
@@ -935,11 +918,10 @@ PHP;
      * `$parentPid === $fingerprint->pid` and always refused; the ancestry
      * path (`getParentPid($fingerprint->pid) === $parentPid` + title check)
      * must now kill the intermediate.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDaemon(): void
     {
         $pair = $this->forkAncestryPair(true);
@@ -997,11 +979,10 @@ PHP;
      * In non-daemon mode the parent of the master is the user's shell.
      * Ancestry (`getParentPid($master) === $parentPid`) is true, but the
      * title check must refuse — the shell must not be killed.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillNonWorkermanParentViaAncestry(): void
     {
         $pair = $this->forkAncestryPair(false);
@@ -1052,10 +1033,9 @@ PHP;
      * parent PID captured while the master was still alive as
      * `$preKillParentPid` must kill the intermediate (the title check
      * still applies).
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkUsesPreKillProofWhenMasterReaped(): void
     {
         $pid = $this->forkChildWithMasterTitle();
@@ -1104,10 +1084,9 @@ PHP;
      * Regression test for issue #790: a pre-kill ancestry proof that does
      * not match the candidate PID — including 0 from an unreadable
      * pre-kill read — must refuse, preserving fail-closed semantics.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkRefusesWhenPreKillProofMismatches(): void
     {
         $pid = $this->forkChildWithMasterTitle();
@@ -1141,11 +1120,10 @@ PHP;
      *
      * Mirrors the Linux test `testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDaemon`
      * but exercises the non-Linux `ps -o ppid=` and `ps -ww -o args=` paths.
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithFingerprintKillsParentViaAncestryOnDarwin(): void
     {
         $pair = $this->forkAncestryPair(true);
@@ -1196,11 +1174,10 @@ PHP;
      * Regression test for issue #722: ancestry verification must NOT kill
      * the parent when the parent is not a Workerman master process on
      * Darwin (shell safety).
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testKillOrphanedIntermediateForkWithFingerprintDoesNotKillNonWorkermanParentViaAncestryOnDarwin(): void
     {
         $pair = $this->forkAncestryPair(false);
@@ -1242,11 +1219,10 @@ PHP;
     /**
      * Regression test for issue #722: `getParentPid()` on Darwin must
      * handle non-existent PIDs gracefully (return 0) and not crash.
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetParentPidReturnsZeroForNonExistentPidOnDarwin(): void
     {
         $this->assertSame(0, $this->inspector->getParentPid(999_999_999));
@@ -1394,11 +1370,10 @@ PHP;
      * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
      * must return an empty string for a non-existent PID (ps exits non-zero,
      * PID is unsignalable) on non-Linux POSIX.
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadProcessStateViaPsReturnsEmptyForNonExistentPid(): void
     {
         if (!\function_exists('exec')) {
@@ -1413,11 +1388,10 @@ PHP;
     /**
      * Regression test for issue #651 round-1 finding R2: `readProcessStateViaPs()`
      * must return a non-empty state string for a running PID on non-Linux POSIX.
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadProcessStateViaPsReturnsStateForRunningPid(): void
     {
         if (!\function_exists('exec')) {
@@ -1453,11 +1427,10 @@ PHP;
      * Regression test for issue #651 round-1 finding R1/R2: `isAliveNonLinux()`
      * must report a non-existent PID as not alive (covers the non-zero ps exit
      * + unsignalable PID branch on non-Linux POSIX).
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsAliveNonLinuxReturnsFalseForNonExistentPid(): void
     {
         $this->assertFalse(
@@ -1471,11 +1444,10 @@ PHP;
      * must report a running direct child as alive (pcntl_waitpid returns 0 →
      * alive, ps path not reached). Real non-child ps coverage is provided by
      * `testIsProcessAliveReturnsTrueForNonChildProcess`.
-     *
-     * @requires OS Darwin
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Darwin')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsAliveNonLinuxReturnsTrueForRunningPid(): void
     {
         $pid = pcntl_fork();
@@ -2049,16 +2021,14 @@ PHP;
     // ──────────────────────────────────────────────
     // Issue #567: bounded /proc reads + fail-closed snapshot
     // ──────────────────────────────────────────────
-
     /**
      * `readProcessStateFromStat()` must return the state character for a
      * running process on Linux. This is the cheaper zombie-detection path
      * that replaces reading the whole /proc/{pid}/status + multiline regex.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadProcessStateFromStatReturnsStateForRunningPid(): void
     {
         $pid = pcntl_fork();
@@ -2086,11 +2056,10 @@ PHP;
     /**
      * `readProcessStateFromStat()` must return null for a non-existent PID
      * (unreadable /proc file) on Linux.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadProcessStateFromStatReturnsNullForNonExistentPid(): void
     {
         $state = $this->invokePrivateMethod('readProcessStateFromStat', 999_999_999);
@@ -2102,11 +2071,10 @@ PHP;
      * `readProcessStateFromStat()` must return 'Z' for a zombie process on
      * Linux, so that `isProcessAlive()` reports it as not alive without
      * reading /proc/{pid}/status.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadProcessStateFromStatReturnsZForZombie(): void
     {
         $pid = pcntl_fork();
@@ -2139,11 +2107,10 @@ PHP;
     /**
      * `readLinuxProcessSnapshot()` must return a non-null snapshot with
      * state, start time, and UID for a running process on Linux.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadLinuxProcessSnapshotReturnsValidSnapshot(): void
     {
         $pid = pcntl_fork();
@@ -2175,11 +2142,10 @@ PHP;
     /**
      * `readLinuxProcessSnapshot()` must return null for a non-existent PID
      * (unreadable /proc/{pid}/stat) on Linux — the caller fails closed.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReadLinuxProcessSnapshotReturnsNullForNonExistentPid(): void
     {
         $snapshot = $this->invokePrivateMethod('readLinuxProcessSnapshot', 999_999_999);
@@ -2191,11 +2157,10 @@ PHP;
      * Fail-closed: `matchesFingerprint()` must return false for a zombie
      * process (process dying mid-verification). The snapshot state is 'Z',
      * so `isAlive()` returns false and verification refuses.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testMatchesFingerprintFailsClosedForZombieProcess(): void
     {
         $pid = pcntl_fork();
@@ -2233,11 +2198,10 @@ PHP;
      *
      * (The separate unreadable-UID branch — `$snapshot->uid === null` — is
      * covered by `testSnapshotMatchesFingerprintFailsClosedForUnreadableUidOnAliveProcess`.)
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testMatchesFingerprintFailsClosedForMismatchedUid(): void
     {
         $pid = pcntl_fork();
@@ -2275,11 +2239,10 @@ PHP;
      * time does not match the fingerprint. The process is alive, the UID
      * matches, but the start time is wrong — must fail closed (PID reuse
      * defense).
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testMatchesFingerprintFailsClosedForMismatchedStartTime(): void
     {
         $pid = pcntl_fork();

@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigCacheGuardConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 
@@ -1077,7 +1078,7 @@ final class ConfigLoaderTest extends TestCase
         yield 'empty segment skipped' => ['default::BAR', 'BAR'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('shortEnvNameProvider')]
+    #[DataProvider('shortEnvNameProvider')]
     public function testShortEnvNameDropsProcessorPrefix(string $ref, string $expected): void
     {
         $this->assertSame($expected, ConfigLoader::shortEnvName($ref));

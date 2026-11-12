@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Test\App\Kernel;
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class TestPortsTest extends TestCase
@@ -92,9 +93,7 @@ final class TestPortsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider invalidPortProvider
-     */
+    #[DataProvider('invalidPortProvider')]
     public function testRejectsAnInvalidPort(string $value): void
     {
         \putenv('WMB_PORT_HTTP=' . $value);
@@ -274,9 +273,7 @@ final class TestPortsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider outOfRangePortProvider
-     */
+    #[DataProvider('outOfRangePortProvider')]
     public function testHelpersRejectAnOutOfRangePort(int $port): void
     {
         $this->expectException(\InvalidArgumentException::class);

@@ -7,11 +7,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger::class)]
 final class JitterTriggerTest extends TestCase
 {
     public function testWrapsAnotherTrigger(): void

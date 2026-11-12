@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger::class)]
 final class DateTimeTriggerTest extends TestCase
 {
     public function testCreateFromIso8601String(): void

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
+
 /**
  * Drives `bin/check-exception-usage.php` as a subprocess (issue #593).
  *
@@ -13,9 +15,8 @@ namespace CrazyGoat\WorkermanBundle\Test;
  * and the CI Lint job enforce exactly what these tests assert. The passing
  * case runs against the real tree; every failure scenario runs against a
  * synthetic fixture in a throw-away sandbox.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class ExceptionUsageLintTest extends LintScriptTestCase
 {
     protected function getScriptName(): string

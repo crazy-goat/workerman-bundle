@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -14,9 +15,8 @@ use PHPUnit\Framework\TestCase;
  * requests over a real socket, and asserts the worker PID never changes.
  *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/577
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class ControlByteWorkerDosE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/control_byte_dos_e2e_runner.php';

@@ -6,13 +6,13 @@ namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\Exception\UnsupportedListenSchemeException;
 use CrazyGoat\WorkermanBundle\Worker\ListenScheme;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class ListenSchemeTest extends TestCase
 {
     // --- fromListen() ---
-
-    /** @dataProvider provideValidListenUrls */
+    #[DataProvider('provideValidListenUrls')]
     public function testFromListenReturnsCorrectScheme(string $listen, ListenScheme $expected): void
     {
         $this->assertSame($expected, ListenScheme::fromListen($listen));
@@ -28,7 +28,7 @@ final class ListenSchemeTest extends TestCase
         yield 'https with hostname' => ['https://example.com:8443', ListenScheme::Https];
     }
 
-    /** @dataProvider provideInvalidListenUrls */
+    #[DataProvider('provideInvalidListenUrls')]
     public function testFromListenThrowsForUnsupportedScheme(string $listen): void
     {
         $this->expectException(UnsupportedListenSchemeException::class);
@@ -52,7 +52,7 @@ final class ListenSchemeTest extends TestCase
         yield 'only port' => [':8080'];
     }
 
-    /** @dataProvider provideWebSocketListenUrls */
+    #[DataProvider('provideWebSocketListenUrls')]
     public function testFromListenRejectsWebSocketSchemes(string $listen): void
     {
         $this->expectException(UnsupportedListenSchemeException::class);
@@ -74,8 +74,7 @@ final class ListenSchemeTest extends TestCase
     }
 
     // --- workermanPrefix() ---
-
-    /** @dataProvider providePrefixExpectations */
+    #[DataProvider('providePrefixExpectations')]
     public function testWorkermanPrefix(ListenScheme $scheme, string $expectedPrefix): void
     {
         $this->assertSame($expectedPrefix, $scheme->workermanPrefix());
@@ -89,8 +88,7 @@ final class ListenSchemeTest extends TestCase
     }
 
     // --- transport() ---
-
-    /** @dataProvider provideTransportExpectations */
+    #[DataProvider('provideTransportExpectations')]
     public function testTransport(ListenScheme $scheme, string $expectedTransport): void
     {
         $this->assertSame($expectedTransport, $scheme->transport());
@@ -104,8 +102,7 @@ final class ListenSchemeTest extends TestCase
     }
 
     // --- requiresSslContext() ---
-
-    /** @dataProvider provideSslExpectations */
+    #[DataProvider('provideSslExpectations')]
     public function testRequiresSslContext(ListenScheme $scheme, bool $expected): void
     {
         $this->assertSame($expected, $scheme->requiresSslContext());

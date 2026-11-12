@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,9 +21,8 @@ use PHPUnit\Framework\TestCase;
  * daemon ports (8888/9999/9991, issue #868).
  *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/934
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class MaxRequestsReloadE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/max_requests_reload_e2e_runner.php';

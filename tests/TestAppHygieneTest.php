@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -12,9 +13,8 @@ use PHPUnit\Framework\TestCase;
  * 0000 (containers). Symfony's Runtime and Workerman's daemonize() both reset
  * the umask to 0, so the pin alone is not enough — the daemon's tree is
  * hardened after startup.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class TestAppHygieneTest extends TestCase
 {
     public function testBootstrapPinsUmaskBeforeStartingTheDaemon(): void

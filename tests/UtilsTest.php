@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Utils;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Utils
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Utils::class)]
 final class UtilsTest extends TestCase
 {
     /** @var list<string> */
@@ -39,17 +40,13 @@ final class UtilsTest extends TestCase
         $this->assertNotSame(0, Utils::cpuCount());
     }
 
-    /**
-     * @requires OS Windows
-     */
+    #[RequiresOperatingSystem('Windows')]
     public function testCpuCountReturnsOneOnWindows(): void
     {
         $this->assertSame(1, Utils::cpuCount());
     }
 
-    /**
-     * @requires OS Linux|Darwin
-     */
+    #[RequiresOperatingSystem('Linux|Darwin')]
     public function testCpuCountReturnsOneWhenShellExecDisabled(): void
     {
         if (function_exists('shell_exec')) {
@@ -77,9 +74,7 @@ final class UtilsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider cgroupV2Provider
-     */
+    #[DataProvider('cgroupV2Provider')]
     public function testCgroupCpuLimitReadsFakeFiles(string $content, string $version, ?int $expected): void
     {
         $root = $this->makeFakeCgroup();
@@ -102,9 +97,7 @@ final class UtilsTest extends TestCase
         $this->assertNull(Utils::cgroupCpuLimit('/this/path/does/not/exist'));
     }
 
-    /**
-     * @requires OS Linux
-     */
+    #[RequiresOperatingSystem('Linux')]
     public function testCpuCountIsLimitedByCgroupQuota(): void
     {
         $root = $this->makeFakeCgroup();
@@ -113,9 +106,7 @@ final class UtilsTest extends TestCase
         $this->assertSame(1, Utils::cpuCount($root));
     }
 
-    /**
-     * @requires OS Linux
-     */
+    #[RequiresOperatingSystem('Linux')]
     public function testCpuCountIgnoresQuotaAboveRealCpuCount(): void
     {
         $root = $this->makeFakeCgroup();

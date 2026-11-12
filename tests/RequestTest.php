@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Http\Request
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Http\Request::class)]
 final class RequestTest extends TestCase
 {
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,9 +22,8 @@ use PHPUnit\Framework\TestCase;
  *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/987
  * @see https://github.com/crazy-goat/workerman-bundle/issues/910
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class AsyncSignalsE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/async_signals_e2e_runner.php';

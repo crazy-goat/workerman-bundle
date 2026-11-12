@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Reboot\FileMonitorWatcher;
 
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\FileMonitorWatcher;
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\InotifyMonitorWatcher;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Workerman\Events\EventInterface;
 use Workerman\Worker;
@@ -115,10 +116,7 @@ final class InotifyMonitorWatcherTest extends TestCase
     }
 
     // ---- Tests that require inotify extension (skipped on macOS) ----
-
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testStartInitializesInotifyAndRegistersHandler(): void
     {
         $tmpDir = $this->createTempDir();
@@ -143,9 +141,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertIsResource($fd, 'start() should create an inotify file descriptor');
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testStartWatchesOnlyTopLevelDirectories(): void
     {
         $tmpDir = $this->createTempDir();
@@ -167,9 +163,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertContains($tmpDir, $pathByWd, 'pathByWd should contain the root source directory');
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testDeferredWalkWatchesAllSubdirectories(): void
     {
         $tmpDir = $this->createTempDir();
@@ -195,9 +189,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertContains($tmpDir . '/other', $pathByWd, 'pathByWd should contain other directory');
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifyTriggersReloadOnCreateEvent(): void
     {
         $tmpDir = $this->createTempDir();
@@ -220,9 +212,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifyTriggersReloadOnModifyEvent(): void
     {
         $tmpDir = $this->createTempDir();
@@ -247,9 +237,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifyDoesNotTriggerReloadForNonMatchingFile(): void
     {
         $tmpDir = $this->createTempDir();
@@ -272,9 +260,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifyIgnoresInIgnoredAndRemovesPath(): void
     {
         $tmpDir = $this->createTempDir();
@@ -320,9 +306,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifyWatchesNewlyCreatedSubdirectory(): void
     {
         $tmpDir = $this->createTempDir();
@@ -351,9 +335,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertContains($tmpDir . '/newsub', $pathByWdAfter, 'newsub should be in pathByWd after creation');
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testOnNotifySkipsAlreadyScheduledReload(): void
     {
         $tmpDir = $this->createTempDir();
@@ -388,9 +370,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertSame(2, $delayCount, 'Second onNotify should NOT schedule another reload while callback is set');
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testPathByWdPopulatedAfterStart(): void
     {
         $tmpDir = $this->createTempDir();
@@ -418,9 +398,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testInIgnoredCleanupRunsWhileReloadIsPending(): void
     {
         $tmpDir = $this->createTempDir();
@@ -483,9 +461,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertMapsConsistent($watcher);
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testDeletedDirectoryIsWatchedAgainAfterRecreation(): void
     {
         $tmpDir = $this->createTempDir();
@@ -533,9 +509,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertMapsConsistent($watcher);
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testEventWithUnknownWatchDescriptorIsSkipped(): void
     {
         $tmpDir = $this->createTempDir();
@@ -579,9 +553,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testMovedInDirectoryWithPreExistingChildrenIsWatched(): void
     {
         $tmpDir = $this->createTempDir();
@@ -617,9 +589,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertMapsConsistent($watcher);
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testMovingWatchedDirectoryKeepsMapsConsistent(): void
     {
         $tmpDir = $this->createTempDir();
@@ -649,9 +619,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertMapsConsistent($watcher);
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testMovedOutDirectoryIsDroppedAndRewatchedOnReturn(): void
     {
         $tmpDir = $this->createTempDir();
@@ -711,9 +679,7 @@ final class InotifyMonitorWatcherTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testMovedOutMatchingFileTriggersReload(): void
     {
         $tmpDir = $this->createTempDir();
@@ -773,9 +739,7 @@ PHP;
         self::assertStringContainsString('START_RETURNED', $process->getOutput());
     }
 
-    /**
-     * @requires extension inotify
-     */
+    #[RequiresPhpExtension('inotify')]
     public function testFailedAddWatchWritesNoMapsAndLogsWarningOnce(): void
     {
         $tmpDir = $this->createTempDir();

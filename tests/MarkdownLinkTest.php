@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -23,9 +24,8 @@ use PHPUnit\Framework\TestCase;
  * target file's GitHub-slugified headings; and fenced code blocks are
  * balanced, and excluded from both checks so a `[…](…)` inside an example
  * snippet is never mistaken for a real link.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class MarkdownLinkTest extends TestCase
 {
     // GitHub's slugger keeps letters and digits from any script, not just

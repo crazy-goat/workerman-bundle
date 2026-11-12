@@ -9,11 +9,11 @@ use CrazyGoat\WorkermanBundle\Scheduler\Trigger\DateTimeTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\JitterTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\PeriodicalTrigger;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory::class)]
 final class TriggerFactoryTest extends TestCase
 {
     public function testCreateFromInteger(): void
@@ -110,9 +110,7 @@ final class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(PeriodicalTrigger::class, $trigger);
     }
 
-    /**
-     * @dataProvider cronExpressionProvider
-     */
+    #[DataProvider('cronExpressionProvider')]
     public function testCronExpressionDetection(string $expression): void
     {
         $trigger = TriggerFactory::create($expression);

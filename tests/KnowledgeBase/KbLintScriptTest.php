@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\KnowledgeBase;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -12,9 +13,8 @@ use PHPUnit\Framework\TestCase;
  * The script only ever reads the knowledge base of the root it is pointed at
  * (`--root=`), so these tests never touch the real `docs/helpers/` and make no
  * network call at all.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class KbLintScriptTest extends TestCase
 {
     private const FAQ = 'docs/helpers/faq.md';

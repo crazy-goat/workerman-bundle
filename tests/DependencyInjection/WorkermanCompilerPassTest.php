@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -245,7 +246,7 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertArrayNotHasKey('jitter', $config['task.c']);
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalidJitterProvider')]
+    #[DataProvider('invalidJitterProvider')]
     public function testInvalidJitterFailsAtContainerBuild(mixed $jitter): void
     {
         $this->container->register('workerman.config_loader', \stdClass::class);
@@ -279,7 +280,7 @@ final class WorkermanCompilerPassTest extends TestCase
         yield 'decimal string' => ['60.0'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalidScheduleProvider')]
+    #[DataProvider('invalidScheduleProvider')]
     public function testInvalidIntegerScheduleFailsAtContainerBuild(mixed $schedule): void
     {
         $this->container->register('workerman.config_loader', \stdClass::class);

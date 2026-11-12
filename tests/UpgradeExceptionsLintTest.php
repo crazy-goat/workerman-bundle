@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
+
 /**
  * Drives `bin/check-upgrade-exceptions.php` as a subprocess (issue #817).
  *
@@ -13,9 +15,8 @@ namespace CrazyGoat\WorkermanBundle\Test;
  * hook and the CI Lint job enforce exactly what these tests assert. The
  * passing case runs against the real tree; every failure scenario runs
  * against a synthetic fixture in a throw-away sandbox.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class UpgradeExceptionsLintTest extends LintScriptTestCase
 {
     protected function getScriptName(): string

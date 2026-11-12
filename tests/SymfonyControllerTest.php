@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
@@ -805,9 +806,7 @@ final class TestThrowingKernel implements KernelInterface, TerminableInterface
     }
 }
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Middleware\SymfonyController
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Middleware\SymfonyController::class)]
 final class SymfonyControllerTest extends TestCase
 {
     private TcpConnection&\PHPUnit\Framework\MockObject\MockObject $connection;

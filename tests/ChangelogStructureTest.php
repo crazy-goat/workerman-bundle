@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,9 +20,8 @@ use PHPUnit\Framework\TestCase;
  *
  * Only the passing case touches the real CHANGELOG.md; every failure scenario
  * runs against a synthetic fixture in a throw-away sandbox.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class ChangelogStructureTest extends TestCase
 {
     private string $sandbox = '';

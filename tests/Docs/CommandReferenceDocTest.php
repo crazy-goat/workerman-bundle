@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
 use CrazyGoat\WorkermanBundle\Command\ServerAction;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Attribute\AsCommand;
 
 /**
  * Every console command, every long option and every server action must be in docs/commands.md (issue #878, section 5).
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class CommandReferenceDocTest extends TestCase
 {
     private const PAGE = 'docs/commands.md';

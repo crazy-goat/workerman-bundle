@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,9 +24,8 @@ use PHPUnit\Framework\TestCase;
  *     separate trees and the autoload lookups for the PHP classes fail.
  *     The fix (#688) consolidated everything into `tests/Fixtures/` via
  *     `git mv`; this test ensures the collision cannot silently return.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class LintScopeTest extends TestCase
 {
     private string $projectDir;

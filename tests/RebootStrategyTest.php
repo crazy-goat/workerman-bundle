@@ -9,18 +9,17 @@ use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy::class)]
 final class RebootStrategyTest extends TestCase
 {
     public function testMaxJobsRebootStrategyReturnsFalseUntilLimit(): void

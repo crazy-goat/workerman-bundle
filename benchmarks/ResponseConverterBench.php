@@ -6,10 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Benchmark;
 
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
-use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
-use PhpBench\Benchmark\Metadata\Annotations\Iterations;
-use PhpBench\Benchmark\Metadata\Annotations\Revs;
-use PhpBench\Benchmark\Metadata\Annotations\Warmup;
+use PhpBench\Attributes\BeforeMethods;
+use PhpBench\Attributes\Iterations;
+use PhpBench\Attributes\Revs;
+use PhpBench\Attributes\Warmup;
 use Symfony\Component\HttpFoundation\Response;
 use Workerman\Connection\TcpConnection;
 
@@ -19,12 +19,11 @@ use Workerman\Connection\TcpConnection;
  *
  * The header-normalisation cache is the key optimisation here; the benchmark
  * exercises both cold-cache and warm-cache paths.
- *
- * @BeforeMethods("init")
- * @Revs(1000)
- * @Iterations(5)
- * @Warmup(1)
  */
+#[BeforeMethods('init')]
+#[Revs(1000)]
+#[Iterations(5)]
+#[Warmup(1)]
 final class ResponseConverterBench
 {
     private ResponseConverter $converter;

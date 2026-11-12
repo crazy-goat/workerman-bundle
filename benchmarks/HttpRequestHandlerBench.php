@@ -9,10 +9,10 @@ use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
-use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
-use PhpBench\Benchmark\Metadata\Annotations\Iterations;
-use PhpBench\Benchmark\Metadata\Annotations\Revs;
-use PhpBench\Benchmark\Metadata\Annotations\Warmup;
+use PhpBench\Attributes\BeforeMethods;
+use PhpBench\Attributes\Iterations;
+use PhpBench\Attributes\Revs;
+use PhpBench\Attributes\Warmup;
 use Workerman\Connection\TcpConnection;
 
 /**
@@ -22,12 +22,11 @@ use Workerman\Connection\TcpConnection;
  * The pipeline is built once and cached; per-request allocations are one
  * controller closure (capturing the connection) and one MiddlewareDispatcher
  * object — independent of the middleware count (issue #563).
- *
- * @BeforeMethods("init")
- * @Revs(1000)
- * @Iterations(5)
- * @Warmup(1)
  */
+#[BeforeMethods('init')]
+#[Revs(1000)]
+#[Iterations(5)]
+#[Warmup(1)]
 final class HttpRequestHandlerBench
 {
     private HttpRequestHandler $handlerNoMiddleware;

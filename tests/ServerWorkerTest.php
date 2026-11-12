@@ -18,6 +18,7 @@ use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -381,7 +382,7 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
-    /** @dataProvider provideWebSocketListenAddresses */
+    #[DataProvider('provideWebSocketListenAddresses')]
     public function testWebSocketListenIsRejected(string $listen): void
     {
         $this->expectException(UnsupportedListenSchemeException::class);

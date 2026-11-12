@@ -7,12 +7,12 @@ namespace CrazyGoat\WorkermanBundle\Test\Phar;
 use CrazyGoat\WorkermanBundle\Exception\SfxExtractionException;
 use CrazyGoat\WorkermanBundle\Phar\SfxDownloader;
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @group network
- */
-
+#[Group('network')]
 final class SfxDownloaderTest extends TestCase
 {
     private static ?int $serverPort = null;
@@ -296,9 +296,8 @@ final class SfxDownloaderTest extends TestCase
      * instead of failing late per-entry inside extractToDirectory()
      * (issue #1052). The valid cached artifact must survive: it is neither
      * extracted nor treated as a poisoned artifact.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testFetchFailsFastWhenCachedZipDestinationIsNotWritable(): void
     {
         $dir = $this->tempDir . '/readonly-cached-zip';
@@ -336,9 +335,8 @@ final class SfxDownloaderTest extends TestCase
      * A read-only directory that already holds every entry of the cached zip
      * keeps working: extractTo() overwrites the existing writable file in
      * place, so the fail-fast guard of issue #1052 must not fire.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testFetchReextractsInPlaceWhenNonWritableDirectoryAlreadyHoldsEntries(): void
     {
         $dir = $this->tempDir . '/readonly-prepopulated';
@@ -379,10 +377,8 @@ final class SfxDownloaderTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider maliciousEntryProvider
-     * @requires extension zip
-     */
+    #[DataProvider('maliciousEntryProvider')]
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRejectsMaliciousEntry(string $entryName, string $expectedMessage): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -404,9 +400,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertFileDoesNotExist($zipPath);
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRejectsEntryWithSubdirectoryTraversal(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -433,9 +427,8 @@ final class SfxDownloaderTest extends TestCase
      * pre-existing symlink inside the destination tree must be rejected: the
      * name rules alone cannot see it (no "..", no absolute path), so the
      * destination-containment backstop has to catch it.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRejectsEntryEscapingViaSymlinkedSubdirectory(): void
     {
         $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
@@ -469,9 +462,8 @@ final class SfxDownloaderTest extends TestCase
      * A corrupt archive whose ZipArchive::open() fails must be unlinked even
      * when no checksum is configured, so a later fetch() re-downloads
      * instead of failing on the same bad bytes forever.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesCorruptArchiveWhenOpenFails(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -499,9 +491,8 @@ final class SfxDownloaderTest extends TestCase
      * surfaced via error_log(): the rethrown exception keeps its original
      * message, so without the warning the operator would never learn that
      * the bad artifact is still on disk, poisoning every later fetch().
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenFailedArchiveCannotBeRemoved(): void
     {
         $dir = $this->tempDir . '/readonly';
@@ -558,9 +549,8 @@ final class SfxDownloaderTest extends TestCase
      * on disk: ZipArchive::extractTo() materialises link entries as regular
      * files containing the link target, which the current extraction design
      * depends on.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipDoesNotCreateSymlinkFromSymlinkEntry(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -576,9 +566,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertSame('../../outside/passwd', file_get_contents($result));
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipSucceedsWithLegitimateArchive(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -596,9 +584,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipSucceedsWithEntryInSubdirectory(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -616,9 +602,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipDoesNotRejectDotsInFilename(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -639,9 +623,8 @@ final class SfxDownloaderTest extends TestCase
      * When a mid-extraction failure occurs (e.g. a later entry escapes the
      * destination via a pre-existing symlink), entries extracted before the
      * failure must be removed so the destination directory is left as it was.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesPreviouslyExtractedEntriesOnMidExtractionFailure(): void
     {
         $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
@@ -682,9 +665,8 @@ final class SfxDownloaderTest extends TestCase
      * When locateSfxEntry() fails (archive has no usable SFX entry), all
      * extracted files must be removed so the destination directory is left
      * as it was — not just the zip archive.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesExtractedEntriesWhenNoSfxEntryFound(): void
     {
         $zipPath = $this->tempDir . '/orphan.sfx.zip';
@@ -724,9 +706,8 @@ final class SfxDownloaderTest extends TestCase
      * When a mid-extraction failure occurs, directories extracted before
      * the failure (including auto-created parent directories) must be
      * removed — not just files.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesDirectoriesOnMidExtractionFailure(): void
     {
         $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
@@ -775,9 +756,8 @@ final class SfxDownloaderTest extends TestCase
      * all levels of auto-created parents must be removed — not just the
      * deepest or shallowest. This tests the depth-descending sort of the
      * cleanup paths.
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesMultiLevelParentsOnMidExtractionFailure(): void
     {
         $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
@@ -822,9 +802,8 @@ final class SfxDownloaderTest extends TestCase
      * here the third entry targets a pre-existing, non-writable directory —
      * must still remove the entries already extracted and the parent
      * directories they created (issue #933).
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRollsBackEntriesWhenLaterEntryCannotBeExtracted(): void
     {
         $dir = $this->tempDir . '/dest';
@@ -878,9 +857,8 @@ final class SfxDownloaderTest extends TestCase
      * parent directory is no longer writable, the failure must be surfaced
      * via error_log(): the rethrown extraction exception says nothing about
      * the leftover file (issue #933).
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedFile(): void
     {
         $dir = $this->tempDir . '/dest';
@@ -941,9 +919,8 @@ final class SfxDownloaderTest extends TestCase
      * its parent is read-only, and an empty directory can never disappear on
      * its own, so the operator must be told that it stayed behind
      * (issue #933).
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedDirectory(): void
     {
         $dir = $this->tempDir . '/dest';
@@ -1007,9 +984,8 @@ final class SfxDownloaderTest extends TestCase
      * symlink whose target stays inside the destination, so the entry is
      * extracted but stays a link that a read-only parent prevents removing
      * (issue #933).
-     *
-     * @requires extension zip
      */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedSymlink(): void
     {
         $dir = $this->tempDir . '/dest';
@@ -1095,9 +1071,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertFileDoesNotExist($shortWriteDir . '/dest');
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipThrowsTypedExceptionWhenNoEntryFound(): void
     {
         $zipPath = $this->tempDir . '/orphan.sfx.zip';
@@ -1123,9 +1097,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertFileDoesNotExist($zipPath);
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipPrimaryRuleMatchesZipBasename(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -1143,9 +1115,7 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'primary-rule-match');
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipFallbackPicksFirstFileEntry(): void
     {
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
@@ -1281,9 +1251,7 @@ final class SfxDownloaderTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider nonHttpSchemeLocationProvider
-     */
+    #[DataProvider('nonHttpSchemeLocationProvider')]
     public function testResolveRedirectUrlRejectsNonHttpScheme(string $location): void
     {
         $this->expectException(\RuntimeException::class);
@@ -1328,9 +1296,7 @@ final class SfxDownloaderTest extends TestCase
         $this->invokePrivateSfxMethod('assertAllowedRedirect', 'HTTPS://mirror.example/php.sfx', 'HTTP://attacker.example/sfx');
     }
 
-    /**
-     * @dataProvider nonHttpSchemeLocationProvider
-     */
+    #[DataProvider('nonHttpSchemeLocationProvider')]
     public function testNonHttpSchemeRejectedFromHttpsOrigin(string $location): void
     {
         $this->expectException(\RuntimeException::class);
@@ -1419,9 +1385,7 @@ final class SfxDownloaderTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider nonHttpSchemePathProvider
-     */
+    #[DataProvider('nonHttpSchemePathProvider')]
     public function testRedirectToNonHttpSchemeRejectedFromHttpOrigin(string $path, string $location): void
     {
         $this->expectException(\RuntimeException::class);

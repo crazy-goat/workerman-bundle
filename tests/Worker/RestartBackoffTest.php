@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\Worker\RestartBackoff;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Workerman\Worker;
 
@@ -169,10 +170,8 @@ final class RestartBackoffTest extends TestCase
         $this->assertSame(10, $backoff->delayForFailures(100));
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopSignalEndsTheWaitEarly(): void
     {
         $readyFile = $this->tempDir . '/ready';

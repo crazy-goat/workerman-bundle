@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Attribute;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 
-#[\PHPUnit\Framework\Attributes\CoversClass(AsTask::class)]
+#[CoversClass(AsTask::class)]
 final class AsTaskTest extends TestCase
 {
     // ──────────────────────────────────────────────
@@ -184,7 +186,7 @@ final class AsTaskTest extends TestCase
         $this->assertCount(4, $constructor->getParameters(), 'AsTask constructor must have exactly 4 parameters');
     }
 
-    /** @depends testConstructorParameterCountIsStable */
+    #[Depends('testConstructorParameterCountIsStable')]
     public function testConstructorParameterNamesAreStable(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);

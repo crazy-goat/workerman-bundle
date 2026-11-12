@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -124,7 +125,7 @@ final class CheckCoverageGateTest extends TestCase
         yield 'text after digits' => ['80abc'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalidThresholds')]
+    #[DataProvider('invalidThresholds')]
     public function testInvalidThresholdIsAUsageError(string $threshold): void
     {
         $output = $this->runCommand(sprintf(

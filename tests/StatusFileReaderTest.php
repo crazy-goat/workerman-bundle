@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -111,9 +112,7 @@ final class StatusFileReaderTest extends TestCase
         $this->assertLessThan(2, $elapsed, 'Should not exceed timeout by much');
     }
 
-    /**
-     * @requires extension pcntl
-     */
+    #[RequiresPhpExtension('pcntl')]
     public function testWaitForFileReturnsTrueWhenFileAppearsDuringPolling(): void
     {
         $reader = $this->createReader($this->createEmptyConfigLoader());

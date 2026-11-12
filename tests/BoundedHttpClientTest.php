@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -53,9 +54,8 @@ final class BoundedHttpClientTest extends TestCase
 
     /**
      * @param array<string, mixed> $options
-     *
-     * @dataProvider unboundedOverrideProvider
      */
+    #[DataProvider('unboundedOverrideProvider')]
     public function testCreateRejectsAnOverrideThatRemovesABound(array $options): void
     {
         $this->expectException(\InvalidArgumentException::class);

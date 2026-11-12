@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class BinDirectoryTest extends TestCase
 {
     /** Ignore the global and system git config and the git env of the caller: the test must not touch the developer's hooks. */

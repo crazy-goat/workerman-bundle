@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
 use CrazyGoat\WorkermanBundle\Phar\PharBuilder;
 use CrazyGoat\WorkermanBundle\Phar\PharCapabilities;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PharBuilderTest extends TestCase
@@ -200,7 +201,7 @@ final class PharBuilderTest extends TestCase
         (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], '');
     }
 
-    /** @dataProvider provideValidAliases */
+    #[DataProvider('provideValidAliases')]
     public function testGenerateStubAcceptsValidAliases(string $alias): void
     {
         $stub = (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], $alias);
@@ -209,7 +210,7 @@ final class PharBuilderTest extends TestCase
         self::assertStringContainsString("phar://{$alias}/vendor/autoload.php", $stub);
     }
 
-    /** @dataProvider provideInvalidAliases */
+    #[DataProvider('provideInvalidAliases')]
     public function testGenerateStubRejectsInvalidAliases(string $alias): void
     {
         $this->expectException(\RuntimeException::class);
@@ -218,7 +219,7 @@ final class PharBuilderTest extends TestCase
         (new PharBuilder('/p', 'test'))->generateStub(['kernel_class' => 'App\\Kernel'], $alias);
     }
 
-    /** @dataProvider provideInvalidAliases */
+    #[DataProvider('provideInvalidAliases')]
     public function testBuildRejectsInvalidAliases(string $alias): void
     {
         if ((bool) ini_get('phar.readonly')) {
@@ -265,7 +266,7 @@ final class PharBuilderTest extends TestCase
         yield 'leading digit' => ['1App\\Kernel'];
     }
 
-    /** @dataProvider provideValidKernelClasses */
+    #[DataProvider('provideValidKernelClasses')]
     public function testGenerateStubAcceptsValidKernelClasses(string $kernelClass): void
     {
         $stub = (new PharBuilder('/p', 'test'))->generateStub([
@@ -275,7 +276,7 @@ final class PharBuilderTest extends TestCase
         self::assertStringContainsString('new ' . $kernelClass . '(', $stub);
     }
 
-    /** @dataProvider provideInvalidKernelClasses */
+    #[DataProvider('provideInvalidKernelClasses')]
     public function testGenerateStubRejectsInvalidKernelClasses(string $kernelClass): void
     {
         $this->expectException(\RuntimeException::class);
@@ -286,7 +287,7 @@ final class PharBuilderTest extends TestCase
         ]);
     }
 
-    /** @dataProvider provideInvalidKernelClasses */
+    #[DataProvider('provideInvalidKernelClasses')]
     public function testBuildRejectsInvalidKernelClasses(string $kernelClass): void
     {
         if ((bool) ini_get('phar.readonly')) {

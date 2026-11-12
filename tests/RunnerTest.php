@@ -14,6 +14,7 @@ use CrazyGoat\WorkermanBundle\Http\StaticFileHandlerInterface;
 use CrazyGoat\WorkermanBundle\KernelFactory;
 use CrazyGoat\WorkermanBundle\Runner;
 use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -378,7 +379,7 @@ final class RunnerTest extends TestCase
         yield 'true' => ['true'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('grpcForkSupportEnabledProvider')]
+    #[DataProvider('grpcForkSupportEnabledProvider')]
     public function testGrpcWarningDescribesSigkillWhenForkSupportEnabled(string $value): void
     {
         $logFile = $this->tempLogPath();
@@ -809,7 +810,7 @@ final class RunnerTest extends TestCase
         yield 'connections' => ['connections'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('commandsThatMustNotCheckStaticRootsProvider')]
+    #[DataProvider('commandsThatMustNotCheckStaticRootsProvider')]
     public function testMissingStaticRootDirectoryDoesNotBlockOtherCommands(string $workermanCommand): void
     {
         $command = Worker::$command;

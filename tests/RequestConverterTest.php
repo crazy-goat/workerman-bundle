@@ -11,12 +11,12 @@ use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
 use CrazyGoat\WorkermanBundle\Exception\MalformedRequestException;
 use CrazyGoat\WorkermanBundle\Http\Request;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Workerman\Worker;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\DTO\RequestConverter
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\DTO\RequestConverter::class)]
 final class RequestConverterTest extends TestCase
 {
     /** @var string[] */
@@ -1009,7 +1009,7 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('key=value', $symfonyRequest->getContent());
     }
 
-    /** @dataProvider provideControlCharacters */
+    #[DataProvider('provideControlCharacters')]
     public function testUriWithControlCharacterIsRejected(string $controlChar): void
     {
         $buffer = "GET /test{$controlChar}something HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -1076,9 +1076,7 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * @dataProvider underscoreHeaderProvider
-     */
+    #[DataProvider('underscoreHeaderProvider')]
     public function testHeadersContainingUnderscoresAreDiscarded(string $headerName): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -1100,9 +1098,7 @@ final class RequestConverterTest extends TestCase
         yield 'custom name with underscore' => ['X_Custom'];
     }
 
-    /**
-     * @dataProvider forwardedHeaderOrderProvider
-     */
+    #[DataProvider('forwardedHeaderOrderProvider')]
     public function testUnderscoreForwardedHeaderCannotOverrideDashHeader(string $forwardedHeaders): void
     {
         $trustedHeaders = \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_FOR;

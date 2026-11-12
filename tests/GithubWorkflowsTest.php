@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class GithubWorkflowsTest extends TestCase
 {
     private const WORKFLOW_FILE = __DIR__ . '/../.github/workflows/tests.yaml';

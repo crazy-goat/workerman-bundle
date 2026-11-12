@@ -6,20 +6,20 @@ namespace CrazyGoat\WorkermanBundle\Benchmark;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
-use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
-use PhpBench\Benchmark\Metadata\Annotations\Iterations;
-use PhpBench\Benchmark\Metadata\Annotations\Revs;
-use PhpBench\Benchmark\Metadata\Annotations\Warmup;
+use PhpBench\Attributes\BeforeMethods;
+use PhpBench\Attributes\Iterations;
+use PhpBench\Attributes\ParamProviders;
+use PhpBench\Attributes\Revs;
+use PhpBench\Attributes\Warmup;
 
 /**
  * Benchmark RequestConverter::toSymfonyRequest — the first hot-path stage
  * where a Workerman HTTP request is transformed into a Symfony Request.
- *
- * @BeforeMethods("init")
- * @Revs(1000)
- * @Iterations(5)
- * @Warmup(1)
  */
+#[BeforeMethods('init')]
+#[Revs(1000)]
+#[Iterations(5)]
+#[Warmup(1)]
 final class RequestConverterBench
 {
     /**
@@ -133,30 +133,27 @@ final class RequestConverterBench
      * Micro-comparison for the header-value control-character filter (#630):
      * preg_match vs strpbrk vs strcspn over representative values.
      *
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterRegex(array $params): bool
     {
         return (bool) \preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $params['value']);
     }
 
     /**
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterStrpbrk(array $params): bool
     {
         return \strpbrk($params['value'], self::CONTROL_CHAR_MASK) !== false;
     }
 
     /**
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterStrcspn(array $params): bool
     {
         return \strcspn($params['value'], self::CONTROL_CHAR_MASK) < \strlen($params['value']);

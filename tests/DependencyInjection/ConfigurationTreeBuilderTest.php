@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\ConfigurationTreeBuilder;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
@@ -184,10 +185,10 @@ final class ConfigurationTreeBuilderTest extends TestCase
      * child, so a combined payload would only exercise the first-declared
      * node's bound (F-4, review round 2).
      *
-     * @dataProvider provideNegativeTimeoutOverrides
      *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideNegativeTimeoutOverrides')]
     public function testConfiguredTreeRejectsNegativeTimeouts(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -216,10 +217,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideInvalidFileMonitorPollingOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideInvalidFileMonitorPollingOverrides')]
     public function testConfiguredTreeRejectsNonPositiveFileMonitorPollingValues(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -375,10 +375,10 @@ final class ConfigurationTreeBuilderTest extends TestCase
      * Symfony Config deprecation, and the message must state the removal
      * version (1.0) so users can plan the upgrade (issue #595).
      *
-     * @dataProvider provideDeprecatedNodes
      *
      * @param array<string, mixed> $override
      */
+    #[DataProvider('provideDeprecatedNodes')]
     public function testConfiguredTreeDeprecatesLegacyStaticFileNodes(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -551,10 +551,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideNegativeRestartOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideNegativeRestartOverrides')]
     public function testRestartRejectsNegativeValues(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -580,10 +579,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideInvalidChunkSizeOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideInvalidChunkSizeOverrides')]
     public function testConfiguredTreeRejectsNonPositiveChunkSize(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -631,10 +629,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideStreamLogFileOverrides
-     *
      * @param array<string, string> $override
      */
+    #[DataProvider('provideStreamLogFileOverrides')]
     public function testConfiguredTreeRejectsStreamLogFile(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();

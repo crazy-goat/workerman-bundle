@@ -6,11 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Validator\FileUploadValidator
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Validator\FileUploadValidator::class)]
 final class FileUploadValidatorTest extends TestCase
 {
     public function testIsSingleFileEntryReturnsTrueWhenNamePresent(): void

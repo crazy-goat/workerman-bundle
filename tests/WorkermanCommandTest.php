@@ -16,6 +16,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -280,10 +281,9 @@ final class WorkermanCommandTest extends KernelTestCase
      * Simulates the reported scenario: master died, kernel reassigned
      * the PID to a plain PHP process, no fingerprint is present. The
      * stop command must fail without signalling the foreign process.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
      */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopWithStalePidFileDoesNotSignalForeignProcess(): void
     {
         $pidFile = self::bootKernel()->getProjectDir() . '/var/run/workerman.pid';

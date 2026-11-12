@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\KnowledgeBase;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -20,9 +21,8 @@ use PHPUnit\Framework\TestCase;
  * agreed on by both. What this test does add is that the invariants hold on the
  * real files without running the script — the script's own behaviour is pinned
  * by `KbLintScriptTest`, which drives it as a subprocess over fixtures.
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class KnowledgeBaseTest extends TestCase
 {
     private const KB_FILES = [

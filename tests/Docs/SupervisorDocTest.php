@@ -7,15 +7,15 @@ namespace CrazyGoat\WorkermanBundle\Test\Docs;
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
 use CrazyGoat\WorkermanBundle\Event\ProcessErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\ProcessStartEvent;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * docs/supervisor.md must name the attribute parameters, the tag and the events, and its YAML examples must be valid (issue #878, section 5).
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class SupervisorDocTest extends TestCase
 {
     private const PAGE = 'docs/supervisor.md';

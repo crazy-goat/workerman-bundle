@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -1137,9 +1138,8 @@ final class BinaryFileResponseStrategyTest extends TestCase
      * fall back to the file size: prepare() removed Content-Length before
      * the HEAD line, so the length is 0 exactly like the GET 304/204
      * (issue #948 review R1-01).
-     *
-     * @dataProvider emptyStatusProvider
      */
+    #[DataProvider('emptyStatusProvider')]
     public function testHeadRequestWithEmptyStatusEmitsZeroContentLength(int $status): void
     {
         $strategy = new BinaryFileResponseStrategy();

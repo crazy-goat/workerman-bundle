@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Attribute;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsProcess;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 
-#[\PHPUnit\Framework\Attributes\CoversClass(AsProcess::class)]
+#[CoversClass(AsProcess::class)]
 final class AsProcessTest extends TestCase
 {
     // ──────────────────────────────────────────────
@@ -136,7 +138,7 @@ final class AsProcessTest extends TestCase
         $this->assertCount(5, $constructor->getParameters(), 'AsProcess constructor must have exactly 5 parameters');
     }
 
-    /** @depends testConstructorParameterCountIsStable */
+    #[Depends('testConstructorParameterCountIsStable')]
     public function testConstructorParameterNamesAreStable(): void
     {
         $reflection = new \ReflectionClass(AsProcess::class);

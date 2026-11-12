@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Http\Response\HeaderNameNormalizer;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverter;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\DefaultResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\StreamedResponseStrategy;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -276,9 +277,8 @@ final class ResponseConverterTest extends TestCase
      * (Workerman's Http::encode() / Response::__toString()) is the sole
      * authority on message framing. Otherwise array_merge_recursive in
      * Response::withHeaders() emits duplicates — see issue #579.
-     *
-     * @dataProvider transportHeadersProvider
      */
+    #[DataProvider('transportHeadersProvider')]
     public function testConvertStripsTransportOwnedHeaders(string $headerName): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -572,9 +572,8 @@ final class ResponseConverterTest extends TestCase
      * must always lowercase back to the input. Any future CORRECTIONS entry
      * whose value lowercases differently from its key (e.g. 'dnt' →
      * 'Do-Not-Track') would silently break the transport-header strip.
-     *
-     * @dataProvider normalizeLowercaseInvariantProvider
      */
+    #[DataProvider('normalizeLowercaseInvariantProvider')]
     public function testNormalizedHeaderNameLowercasesBackToInput(string $name): void
     {
         $this->assertSame(

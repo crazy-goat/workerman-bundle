@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * docs/deployment.md must match the config tree and the systemd unit example must be sane (issue #878, section 11).
- *
- * @coversNothing
  */
+#[CoversNothing]
 final class DeploymentDocTest extends TestCase
 {
     private const PAGE = 'docs/deployment.md';

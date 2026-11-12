@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\CronExpressionTrigger;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Scheduler\Trigger\CronExpressionTrigger
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Scheduler\Trigger\CronExpressionTrigger::class)]
 final class CronExpressionTriggerTest extends TestCase
 {
     public function testValidCronExpression(): void
@@ -27,9 +27,7 @@ final class CronExpressionTriggerTest extends TestCase
         new CronExpressionTrigger('invalid cron');
     }
 
-    /**
-     * @dataProvider specialCronExpressionProvider
-     */
+    #[DataProvider('specialCronExpressionProvider')]
     public function testSpecialCronExpressions(string $expression): void
     {
         $trigger = new CronExpressionTrigger($expression);

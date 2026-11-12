@@ -13,6 +13,8 @@ use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Test\App\TestMiddleware;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -248,9 +250,7 @@ final class TestTimerEvent implements EventInterface
     }
 }
 
-/**
- * @group http
- */
+#[Group('http')]
 final class HttpRequestHandlerTest extends TestCase
 {
     private HttpHandlerTestKernel $kernel;
@@ -1318,9 +1318,7 @@ final class HttpRequestHandlerTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider deleteFileAfterSendSizeProvider
-     */
+    #[DataProvider('deleteFileAfterSendSizeProvider')]
     public function testDeleteFileAfterSendFileIsDeletedWhileConnectionStaysOpen(int $size): void
     {
         $path = tempnam(sys_get_temp_dir(), 'wmb-906-');

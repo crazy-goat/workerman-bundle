@@ -9,6 +9,7 @@ use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesMiddleware;
 use CrazyGoat\WorkermanBundle\Middleware\StaticFilesRealPathCache;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Workerman\Protocols\Http\Response;
 
@@ -37,9 +38,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider invalidCharacterProvider
-     */
+    #[DataProvider('invalidCharacterProvider')]
     public function testInvalidCharactersPassToNext(string $path): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
@@ -283,9 +282,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider pathTraversalProvider
-     */
+    #[DataProvider('pathTraversalProvider')]
     public function testPathTraversalBlocked(string $path): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
@@ -850,9 +847,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider blockedExtensionProvider
-     */
+    #[DataProvider('blockedExtensionProvider')]
     public function testBlockedExtensionsReturn404(string $fileName, string $extension): void
     {
         $file = $this->rootDirectory . '/' . $fileName;
@@ -910,9 +905,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider blockedExtensionProvider
-     */
+    #[DataProvider('blockedExtensionProvider')]
     public function testBlockedExtensionsTakePrecedenceOverAllowlist(string $fileName, string $extension): void
     {
         $file = $this->rootDirectory . '/' . $fileName;
@@ -936,9 +929,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider backupSuffixFileProvider
-     */
+    #[DataProvider('backupSuffixFileProvider')]
     public function testBackupSuffixFilesBlockedReturn404(string $fileName): void
     {
         $file = $this->rootDirectory . '/' . $fileName;
@@ -986,9 +977,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertTrue($reflection->invoke($middleware, '#style.css#'));
     }
 
-    /**
-     * @dataProvider compoundExtensionProvider
-     */
+    #[DataProvider('compoundExtensionProvider')]
     public function testCompoundExtensionBlockedReturn404(string $fileName): void
     {
         $file = $this->rootDirectory . '/' . $fileName;
@@ -1273,9 +1262,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider extensionlessFileProvider
-     */
+    #[DataProvider('extensionlessFileProvider')]
     public function testExtensionlessFilesAreBlockedWithAllowlist(string $fileName): void
     {
         $file = $this->rootDirectory . '/' . $fileName;
@@ -1631,9 +1618,7 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertEquals(304, $response->getStatusCode());
     }
 
-    /**
-     * @dataProvider nonGetHeadMethodProvider
-     */
+    #[DataProvider('nonGetHeadMethodProvider')]
     public function testNonGetHeadMethodsPassToNext(string $method): void
     {
         $middleware = new StaticFilesMiddleware($this->rootDirectory);

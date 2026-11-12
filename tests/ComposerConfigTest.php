@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class ComposerConfigTest extends TestCase
 {
     private const COMPOSER_JSON = __DIR__ . '/../composer.json';

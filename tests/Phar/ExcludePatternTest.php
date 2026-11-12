@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
 use CrazyGoat\WorkermanBundle\Phar\ExcludePattern;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class ExcludePatternTest extends TestCase
@@ -44,9 +45,7 @@ final class ExcludePatternTest extends TestCase
         yield 'star over plus'         => ['(a+)*'];
     }
 
-    /**
-     * @dataProvider provideNestedUnboundedQuantifiers
-     */
+    #[DataProvider('provideNestedUnboundedQuantifiers')]
     public function testRejectsNestedUnboundedQuantifiersAtConstruction(string $rawInput): void
     {
         $this->expectException(\InvalidArgumentException::class);

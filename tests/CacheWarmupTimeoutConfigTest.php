@@ -7,6 +7,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\CacheWarmupTimeoutConfig;
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 use CrazyGoat\WorkermanBundle\Exception\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class CacheWarmupTimeoutConfigTest extends TestCase
@@ -213,9 +214,7 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
         self::assertSame(77, CacheWarmupTimeoutConfig::resolve());
     }
 
-    /**
-     * @dataProvider invalidEnvValueProvider
-     */
+    #[DataProvider('invalidEnvValueProvider')]
     public function testResolveRejectsNonPositiveEnvVar(string $raw): void
     {
         $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = $raw;
