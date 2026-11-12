@@ -64,6 +64,7 @@ With `dispersion`, each worker picks its own number between `requests` minus `di
 Then the workers do not all reload at the same time.
 With `requests: 1000` and `dispersion: 20`, a worker reloads after about 800 to 1000 requests.
 Use `dispersion: 0` for the same number in every worker.
+Supported ranges: `requests` must be at least 1, and `dispersion` is a percent between 0 and 100. Values outside these ranges fail with a configuration error instead of breaking the reload calculation.
 
 ## memory
 
