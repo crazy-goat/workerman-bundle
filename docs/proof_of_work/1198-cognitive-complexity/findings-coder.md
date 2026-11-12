@@ -117,3 +117,26 @@ A Clover run of `ServerWorkerTest` on the **original** class showed three statem
   - Trigger: "refactoring a callback-heavy constructor such as ServerWorker or another worker for the cognitive-complexity limit"
   - Body: a method that returns the same `function () use (...)` literal keeps the `$this` binding, the static/non-static kind and the captured variable names. Tests such as `testOnConnectClosureCapturesBodySizeCap` read those names through `ReflectionFunction::getStaticVariables()`. `$this->method(...)` changes all three.
   - Prefer a gate: the reflection test is already the gate for `onConnect`, so this entry is optional.
+
+## Round 4 (stage 3: function limit 30), coder-high
+
+### Biggest problem: proving that a refactored test still fails under the same conditions
+
+A refactored test that passes proves little: a helper that silently skips an assertion still passes on a clean repository. For `GithubWorkflowsTest::testMatrixRewriteExclusionsCoverOffSchemeSymfonyPackages()` I built 10 scratch roots: the clean workflow plus composer.json, and 9 mutations, one per guarded rule. I ran the old and the new test file on each. Both pass on the clean root, and both fail on every mutation with the same first message. This is recorded in `code-decision-4.md`. The same concern applied to the tree parser's error branches in `bin/check-upgrade-exceptions.php`, which no test reached. The three new tests were checked against mutants that delete each guarded branch.
+
+### Discovered bugs and weak spots (not fixed: behaviour changes)
+
+1. **The named-type scan never removes the hierarchy tree block.** In `bin/check-upgrade-exceptions.php`, `checkUpgradeExceptionsNamedTypeScope()` (`bin/check-upgrade-exceptions.php:225` and `:233`; the logic predates this PR, at former lines 174/178):
+   - Problem: `preg_match` (not `preg_match_all`) fills `$blocks[0]` with the whole match as a string, so `$blocks[0][0]` is its first character, a backtick. The function removes one backtick at the first backtick after the marker, not the tree block.
+   - Effect: harmless today, because tree lines carry no backtick spans and no `use` / `catch` / `new` text. But the intended exclusion does not happen.
+   - Suggested fix: use `$blocks[0]` in both places. Add a test where the tree contains `` `GhostException` `` inside the text block and must not be reported as named outside the tree.
+2. **`GithubWorkflowsTest` coerces numeric constraint keys.** `array_count_values()` turns a numeric-string constraint into an int key, and the old test compared it with `===` against strings. The helper now casts the key to `string`. This is not reachable with real Symfony constraints. It is noted in `code-decision-4.md`.
+3. **Stage-4 note.** `bin/check-exception-usage.php` holds two of the remaining stage-4 functions (29 and 28). It mirrors the token-scan structure that `check-upgrade-exceptions.php` had before stage 1, so the stage-1 split of `checkUpgradeExceptionsDeclaredTypes()` is a ready template. The two scripts could share the token reader, but DEC-008 (one entry point per check) should be checked first.
+
+### Knowledge-base candidate
+
+- **FAQ: "Refactoring a test: prove the failure conditions with a mutation run, not a green run"**
+  - Tags: `tests`, `phpstan`
+  - Trigger: "splitting a long test method for the cognitive-complexity limit"
+  - Body: run the old and the new test against scratch copies of the guarded input (workflow YAML, composer.json, fixtures), one mutation per assertion, and compare that both fail with the same message. A green run on the real repository only proves that nothing new fails.
+  - Prefer a gate: none practical, so this is process guidance. It is optional.
