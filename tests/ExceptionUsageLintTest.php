@@ -4,18 +4,9 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-/**
- * Drives `bin/check-exception-usage.php` as a subprocess (issue #593).
- *
- * The script is the single source of truth for the rule "every type in
- * src/Exception/ is referenced by at least one PHP file outside its own
- * definition", and `composer lint` runs it directly — so the pre-push hook
- * and the CI Lint job enforce exactly what these tests assert. The passing
- * case runs against the real tree; every failure scenario runs against a
- * synthetic fixture in a throw-away sandbox.
- *
- * @coversNothing
- */
+use PHPUnit\Framework\Attributes\CoversNothing;
+
+#[CoversNothing]
 final class ExceptionUsageLintTest extends LintScriptTestCase
 {
     protected function getScriptName(): string
@@ -39,9 +30,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
     public function testAnUnusedExceptionClassFails(): void
     {
-        // A declared class that no other PHP file mentions is the exact
-        // defect #593 found: the hierarchy advertises coverage it does not
-        // have.
         $this->writeException('UnusedException', "final class UnusedException extends \\RuntimeException\n{\n}\n");
         $this->writeReferencingFile('src/Other.php', "<?php\n\n// a file that mentions no exception\n");
 
@@ -63,9 +51,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
     public function testAReferenceInsideTheSameFileDoesNotCount(): void
     {
-        // A class whose only mention is in its own file is unused by
-        // definition: the self-reference in a docblock or return type must
-        // not satisfy the check.
         $this->writeException(
             'SelfReferentialException',
             "/** @return SelfReferentialException */\n"
@@ -80,12 +65,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
     public function testTheWordInterfaceInADocblockIsNotMistakenForADeclaration(): void
     {
-        // Regression test for review finding F-01: the type-discovery step
-        // must use the PHP tokenizer, not a regex, so that the word
-        // "interface" (or "class") inside a docblock cannot be captured as
-        // the declared type name. A naive regex captured "for" from
-        // "Marker interface for exceptions", making the real interface
-        // silently unchecked.
         $this->writeException(
             'UnusedMarkerInterface',
             "/** Marker interface for unreferenced exceptions. */\n"
@@ -95,19 +74,15 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
         $result = $this->runChecked();
 
-        // The script must report the *real* type name, not "for".
         self::assertStringContainsString('UnusedMarkerInterface is declared in src/Exception but referenced by no other PHP file', $result['err']);
         self::assertStringNotContainsString('for is declared in src/Exception', $result['err']);
     }
 
     public function testMultipleTypesInOneFileAreAllDiscovered(): void
     {
-        // Regression test for review finding F-02: a file that declares
-        // multiple types must have all of them discovered and checked.
         $body = "interface FirstInterface extends \\Throwable\n{\n}\n\n"
             . "final class SecondException extends \\RuntimeException\n{\n}\n";
         $this->writeException('MultiTypeFile', $body);
-        // Reference the first type so only the second is unused.
         $this->writeReferencingFile('src/UsesFirst.php', "<?php\n\nthrow new \\CrazyGoat\\WorkermanBundle\\Exception\\FirstInterface('x');\n");
 
         $result = $this->runChecked();
@@ -118,10 +93,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
     public function testClassConstantFetchIsNotMistakenForADeclaration(): void
     {
-        // Regression test for review finding F-08: `Foo::class` inside an
-        // exception file is a constant fetch, not a declaration — the token
-        // after T_CLASS must not be captured across other significant
-        // tokens (here `.`), which used to record a phantom type name.
         $this->writeException(
             'RealException',
             "final class RealException extends \\RuntimeException\n{\n}\n"
@@ -147,11 +118,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
 
     public function testAnEmptyRootValueIsAUsageError(): void
     {
-        // Regression test for issue #1044: substr('--root=', 7) yields ''
-        // and realpath('') is the working directory, so the gate silently
-        // ran against the wrong tree. The sandbox doubles as the script's
-        // cwd and holds an unused exception, so the old code would have
-        // exited 1 here instead of rejecting the empty value.
         $this->writeException('UnusedException', "final class UnusedException extends \\RuntimeException\n{\n}\n");
         $this->writeReferencingFile('src/Other.php', "<?php\n\n// a file that mentions no exception\n");
 
@@ -201,9 +167,6 @@ final class ExceptionUsageLintTest extends LintScriptTestCase
     }
 
     /**
-     * Runs the script against the sandbox and asserts it failed with exit
-     * code 1.
-     *
      * @return array{code: int, out: string, err: string}
      */
     private function runChecked(): array

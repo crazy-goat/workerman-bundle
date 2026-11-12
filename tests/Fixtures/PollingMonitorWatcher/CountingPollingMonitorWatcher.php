@@ -6,10 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher;
 
 use CrazyGoat\WorkermanBundle\Reboot\FileMonitorWatcher\PollingMonitorWatcher;
 
-/**
- * PollingMonitorWatcher subclass that uses CountingRecursiveDirectoryIterator,
- * so stat() calls performed by the watcher can be observed and counted.
- */
 final class CountingPollingMonitorWatcher extends PollingMonitorWatcher
 {
     /**

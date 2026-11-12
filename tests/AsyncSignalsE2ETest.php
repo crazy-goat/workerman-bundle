@@ -5,25 +5,14 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E tests for issue #987 (async signals) and issue #910 (graceful SIGTERM).
- *
- * Symfony Console turns on pcntl_async_signals(true) and the workers inherit
- * it. A stop or reload signal then runs the Workerman handler in the middle
- * of a request, on the Select loop. The request must end first.
- *
- * The graceful SIGTERM tests start the same server with `graceful_sigterm`
- * enabled and check that a busy request finishes, that the
- * `graceful_stop_timeout` backstop cuts it, and that the default fast stop is
- * unchanged.
- *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/987
  * @see https://github.com/crazy-goat/workerman-bundle/issues/910
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class AsyncSignalsE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/async_signals_e2e_runner.php';
@@ -161,8 +150,6 @@ final class AsyncSignalsE2ETest extends TestCase
     }
 
     /**
-     * Send the slow request, run $signal after 0.5 s and return the reply.
-     *
      * @param callable(): mixed $signal
      */
     private function requestDuring(callable $signal): string

@@ -6,107 +6,50 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Tests for SIGCHLD signal handling in SchedulerWorker.
- *
- * Issue #41: Ignored SIGCHLD Prevents Crash Detection
- *
- * Behavioral tests run in isolated PHP processes (via proc_open) to avoid
- * inheriting PHPUnit's output buffers and shutdown functions, which interfere
- * with pcntl_fork() + exit() behavior.
- *
- * The signal-pattern test uses reflection to invoke the actual
- * SchedulerWorker::handleSigchld method, providing regression protection
- * if the handler implementation changes (replaces old source-grep test).
- */
 final class SchedulerWorkerSigchldTest extends TestCase
 {
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/sigchld_test_runner.php';
 
-    /**
-     * Test that the SIGCHLD handler detects a child exiting with non-zero code.
-     */
     public function testSigchldHandlerDetectsNonZeroExitCode(): void
     {
         $this->runIsolatedTest('nonzero_exit');
     }
 
-    /**
-     * Test that a child exiting with code 0 does NOT produce a warning log.
-     */
     public function testSigchldHandlerIgnoresZeroExitCode(): void
     {
         $this->runIsolatedTest('zero_exit');
     }
 
-    /**
-     * Test that a child killed by a signal is detected via pcntl_wifsignaled.
-     * This is the primary scenario Issue #41 aims to detect (SIGSEGV, SIGKILL, OOM).
-     */
     public function testSigchldHandlerDetectsSignalKilledChild(): void
     {
         $this->runIsolatedTest('signal_kill');
     }
 
-    /**
-     * On grpc hosts ProcessTerminator ends task children with SIGKILL, so
-     * signal 9 is the NORMAL completion path and must not be logged as a
-     * crash — while other signals still must be.
-     */
     public function testSigchldHandlerSilencesSigkillOnGrpcHosts(): void
     {
         $this->runIsolatedTest('sigkill_normal_when_grpc');
     }
 
-    /**
-     * Regression guard for the non-grpc contract: SIGKILL death without the
-     * termination override must still be logged as a crash (Issue #41).
-     */
     public function testSigchldHandlerWarnsOnSigkillWithoutGrpc(): void
     {
         $this->runIsolatedTest('sigkill_warns_without_grpc');
     }
 
-    /**
-     * Test that multiple simultaneous child terminations are all reaped.
-     */
     public function testSigchldHandlerReapsMultipleChildren(): void
     {
         $this->runIsolatedTest('multiple_children');
     }
 
-    /**
-     * Behavioral test: verify SchedulerWorker's actual handleSigchld method
-     * correctly reaps children and logs appropriate messages via real fork + SIGCHLD.
-     *
-     * Uses reflection to invoke the private method on the real SchedulerWorker class,
-     * providing regression protection if the handler implementation changes.
-     */
     public function testSchedulerWorkerUsesCorrectSignalPattern(): void
     {
         $this->runIsolatedTest('scheduler_worker_handler');
     }
 
-    /**
-     * Behavioral test: verify SchedulerWorker logs exceptions in child process
-     * and exits with code 1.
-     *
-     * Forks a child that invokes SchedulerWorker::handleChild via reflection
-     * with a TaskHandler that throws. Asserts the child exits with code 1
-     * and the exception is logged via Worker::log().
-     *
-     * Replaces the old source-grep structural test (Issue #306).
-     */
     public function testSchedulerWorkerLogsExceptionsInChildProcess(): void
     {
         $this->runIsolatedTest('scheduler_worker_exception_logging');
     }
 
-    /**
-     * Regression for #1023: a task child must not run PHP shutdown in the
-     * fork, because libevent cleanup there kills the scheduler's signal
-     * events (SIGCHLD, stop, reload) on the ext-event loop.
-     */
     public function testSchedulerWorkerChildSkipsPhpShutdown(): void
     {
         if (!function_exists('pcntl_exec')) {
@@ -116,15 +59,6 @@ final class SchedulerWorkerSigchldTest extends TestCase
         $this->runIsolatedTest('scheduler_worker_child_skips_shutdown');
     }
 
-    // --- PID file handle caching structural tests (Issue #297) ---
-
-    /**
-     * Structural test: verify SchedulerWorker caches PID file handles
-     * to avoid fopen/fclose on every task fire.
-     *
-     * The $pidFileHandles property should exist and openPidFile should
-     * check it before opening a new handle.
-     */
     public function testPidFileHandleCachingIsImplemented(): void
     {
         $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
@@ -133,28 +67,24 @@ final class SchedulerWorkerSigchldTest extends TestCase
         $content = file_get_contents($sourceFile);
         $this->assertNotFalse($content);
 
-        // Verify the caching property exists
         $this->assertStringContainsString(
             'pidFileHandles',
             $content,
             'PID file handle cache array must exist for caching (Issue #297)',
         );
 
-        // Verify openPidFile checks the cache before opening
         $this->assertStringContainsString(
             '$this->pidFileHandles[$pidFile]',
             $content,
             'openPidFile must check the cache before opening a new handle (Issue #297)',
         );
 
-        // Verify handleParent uses releaseLock (unlock only, no fclose)
         $this->assertStringContainsString(
             "\$this->releaseLock(\$fp)",
             $content,
             'handleParent must call releaseLock (unlock without close) to keep handle cached (Issue #297)',
         );
 
-        // Verify handleForkError uses releaseLock (unlock only, no fclose)
         $this->assertStringContainsString(
             "\$this->releaseLock(\$fp)",
             $content,
@@ -163,10 +93,6 @@ final class SchedulerWorkerSigchldTest extends TestCase
 
     }
 
-    /**
-     * Structural test: verify SchedulerWorker is no longer readonly
-     * and allows the mutable $pidFileHandles cache property.
-     */
     public function testSchedulerWorkerHasMutableStateForHandleCache(): void
     {
         $sourceFile = dirname(__DIR__) . '/src/Worker/SchedulerWorker.php';
@@ -175,14 +101,12 @@ final class SchedulerWorkerSigchldTest extends TestCase
         $content = file_get_contents($sourceFile);
         $this->assertNotFalse($content);
 
-        // Class should not be readonly (to allow mutable cache state)
         $this->assertStringContainsString(
             'final class SchedulerWorker',
             $content,
             'SchedulerWorker class must not be readonly to support mutable handle cache (Issue #297)',
         );
 
-        // The Worker property should still be explicitly readonly for safety
         $this->assertStringContainsString(
             'private readonly Worker $worker;',
             $content,
@@ -190,24 +114,14 @@ final class SchedulerWorkerSigchldTest extends TestCase
         );
     }
 
-    /**
-     * Run a SIGCHLD test in an isolated PHP process to avoid PHPUnit
-     * state inheritance issues with pcntl_fork().
-     *
-     * Uses `php -n` (no php.ini) to prevent the grpc extension from loading.
-     * The grpc extension's shutdown handler deadlocks in forked child processes,
-     * making exit() hang indefinitely. The pcntl and posix
-     * extensions are loaded explicitly when this PHP needs a shared module for them
-     * (see IsolatedPhp, #823).
-     */
     private function runIsolatedTest(string $testName): void
     {
         $this->assertFileExists(self::RUNNER_SCRIPT, 'Test runner script must exist');
 
         $descriptors = [
-            0 => ['pipe', 'r'],  // stdin
-            1 => ['pipe', 'w'],  // stdout
-            2 => ['pipe', 'w'],  // stderr
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
         ];
 
         $process = proc_open(

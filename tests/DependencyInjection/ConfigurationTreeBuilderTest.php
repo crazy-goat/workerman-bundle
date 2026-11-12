@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\DependencyInjection;
 
 use CrazyGoat\WorkermanBundle\DependencyInjection\ConfigurationTreeBuilder;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
@@ -180,14 +181,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * One field at a time: Symfony's Processor throws on the first invalid
-     * child, so a combined payload would only exercise the first-declared
-     * node's bound (F-4, review round 2).
-     *
-     * @dataProvider provideNegativeTimeoutOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideNegativeTimeoutOverrides')]
     public function testConfiguredTreeRejectsNegativeTimeouts(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -216,10 +212,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideInvalidFileMonitorPollingOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideInvalidFileMonitorPollingOverrides')]
     public function testConfiguredTreeRejectsNonPositiveFileMonitorPollingValues(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -371,14 +366,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * The deprecated serve_files/root_dir/static_files nodes must still emit a
-     * Symfony Config deprecation, and the message must state the removal
-     * version (1.0) so users can plan the upgrade (issue #595).
-     *
-     * @dataProvider provideDeprecatedNodes
-     *
      * @param array<string, mixed> $override
      */
+    #[DataProvider('provideDeprecatedNodes')]
     public function testConfiguredTreeDeprecatesLegacyStaticFileNodes(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -418,12 +408,6 @@ final class ConfigurationTreeBuilderTest extends TestCase
         self::assertStringContainsString('Will be removed in 1.0', $deprecationMessage);
     }
 
-    /**
-     * Regression guard for #680: `serve_files` and `root_dir` used to share
-     * one identical `info()` string ("Should current worker serve files from
-     * public directory") that also omitted the deprecation. Distinctness is
-     * asserted separately from the deprecation/replacement wording below.
-     */
     public function testDeprecatedStaticFileNodeInfoTextsAreDistinct(): void
     {
         $infos = $this->legacyStaticFileNodeInfos();
@@ -435,12 +419,6 @@ final class ConfigurationTreeBuilderTest extends TestCase
         );
     }
 
-    /**
-     * `info()` and `setDeprecated()` are independent Symfony attributes with no
-     * other coupling, so without this test a rewrite can silently drop the
-     * deprecation signal or the replacement hint from every legacy static-file
-     * node shown by `config:dump-reference` (issue #680).
-     */
     public function testDeprecatedStaticFileNodeInfoNamesDeprecationAndReplacement(): void
     {
         foreach ($this->legacyStaticFileNodeInfos() as $name => $info) {
@@ -458,7 +436,7 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @return array<string, string> legacy node name => its info() text
+     * @return array<string, string>
      */
     private function legacyStaticFileNodeInfos(): array
     {
@@ -487,11 +465,6 @@ final class ConfigurationTreeBuilderTest extends TestCase
         return $infos;
     }
 
-    /**
-     * The config trees built here create cyclic node references. Left in the
-     * GC root buffer they perturb order-dependent GC assumptions elsewhere in
-     * the suite (RebootStrategyTest's gc_collect_cycles count), so drain them.
-     */
     protected function tearDown(): void
     {
         gc_collect_cycles();
@@ -551,10 +524,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideNegativeRestartOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideNegativeRestartOverrides')]
     public function testRestartRejectsNegativeValues(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -580,10 +552,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideInvalidChunkSizeOverrides
-     *
      * @param array<string, int> $override
      */
+    #[DataProvider('provideInvalidChunkSizeOverrides')]
     public function testConfiguredTreeRejectsNonPositiveChunkSize(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();
@@ -631,10 +602,9 @@ final class ConfigurationTreeBuilderTest extends TestCase
     }
 
     /**
-     * @dataProvider provideStreamLogFileOverrides
-     *
      * @param array<string, string> $override
      */
+    #[DataProvider('provideStreamLogFileOverrides')]
     public function testConfiguredTreeRejectsStreamLogFile(array $override): void
     {
         $configurator = $this->createDefinitionConfigurator();

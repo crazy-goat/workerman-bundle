@@ -9,16 +9,12 @@ use PHPUnit\Framework\TestCase;
 
 final class ConfigCacheGuardConfigTest extends TestCase
 {
-    /** @var string|false the process env value captured at setUp, restored at tearDown */
     private string|false $savedTrustEnv = false;
 
     protected function setUp(): void
     {
         ConfigCacheGuardConfig::reset();
         unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
-        // The process env must not leak into tests either: a developer who
-        // exported WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE while running the
-        // suite would otherwise break strict-mode tests.
         $this->savedTrustEnv = function_exists('getenv') ? getenv(ConfigCacheGuardConfig::ENV_VAR) : false;
         if (function_exists('putenv')) {
             putenv(ConfigCacheGuardConfig::ENV_VAR);
@@ -112,7 +108,6 @@ final class ConfigCacheGuardConfigTest extends TestCase
 
     public function testResolveTreatsUnrecognisedEnvValuesAsStrict(): void
     {
-        // Fail-closed: a typo must never silently unlock a security guard.
         foreach (['banana', 'ture', 'enabled', '1.0', 'yes please', 'ONN'] as $value) {
             $_SERVER[ConfigCacheGuardConfig::ENV_VAR] = $value;
             self::assertFalse(ConfigCacheGuardConfig::resolve(), "value '$value' should resolve to false");
@@ -122,7 +117,6 @@ final class ConfigCacheGuardConfigTest extends TestCase
 
     public function testResolveFallsBackToEnvWhenServerValueIsEmpty(): void
     {
-        // An empty $_SERVER value must not shadow a truthy $_ENV value.
         $_SERVER[ConfigCacheGuardConfig::ENV_VAR] = '';
         $_ENV[ConfigCacheGuardConfig::ENV_VAR] = '1';
         self::assertTrue(ConfigCacheGuardConfig::resolve());

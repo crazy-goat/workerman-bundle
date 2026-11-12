@@ -9,10 +9,6 @@ use CrazyGoat\WorkermanBundle\Worker\MasterWorker;
 use PHPUnit\Framework\TestCase;
 use Workerman\Worker;
 
-/**
- * Tests for MasterWorker: the Workerman subclass that records the master
- * fingerprint in daemon mode (issue #584).
- */
 final class MasterWorkerTest extends TestCase
 {
     private string $tmpDir;
@@ -54,7 +50,6 @@ final class MasterWorkerTest extends TestCase
         }
 
         $reportFile = $this->tmpDir . '/fd2-fallback.txt';
-        // A directory cannot be opened with fopen(..., 'a').
         $this->runResetStdFixture($this->tmpDir, $reportFile);
 
         $report = json_decode((string) file_get_contents($reportFile), true);
@@ -78,14 +73,6 @@ final class MasterWorkerTest extends TestCase
         self::assertSame(0, proc_close($process));
     }
 
-    /**
-     * Regression test for issue #584: `saveMasterPid()` must write the
-     * PID file AND a fingerprint describing the current (master) process.
-     *
-     * `parent::saveMasterPid()` persists the PID; the override must then
-     * record a fingerprint of the real master — this is what closes the
-     * daemon-mode gap where no fingerprint was ever written.
-     */
     public function testSaveMasterPidWritesPidFileAndFingerprint(): void
     {
         $pidFile = $this->tmpDir . '/workerman.pid';
@@ -114,21 +101,9 @@ final class MasterWorkerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: a fingerprint write failure must
-     * not abort the master start sequence — the strict cmdline fallback
-     * in ProcessInspector covers the unverifiable case.
-     *
-     * The failure is provoked by pre-creating a DIRECTORY at the
-     * fingerprint path: `MasterFingerprint::writeTo()` writes its temp
-     * file, then fails the final rename onto the directory and throws.
-     * The PID file write itself succeeds, so only the fingerprint step
-     * fails.
-     */
     public function testSaveMasterPidDoesNotThrowWhenFingerprintWriteFails(): void
     {
         $pidFile = $this->tmpDir . '/workerman.pid';
-        // Occupy the fingerprint path with a directory so the rename fails.
         mkdir($pidFile . '.fingerprint', 0700);
 
         $masterPidProp = new \ReflectionProperty(MasterWorker::class, 'masterPid');
@@ -136,8 +111,6 @@ final class MasterWorkerTest extends TestCase
         $previousLogFile = Worker::$logFile;
         $previousMasterPid = $masterPidProp->getValue();
         $previousOutputStream = Worker::$outputStream;
-        // Worker::log() -> safeEcho() requires a writable stream; in a unit
-        // test no stream has been initialised, so give it one.
         $testStream = \fopen('php://temp', 'w+');
         if ($testStream === false) {
             self::fail('Unable to open temp stream for test');
@@ -152,8 +125,6 @@ final class MasterWorkerTest extends TestCase
             $method = new \ReflectionMethod(MasterWorker::class, 'saveMasterPid');
             $method->invoke(null);
 
-            // No exception means the start sequence continues; the PID
-            // file must still have been written by the parent.
             self::assertFileExists($pidFile, 'PID file must still be written');
             self::assertSame((string) \getmypid(), (string) file_get_contents($pidFile));
         } finally {

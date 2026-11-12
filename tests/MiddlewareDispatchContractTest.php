@@ -8,21 +8,6 @@ use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * Cross-platform middleware dispatch contract.
- *
- * Locks in the invariant that the middleware pipeline dispatches each
- * registered middleware exactly ONCE per incoming HTTP request. Issue #533
- * exposed a regression where middleware ran multiple times per request on
- * macOS, so this contract test guards the whole dispatch-count class of bugs
- * forever, regardless of OS.
- *
- * The implementation uses a dedicated dispatch-count server (the third test
- * port, 9991 by default) configured with a single counting middleware
- * ({@see \CrazyGoat\WorkermanBundle\Test\App\DispatchCountMiddleware}).
- * On every __invoke the middleware increments a shared counter file under
- * flock() and exposes the current count via the X-Dispatch-Count response
- * header, which lets us assert the dispatch count after exactly one request.
- *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/542
  * @see https://github.com/crazy-goat/workerman-bundle/issues/533
  */
@@ -35,12 +20,6 @@ final class MiddlewareDispatchContractTest extends WebTestCase
 
     protected function setUp(): void
     {
-        // Reset the shared counter file so each test starts from zero. Using
-        // truncate-then-write inside a microsecond race window is acceptable
-        // because every test method here sends exactly one request; if any
-        // test were to send concurrent requests the contract would still hold
-        // per-request but the file would need locking -- the counting
-        // middleware itself uses flock() for that reason.
         $dir = dirname(self::COUNTER_FILE);
         if (!is_dir($dir) && !mkdir($dir, 0o775, true) && !is_dir($dir)) {
             self::failLiveServer(sprintf('Cannot create counter directory: %s', $dir));
@@ -62,18 +41,9 @@ final class MiddlewareDispatchContractTest extends WebTestCase
 
     protected function tearDown(): void
     {
-        // Leave the counter file intact so cross-test inspection stays
-        // possible, but normalize it back to zero so the next test starts
-        // from the same baseline.
         @file_put_contents(self::COUNTER_FILE, '0');
     }
 
-    /**
-     * After exactly one HTTP request the dispatch middleware must have run
-     * exactly once. The X-Dispatch-Count response header is the dispatched
-     * post-increment value; the shared counter file on disk reflects the same
-     * value because the middleware writes before sending the response.
-     */
     public function testMiddlewareRunsExactlyOncePerRequest(): void
     {
         $client = BoundedHttpClient::create();
@@ -104,15 +74,6 @@ final class MiddlewareDispatchContractTest extends WebTestCase
         ));
     }
 
-    /**
-     * Two independent requests dispatched in sequence must produce exactly
-     * two invocations of the middleware (1+1=2), never one (e.g. caching
-     * response across requests) and never more than two (double dispatch).
-     *
-     * This is a stricter guarantee than the single-request case: it catches
-     * reuse-of-Response objects across requests, which would still pass
-     * {@see testMiddlewareRunsExactlyOncePerRequest()} on its own.
-     */
     public function testMiddlewareRunsExactlyOncePerTwoSequentialRequests(): void
     {
         $client = BoundedHttpClient::create();

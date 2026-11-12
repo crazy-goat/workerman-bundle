@@ -14,13 +14,6 @@ final class ProcFileReader
     }
 
     /**
-     * Fail-closed read of a /proc pseudo-file.
-     *
-     * An unreadable path, a read failure and empty content all surface as
-     * null, so callers keep their own fail-closed sentinel (0 / false /
-     * null). The `@` suppresses the warning when the process exits between
-     * `is_readable()` and the read.
-     *
      * @phpstan-impure
      */
     public static function read(string $path): ?string

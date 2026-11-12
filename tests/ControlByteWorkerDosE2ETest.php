@@ -5,18 +5,13 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E acceptance criteria for issue #577.
- *
- * Spawns a real single-worker Workerman process, sends control-byte
- * requests over a real socket, and asserts the worker PID never changes.
- *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/577
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class ControlByteWorkerDosE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/control_byte_dos_e2e_runner.php';
@@ -81,9 +76,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         }
     }
 
-    /**
-     * AC: control byte → 400 and worker PID unchanged.
-     */
     public function testControlByteReturns400AndWorkerPidUnchanged(): void
     {
         $workerPid = $this->startWorker('handler');
@@ -102,10 +94,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         );
         $this->assertStringContainsString('Bad Request', $response);
 
-        // Poll briefly for a PID change — a crashing worker would have
-        // been respawned with a new PID. The condition should never become
-        // true, so Wait::until times out after 2s, which is the observation
-        // window that a fixed 200ms usleep only guessed at.
         Wait::until(fn(): bool => $this->readWorkerPid() !== $before, 2);
 
         $after = $this->readWorkerPid();
@@ -120,9 +108,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         );
     }
 
-    /**
-     * AC: soak 10 000 malformed requests; PID never changes.
-     */
     public function testSoak10kMalformedRequestsKeepsWorkerPidStable(): void
     {
         $workerPid = $this->startWorker('handler');
@@ -161,28 +146,21 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         $this->assertTrue(\posix_kill($workerPid, 0), 'Worker must still be alive after soak');
     }
 
-    /**
-     * AC: with handler-level try removed, errorHandler alone keeps the worker alive.
-     */
     public function testBackstopAloneKeepsWorkerAliveOnControlByte(): void
     {
         $workerPid = $this->startWorker('backstop');
 
-        // No 400 expected — the throw escapes onMessage into errorHandler,
-        // which closes the connection without a response body.
         $response = $this->sendRaw(
             "GET /boom HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\nConnection: close\r\n\r\n",
             expectMaybeEmpty: true,
         );
 
-        // Should not be a clean 200 from the happy path.
         $this->assertStringNotContainsString(
             '200 OK',
             $response,
             'Backstop mode must not complete the happy-path 200 for a control-byte request',
         );
 
-        // Poll briefly for a PID change — the worker should NOT crash.
         Wait::until(fn(): bool => $this->readWorkerPid() !== $workerPid, 3);
 
         $after = $this->readWorkerPid();
@@ -196,7 +174,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
             'Worker process must still be alive with backstop-only path',
         );
 
-        // A subsequent benign request should still be served (worker not dead).
         $ok = $this->sendRaw("GET /hello HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
         $this->assertStringContainsString(
             '200',
@@ -205,9 +182,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
         );
     }
 
-    /**
-     * @return int Worker child PID
-     */
     private function startWorker(string $mode): int
     {
         $readyFile = $this->tempDir . '/ready';
@@ -257,11 +231,11 @@ final class ControlByteWorkerDosE2ETest extends TestCase
             }
             $proc = $this->process;
             if ($proc === null) {
-                return true; // process exited / not started
+                return true;
             }
             $status = \proc_get_status($proc);
             if ($status['running'] === false) {
-                return true; // break — process exited early
+                return true;
             }
 
             return $this->portIsOpen();
@@ -289,10 +263,8 @@ final class ControlByteWorkerDosE2ETest extends TestCase
 
         $status = \proc_get_status($this->process);
         if ($status['running']) {
-            // Kill process group / children: SIGTERM master then wait.
             $pid = $status['pid'];
             @\posix_kill($pid, SIGTERM);
-            // Also signal worker child if known.
             $workerPidFile = $this->tempDir . '/worker.pid';
             if (\is_file($workerPidFile)) {
                 $child = (int) \trim((string) \file_get_contents($workerPidFile));
@@ -300,7 +272,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
                     @\posix_kill($child, SIGTERM);
                 }
             }
-            // Poll until the process exits (or timeout), then SIGKILL if still running.
             $stopped = Wait::until(function (): bool {
                 $proc = $this->process;
 
@@ -359,7 +330,6 @@ final class ControlByteWorkerDosE2ETest extends TestCase
                 break;
             }
             $response .= $chunk;
-            // Enough for status line / small body.
             if (\strlen($response) > 4096) {
                 break;
             }

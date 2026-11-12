@@ -216,10 +216,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]['data']);
     }
 
-    /**
-     * Header injection guard (#929): a header value with CR/LF must never
-     * reach the response head.
-     */
     public function testConvertDropsHeaderValueWithCrlf(): void
     {
         $head = $this->convertAndGetHead([
@@ -233,9 +229,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
     }
 
-    /**
-     * Header injection guard (#929): a bare LF is as dangerous as CRLF.
-     */
     public function testConvertDropsHeaderValueWithBareLf(): void
     {
         $head = $this->convertAndGetHead([
@@ -249,10 +242,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
     }
 
-    /**
-     * Header injection guard (#929): a header name with a colon or CR/LF
-     * must be skipped, including a bare LF.
-     */
     public function testConvertDropsHeaderNameWithColonOrCrlf(): void
     {
         $head = $this->convertAndGetHead([
@@ -268,10 +257,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertSame(1, substr_count($head, "\r\n\r\n"), 'The head must have exactly one blank-line separator');
     }
 
-    /**
-     * Header injection guard (#929): Content-Length and Transfer-Encoding are
-     * owned by the strategy, and the comparison is case-insensitive.
-     */
     public function testConvertDropsAppContentLengthAndTransferEncoding(): void
     {
         $head = $this->convertAndGetHead([
@@ -365,12 +350,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertSame($initialLevel, ob_get_level(), 'OB level should be restored after exception');
     }
 
-    /**
-     * A HEAD request must not carry a body (RFC 9110 §9.3.2). The strategy
-     * sends only the head (the same status line and Transfer-Encoding: chunked
-     * header the GET would carry) — no chunks and no chunked terminator — and
-     * never executes the stream callback (issue #683).
-     */
     public function testHeadRequestSendsHeadOnlyWithNoBody(): void
     {
         $this->connection->context = new \stdClass();
@@ -408,11 +387,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertTrue($this->connection->context->responseSentDirectly);
     }
 
-    /**
-     * HTTP/1.0 variant of the HEAD test: the head carries Connection: close
-     * instead of Transfer-Encoding: chunked (the same framing the GET sends),
-     * with no body (issue #683).
-     */
     public function testHeadRequestHttp10SendsHeadOnlyWithNoBody(): void
     {
         $this->connection->context = new \stdClass();
@@ -450,13 +424,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertTrue($this->connection->context->responseSentDirectly);
     }
 
-    /**
-     * Issue #621: an HTTP/1.1 streamed response to a client that sent
-     * `Connection: close` must echo `Connection: close` in the head (alongside
-     * `Transfer-Encoding: chunked`). The socket is closed anyway by
-     * HttpRequestHandler::shouldCloseConnection(); this is protocol-politeness
-     * so a close-delimited client gets an explicit signal beyond EOF.
-     */
     public function testConvertHttp11WithShouldCloseEchoesConnectionClose(): void
     {
         $this->connection->context = new \stdClass();
@@ -487,11 +454,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertTrue($sendCalls[0]['raw']);
     }
 
-    /**
-     * Issue #621: an HTTP/1.1 streamed response over a keep-alive connection
-     * must NOT emit Connection: close — the default (no Connection header on
-     * HTTP/1.1 implies keep-alive) is correct and must be preserved.
-     */
     public function testConvertHttp11KeepAliveDoesNotEmitConnectionClose(): void
     {
         $this->connection->context = new \stdClass();
@@ -520,13 +482,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertStringNotContainsString('Connection:', $sendCalls[0]['data'], 'Keep-alive HTTP/1.1 must not emit a Connection header');
     }
 
-    /**
-     * Issue #621: an app-set `Connection: keep-alive` on an HTTP/1.1 streamed
-     * response must be suppressed — the strategy owns the Connection header.
-     * Otherwise the app could emit `Connection: keep-alive` while the handler
-     * closes the socket (a cosmetic contradiction). The suppression guard was
-     * previously 1.0-only.
-     */
     public function testConvertHttp11SuppressesAppConnectionKeepAliveHeader(): void
     {
         $this->connection->context = new \stdClass();
@@ -549,15 +504,9 @@ final class StreamedResponseStrategyTest extends TestCase
 
         $this->assertStringNotContainsString('Connection: keep-alive', $sendCalls[0]['data'], 'App-provided Connection must not duplicate the strategy-owned close header');
         $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data']);
-        // Exactly one Connection header line (the strategy-owned close).
         $this->assertSame(1, substr_count($sendCalls[0]['data'], 'Connection:'));
     }
 
-    /**
-     * Issue #621: HEAD variant — an HTTP/1.1 HEAD streamed response to a
-     * Connection: close client echoes Connection: close alongside
-     * Transfer-Encoding: chunked (the same framing the GET would carry).
-     */
     public function testHeadRequestHttp11WithShouldCloseEchoesConnectionClose(): void
     {
         $this->connection->context = new \stdClass();
@@ -586,10 +535,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0]['data'], 'HTTP/1.1 HEAD close reply must echo Connection: close');
     }
 
-    /**
-     * Issue #900: Workerman send() returns false and drops the data when the send
-     * buffer is full. The stream must stop and the connection must be destroyed.
-     */
     public function testConvertStopsAndDestroysConnectionWhenSendIsRefused(): void
     {
         $context = new \stdClass();
@@ -677,7 +622,6 @@ final class StreamedResponseStrategyTest extends TestCase
         $logger->expects($this->once())->method('warning');
 
         try {
-            // 8 MB in 8 KB lines. The client never reads, so the 1 MB send buffer fills up.
             $streamedResponse = new StreamedResponse(static function (): void {
                 for ($i = 0; $i < 1024; ++$i) {
                     echo str_repeat('x', 8192);

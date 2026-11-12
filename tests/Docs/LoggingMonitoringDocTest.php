@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/logging-monitoring.md must match the config tree, and its examples must stay consistent (issue #878, section 14).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class LoggingMonitoringDocTest extends TestCase
 {
     private const PAGE = 'docs/logging-monitoring.md';

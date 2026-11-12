@@ -6,11 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Validator\FileUploadValidator;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Validator\FileUploadValidator
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Validator\FileUploadValidator::class)]
 final class FileUploadValidatorTest extends TestCase
 {
     public function testIsSingleFileEntryReturnsTrueWhenNamePresent(): void
@@ -66,8 +65,6 @@ final class FileUploadValidatorTest extends TestCase
 
     public function testEmptyFilesArrayReturnsEarly(): void
     {
-        // Zero-iteration fast path: validate skips traversal when no files present.
-        // This is the common case for read-heavy apps and must be a no-op.
         FileUploadValidator::validate([]);
         $this->addToAssertionCount(1);
     }
@@ -84,9 +81,8 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Validation passes when no exception is thrown
         FileUploadValidator::validate($files);
-        $this->addToAssertionCount(1); // No exception means validation passed
+        $this->addToAssertionCount(1);
     }
 
     public function testValidMultipleFilesArrayIsAccepted(): void
@@ -110,9 +106,8 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Validation passes when no exception is thrown
         FileUploadValidator::validate($files);
-        $this->addToAssertionCount(1); // No exception means validation passed
+        $this->addToAssertionCount(1);
     }
 
     public function testValidNestedAssociativeArrayIsAccepted(): void
@@ -136,9 +131,8 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Validation passes when no exception is thrown
         FileUploadValidator::validate($files);
-        $this->addToAssertionCount(1); // No exception means validation passed
+        $this->addToAssertionCount(1);
     }
 
     public function testValidNestedArrayOfFilesIsAccepted(): void
@@ -164,9 +158,8 @@ final class FileUploadValidatorTest extends TestCase
             ],
         ];
 
-        // Validation passes when no exception is thrown
         FileUploadValidator::validate($files);
-        $this->addToAssertionCount(1); // No exception means validation passed
+        $this->addToAssertionCount(1);
     }
 
     public function testMissingRequiredFieldThrowsException(): void
@@ -178,7 +171,6 @@ final class FileUploadValidatorTest extends TestCase
             'malformed_file' => [
                 'name' => 'test.txt',
                 'tmp_name' => '/tmp/test',
-                // Missing 'type', 'size', 'error'
             ],
         ];
 
@@ -206,7 +198,6 @@ final class FileUploadValidatorTest extends TestCase
             'nested' => [
                 'unrecognized' => [
                     'foo' => 'bar',
-                    // Missing file keys (name, tmp_name)
                 ],
             ],
         ];

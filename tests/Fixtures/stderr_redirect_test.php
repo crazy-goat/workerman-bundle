@@ -24,9 +24,6 @@ if ($reportFile !== '') {
     ], JSON_THROW_ON_ERROR));
 }
 
-// In daemon mode Workerman closed STDOUT/STDERR. The bundle keeps fd 2 on
-// stdout_file, so a php://stderr writer (Monolog's stream handler) must land
-// there instead of writing to an eventpoll fd (issue #990).
 file_put_contents('php://stderr', "stderr-line\n");
 error_log('error-log-line');
 

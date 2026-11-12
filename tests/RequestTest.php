@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Http\Request;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Http\Request
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Http\Request::class)]
 final class RequestTest extends TestCase
 {
     /**
@@ -202,25 +201,13 @@ final class RequestTest extends TestCase
         $this->assertSame($buffer, $request->rawBuffer());
     }
 
-    public function testSetHeaderDocumentsXForwardedSecurityWarning(): void
+    public function testSecurityDocsWarnAboutForwardedHeaderReInjection(): void
     {
-        $reflection = new \ReflectionMethod(Request::class, 'setHeader');
-        $docComment = $reflection->getDocComment();
+        $security = (string) file_get_contents(\dirname(__DIR__) . '/docs/security.md');
 
-        $this->assertIsString($docComment, 'setHeader() must have a PHPDoc comment');
-        $this->assertStringContainsString('X-Forwarded', $docComment, 'setHeader() PHPDoc must warn about X-Forwarded-* re-injection');
-        $this->assertStringContainsString('Forwarded', $docComment, 'setHeader() PHPDoc must warn about Forwarded header re-injection');
-        $this->assertStringContainsString('trusted-proxy', $docComment, 'setHeader() PHPDoc must reference the trusted-proxy bypass risk');
-    }
-
-    public function testWithHeaderDocumentsXForwardedSecurityWarning(): void
-    {
-        $reflection = new \ReflectionMethod(Request::class, 'withHeader');
-        $docComment = $reflection->getDocComment();
-
-        $this->assertIsString($docComment, 'withHeader() must have a PHPDoc comment');
-        $this->assertStringContainsString('X-Forwarded', $docComment, 'withHeader() PHPDoc must warn about X-Forwarded-* re-injection');
-        $this->assertStringContainsString('Forwarded', $docComment, 'withHeader() PHPDoc must warn about Forwarded header re-injection');
-        $this->assertStringContainsString('trusted-proxy', $docComment, 'withHeader() PHPDoc must reference the trusted-proxy bypass risk');
+        $this->assertStringContainsString('## Middleware Header Re-Injection (Trusted-Proxy Bypass)', $security);
+        foreach (['`Request::setHeader()`', '`withHeader()`', '`X-Forwarded-For`', '`Forwarded`', 'setTrustedProxies()'] as $needle) {
+            $this->assertStringContainsString($needle, $security, 'docs/security.md must keep the setHeader() re-injection warning');
+        }
     }
 }

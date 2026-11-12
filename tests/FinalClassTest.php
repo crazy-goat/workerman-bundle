@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class FinalClassTest extends TestCase
 {
     /**
@@ -49,9 +49,7 @@ final class FinalClassTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideTestFiles
-     */
+    #[DataProvider('provideTestFiles')]
     public function testTestClassIsFinal(string $path, string $content): void
     {
         $isFinal = (bool) preg_match('/^final\s+(?:abstract\s+)?(?:readonly\s+)?class\s+\w+/m', $content);

@@ -18,6 +18,7 @@ use CrazyGoat\WorkermanBundle\Middleware\SymfonyController;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 use CrazyGoat\WorkermanBundle\Utils;
 use CrazyGoat\WorkermanBundle\Worker\ServerWorker;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -381,7 +382,7 @@ final class ServerWorkerTest extends TestCase
         );
     }
 
-    /** @dataProvider provideWebSocketListenAddresses */
+    #[DataProvider('provideWebSocketListenAddresses')]
     public function testWebSocketListenIsRejected(string $listen): void
     {
         $this->expectException(UnsupportedListenSchemeException::class);
@@ -968,15 +969,6 @@ final class ServerWorkerTest extends TestCase
         $this->assertNotNull($worker->onConnect, 'onConnect should always be set for timeout handling');
     }
 
-    // ──────────────────────────────────────────────
-    // Issue #577 — defence-in-depth: $connection->errorHandler backstop
-    //
-    // Even if HttpRequestHandler's own try/catch misses a throw site added
-    // in the future, the TcpConnection error handler must be set so that
-    // Workerman closes the connection instead of calling Worker::stopAll()
-    // and killing the whole worker process.
-    // ──────────────────────────────────────────────
-
     public function testOnConnectSetsErrorHandlerBackstop(): void
     {
         $kernelFactory = $this->createKernelFactory();
@@ -992,9 +984,6 @@ final class ServerWorkerTest extends TestCase
         $this->assertNotNull($worker);
         $this->assertNotNull($worker->onConnect, 'onConnect must be set');
 
-        // Instantiate TcpConnection without invoking the constructor so we
-        // don't need a real EventLoop / readable socket. onConnect only
-        // touches $maxPackageSize, $context and $errorHandler.
         $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
         $connection->context = new \stdClass();
 
@@ -1010,8 +999,6 @@ final class ServerWorkerTest extends TestCase
 
     public function testErrorHandlerBackstopClosesConnectionInsteadOfKillingWorker(): void
     {
-        // The errorHandler installed by onConnect must close the connection
-        // when invoked with a throwable, NOT rethrow or call Worker::stopAll().
         $kernelFactory = $this->createKernelFactory();
 
         new ServerWorker(
@@ -1034,8 +1021,6 @@ final class ServerWorkerTest extends TestCase
         $handler = $connection->errorHandler;
         $this->assertNotNull($handler);
 
-        // The backstop logs by design. Capture that expected log output so
-        // this behavioral test does not make the test suite look failed.
         $logFile = tempnam(sys_get_temp_dir(), 'test_backstop_');
         $this->assertNotFalse($logFile);
         ini_set('error_log', $logFile);
@@ -1056,10 +1041,6 @@ final class ServerWorkerTest extends TestCase
 
     public function testErrorHandlerBackstopLogsToErrorLog(): void
     {
-        // Major finding from review: the backstop must not silently swallow
-        // throwables — operators need visibility when the defence-in-depth
-        // backstop fires. We assert it writes to error_log with the
-        // exception message.
         $kernelFactory = $this->createKernelFactory();
 
         new ServerWorker(
@@ -1286,10 +1267,6 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
-    /**
-     * Issue #899: a download that takes longer than keepalive_timeout, but keeps
-     * sending data, must not be closed.
-     */
     public function testKeepaliveTimeoutDoesNotCloseConnectionThatKeepsSending(): void
     {
         $eventLoop = new Select();
@@ -1310,9 +1287,6 @@ final class ServerWorkerTest extends TestCase
             $this->startBigFileDownload($connection);
             $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
 
-            // A slow client: it reads 256 KB every 0.2 s, so the connection makes progress.
-            // It reads in several calls because one fread() returns 8 KB at most, and a
-            // Linux unix socket becomes writable again only after most of its buffer is free.
             $eventLoop->repeat(0.2, static function () use ($peer): void {
                 for ($i = 0; $i < 32; ++$i) {
                     fread($peer, 8192);
@@ -1347,10 +1321,8 @@ final class ServerWorkerTest extends TestCase
             $this->startBigFileDownload($connection);
             $this->assertGreaterThan(0, $connection->getSendBufferQueueSize());
 
-            // The client never reads: no byte moves, so the timeout still applies.
             $this->runEventLoopFor($eventLoop, 3.5);
 
-            // close() with unsent data leaves the connection in CLOSING until the buffer is flushed.
             $this->assertContains($connection->getStatus(), [TcpConnection::STATUS_CLOSING, TcpConnection::STATUS_CLOSED]);
         } finally {
             Timer::delAll();
@@ -1358,10 +1330,6 @@ final class ServerWorkerTest extends TestCase
         }
     }
 
-    /**
-     * Issue #907: a slow body of the second request on a keep-alive connection gets
-     * connection_timeout, not keepalive_timeout.
-     */
     public function testSlowSecondRequestGetsConnectionTimeoutNotKeepaliveTimeout(): void
     {
         $eventLoop = new Select();
@@ -1374,7 +1342,6 @@ final class ServerWorkerTest extends TestCase
         try {
             $this->startSlowSecondRequest($worker, $connection, $peer, $eventLoop);
 
-            // keepalive_timeout is 1 s. The upload is still slow after 2.5 s, but connection_timeout is 5 s.
             $this->runEventLoopFor($eventLoop, 2.5);
 
             $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $connection->getStatus());
@@ -1396,7 +1363,6 @@ final class ServerWorkerTest extends TestCase
         try {
             $this->startSlowSecondRequest($worker, $connection, $peer, $eventLoop);
 
-            // The body never ends, so connection_timeout (2 s) closes the connection.
             $this->runEventLoopFor($eventLoop, 4.5);
 
             $this->assertSame(TcpConnection::STATUS_CLOSED, $connection->getStatus());
@@ -1407,9 +1373,6 @@ final class ServerWorkerTest extends TestCase
     }
 
     /**
-     * Completes a first request, then starts a second request with a body that is
-     * never completed: the peer sends 1 KB of a 100 KB body every 0.3 s.
-     *
      * @param resource $peer
      */
     private function startSlowSecondRequest(Worker $worker, TcpConnection $connection, $peer, Select $eventLoop): void
@@ -1522,9 +1485,6 @@ final class ServerWorkerTest extends TestCase
     }
 
     /**
-     * The Worker keeps its stream context in a protected property, so read the
-     * options exactly as Workerman does when it creates the listening socket.
-     *
      * @return array<string, array<string, mixed>>
      */
     private function getWorkerSocketContextOptions(Worker $worker): array
@@ -1537,10 +1497,6 @@ final class ServerWorkerTest extends TestCase
         return stream_context_get_options($context);
     }
 
-    /**
-     * Sends a 6 MB file the way a BinaryFileResponse does: Http::encode() streams a
-     * file of 2 MB or more with sendStream(), so the data is not all queued at once.
-     */
     private function startBigFileDownload(TcpConnection $connection): void
     {
         $file = $this->tempDir . '/big_download.bin';
@@ -1612,8 +1568,6 @@ final class ServerWorkerTest extends TestCase
 
     private function bindConnectionToWorker(TcpConnection $connection, Worker $worker): void
     {
-        // Mirrors Workerman\Worker::acceptTcpConnection(), which copies the worker-level
-        // callbacks onto each accepted connection. Keep in sync if Workerman changes this.
         $connection->worker = $worker;
         $worker->connections[$connection->id] = $connection;
         $connection->onClose = $worker->onClose;

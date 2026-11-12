@@ -73,8 +73,6 @@ final readonly class SupervisorWorker
                 $handler = $kernel->getContainer()->get('workerman.process_handler');
                 $handler(new ServiceMethod($serviceId, $method), $taskName);
                 $worker->log("Process \"$taskName\" (service: $serviceId::$method) finished unexpectedly");
-                // SIGKILL instead of exit() when grpc is loaded: its shutdown
-                // handler deadlocks in forked children (see ProcessTerminator).
                 ProcessTerminator::terminate(1);
             };
         }

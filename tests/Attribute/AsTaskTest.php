@@ -5,15 +5,13 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Attribute;
 
 use CrazyGoat\WorkermanBundle\Attribute\AsTask;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 
-#[\PHPUnit\Framework\Attributes\CoversClass(AsTask::class)]
+#[CoversClass(AsTask::class)]
 final class AsTaskTest extends TestCase
 {
-    // ──────────────────────────────────────────────
-    // Constructor round-trip
-    // ──────────────────────────────────────────────
-
     public function testConstructorWithDefaultValues(): void
     {
         $attribute = new AsTask();
@@ -85,10 +83,6 @@ final class AsTaskTest extends TestCase
         $this->assertSame(0, $attribute->jitter);
     }
 
-    // ──────────────────────────────────────────────
-    // Type safety
-    // ──────────────────────────────────────────────
-
     public function testJitterParameterIsNullableInt(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -112,10 +106,6 @@ final class AsTaskTest extends TestCase
         $this->assertTrue($type->allowsNull());
     }
 
-    // ──────────────────────────────────────────────
-    // Reflection target
-    // ──────────────────────────────────────────────
-
     public function testAttributeCanBeAppliedToClass(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -124,10 +114,6 @@ final class AsTaskTest extends TestCase
 
         $this->assertSame(\Attribute::TARGET_CLASS, $targets & \Attribute::TARGET_CLASS, 'AsTask must allow TARGET_CLASS');
     }
-
-    // ──────────────────────────────────────────────
-    // Reflecting off a fixture class
-    // ──────────────────────────────────────────────
 
     public function testReflectAttributeReadsConstructorArguments(): void
     {
@@ -171,10 +157,6 @@ final class AsTaskTest extends TestCase
         $this->assertNull($attribute->jitter);
     }
 
-    // ──────────────────────────────────────────────
-    // Regression protection
-    // ──────────────────────────────────────────────
-
     public function testConstructorParameterCountIsStable(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -184,7 +166,7 @@ final class AsTaskTest extends TestCase
         $this->assertCount(4, $constructor->getParameters(), 'AsTask constructor must have exactly 4 parameters');
     }
 
-    /** @depends testConstructorParameterCountIsStable */
+    #[Depends('testConstructorParameterCountIsStable')]
     public function testConstructorParameterNamesAreStable(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -233,10 +215,6 @@ final class AsTaskTest extends TestCase
         $this->assertTrue($reflection->isFinal(), 'AsTask must be final');
     }
 }
-
-// ──────────────────────────────────────────────
-// Fixture classes
-// ──────────────────────────────────────────────
 
 #[AsTask(name: 'fixture_task', schedule: '0 */2 * * *', method: 'process', jitter: 15)]
 final readonly class FixtureTask

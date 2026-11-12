@@ -5,11 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Phar;
 
 /**
- * Composes a standalone executable from a phpmicro SFX, optional custom
- * php.ini header, and a PHAR payload.
- *
- * Uses stream copying so memory stays bounded regardless of PHAR size.
- *
  * @internal
  */
 final class BinaryComposer
@@ -17,9 +12,7 @@ final class BinaryComposer
     private const MAGIC_BYTES = "\xfd\xf6\x69\xe6";
 
     /**
-     * Compose [SFX][optional INI header][PHAR] into a single executable at $binPath.
-     *
-     * @throws \RuntimeException when any file operation fails
+     * @throws \RuntimeException
      */
     public function compose(string $sfxPath, string $pharPath, string $binPath, ?string $customIni = null): void
     {

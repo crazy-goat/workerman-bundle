@@ -70,11 +70,6 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('attachment', $response->getHeaderLine('content-disposition'));
     }
 
-    /**
-     * A HEAD request on a BinaryFileResponse must emit no body while carrying
-     * the file size as Content-Length and the same header fields as the GET
-     * (RFC 9110 §9.3.2, issue #683) — end-to-end through the real daemon.
-     */
     public function testHeadBinaryFileResponse(): void
     {
         $client = BoundedHttpClient::create();
@@ -97,23 +92,17 @@ final class ResponseTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        // Request only first 5 bytes
         $response = $client->request('GET', TestPorts::url(TestPorts::second(), '/response_test_file'), [
             'headers' => [
                 'Range' => 'bytes=0-4',
             ],
         ]);
 
-        // Should return 206 Partial Content for range requests
         $this->assertSame(206, $response->getStatusCode());
-        // Body should be exactly 5 bytes
         $this->assertSame(5, strlen((string) $response->getBody()));
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
 
-    /**
-     * Issue #902: a file of 2 MB or more was sent as 206 with no body.
-     */
     public function testBigBinaryFileResponseIsSentInFull(): void
     {
         $client = BoundedHttpClient::create(['timeout' => 20]);
@@ -176,7 +165,6 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertStringContainsString('Delete me after download!', (string) $response->getBody());
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
-        // File should be deleted after download (handled by strategy)
     }
 
     public function testStreamedBinaryFileResponse(): void
@@ -192,8 +180,6 @@ final class ResponseTest extends KernelTestCase
 
     public function testBinaryFileResponseWithTempFileObject(): void
     {
-        // The E2E daemon boots from this same vendor dir, so property_exists()
-        // here reflects the Symfony version the controller runs against.
         if (!property_exists(\Symfony\Component\HttpFoundation\BinaryFileResponse::class, 'tempFileObject')) {
             $this->markTestSkipped('BinaryFileResponse::$tempFileObject is not available in the installed symfony/http-foundation version.');
         }
@@ -207,15 +193,6 @@ final class ResponseTest extends KernelTestCase
         $this->assertStringContainsString('text/plain', $response->getHeaderLine('content-type'));
     }
 
-    /**
-     * A 304 on a BinaryFileResponse must not put the file on the wire
-     * (RFC 9110 §15.4.5, issue #948) — end-to-end through the real daemon.
-     *
-     * The raw socket is not optional here: curl (and therefore Guzzle) never
-     * reads a body after a 304, so a client-level assertion passes even while
-     * the whole file follows the head. Reading the socket to EOF is the only
-     * way to see the bytes the server actually writes.
-     */
     public function testNotModifiedBinaryFileResponseSendsNoBodyOnTheWire(): void
     {
         $wire = $this->rawGet('/response_test_file_not_modified');
@@ -226,10 +203,6 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame('', $this->bodyOf($wire), 'a 304 must not emit a body');
     }
 
-    /**
-     * A 204 must not carry content at all (RFC 9110 §15.3.5, issue #948) —
-     * raw socket, because curl also stops reading the body of a 204.
-     */
     public function testNoContentBinaryFileResponseSendsNoBodyOnTheWire(): void
     {
         $wire = $this->rawGet('/response_test_file_no_content');
@@ -239,11 +212,6 @@ final class ResponseTest extends KernelTestCase
         $this->assertSame('', $this->bodyOf($wire), 'a 204 must not emit a body');
     }
 
-    /**
-     * The GET file path next to it must keep working: the bodyless guard is
-     * about prepare()'s maxlen = 0, not about file responses in general
-     * (issue #948).
-     */
     public function testOkBinaryFileResponseStillSendsTheFileOnTheWire(): void
     {
         $wire = $this->rawGet('/response_test_file');
@@ -255,13 +223,6 @@ final class ResponseTest extends KernelTestCase
         );
     }
 
-    /**
-     * Send one GET on a raw socket and read the response to EOF.
-     *
-     * `Connection: close` makes the daemon close the socket after the reply,
-     * so the full response — including any body the server wrongly wrote — is
-     * in the string this returns.
-     */
     private function rawGet(string $path): string
     {
         $socket = @fsockopen(TestPorts::connectHost(), TestPorts::second(), $errorCode, $errorMessage, 2);
@@ -287,9 +248,6 @@ final class ResponseTest extends KernelTestCase
         return $wire;
     }
 
-    /**
-     * The bytes after the header terminator of a raw response.
-     */
     private function bodyOf(string $wire): string
     {
         $parts = explode("\r\n\r\n", $wire, 2);

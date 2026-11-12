@@ -6,10 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Runner;
 
-/**
- * Runner subclass whose forked child sleeps to simulate a stuck cache warmup.
- * Used by the end-to-end timeout test in RunnerTest.
- */
 final readonly class StuckChildRunner extends Runner
 {
     protected function fork(): int

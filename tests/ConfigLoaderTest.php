@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigCacheGuardConfig;
 use CrazyGoat\WorkermanBundle\ConfigLoader;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 
@@ -13,21 +14,15 @@ final class ConfigLoaderTest extends TestCase
 {
     private string $tempDir;
 
-    /** @var string|false the process env value captured at setUp, restored at tearDown */
     private string|false $savedTrustEnv = false;
 
-    /** @var list<string> test env vars set via setTestEnv(), removed at tearDown */
+    /** @var list<string> */
     private array $testEnvNames = [];
 
     protected function setUp(): void
     {
         $this->tempDir = sys_get_temp_dir() . '/config-loader-test-' . uniqid();
 
-        // Pin the umask around fixture creation so the effective modes of the
-        // temp dirs do not depend on the process umask (e.g. a container
-        // umask 0000 would leave these 0777 world-writable — sloppy hygiene
-        // for a class whose subject is permission validation). Same
-        // save/restore pattern ConfigLoader::warmUp() uses.
         $previousUmask = umask(0077);
         try {
             mkdir($this->tempDir . '/config/packages', 0777, true);
@@ -36,10 +31,6 @@ final class ConfigLoaderTest extends TestCase
             umask($previousUmask);
         }
 
-        // Hermeticity: an exported WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE must
-        // not leak into strict-mode tests from the developer's shell — it can
-        // arrive via the process env (getenv) or via the superglobals, which
-        // PHP populates from the environment at startup.
         unset($_SERVER[ConfigCacheGuardConfig::ENV_VAR], $_ENV[ConfigCacheGuardConfig::ENV_VAR]);
         $this->savedTrustEnv = function_exists('getenv') ? getenv(ConfigCacheGuardConfig::ENV_VAR) : false;
         if (function_exists('putenv')) {
@@ -94,7 +85,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only process, scheduler, and build config
         $loader->setProcessConfig(['some' => 'process']);
         $loader->setSchedulerConfig(['some' => 'scheduler']);
         $loader->setBuildConfig(['some' => 'build']);
@@ -109,7 +99,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman, scheduler, and build config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setSchedulerConfig(['some' => 'scheduler']);
         $loader->setBuildConfig(['some' => 'build']);
@@ -124,7 +113,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman, process, and build config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setProcessConfig(['some' => 'process']);
         $loader->setBuildConfig(['some' => 'build']);
@@ -139,7 +127,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman, process, and scheduler config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setProcessConfig(['some' => 'process']);
         $loader->setSchedulerConfig(['some' => 'scheduler']);
@@ -154,7 +141,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set only workerman config
         $loader->setWorkermanConfig(['some' => 'workerman']);
         $loader->setBuildConfig(['some' => 'build']);
 
@@ -168,8 +154,6 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Don't set any config
-
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('All config sections must be set before warming up. Missing: workerman, process, scheduler, build');
 
@@ -180,20 +164,16 @@ final class ConfigLoaderTest extends TestCase
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
-        // Set all config sections
         $loader->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loader->setProcessConfig(['processes' => []]);
         $loader->setSchedulerConfig(['schedules' => []]);
         $loader->setBuildConfig(['build_dir' => '/tmp/build']);
 
-        // Should not throw exception
         $result = $loader->warmUp($this->tempDir . '/cache');
 
-        // Verify cache was created
         $this->assertFileExists($this->tempDir . '/cache/workerman/config.cache.php');
         $this->assertSame([], $result);
 
-        // Verify config can be loaded back
         $loadedConfig = require $this->tempDir . '/cache/workerman/config.cache.php';
         $this->assertArrayHasKey('workerman', $loadedConfig);
         $this->assertArrayHasKey('process', $loadedConfig);
@@ -259,7 +239,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheReturnsConfigWhenCacheFileExists(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -270,14 +249,12 @@ final class ConfigLoaderTest extends TestCase
         $loaderA->setBuildConfig([]);
         $loaderA->warmUp($this->tempDir . '/cache');
 
-        // Create loader B (no config set via setters) — should load from cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
     }
 
     public function testLoadFromCacheRejectsWorldWritableCacheFile(): void
     {
-        // Create loader, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -287,10 +264,8 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // Make the cache file world-writable
         chmod($cachePath, 0666);
 
-        // Create loader B (no config set via setters) — should reject world-writable cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $this->expectException(\RuntimeException::class);
@@ -301,7 +276,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheWithPrivateCacheFileContinuesToWork(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -314,17 +288,14 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // Make the cache file owner-only readable/writable
         chmod($cachePath, 0600);
 
-        // Create loader B (no config set via setters) — should load from cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
     }
 
     public function testLoadFromCacheRefusesWorldWritableCacheDirectory(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -335,11 +306,9 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // The file itself is safe (0644); only the containing directory is world-writable.
         chmod($cachePath, 0644);
         chmod($cacheDir, 0777);
 
-        // Create loader B (no config set via setters) — should reject the world-writable directory
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $this->expectException(\RuntimeException::class);
@@ -355,7 +324,6 @@ final class ConfigLoaderTest extends TestCase
             $this->markTestSkipped('No supplementary group available to chgrp to');
         }
 
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -369,8 +337,6 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // Group-writable by a supplementary group of the process: the process
-        // legitimately belongs to that group, so loading must succeed.
         chmod($cachePath, 0644);
         chmod($cacheDir, 0770);
 
@@ -378,14 +344,12 @@ final class ConfigLoaderTest extends TestCase
             $this->markTestSkipped('chgrp to a supplementary group requires membership');
         }
 
-        // Create loader B (no config set via setters) — should load from cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
     }
 
     public function testLoadFromCacheAcceptsGroupWritableCacheDirectoryOfOwnEffectiveGroup(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -399,7 +363,6 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // Group-writable by the process's own effective group: accepted.
         chmod($cachePath, 0644);
         chmod($cacheDir, 0770);
 
@@ -407,7 +370,6 @@ final class ConfigLoaderTest extends TestCase
             $this->markTestSkipped('chgrp to the effective group failed');
         }
 
-        // Create loader B (no config set via setters) — should load from cache
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
     }
@@ -419,7 +381,6 @@ final class ConfigLoaderTest extends TestCase
             $this->markTestSkipped('No candidate foreign group found');
         }
 
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -430,8 +391,6 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // Group-writable by a group the process does not belong to; the file
-        // itself stays safe. chgrp to a foreign group needs root.
         chmod($cachePath, 0644);
         chmod($cacheDir, 0770);
 
@@ -439,7 +398,6 @@ final class ConfigLoaderTest extends TestCase
             $this->markTestSkipped('chgrp to a foreign group requires root privileges');
         }
 
-        // Create loader B (no config set via setters) — should reject the foreign-group directory
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $this->expectException(\RuntimeException::class);
@@ -450,7 +408,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheRefusesCacheFileOwnedByAnotherUser(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -460,17 +417,12 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // The containing directory must not contribute a second warning:
-        // warmUp() pins umask(0077) internally, but pinning the mode here
-        // keeps the test independent of how the directory is created and of
-        // future changes, so exactly one refusal signal fires.
         chmod(dirname($cachePath), 0700);
         chmod($cachePath, 0644);
         if (!@chown($cachePath, 65534)) {
             $this->markTestSkipped('chown to another user requires root privileges');
         }
 
-        // Create loader B (no config set via setters) — should reject the foreign-owned file
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
         $this->expectException(\RuntimeException::class);
@@ -481,7 +433,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheWithSecureDirectoryAndFilePermissionsStillWorks(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -495,26 +446,18 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // 0750 directory, 0644 file, owned by the process user — must load.
         chmod($cacheDir, 0750);
         chmod($cachePath, 0644);
 
         $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderB->getWorkermanConfig());
 
-        // 0700 directory also works.
         chmod($cacheDir, 0700);
 
         $loaderC = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $this->assertSame($config, $loaderC->getWorkermanConfig());
     }
 
-    /**
-     * Regression guard for the umask(0077) pin in warmUp() (#779): a real
-     * warm-up under a permissive process umask must still produce a
-     * non-world-writable cache directory and file. Without the pin the
-     * directory would be 0777 / the file 0666 here.
-     */
     public function testWarmUpKeepsCacheArtifactsNonWorldWritableUnderPermissiveUmask(): void
     {
         $loader = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
@@ -576,15 +519,6 @@ final class ConfigLoaderTest extends TestCase
         $logFile = $this->tempDir . '/error-throwing.log';
         $userWarningInvocations = 0;
 
-        // A throwing error handler (Symfony's DebugErrorHandler escalates
-        // E_USER_WARNING to ErrorException in debug mode). The fail-open
-        // warning must not invoke it — only error_log() may fire — so no
-        // exception may escape, the handler must never see an E_USER_WARNING,
-        // and the warning must still reach the log. The handler mirrors
-        // Symfony's: it respects @-suppressed errors (the four
-        // @fileperms()/@filegroup()/@fileowner() metadata reads must not
-        // throw) and throws only on the E_USER_WARNING that trigger_error()
-        // would previously have emitted.
         set_error_handler(
             static function (int $severity, string $message) use (&$userWarningInvocations): bool {
                 if ($severity === \E_USER_WARNING) {
@@ -606,8 +540,6 @@ final class ConfigLoaderTest extends TestCase
             ini_restore('error_log');
         }
 
-        // The fail-open warning must reach the log via error_log() — without
-        // ever touching the error handler, or fail-open would fail closed.
         $this->assertSame(0, $userWarningInvocations, 'the fail-open warning must not reach the error handler');
         $this->assertFileExists($logFile);
         $logContent = file_get_contents($logFile);
@@ -618,7 +550,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheFallsThroughToLoadFreshWhenDirectoryIsUnreadable(): void
     {
-        // Create loader A, set config, warm up to write cache
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -629,14 +560,8 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // Precondition: the cache file must actually exist, otherwise this
-        // test degenerates into testLoadFreshThrowsWhenNoConfigAndNoCache and
-        // proves nothing.
         $this->assertFileExists($cachePath);
 
-        // On POSIX, chmod 0000 on the containing directory makes stat() on a
-        // path inside it fail with EACCES, so is_file() answers false and the
-        // loadFromCache() gate falls through before permission validation runs.
         if (!@chmod($cacheDir, 0000)) {
             $this->markTestSkipped('chmod 0000 on the cache directory failed');
         }
@@ -646,9 +571,6 @@ final class ConfigLoaderTest extends TestCase
                 $this->markTestSkipped('chmod 0000 on the cache directory did not make is_file() return false on this host');
             }
 
-            // Create loader B (no config set via setters) — the is_file() gate
-            // fails, so loading falls through to loadFresh() and the caller
-            // gets a LogicException, not the fail-open warning.
             $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
 
             $this->expectException(\LogicException::class);
@@ -742,7 +664,6 @@ final class ConfigLoaderTest extends TestCase
         $this->assertNull($verdict['warn']);
         $this->assertNotNull($verdict['error']);
         $this->assertStringContainsString('is owned by uid 65534', $verdict['error']);
-        // Byte-identity pin: the strict path must not leak the opt-out marker.
         $this->assertStringNotContainsString(ConfigCacheGuardConfig::ENV_VAR, $verdict['error']);
     }
 
@@ -855,7 +776,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testCheckCacheFilePermissionsWithTrustAcceptsSecurePermissions(): void
     {
-        // The opt-out must not invent warnings for an already-safe cache.
         $verdict = ConfigLoader::checkCacheFilePermissions(
             '/tmp/cache/workerman/config.cache.php',
             0700,
@@ -883,7 +803,6 @@ final class ConfigLoaderTest extends TestCase
             }
         };
 
-        // Create loader A, set config, warm up to write cache.
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -897,16 +816,11 @@ final class ConfigLoaderTest extends TestCase
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
         $cacheDir = dirname($cachePath);
 
-        // The file itself is safe (0644); only the containing directory is world-writable.
         chmod($cachePath, 0644);
         chmod($cacheDir, 0777);
 
-        // Exercise the real opt-out path: the env var, not the test holder.
         $_SERVER[ConfigCacheGuardConfig::ENV_VAR] = '1';
         try {
-            // Create loader B (no config set via setters) — with the documented
-            // opt-out the world-writable directory no longer refuses loading;
-            // the advisory warning is emitted instead.
             $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true, $logger);
             $this->assertSame($config, $loaderB->getWorkermanConfig());
 
@@ -932,7 +846,6 @@ final class ConfigLoaderTest extends TestCase
             }
         };
 
-        // Create loader A, set config, warm up to write cache.
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -945,10 +858,6 @@ final class ConfigLoaderTest extends TestCase
 
         $cachePath = $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // The containing directory must not contribute a second warning:
-        // warmUp() pins umask(0077) internally, but pinning the mode here
-        // keeps the test independent of how the directory is created and of
-        // future changes, so assertCount(1) stays deterministic.
         chmod(dirname($cachePath), 0700);
         chmod($cachePath, 0644);
         if (!@chown($cachePath, 65534)) {
@@ -957,9 +866,6 @@ final class ConfigLoaderTest extends TestCase
 
         ConfigCacheGuardConfig::set(true);
         try {
-            // Create loader B (no config set via setters) — with the
-            // documented opt-out the foreign-owned file no longer refuses
-            // loading; the advisory warning is emitted instead.
             $loaderB = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true, $logger);
             $this->assertSame($config, $loaderB->getWorkermanConfig());
 
@@ -973,7 +879,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoadFromCacheTriggersWarningViaErrorLogWhenTrustSetAndNoLogger(): void
     {
-        // Create loader A, set config, warm up to write cache.
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $config = [
             'server' => ['listen' => 'http://0.0.0.0:8080'],
@@ -988,8 +893,6 @@ final class ConfigLoaderTest extends TestCase
         chmod($cachePath, 0644);
         chmod(dirname($cachePath), 0777);
 
-        // No logger: the Runner path (launcher process) has none, so the
-        // downgraded refusal must still surface via error_log().
         $logFile = $this->tempDir . '/error.log';
         ini_set('error_log', $logFile);
 
@@ -1077,7 +980,7 @@ final class ConfigLoaderTest extends TestCase
         yield 'empty segment skipped' => ['default::BAR', 'BAR'];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('shortEnvNameProvider')]
+    #[DataProvider('shortEnvNameProvider')]
     public function testShortEnvNameDropsProcessorPrefix(string $ref, string $expected): void
     {
         $this->assertSame($expected, ConfigLoader::shortEnvName($ref));
@@ -1096,8 +999,6 @@ final class ConfigLoaderTest extends TestCase
         /** @var array{config: array<string, mixed[]>, env: array<string, string|null>} $payload */
         $payload = require $this->tempDir . '/cache/workerman/config.cache.php';
 
-        // Over-tracking the literal fallback is deliberate: a spurious
-        // re-warm heals itself, a missed variable keeps stale config.
         $this->assertSame(['WMB_TEST_FOO' => null, 'bar' => null], $payload['env']);
     }
 
@@ -1119,7 +1020,6 @@ final class ConfigLoaderTest extends TestCase
         $this->assertArrayHasKey('config', $payload);
         $this->assertArrayHasKey('env', $payload);
         $this->assertSame(['server' => ['listen' => 'http://0.0.0.0:A']], $payload['config']['workerman']);
-        // The processor prefix is dropped, duplicates are removed, names are sorted.
         $this->assertSame(['WMB_TEST_PORT' => 'A', 'WMB_TEST_WORKERS' => null], $payload['env']);
     }
 
@@ -1160,7 +1060,6 @@ final class ConfigLoaderTest extends TestCase
 
     public function testHasTrackedEnvChangedReturnsFalseForLegacyCache(): void
     {
-        // A cache written without env names (legacy format) carries no snapshot.
         $loaderA = new ConfigLoader($this->tempDir, $this->tempDir . '/cache', true);
         $loaderA->setWorkermanConfig(['server' => ['listen' => 'http://0.0.0.0:8080']]);
         $loaderA->setProcessConfig([]);
@@ -1181,11 +1080,6 @@ final class ConfigLoaderTest extends TestCase
         $this->assertFalse($loader->hasTrackedEnvChanged());
     }
 
-    /**
-     * Sets a test env var in every place ConfigLoader::readEnvValues()
-     * looks (`$_SERVER`, `$_ENV`, `getenv()`), restoring the previous
-     * state afterwards.
-     */
     private function setTestEnv(string $name, string $value): void
     {
         $_SERVER[$name] = $value;

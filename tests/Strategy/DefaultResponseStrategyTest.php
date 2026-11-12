@@ -93,12 +93,6 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertStringEndsWith("\r\n{$body}", $wire);
     }
 
-    /**
-     * An empty-body response carrying an application-provided Content-Length
-     * (the HEAD contract from ResponseConverter, issue #643) must emit exactly
-     * one Content-Length with the app value — not the 0 the transport
-     * computes from the empty body, and not a duplicate.
-     */
     public function testEmptyBodyWithAppContentLengthEmitsSingleAppValue(): void
     {
         $strategy = new DefaultResponseStrategy();
@@ -123,11 +117,6 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'empty body on the wire');
     }
 
-    /**
-     * A non-empty body with an app-provided Content-Length must keep the
-     * transport-strip guarantee of issue #579: exactly one Content-Length,
-     * computed from the real body.
-     */
     public function testNonEmptyBodyWithAppContentLengthStripsIt(): void
     {
         $strategy = new DefaultResponseStrategy();
@@ -149,10 +138,6 @@ final class DefaultResponseStrategyTest extends TestCase
         $this->assertStringNotContainsString("Content-Length: 5\r\n", $wire);
     }
 
-    /**
-     * A non-digit application Content-Length (or a header that failed
-     * single-value flattening) must be stripped, never echoed onto the wire.
-     */
     public function testInvalidAppContentLengthIsStripped(): void
     {
         $strategy = new DefaultResponseStrategy();

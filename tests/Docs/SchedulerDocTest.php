@@ -9,15 +9,12 @@ use CrazyGoat\WorkermanBundle\DependencyInjection\WorkermanCompilerPass;
 use CrazyGoat\WorkermanBundle\Event\TaskErrorEvent;
 use CrazyGoat\WorkermanBundle\Event\TaskStartEvent;
 use CrazyGoat\WorkermanBundle\Scheduler\Trigger\TriggerFactory;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/scheduler.md must name the attribute parameters, the tag, the events and only show schedules that work (issue #878, section 5).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class SchedulerDocTest extends TestCase
 {
     private const PAGE = 'docs/scheduler.md';
@@ -103,7 +100,6 @@ final class SchedulerDocTest extends TestCase
             self::assertIsArray($parsed);
             foreach ($parsed['services'] as $definition) {
                 foreach ($definition['tags'] as $tag) {
-                    // The second form is `{ workerman.task: { attributes } }`; in the first form `name` is the tag name.
                     $attributes = $tag['workerman.task'] ?? $tag;
                     self::assertTrue(isset($tag['workerman.task']) || ($tag['name'] ?? null) === 'workerman.task');
                     unset($attributes['name']);

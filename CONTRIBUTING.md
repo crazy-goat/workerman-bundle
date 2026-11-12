@@ -203,7 +203,7 @@ The test daemon binds ports **8888**, **9999** and **9991** by default inside
 the container on `127.0.0.1` — no `-p` port forwarding is needed. This helper
 does not forward host `WMB_PORT_*` overrides, so it always uses the defaults
 inside; host runs and `bin/docker-test-worktree` accept and forward them. The
-`@requires extension inotify` tests use the container's own `/tmp`, not the
+`#[RequiresPhpExtension('inotify')]` tests use the container's own `/tmp`, not the
 bind mount, so they work as on CI.
 
 #### Live-server skips
@@ -315,6 +315,25 @@ Superseded pull-request runs are cancelled, but a `master` run is never cancelle
 - Follow PSR-12 coding standards (enforced by PHP-CS-Fixer)
 - Static analysis with PHPStan level 8
 - Automated refactoring with Rector
+- No narrative comments (enforced by the custom PHP-CS-Fixer rule `CrazyGoat/no_narrative_comments` in
+  `tools/php-cs-fixer/`; `composer lint` reports a violation, `composer lint-fix` removes it):
+  - a docblock holds only tags, with no summary or description: `@param <type> $name`, `@param-out <type> $name`,
+    `@return <type>`, `@throws <Class>`, `@var <type> [$name]`, bare `@deprecated` and `@internal`, and
+    `@see <target>`; descriptions after a tag are removed, and a docblock left empty is removed
+  - `@phpstan-*`, `@psalm-*` and `@template*` tags are kept verbatim; write generics as `@phpstan-extends`,
+    `@phpstan-implements`, `@phpstan-method` or `@phpstan-property`, because the plain tags are removed
+  - `//`, `#` and `/* */` comments are removed unless they contain a tool directive: `@phpstan-ignore*`,
+    `@codeCoverageIgnore*`, `phpcs:` or `@psalm-suppress`
+  - explain intent with names, types and tests; put rationale in the issue, the pull request, `docs/` or
+    `docs/helpers/` instead of a comment
+  - PHPUnit and PHPBench metadata use attributes (`#[DataProvider]`, `#[RequiresPhpExtension]`,
+    `#[CoversClass]`, `#[Revs]`, `#[BeforeMethods]`, …), never doc annotations
+    (Rector's `PHPUnitSetList::ANNOTATIONS_TO_ATTRIBUTES` converts PHPUnit annotations in `composer lint-fix`;
+    the rule leaves a docblock with a PHPUnit or PHPBench annotation untouched, and
+    `tests/Tools/NoTestDocAnnotationsTest.php` fails until it is converted by hand)
+  - a typed tag whose type cannot be parsed makes `composer lint` fail; fix the type or use the
+    `@phpstan-` form of the tag
+  - a comment counts as a directive only when the directive starts it (`// @phpstan-ignore …`)
 
 ## Deprecation Policy
 

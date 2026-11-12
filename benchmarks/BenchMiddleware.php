@@ -8,9 +8,6 @@ use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-/**
- * Simple header-adding middleware for benchmarking.
- */
 final readonly class BenchMiddleware implements MiddlewareInterface
 {
     public function __construct(

@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Regression guard for issue #778: the test app's var/cache and var/log trees
- * must stay non-world-writable even when the invoking shell runs with umask
- * 0000 (containers). Symfony's Runtime and Workerman's daemonize() both reset
- * the umask to 0, so the pin alone is not enough — the daemon's tree is
- * hardened after startup.
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class TestAppHygieneTest extends TestCase
 {
     public function testBootstrapPinsUmaskBeforeStartingTheDaemon(): void

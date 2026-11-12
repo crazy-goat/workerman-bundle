@@ -9,27 +9,13 @@ use Cron\CronExpression;
 final class TriggerFactory
 {
     /**
-     * Sets the trigger frequency.
-     *
-     * Supported frequency formats:
-     *
-     *  * An integer, or a string of only digits such as '60', to define the frequency as a number of seconds;
-     *  * An ISO8601 datetime format;
-     *  * An ISO8601 duration format;
-     *  * A relative date format as supported by \DateInterval;
-     *  * A \DateInterval instance;
-     *  * A \DateTimeImmutable instance;
-     *  * A cron expression.
-     *
      * @see https://en.wikipedia.org/wiki/ISO_8601#Durations
      * @see https://www.php.net/manual/en/dateinterval.createfromdatestring.php
      * @see https://github.com/dragonmantank/cron-expression
-     *
      * @throws \InvalidArgumentException
      */
     public static function create(string|int|\DateInterval|\DateTimeImmutable $expression, int $jitter = 0): TriggerInterface
     {
-        // #[AsTask] and quoted YAML values always give a string.
         if (is_string($expression) && preg_match('/^\d+$/', $expression) === 1) {
             $expression = (int) $expression;
         }

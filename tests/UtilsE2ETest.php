@@ -6,12 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * E2E tests for Utils::reload().
- *
- * These tests verify that Utils::reload() actually sends a SIGUSR1 signal
- * in a real subprocess context (not just within the same process).
- */
 final class UtilsE2ETest extends TestCase
 {
     private string $tempDir;

@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Test\App\Kernel;
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class TestPortsTest extends TestCase
@@ -92,9 +93,7 @@ final class TestPortsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider invalidPortProvider
-     */
+    #[DataProvider('invalidPortProvider')]
     public function testRejectsAnInvalidPort(string $value): void
     {
         \putenv('WMB_PORT_HTTP=' . $value);
@@ -215,10 +214,6 @@ final class TestPortsTest extends TestCase
         self::assertSame('http://[::1]:8888/response_test', TestPorts::url(TestPorts::http(), '/response_test'));
     }
 
-    /**
-     * fsockopen() rejects a bare IPv6 literal; the value connectHost() returns
-     * must be usable by the readiness probe and every raw-socket test client.
-     */
     public function testConnectHostIsUsableWithFsockopenOnIpv6(): void
     {
         $server = @\stream_socket_server('tcp://[::1]:0', $errorCode, $errorMessage);
@@ -274,9 +269,7 @@ final class TestPortsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider outOfRangePortProvider
-     */
+    #[DataProvider('outOfRangePortProvider')]
     public function testHelpersRejectAnOutOfRangePort(int $port): void
     {
         $this->expectException(\InvalidArgumentException::class);

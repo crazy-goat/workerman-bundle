@@ -4,18 +4,9 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-/**
- * Drives `bin/check-upgrade-exceptions.php` as a subprocess (issue #817).
- *
- * The script is the single source of truth for the rule "the
- * exception-hierarchy tree in UPGRADE.md matches the types declared in
- * src/Exception/", and `composer lint` runs it directly — so the pre-push
- * hook and the CI Lint job enforce exactly what these tests assert. The
- * passing case runs against the real tree; every failure scenario runs
- * against a synthetic fixture in a throw-away sandbox.
- *
- * @coversNothing
- */
+use PHPUnit\Framework\Attributes\CoversNothing;
+
+#[CoversNothing]
 final class UpgradeExceptionsLintTest extends LintScriptTestCase
 {
     protected function getScriptName(): string
@@ -146,12 +137,6 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('no exception-hierarchy tree', $result['err']);
     }
 
-    /**
-     * Issue #1045: the `| Before | After |` table names exception types
-     * with no check — a table entry that declares no type in src/Exception/
-     * must fail the gate, while leading-backslash (external) entries are
-     * ignored.
-     */
     public function testATableNamingAnUndeclaredTypeFails(): void
     {
         $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
@@ -176,11 +161,6 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
     }
 
-    /**
-     * Issue #1045: per-version prose and the PHP examples are covered too —
-     * a backtick-quoted name, a `use` import and a `catch` clause naming an
-     * undeclared type must each fail the gate.
-     */
     public function testProseAndExampleNamingAnUndeclaredTypeFails(): void
     {
         $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
@@ -212,13 +192,6 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('GhostException is named in UPGRADE.md but declares no type in src/Exception', $result['err']);
     }
 
-    /**
-     * Issue #1045: external references stay out of the gate — a
-     * leading-backslash type (PHP built-ins like `\RuntimeException`) and
-     * the bare word `Exception` (the namespace name, not a type) must not
-     * fail, even next to a fenced block whose closing fence could shift a
-     * naive backtick-span pairing.
-     */
     public function testExternalTypesInTableAndProseAreIgnored(): void
     {
         $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
@@ -332,11 +305,6 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
 
     public function testAnEmptyRootValueIsAUsageError(): void
     {
-        // Regression test for issue #1044: substr('--root=', 7) yields ''
-        // and realpath('') is the working directory, so the gate silently
-        // ran against the wrong tree. The sandbox doubles as the script's
-        // cwd and holds a valid fixture, so the old code would have exited
-        // 0 here instead of rejecting the empty value.
         $this->writeFixture(
             ['BaseException' => "abstract class BaseException extends \\RuntimeException\n{\n}\n"],
             'BaseException (extends \RuntimeException)',
@@ -368,7 +336,7 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
     }
 
     /**
-     * @param array<string, string> $exceptions class name => class body
+     * @param array<string, string> $exceptions
      */
     private function writeFixture(array $exceptions, string $tree): void
     {
@@ -405,9 +373,6 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
     }
 
     /**
-     * Runs the script against the sandbox and asserts it failed with exit
-     * code 1.
-     *
      * @return array{code: int, out: string, err: string}
      */
     private function runChecked(): array

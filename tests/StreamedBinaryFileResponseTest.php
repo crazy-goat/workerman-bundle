@@ -59,7 +59,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', 'Hello, World!');
         $response = new StreamedBinaryFileResponse($testFile);
 
-        // Set Content-Type before prepare() to avoid MIME type detection dependency
         $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
@@ -72,7 +71,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.html', '<html><body>Hello</body></html>');
         $response = new StreamedBinaryFileResponse($testFile);
 
-        // Set Content-Type before prepare() to avoid MIME type detection dependency
         $response->headers->set('Content-Type', 'text/html');
         $response->prepare($this->createRequest());
 
@@ -105,7 +103,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', $content);
         $response = new StreamedBinaryFileResponse($testFile);
 
-        // Set Content-Type before prepare() to avoid MIME type detection dependency
         $response->headers->set('Content-Type', 'text/plain');
         $response->prepare($this->createRequest());
 
@@ -187,9 +184,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
         $testFile = $this->createFixtureFile('test.txt', 'content');
         $response = new StreamedBinaryFileResponse($testFile);
 
-        // Symfony 6.4 throws LogicException here, 7+ throws InvalidArgumentException
-        // (a LogicException subclass), so the parent class covers both; the message
-        // fragment pins it to the chunk-size validation, not just any LogicException.
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('cannot be less than 1');
         $response->setChunkSize(0);
@@ -221,7 +215,6 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
         $this->assertFileExists($testFile);
 
-        // Capture output from sendContent()
         ob_start();
         $response->sendContent();
         ob_end_clean();
@@ -259,7 +252,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     public function testSendContentOutputsCorrectLengthForLargeFile(): void
     {
-        $content = \str_repeat("ABCDEFGHIJ\n", 2000); // ~22KB
+        $content = \str_repeat("ABCDEFGHIJ\n", 2000);
         $testFile = $this->createFixtureFile('large.txt', $content);
         $response = new StreamedBinaryFileResponse($testFile);
 
@@ -274,7 +267,7 @@ final class StreamedBinaryFileResponseTest extends TestCase
 
     public function testPrepareSetsContentLengthForLargeFile(): void
     {
-        $content = \str_repeat("0123456789\n", 5000); // ~55KB
+        $content = \str_repeat("0123456789\n", 5000);
         $testFile = $this->createFixtureFile('big.txt', $content);
         $response = new StreamedBinaryFileResponse($testFile);
 

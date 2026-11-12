@@ -13,49 +13,19 @@ use Workerman\Worker;
 
 final class RequestConverter
 {
-    /**
-     * Security-hardened HTTP method pattern: only uppercase ASCII letters allowed.
-     * This is stricter than RFC 7230 (which allows digits and special characters
-     * in tokens) to minimise the attack surface for method-based routing bypasses.
-     */
     private const METHOD_REGEX = '/^[A-Z]+$/';
     private const MAX_METHOD_LENGTH = 32;
 
-    /**
-     * Every byte rejected in header values: {0-8, 10-31, 127}. TAB (0x09) and
-     * all other bytes are accepted. Listed byte-by-byte because strcspn()
-     * takes a literal mask, not a range.
-     *
-     * Single source of truth: RequestConverterBench::CONTROL_CHAR_MASK must
-     * mirror this constant (pinned by the benchmark-mask equality test).
-     */
     private const HEADER_VALUE_CONTROL_CHARS = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0A\x0B\x0C\x0D\x0E\x0F"
         . "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
 
-    /**
-     * Number of distinct underscore header names logged per worker before
-     * further names are suppressed. The names come straight off the wire, so
-     * this constant — not client input — bounds both the static map's memory
-     * and the number of log lines written by logDroppedUnderscoreHeader().
-     */
     private const MAX_LOGGED_UNDERSCORE_HEADERS = 64;
 
-    /** @var array<string, true> Header names already logged in this worker. */
+    /** @var array<string, true> */
     private static array $loggedUnderscoreHeaders = [];
 
-    /**
-     * True once MAX_LOGGED_UNDERSCORE_HEADERS distinct names were logged and
-     * further names are suppressed. Kept out of the map so client-supplied
-     * header names can never collide with bookkeeping keys.
-     */
     private static bool $underscoreHeaderLogSuppressed = false;
 
-    /**
-     * Validates that a URI does not contain control characters.
-     *
-     * Control characters (\x00-\x1F, \x7F) in the URI enable log forging,
-     * response splitting, and bypass of URI-based access checks.
-     */
     private static function validateUri(string $uri): void
     {
         if (preg_match('/[\x00-\x1F\x7F]/', $uri)) {
@@ -65,12 +35,6 @@ final class RequestConverter
         }
     }
 
-    /**
-     * Validates that an HTTP method conforms to RFC 7230 token format.
-     *
-     * Only uppercase ASCII letters are allowed. Length is limited to prevent
-     * abuse through oversized method tokens.
-     */
     private static function validateMethod(string $method): void
     {
         if (\strlen($method) > self::MAX_METHOD_LENGTH) {
@@ -92,8 +56,6 @@ final class RequestConverter
         $files = $rawRequest->file() ?? [];
         $post = $rawRequest->post();
 
-        // Fast-path: most requests carry no files — skip validation
-        // and processing to keep the hot path lean.
         if ($files !== []) {
             $files = self::processFiles($files);
         }
@@ -124,11 +86,6 @@ final class RequestConverter
     }
 
     /**
-     * Detect form-data content type characteristics from the Content-Type header.
-     *
-     * Determines whether the request body is form-urlencoded and/or multipart,
-     * which controls POST bag population and raw body consumption.
-     *
      * @return array{isMultipart: bool, isFormData: bool}
      */
     private static function detectFormData(string $contentType): array
@@ -144,13 +101,6 @@ final class RequestConverter
     }
 
     /**
-     * Build the $_SERVER-style array from a Workerman request.
-     *
-     * Constructs the base server bag with REQUEST_URI, REQUEST_METHOD,
-     * SERVER_PROTOCOL, connection metadata, QUERY_STRING, request timing,
-     * and HTTPS detection.
-     *
-     *
      * @return array<string, float|int|string>
      */
     private static function buildServerBag(
@@ -181,24 +131,7 @@ final class RequestConverter
     }
 
     /**
-     * Build server headers from Workerman request with security hardening.
-     *
-     * Uses Workerman's parsed headers as the base (includes middleware-added headers),
-     * and only falls back to raw header parsing to detect duplicate header values
-     * for special handling:
-     *
-     * - Cookie: multiple header values joined with '; ' per RFC 6265
-     * - Host, Content-Length, Authorization: only the first value is used (duplicates discarded)
-     * - All other headers: joined with ', ' per RFC 7230
-     * - Header values containing control characters are rejected
-     * - Header names containing underscores are discarded because PHP's server
-     *   variable convention maps both dashes and underscores to underscores
-     * - Header names containing whitespace (obs-fold / space-padded) are
-     *   discarded so no `$_SERVER` key with a literal space is forwarded
-     *   (RFC 7230 §3.2.4)
-     *
      * @param array<string, float|int|string> $server
-     *
      * @return array<string, float|int|string>
      */
     private static function buildServerHeaders(\Workerman\Protocols\Http\Request $rawRequest, array $server): array
@@ -212,7 +145,6 @@ final class RequestConverter
             $name = (string) $name;
             $nameLower = \strtolower($name);
 
-            // Validate header value for control characters
             $stringValue = (string) $value;
             if (\strcspn($stringValue, self::HEADER_VALUE_CONTROL_CHARS) < \strlen($stringValue)) {
                 throw new MalformedRequestException(
@@ -225,30 +157,19 @@ final class RequestConverter
                 continue;
             }
 
-            // RFC 7230 §3.2.4: obs-fold continuation lines (a leading space)
-            // and other whitespace-padded names must not be forwarded under a
-            // $_SERVER key containing a literal space. A header field-name is a
-            // token and may never contain whitespace, so drop any name carrying a
-            // space or tab (leading, trailing or internal) — e.g. a Workerman
-            // " x-fold" key would otherwise become the literal "HTTP_ X_FOLD".
             if (\strpbrk($name, " \t") !== false) {
                 continue;
             }
 
             $key = 'HTTP_' . \strtoupper(\str_replace('-', '_', $name));
 
-            // Check if this header had duplicate values in the raw request
             $originalValues = $rawHeaders[$nameLower] ?? null;
             $hadDuplicates = $originalValues !== null && \count($originalValues) > 1;
 
             if ($hadDuplicates) {
                 $server[$key] = match ($nameLower) {
-                    // RFC 6265: multiple Cookie header values must be joined with '; '
                     'cookie' => \implode('; ', $originalValues),
-                    // Security-sensitive headers: only the first value is meaningful
-                    // Transfer-encoding is also protected against TE/TE smuggling
                     'host', 'content-length', 'authorization', 'transfer-encoding' => $originalValues[0],
-                    // Standard HTTP behavior: join with ', ' per RFC 7230
                     default => \implode(', ', $originalValues),
                 };
             } else {
@@ -256,7 +177,6 @@ final class RequestConverter
             }
         }
 
-        // Content-Type, Content-Length, Content-MD5 use CGI convention (no HTTP_ prefix)
         foreach (['CONTENT_TYPE', 'CONTENT_LENGTH', 'CONTENT_MD5'] as $specialHeader) {
             $httpKey = 'HTTP_' . $specialHeader;
             if (isset($server[$httpKey])) {
@@ -268,14 +188,6 @@ final class RequestConverter
         return $server;
     }
 
-    /**
-     * Log an underscore-containing header once per worker before dropping it.
-     *
-     * Bounded by a constant: at most MAX_LOGGED_UNDERSCORE_HEADERS distinct
-     * names are recorded and logged per worker, followed by a single
-     * suppression notice. Unauthenticated clients cannot grow the static map
-     * or the log volume without limit.
-     */
     private static function logDroppedUnderscoreHeader(string $name): void
     {
         $nameLower = \strtolower($name);
@@ -299,11 +211,6 @@ final class RequestConverter
         ));
     }
 
-    /**
-     * Write the message through Workerman's log, falling back to error_log
-     * when conversion happens outside a running Worker or no log file is
-     * configured.
-     */
     private static function writeDroppedHeaderLog(string $message): void
     {
         if (Worker::$logFile === '') {
@@ -320,21 +227,6 @@ final class RequestConverter
     }
 
     /**
-     * Decide whether the raw head must be re-parsed for duplicate header lines.
-     *
-     * Workerman's header() map holds one entry per distinct header name, so
-     * its size (minus any names middleware added via setHeader()) can only
-     * equal the raw header-line count when no line was skipped (colon-less
-     * garbage, CR-only lines) and no name occurred twice. rawHead() never
-     * ends with CRLF and cannot contain an empty line, so the CRLF count is
-     * exactly the number of lines after the request line. Names that differ
-     * from their trim() (obs-fold continuation lines, space-before-colon)
-     * also force a re-parse: parseRawHeaderLines() trims names while
-     * Workerman does not, so two such lines can collide into a duplicate
-     * that the distinct-key count alone would not reveal. The check may
-     * return true when there are no duplicates (false positive), but never
-     * false when duplicates exist.
-     *
      * @param array<array-key, mixed> $workermanHeaders
      */
     private static function rawHeadMayHaveDuplicates(
@@ -359,11 +251,6 @@ final class RequestConverter
     }
 
     /**
-     * Parse raw HTTP headers into name => list of values.
-     *
-     * The request line (first line of the head) is skipped.
-     * Header names are returned in lowercase.
-     *
      * @return array<string, list<string>>
      */
     private static function parseRawHeaderLines(string $rawHead): array
@@ -388,25 +275,7 @@ final class RequestConverter
     }
 
     /**
-     * Parse cookies from the server bag's HTTP_COOKIE value.
-     *
-     * This replaces Workerman's built-in cookie() call to ensure correct
-     * handling when duplicate Cookie headers are present (see security issue #217).
-     *
-     * Values are URL-decoded after splitting on ';' and '=' with rawurldecode()
-     * semantics, mirroring PHP's SAPI: PHP populates $_COOKIE via
-     * php_raw_url_decode(), so %XX sequences are decoded but a literal '+' is
-     * preserved (it does not become a space — see docs/security.md). Decoding
-     * must never run before splitting, or an encoded '%3B' in a value would be
-     * reinterpreted as a cookie separator and reintroduce the smuggling class
-     * closed by #217. Cookie names are not decoded, matching PHP.
-     *
-     * Unlike PHP's SAPI, the loop is not capped by max_input_vars: every
-     * pair in the header is registered even past PHP's default limit of
-     * 1000 (an intentional deviation — see docs/security.md).
-     *
      * @param array<string, mixed> $server
-     *
      * @return array<string, string>
      */
     private static function parseCookiesFromServerBag(array $server): array
@@ -436,24 +305,9 @@ final class RequestConverter
     }
 
     /**
-     * Recursively convert Workerman's $_FILES-style arrays to UploadedFile
-     * objects, validating the structure in the same single traversal.
-     *
-     * Workerman returns nested arrays for multiple file uploads (e.g., files[]
-     * or documents[0]), but Symfony's Request expects UploadedFile objects in
-     * the files ParameterBag.
-     *
-     * Shape recognition (isSingleFileEntry, isFileList) and error-message
-     * construction are delegated to FileUploadValidator so there is exactly
-     * one source of truth for what a valid upload looks like. This replaces
-     * the former two-pass design where validate() walked the structure first
-     * and processFiles() walked it again.
-     *
      * @param array<string, mixed> $files
-     *
      * @return array<string, mixed>
-     *
-     * @throws FileUploadValidationException if file structure is malformed
+     * @throws FileUploadValidationException
      */
     private static function processFiles(array $files): array
     {
@@ -466,15 +320,7 @@ final class RequestConverter
     }
 
     /**
-     * Process a single node of the upload tree: validate its shape and
-     * convert it to an UploadedFile (leaf) or recurse (container).
-     *
-     * @param string $fieldName The dotted field path for error messages
-     * @param mixed  $value     The node value from the files array
-     *
-     * @return mixed UploadedFile for a leaf, array for a container
-     *
-     * @throws FileUploadValidationException if the structure is malformed
+     * @throws FileUploadValidationException
      */
     private static function processFileNode(string $fieldName, mixed $value): mixed
     {
@@ -499,12 +345,6 @@ final class RequestConverter
             return self::processFileEntry($fieldName, $value);
         }
 
-        // Nested associative container — recurse into each sub-field.
-        // This mirrors validateNestedAssociative: each child must be an
-        // array, and must itself be a file list, a single file entry, or
-        // a nested container. A child that is an array but none of these
-        // is an unrecognized structure; a non-array child is "expected
-        // array".
         $nested = [];
         foreach ($value as $subKey => $subValue) {
             $nestedFieldName = $fieldName . '[' . $subKey . ']';
@@ -533,13 +373,8 @@ final class RequestConverter
     }
 
     /**
-     * Convert a single file entry array to an UploadedFile, after asserting
-     * all required fields are present.
-     *
-     * @param string               $fieldName The form field name
-     * @param array<string, mixed> $file      The file entry array
-     *
-     * @throws FileUploadValidationException if required fields are missing
+     * @param array<string, mixed> $file
+     * @throws FileUploadValidationException
      */
     private static function processFileEntry(string $fieldName, array $file): UploadedFile
     {

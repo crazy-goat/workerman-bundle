@@ -7,13 +7,9 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Guards issue #1028: every real HTTP client in tests/ carries a connect
- * timeout and a total timeout, so a stalled response fails the test instead
- * of hanging the suite.
- */
 final class BoundedHttpClientTest extends TestCase
 {
     public function testCreateCarriesTimeouts(): void
@@ -53,9 +49,8 @@ final class BoundedHttpClientTest extends TestCase
 
     /**
      * @param array<string, mixed> $options
-     *
-     * @dataProvider unboundedOverrideProvider
      */
+    #[DataProvider('unboundedOverrideProvider')]
     public function testCreateRejectsAnOverrideThatRemovesABound(array $options): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -63,12 +58,6 @@ final class BoundedHttpClientTest extends TestCase
         BoundedHttpClient::create($options);
     }
 
-    /**
-     * A test or a lint check must fail when a client without timeouts is
-     * added (#1028): scan every tests/ file for a bare client construction
-     * and require both timeouts (or the shared factory); a raw
-     * curl_init() client needs CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT.
-     */
     public function testNoUnboundedHttpClientInTests(): void
     {
         $offenders = [];
@@ -80,13 +69,10 @@ final class BoundedHttpClientTest extends TestCase
                 continue;
             }
             $source = (string) file_get_contents($file->getPathname());
-            // A raw curl client needs both curl timeouts in the same file.
             if (str_contains($source, 'curl_init(')
                 && (!str_contains($source, 'CURLOPT_CONNECTTIMEOUT') || !str_contains($source, 'CURLOPT_TIMEOUT'))) {
                 $offenders[] = $file->getFilename() . ': curl_init() without CURLOPT_CONNECTTIMEOUT and CURLOPT_TIMEOUT';
             }
-            // The factory itself is the one place that builds a client
-            // from the shared options; testCreateCarriesTimeouts covers it.
             if ($file->getFilename() === 'BoundedHttpClient.php') {
                 continue;
             }
@@ -94,8 +80,6 @@ final class BoundedHttpClientTest extends TestCase
                 continue;
             }
             foreach ($matches[1] as $arguments) {
-                // Quoted keys: 'timeout' is a substring of connect_timeout,
-                // so a bare str_contains() would accept connect_timeout alone.
                 $bounded = str_contains($arguments, "'connect_timeout'") && str_contains($arguments, "'timeout'");
                 if (!$bounded) {
                     $offenders[] = $file->getFilename() . ': ' . trim($arguments);

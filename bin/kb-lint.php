@@ -2,60 +2,8 @@
 
 declare(strict_types=1);
 
-/**
- * Lints the subagent knowledge base under docs/helpers/.
- *
- * The knowledge base is read by every implementation and review subagent, so
- * it has to stay small, tagged and searchable. This script enforces that:
- * every entry carries machine-readable front matter, ids are unique, the tag
- * index is in sync with the entries, near-duplicates are reported, and the
- * per-file line budget is watched.
- *
- * Usage: php bin/kb-lint.php [options]
- *
- * Options:
- *   --fix               regenerate the tag index of every knowledge-base file
- *                       and normalise its trailing newline
- *   --json              machine-readable output (JSON on stdout)
- *   --root=DIR          repository root (default: the parent of bin/)
- *   --help              show this help
- *
- * Environment:
- *   KB_LINT_ROOT        same as --root=, overridden by it. The resolved root is
- *                       always printed, and using this variable is reported as a
- *                       warning — a lint whose target can be switched invisibly
- *                       is not a gate.
- *
- * Exit codes:
- *   0  clean (warnings may still be printed)
- *   1  lint failure (an error was found, or --fix was needed and not given)
- *   2  usage error
- *
- * Entry front matter — markdown has no per-section front matter, so an entry
- * carries a single-line HTML comment **immediately after** its `###` heading.
- * It renders as nothing and parses with one regex:
- *
- *     ### Some entry title
- *     <!-- kb: id=FAQ-012 date=2026-08-11 tags=http,head trigger="HEAD headers" hits=0 status=active -->
- *
- * Grammar: `<!-- kb:` + space-separated `key=value` pairs + `-->`, all on one
- * line. A value is either bare (no whitespace) or double-quoted. Required
- * keys: id, date, tags, trigger, hits, status. Optional: gate (mandatory for
- * `status=promoted`).
- *
- * Decay (the retro step applies it, this script reports it):
- *   - `promoted` — already encoded as a test or a rule: the body collapses to
- *     a one-liner plus `gate=` pointing at the check that replaced it.
- *   - `stale` — 0 hits in STALE_AFTER_CYCLES cycles: listed here, removed by
- *     the retro.
- *
- * Only the retro step writes to docs/helpers/; coder and review subagents
- * propose candidate entries in their reports. See docs/helpers/README.md.
- */
-
 const ROOT_ENV = 'KB_LINT_ROOT';
 
-/** Knowledge-base file (relative to the root) => id prefix of its entries. */
 const KB_FILES = [
     'docs/helpers/faq.md' => 'FAQ',
     'docs/helpers/decisions.md' => 'DEC',
@@ -65,34 +13,19 @@ const REQUIRED_KEYS = ['id', 'date', 'tags', 'trigger', 'hits', 'status'];
 const OPTIONAL_KEYS = ['gate'];
 const KNOWN_STATUSES = ['active', 'promoted', 'stale'];
 
-/** Advisory line budget per file; the generated tag index does not count. */
 const LINE_BUDGET = 300;
 
-/** A `promoted` entry is a pointer, not knowledge: at most this many body lines. */
 const PROMOTED_MAX_BODY_LINES = 2;
 
-/** An entry with 0 hits over this many cycles is `stale` and gets removed. */
 const STALE_AFTER_CYCLES = 20;
 
-/**
- * Near-duplicate detection: overlap coefficient |A ∩ B| / min(|A|, |B|) over
- * the normalised token sets of title + body. The overlap coefficient (not
- * Jaccard) is used on purpose — a short entry fully contained in a long one is
- * a duplicate even though Jaccard would score it low.
- */
 const DUPLICATE_THRESHOLD = 0.75;
 
-/**
- * A pair is compared only when the *larger* of the two entries reaches this
- * token count. Applying the minimum to both entries would skip exactly the
- * short-entry-inside-a-long-one case the overlap coefficient exists for.
- */
 const DUPLICATE_MIN_TOKENS = 15;
 
 const INDEX_START = '<!-- kb-index:start -->';
 const INDEX_END = '<!-- kb-index:end -->';
 
-/** Words carrying no topical signal, dropped before comparing two entries. */
 const STOP_WORDS = [
     'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'from', 'has', 'have', 'in', 'into',
     'is', 'it', 'its', 'no', 'not', 'of', 'on', 'or', 'that', 'the', 'this', 'to', 'was', 'were', 'when',
@@ -100,8 +33,6 @@ const STOP_WORDS = [
 ];
 
 /**
- * One knowledge-base entry.
- *
  * @phpstan-type Entry array{
  *     file: string,
  *     line: int,
@@ -125,8 +56,6 @@ function readLines(string $path): array
 }
 
 /**
- * Parses the single-line front-matter comment of an entry.
- *
  * @return array{pairs: array<string, string>, error: ?string}
  */
 function parseFrontMatter(string $line): array
@@ -159,7 +88,7 @@ function parseFrontMatter(string $line): array
             return ['pairs' => [], 'error' => 'malformed front matter: expected key=value at offset ' . $keyStart];
         }
 
-        $i++; // consume '='
+        $i++;
 
         if ($i < $length && $spec[$i] === '"') {
             $i++;
@@ -173,7 +102,7 @@ function parseFrontMatter(string $line): array
             }
 
             $value = substr($spec, $valueStart, $i - $valueStart);
-            $i++; // consume the closing quote
+            $i++;
         } else {
             $valueStart = $i;
             while ($i < $length && !ctype_space($spec[$i])) {
@@ -186,8 +115,6 @@ function parseFrontMatter(string $line): array
             return ['pairs' => [], 'error' => sprintf('duplicate front-matter key "%s"', $key)];
         }
 
-        // An HTML comment ends at its first "-->", whatever the quoting says, so
-        // a value containing one parses here but renders as visible text.
         if (str_contains($value, '-->')) {
             return ['pairs' => [], 'error' => sprintf('front-matter value for "%s" must not contain "-->"', $key)];
         }
@@ -199,12 +126,6 @@ function parseFrontMatter(string $line): array
 }
 
 /**
- * How many lines the generated index occupies, its scaffolding included.
- *
- * `writeIndex()` emits `## Tag index`, a blank line, the two markers and a
- * trailing blank line. All of that is generated, so none of it is charged to
- * the line budget.
- *
  * @param list<string> $lines
  * @param array{start: int, end: int, body: list<string>} $index
  */
@@ -230,8 +151,6 @@ function indexFootprint(array $lines, array $index): int
 }
 
 /**
- * Splits one knowledge-base file into entries and locates its tag index.
- *
  * @return array{
  *     entries: list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}>,
  *     errors: list<string>,
@@ -253,7 +172,7 @@ function parseFile(string $relative, string $absolute): array
     $inFence = false;
     $indexStart = null;
     $current = null;
-    /** @var list<string>|null $currentBody reference to the body of the entry being collected */
+    /** @var list<string>|null $currentBody */
     $currentBody = null;
 
     foreach ($lines as $offset => $line) {
@@ -278,8 +197,6 @@ function parseFile(string $relative, string $absolute): array
             }
 
             if ($index !== null) {
-                // --fix rewrites one block only, so a leftover would survive the
-                // next lint and silently contradict the regenerated index.
                 $errors[] = sprintf('%s:%d: more than one tag index block — keep exactly one', $relative, $number);
                 $indexStart = null;
 
@@ -352,7 +269,6 @@ function parseFile(string $relative, string $absolute): array
         $index['footprint'] = indexFootprint($lines, $index);
     }
 
-    // The front-matter line is part of the entry, not of its body.
     foreach ($entries as $key => $entry) {
         $body = $entry['body'];
         if ($body !== [] && str_starts_with(trim($body[0]), '<!--')) {
@@ -361,7 +277,6 @@ function parseFile(string $relative, string $absolute): array
         $entries[$key]['body'] = $body;
     }
 
-    // A file ending in a newline yields a trailing empty element; it is not a line.
     $lineCount = \count($lines);
     if ($lineCount > 0 && end($lines) === '') {
         $lineCount--;
@@ -379,7 +294,6 @@ function parseFile(string $relative, string $absolute): array
 
 /**
  * @param array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>} $entry
- *
  * @return list<string>
  */
 function validateEntry(array $entry, string $prefix): array
@@ -389,7 +303,7 @@ function validateEntry(array $entry, string $prefix): array
     $where = sprintf('%s:%d: "%s"', $entry['file'], $entry['line'], $entry['title']);
 
     if ($meta === []) {
-        return $errors; // the parse error was already reported
+        return $errors;
     }
 
     foreach (REQUIRED_KEYS as $key) {
@@ -474,10 +388,7 @@ function isIsoDate(string $value): bool
 }
 
 /**
- * Normalised token set of an entry, used for near-duplicate detection.
- *
  * @param array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>} $entry
- *
  * @return array<string, true>
  */
 function tokenSet(array $entry): array
@@ -512,10 +423,7 @@ function overlapCoefficient(array $a, array $b): float
 }
 
 /**
- * Renders the tag index body (the lines between the two markers).
- *
  * @param list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries
- *
  * @return list<string>
  */
 function renderIndex(array $entries): array
@@ -548,9 +456,6 @@ function renderIndex(array $entries): array
 }
 
 /**
- * Writes a freshly rendered tag index into a file, creating the section when
- * the markers are missing.
- *
  * @param list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries
  * @param array{start: int, end: int, body: list<string>, footprint: int}|null $index
  */
@@ -566,12 +471,6 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
     } else {
         $at = $firstSection !== null ? $firstSection - 1 : \count($lines);
 
-        // The heading must be separated from the preceding content by exactly
-        // one blank line, regardless of how many blank lines (or none) the
-        // input had there. Find the start of the blank run before the insertion
-        // point, drop it from the head slice, and let the separator below
-        // re-add exactly one. `$at` is kept for the tail slice so the dropped
-        // blanks are not re-emitted after the inserted section.
         $headEnd = $at;
         while ($headEnd > 0 && trim($lines[$headEnd - 1] ?? '') === '') {
             --$headEnd;
@@ -586,20 +485,9 @@ function writeIndex(string $absolute, array $entries, ?array $index, ?int $first
         $lines = [...\array_slice($lines, 0, $headEnd), ...$section, ...\array_slice($lines, $at)];
     }
 
-    // Normalise the write path to POSIX: exactly one trailing newline,
-    // whatever state the input was in. Only the write path changes; readLines()
-    // still exposes the input's trailing state to the parser.
     file_put_contents($absolute, rtrim(implode("\n", $lines), "\n") . "\n");
 }
 
-/**
- * Rewrites a file that does not end in exactly one LF newline.
- *
- * `writeIndex()` is only reached when the tag index is missing or out of sync,
- * so a file whose index is already correct would otherwise never be normalised
- * by `--fix` (issue #694). A file that already ends in exactly one newline is
- * left untouched, so no spurious rewrite happens.
- */
 function normalizeTrailingNewline(string $absolute): void
 {
     $contents = file_get_contents($absolute);
@@ -608,8 +496,6 @@ function normalizeTrailingNewline(string $absolute): void
         return;
     }
 
-    // Only LF files are normalised. Rewriting just the tail of a CRLF file
-    // would leave it with mixed line endings, and the knowledge base is LF-only.
     if (str_contains($contents, "\r")) {
         return;
     }
@@ -640,7 +526,6 @@ function printUsage(array $args): void
 
 /**
  * @param list<string> $argv
- *
  * @return array{fix: bool, json: bool, root: string, root_from_env: bool}
  */
 function parseArgs(array $argv): array
@@ -704,8 +589,6 @@ function main(array $options): int
     $errors = [];
     $warnings = [];
 
-    // Which tree was linted is part of the result: an environment variable that
-    // silently redirects the lint must never be invisible in its output.
     if ($options['root_from_env']) {
         $warnings[] = sprintf('root overridden via %s', ROOT_ENV);
     }
@@ -753,8 +636,6 @@ function main(array $options): int
             $allEntries[] = $entry;
         }
 
-        // The generated index is not knowledge, so neither it nor the heading and
-        // blank lines generated around it use up the budget.
         $indexLines = $parsed['index'] !== null ? $parsed['index']['footprint'] : 0;
         $budgeted = $parsed['lines'] - $indexLines;
 
@@ -768,8 +649,6 @@ function main(array $options): int
         }
 
         if ($parsed['index'] === null && $parsed['index_heading'] !== null) {
-            // --fix would splice a second heading next to this one, and the file would
-            // then lint clean (#838). Ask for a manual repair instead.
             $errors[] = sprintf(
                 '%s:%d: a "Tag index" heading but no index markers (add %s / %s below it, or remove the heading, then run --fix)',
                 $relative,
@@ -797,8 +676,6 @@ function main(array $options): int
             }
         }
 
-        // The index being in sync does not mean the file needs no fix: `--fix`
-        // also normalises the trailing newline (#694).
         if ($options['fix']) {
             normalizeTrailingNewline($absolute);
         }
@@ -812,8 +689,6 @@ function main(array $options): int
         ];
     }
 
-    // Near-duplicate detection across both files. Promoted entries are
-    // one-line pointers by design, so they never take part.
     $comparable = array_values(array_filter(
         $allEntries,
         static fn(array $entry): bool => ($entry['meta']['status'] ?? '') !== 'promoted',

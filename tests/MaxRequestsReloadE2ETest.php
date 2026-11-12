@@ -5,24 +5,13 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Util\Wait;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * E2E acceptance criteria for issue #934.
- *
- * Spawns one real Workerman worker with the max_requests reload strategy and
- * asserts that the worker PID really changes after the configured number of
- * requests — the missing link between a shouldReboot() verdict and a restarted
- * worker. The unit test proves the verdict sends SIGUSR1; this test proves the
- * signal restarts the worker.
- *
- * The server binds a free ephemeral port and never touches the shared test
- * daemon ports (8888/9999/9991, issue #868).
- *
  * @see https://github.com/crazy-goat/workerman-bundle/issues/934
- *
- * @group e2e
  */
+#[Group('e2e')]
 final class MaxRequestsReloadE2ETest extends TestCase
 {
     private const RUNNER = __DIR__ . '/Fixtures/max_requests_reload_e2e_runner.php';
@@ -151,9 +140,6 @@ final class MaxRequestsReloadE2ETest extends TestCase
 
         $status = \proc_get_status($process);
         if (!$ready || $status['running'] === false) {
-            // A live-but-silent child never closes its end of the pipe, so a
-            // blocking read would hang the suite instead of reporting the
-            // failure. Drain non-blocking, then stop the child before failing.
             \stream_set_blocking($pipes[1], false);
             \stream_set_blocking($pipes[2], false);
             $stderr = \stream_get_contents($pipes[2]) ?: '';

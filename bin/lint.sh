@@ -56,13 +56,14 @@ if [ "${LINT_SKIP_AUDIT:-0}" = 1 ]; then
 else
     step "composer audit" composer audit
 fi
-step "php-cs-fixer" vendor/bin/php-cs-fixer fix -v --dry-run --diff
+step "php-cs-fixer" vendor/bin/php-cs-fixer fix -vv --dry-run --diff
 step "phpstan" vendor/bin/phpstan analyse --no-progress
 step "rector" vendor/bin/rector process --dry-run
 step "kb-lint" php bin/kb-lint.php
 step "changelog" php bin/check-changelog.php
 step "exception-usage" php bin/check-exception-usage.php
 step "upgrade-exceptions" php bin/check-upgrade-exceptions.php
+step "test-annotations" php bin/check-test-annotations.php
 step "shellcheck" run_shellcheck
 step "hadolint" run_hadolint
 

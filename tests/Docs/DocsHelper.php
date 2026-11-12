@@ -13,9 +13,6 @@ use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\Config\Definition\PrototypedArrayNode;
 use Symfony\Component\Config\FileLocator;
 
-/**
- * Shared helpers for the tests that keep the user docs true (issue #878, section 5).
- */
 final class DocsHelper
 {
     public static function rootDir(): string
@@ -39,9 +36,7 @@ final class DocsHelper
     }
 
     /**
-     * The user pages: README.md and every Markdown file directly in docs/.
-     *
-     * @return list<string> paths relative to the project root
+     * @return list<string>
      */
     public static function userPages(): array
     {
@@ -53,9 +48,6 @@ final class DocsHelper
         return $pages;
     }
 
-    /**
-     * Build the config tree of the bundle.
-     */
     public static function configTree(): ArrayNode
     {
         $treeBuilder = new TreeBuilder('workerman');
@@ -71,9 +63,6 @@ final class DocsHelper
     }
 
     /**
-     * Every leaf of the config tree, keyed by its path (for example `reload_strategy.memory.gc_limit`).
-     * A list of servers is written `servers[]`. A list of plain values is a leaf too.
-     *
      * @return array<string, NodeInterface>
      */
     public static function configLeaves(): array
@@ -116,8 +105,6 @@ final class DocsHelper
     }
 
     /**
-     * The default of a leaf, as the strings a doc row must show.
-     *
      * @return list<string>
      */
     public static function defaultTokens(NodeInterface $node): array
@@ -138,9 +125,7 @@ final class DocsHelper
     }
 
     /**
-     * Fenced YAML blocks of a page that hold a `workerman:` root, also inside `when@<env>:`.
-     *
-     * @return list<array<mixed>> the parsed `workerman` configs
+     * @return list<array<mixed>>
      */
     public static function workermanConfigsFromYaml(string $yaml): array
     {
@@ -163,7 +148,7 @@ final class DocsHelper
     }
 
     /**
-     * @return list<string> the content of every ```yaml block
+     * @return list<string>
      */
     public static function yamlBlocks(string $markdown): array
     {

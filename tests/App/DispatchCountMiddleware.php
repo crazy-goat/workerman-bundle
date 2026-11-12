@@ -8,20 +8,6 @@ use CrazyGoat\WorkermanBundle\Http\Request;
 use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use Workerman\Protocols\Http\Response;
 
-/**
- * Counting middleware used by MiddlewareDispatchContractTest to assert the
- * cross-platform contract that the middleware pipeline dispatches each
- * middleware exactly once per HTTP request.
- *
- * Each __invoke increments a shared counter file under flock() so the parent
- * PHPUnit process can observe the dispatch count regardless of which forked
- * Workerman child handled the request. The current count is also exposed via
- * the X-Dispatch-Count response header for direct per-request inspection.
- *
- * The counter file path is injected by the test kernel as
- * %kernel.project_dir%/var/dispatch_count so it is shared between the
- * Workerman child processes and the PHPUnit parent process.
- */
 final readonly class DispatchCountMiddleware implements MiddlewareInterface
 {
     public function __construct(
@@ -39,10 +25,6 @@ final readonly class DispatchCountMiddleware implements MiddlewareInterface
         return $response;
     }
 
-    /**
-     * Atomically read-and-increment the shared counter under an exclusive
-     * flock(). Returns the post-increment value.
-     */
     private function increment(): int
     {
         $dir = dirname($this->counterFile);

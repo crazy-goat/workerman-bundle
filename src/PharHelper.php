@@ -9,9 +9,6 @@ namespace CrazyGoat\WorkermanBundle;
  */
 final class PharHelper
 {
-    /**
-     * Whether the current process is running from a PHAR archive.
-     */
     public static function isPhar(): bool
     {
         $pharPath = \Phar::running(false);
@@ -19,16 +16,6 @@ final class PharHelper
         return $pharPath !== '';
     }
 
-    /**
-     * Returns the writable runtime directory.
-     *
-     * In PHAR mode, this is the directory containing the PHAR file
-     * (or WORKERMAN_RUNTIME_DIR env var if set).
-     *
-     * In non-PHAR mode, this is the project directory.
-     *
-     * @param string $projectDir The project root directory (kernel.project_dir)
-     */
     public static function getRuntimeDir(string $projectDir): string
     {
         if (isset($_SERVER['WORKERMAN_RUNTIME_DIR']) && $_SERVER['WORKERMAN_RUNTIME_DIR'] !== '') {
@@ -42,17 +29,6 @@ final class PharHelper
         return \dirname(\Phar::running(false));
     }
 
-    /**
-     * Resolve a path relative to project_dir, replacing the project_dir
-     * prefix with runtime_dir when in PHAR mode.
-     *
-     * Only the exact project directory or a path inside it (followed by
-     * a "/") is rewritten: a sibling that merely shares the name prefix,
-     * e.g. "/application/..." with project_dir "/app", is left unchanged.
-     *
-     * Consolidates logic previously duplicated across Runner, KernelFactory,
-     * and ServerManager.
-     */
     public static function resolveRuntimePath(string $path, string $projectDir): string
     {
         $projectDir = rtrim($projectDir, '/');

@@ -15,15 +15,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 
-/**
- * Regression tests for issue #579: duplicate Content-Length on every file
- * download and on app-set Content-Length — response desync when values
- * conflict.
- *
- * Each test asserts on the actual bytes that would be written to the wire,
- * not on the Response object's header array, because the duplicate arises in
- * Workerman's encode()/__toString() at serialization time.
- */
 final class ContentLengthDesyncTest extends TestCase
 {
     private string $fixtureDir;
@@ -34,17 +25,12 @@ final class ContentLengthDesyncTest extends TestCase
         $this->fixtureDir = sys_get_temp_dir() . '/cld_' . uniqid();
         mkdir($this->fixtureDir, 0777, true);
 
-        // Anonymous TcpConnection subclass that captures every raw send()
-        // without touching a real socket. Mirrors the pattern used in
-        // BinaryFileResponseStrategyTest. Captured bytes are exposed via the
-        // public $captured property.
         $this->connection = new class extends TcpConnection {
             /** @var list<string> */
             public array $captured = [];
 
             public function __construct()
             {
-                // Bypass parent constructor — no socket needed.
             }
 
             public function send(mixed $sendBuffer, bool $raw = false): bool
@@ -77,25 +63,6 @@ final class ContentLengthDesyncTest extends TestCase
         }
     }
 
-    /**
-     * Path 1: BinaryFileResponse download — see
-     * testFileDownloadThroughEncodeEmitsSingleFramingHeaders for the
-     * end-to-end wire test using Http::encode() that asserts exactly one
-     * Content-Length and one Accept-Ranges on the wire plus the full body.
-     */
-
-    /**
-     * Path 2: ranged BinaryFileResponse — see
-     * testRangedFileDownloadThroughEncodeEmitsCorrectBodyRange for the
-     * end-to-end wire test that asserts status 206, single Content-Length,
-     * correct Content-Range value, and the requested byte range as body.
-     */
-
-    /**
-     * Path 3: small body where the app sets a Content-Length that DISAGREES
-     * with the actual body — must emit exactly one Content-Length matching
-     * the bytes actually sent.
-     */
     public function testSmallBodyWithDisagreeingAppContentLengthEmitsSingleCorrectValue(): void
     {
         $converter = $this->createConverter();
@@ -113,16 +80,10 @@ final class ContentLengthDesyncTest extends TestCase
             substr_count($head, 'Content-Length:'),
             'Small-body path must emit exactly one Content-Length',
         );
-        // Workerman computes Content-Length from the actual body (11 bytes),
-        // not from the stripped app-supplied value (5).
         $this->assertStringContainsString('Content-Length: 11', $head);
         $this->assertStringNotContainsString('Content-Length: 5', $head);
     }
 
-    /**
-     * Path 4: large body (> chunk size) — buildHeaderString writes its own
-     * Content-Length. The app-supplied Content-Length must already be gone.
-     */
     public function testLargeBodyPathEmitsSingleContentLength(): void
     {
         $converter = new ResponseConverter([
@@ -141,11 +102,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertStringContainsString('Content-Length: 4096', $wire);
     }
 
-    /**
-     * Path 5: StreamedResponse — uses Transfer-Encoding: chunked, must not
-     * emit Content-Length at all, even when the application sets its own
-     * Content-Length (which must be stripped so it cannot leak onto the wire).
-     */
     public function testStreamedResponseEmitsNoContentLength(): void
     {
         $converter = $this->createConverter();
@@ -164,10 +120,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame(1, substr_count($sent, 'Transfer-Encoding: chunked'));
     }
 
-    /**
-     * Set-Cookie with multiple values must still emit one line per cookie
-     * even after the single-value flattening transformation.
-     */
     public function testMultipleSetCookiesEmitOneLinePerCookie(): void
     {
         $converter = $this->createConverter();
@@ -185,10 +137,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertStringContainsString('b=2', $head);
     }
 
-    /**
-     * The transport-header strip must be explicit and catch any future header
-     * that encode() also sets. This guards the TRANSPORT_HEADERS list.
-     */
     public function testTransportHeadersListedExplicitly(): void
     {
         $reflection = new \ReflectionClass(ResponseConverter::class);
@@ -201,11 +149,6 @@ final class ContentLengthDesyncTest extends TestCase
         );
     }
 
-    /**
-     * A response with no body must still emit exactly one Content-Length,
-     * computed from the actual empty body. Covers the empty-body path that
-     * HEAD/204/304 responses share (Workerman emits Content-Length: 0).
-     */
     public function testEmptyBodyEmitsSingleZeroContentLength(): void
     {
         $converter = $this->createConverter();
@@ -223,10 +166,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertStringNotContainsString('Content-Length: 999', $head);
     }
 
-    /**
-     * A 304 Not Modified must not carry a body and must emit a consistent
-     * Content-Length.
-     */
     public function testNotModifiedEmitsSingleContentLength(): void
     {
         $converter = $this->createConverter();
@@ -245,13 +184,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertStringContainsString('ETag: "abc"', $head);
     }
 
-    /**
-     * A HEAD request with an application-provided Content-Length must emit no
-     * body and exactly one Content-Length: the app value (the length the
-     * corresponding GET would produce, RFC 9110 §9.3.2) — not the 0 the
-     * transport computes from the empty body (issue #643). Symfony's
-     * prepare() empties the body for HEAD but keeps the header.
-     */
     public function testHeadRequestEmitsAppContentLengthAndNoBody(): void
     {
         $converter = $this->createConverter();
@@ -269,15 +201,10 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertStringContainsString('Content-Length: 999', $output, 'HEAD must carry the app-provided length');
         $this->assertStringNotContainsString('Content-Length: 0', $output);
 
-        // No body after the head terminator.
         $parts = explode("\r\n\r\n", $output, 2);
         $this->assertSame('', $parts[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * A HEAD request without an application-provided Content-Length keeps the
-     * transport-computed value: exactly one Content-Length: 0.
-     */
     public function testHeadRequestWithoutAppContentLengthEmitsZero(): void
     {
         $converter = $this->createConverter();
@@ -294,12 +221,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $output, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * End-to-end wire test for ranged file download using Workerman's actual
-     * Http::encode(). Asserts on the bytes written to the connection: status
-     * 206, exactly one Content-Length: 100, Content-Range: bytes 0-99/5000,
-     * and the body is the requested 100-byte range from the fixture.
-     */
     public function testRangedFileDownloadThroughEncodeEmitsCorrectBodyRange(): void
     {
         $fixtureContent = str_repeat('y', 5000);
@@ -313,8 +234,6 @@ final class ContentLengthDesyncTest extends TestCase
 
         $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', 'GET');
 
-        // Drive the real Workerman serializer. For files < 2MB, encode() sends
-        // head + body in one send() call and returns ''.
         $return = Http::encode($workermanResponse, $this->connection);
         $this->assertSame('', $return, 'encode() should send inline for small files');
 
@@ -326,7 +245,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame(1, substr_count($wire, 'Content-Range:'), 'Exactly one Content-Range on the wire');
         $this->assertStringContainsString('Content-Range: bytes 0-99/5000', $wire, 'Content-Range value must match the requested range');
 
-        // Body after the head terminator must be the requested 100-byte range.
         $parts = explode("\r\n\r\n", $wire, 2);
         $this->assertSame(
             substr($fixtureContent, 0, 100),
@@ -335,11 +253,6 @@ final class ContentLengthDesyncTest extends TestCase
         );
     }
 
-    /**
-     * End-to-end wire test for plain file download using Workerman's actual
-     * Http::encode(). Asserts exactly one Content-Length and one Accept-Ranges
-     * on the wire, and the body is the full fixture content.
-     */
     public function testFileDownloadThroughEncodeEmitsSingleFramingHeaders(): void
     {
         $fixtureContent = str_repeat('z', 5000);
@@ -367,15 +280,6 @@ final class ContentLengthDesyncTest extends TestCase
         $this->assertSame($fixtureContent, $parts[1] ?? '', 'Body must be the full fixture content');
     }
 
-    /**
-     * End-to-end wire test for a HEAD request on a BinaryFileResponse using
-     * Workerman's actual Http::encode(). Symfony's prepare() sets
-     * Content-Length to the file size for HEAD (Range handling is GET-only);
-     * ResponseConverter preserves it for HEAD and BinaryFileResponseStrategy
-     * emits a bodyless HeadResponse instead of calling withFile(). Asserts:
-     * exactly one Content-Length: <fileSize>, no body, status 200
-     * (RFC 9110 §9.3.2 — issue #683).
-     */
     public function testHeadBinaryFileResponseEmitsFileSizeContentLengthAndNoBody(): void
     {
         $fixtureContent = str_repeat('x', 5000);
@@ -389,8 +293,6 @@ final class ContentLengthDesyncTest extends TestCase
 
         $workermanResponse = $converter->convert($binaryResponse, $this->connection, '1.1', 'HEAD');
 
-        // For a non-file (HeadResponse) response, Http::encode() returns the
-        // serialized string instead of sending it via $connection->send().
         $wire = Http::encode($workermanResponse, $this->connection);
 
         $this->assertStringContainsString('HTTP/1.1 200 OK', $wire);
@@ -436,9 +338,6 @@ final class ContentLengthDesyncTest extends TestCase
      */
     private function getSent(): array
     {
-        // The anonymous TcpConnection subclass exposes a public $captured
-        // property that is not declared on TcpConnection itself, so we read it
-        // via reflection to satisfy PHPStan.
         $reflection = (new \ReflectionObject($this->connection))->getProperty('captured');
 
         /** @var list<string> $value */

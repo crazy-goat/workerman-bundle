@@ -6,12 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
-/**
- * Tests for StatusFileReader file polling and status file path behavior.
- */
 final class StatusFileReaderTest extends TestCase
 {
     private function createEmptyConfigLoader(): ConfigLoader
@@ -37,9 +35,6 @@ final class StatusFileReaderTest extends TestCase
         return new StatusFileReader($configLoader);
     }
 
-    /**
-     * Invoke the private waitForFile method via reflection.
-     */
     private function invokeWaitForFile(StatusFileReader $reader, string $filePath, int $timeout): bool
     {
         $reflection = new ReflectionClass($reader);
@@ -48,9 +43,6 @@ final class StatusFileReaderTest extends TestCase
         return $method->invoke($reader, $filePath, $timeout);
     }
 
-    /**
-     * Invoke the private getStatusTimeout method via reflection.
-     */
     private function invokeGetStatusTimeout(StatusFileReader $reader): int
     {
         $reflection = new ReflectionClass($reader);
@@ -58,8 +50,6 @@ final class StatusFileReaderTest extends TestCase
 
         return $method->invoke($reader);
     }
-
-    // ----- waitForFile tests -----
 
     public function testWaitForFileReturnsTrueWhenFileExists(): void
     {
@@ -111,9 +101,7 @@ final class StatusFileReaderTest extends TestCase
         $this->assertLessThan(2, $elapsed, 'Should not exceed timeout by much');
     }
 
-    /**
-     * @requires extension pcntl
-     */
+    #[RequiresPhpExtension('pcntl')]
     public function testWaitForFileReturnsTrueWhenFileAppearsDuringPolling(): void
     {
         $reader = $this->createReader($this->createEmptyConfigLoader());
@@ -125,8 +113,6 @@ final class StatusFileReaderTest extends TestCase
 
         $pid = pcntl_fork();
         if ($pid === 0) {
-            // Deliberate pacing delay before creating the file — tests that
-            // waitForFile polls instead of checking once. Not a condition wait.
             usleep(100_000);
             file_put_contents($tempFile, 'status data');
             posix_kill(posix_getpid(), SIGKILL);
@@ -146,8 +132,6 @@ final class StatusFileReaderTest extends TestCase
         $this->assertGreaterThan(0.05, $elapsed, 'Should take at least 50ms (file created at 100ms)');
         $this->assertLessThan(3, $elapsed, 'Should complete well within 5s timeout');
     }
-
-    // ----- getStatusTimeout tests -----
 
     public function testGetStatusTimeoutDefault(): void
     {

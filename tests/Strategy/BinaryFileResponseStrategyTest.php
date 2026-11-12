@@ -6,6 +6,7 @@ namespace CrazyGoat\WorkermanBundle\Test\Strategy;
 
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\BinaryFileResponseStrategy;
 use CrazyGoat\WorkermanBundle\Http\Response\Strategy\HeadResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -25,7 +26,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->connection = new class extends TcpConnection {
             public function __construct()
             {
-                // Bypass parent constructor — we only need the public properties.
             }
         };
     }
@@ -140,10 +140,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNotNull($workermanResponse->file);
     }
 
-    /**
-     * Issue #902: Symfony's default maxlen is -1 ("to the end"). Workerman treats any
-     * non-zero length as a range, so the strategy must pass 0.
-     */
     public function testConvertMapsDefaultMaxlenToZeroLength(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -212,7 +208,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertFileExists($tempFile);
         $this->assertNotNull($workermanResponse->file);
 
-        // Simulate buffer drain (primary cleanup path)
         $onBufferDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($onBufferDrain, 'onBufferDrain callback should be registered');
         assert(is_callable($onBufferDrain));
@@ -240,7 +235,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             'Content-Type' => ['text/plain'],
         ], $this->connection, '1.1');
 
-        // Simulate connection close without buffer drain (early disconnect)
         $onCloseCallback = $this->connection->onClose;
         $this->assertNotNull($onCloseCallback, 'onClose fallback callback should be registered');
         assert(is_callable($onCloseCallback));
@@ -270,7 +264,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             'Content-Type' => ['text/plain'],
         ], $this->connection, '1.1');
 
-        // Trigger via onClose fallback
         $onCloseCallback = $this->connection->onClose;
         $onCloseCallback($this->connection);
 
@@ -296,12 +289,10 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Simulate buffer drain (primary path)
         $onBufferDrain = $this->connection->onBufferDrain;
         assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
-        // After buffer drain, onClose should be restored to the original
         $this->assertSame(
             $existingOnClose,
             $this->connection->onClose,
@@ -366,7 +357,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Simulate buffer drain
         $onBufferDrain = $this->connection->onBufferDrain;
         $onBufferDrain($this->connection);
 
@@ -440,7 +430,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Fire buffer drain
         $onBufferDrain = $this->connection->onBufferDrain;
         assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
@@ -467,7 +456,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Fire onClose (early disconnect)
         $onCloseCallback = $this->connection->onClose;
         assert(is_callable($onCloseCallback));
         $onCloseCallback($this->connection);
@@ -527,14 +515,12 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Fire buffer drain (deletes file)
         $onBufferDrain = $this->connection->onBufferDrain;
         assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
 
         $this->assertFileDoesNotExist($tempFile);
 
-        // onClose was already restored to null, so no second cleanup runs
         $this->assertNull($this->connection->onClose);
     }
 
@@ -618,7 +604,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $onCloseCallback = $this->connection->onClose;
         assert(is_callable($onCloseCallback));
 
-        // Suppress PHP warning from unlink() on read-only directory
         set_error_handler(static fn(): true => true);
         try {
             $onCloseCallback($this->connection);
@@ -626,7 +611,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             restore_error_handler();
         }
 
-        // Restore permissions for cleanup
         chmod($dir, 0777);
         @unlink($tempFile);
         rmdir($dir);
@@ -649,7 +633,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $strategy->convert($binaryResponse, [], $this->connection, '1.1');
 
-        // Trigger via buffer drain (primary path)
         $onBufferDrain = $this->connection->onBufferDrain;
         assert(is_callable($onBufferDrain));
         $onBufferDrain($this->connection);
@@ -672,7 +655,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $connection = new class extends TcpConnection {
                 public function __construct()
                 {
-                    // Bypass parent constructor — we only need the public properties.
                 }
             };
 
@@ -682,7 +664,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         try {
             gc_disable();
 
-            // Warmup: absorb first-time class loading / allocator setup.
             $convert();
             $baselineMemory = memory_get_usage();
             $baselineRoots = gc_status()['roots'];
@@ -691,9 +672,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
                 $convert();
             }
 
-            // With no cycles, reference counting alone reclaims everything:
-            // the GC root buffer must stay flat and memory must not grow
-            // linearly (~2.4 KB per download in the old by-ref-capture code).
             $this->assertSame($baselineRoots, gc_status()['roots'], 'no new GC roots may accumulate per download');
             $this->assertLessThan($baselineMemory + 131072, memory_get_usage(), 'memory must not grow linearly per download');
         } finally {
@@ -727,9 +705,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
                     $firstDrain = $this->connection->onBufferDrain;
                     $firstClose = $this->connection->onClose;
                 } else {
-                    // A second pending download must not wrap the handlers
-                    // again — one shared pair per connection, not a chain of
-                    // depth K.
                     $this->assertSame($firstDrain, $this->connection->onBufferDrain);
                     $this->assertSame($firstClose, $this->connection->onClose);
                 }
@@ -740,7 +715,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             assert(is_callable($firstDrain));
             $firstDrain($this->connection);
 
-            // One drain deleted every pending temp file exactly once.
             foreach ($tempFiles as $tempFile) {
                 $this->assertFileDoesNotExist($tempFile);
             }
@@ -772,20 +746,16 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $deleteFlag->setValue($response, true);
         }
 
-        // First download drains and self-removes.
         $strategy->convert($responses[0], [], $this->connection, '1.1');
         $staleDrain = $this->connection->onBufferDrain;
         assert(is_callable($staleDrain));
         $staleDrain($this->connection);
         $this->assertFileDoesNotExist($firstFile);
 
-        // Second download on the same keep-alive connection installs a fresh pair.
         $strategy->convert($responses[1], [], $this->connection, '1.1');
         $currentDrain = $this->connection->onBufferDrain;
         $this->assertNotNull($currentDrain);
 
-        // Re-invoking the stale (already-fired) handler must be a no-op: it
-        // must not delete the newer download's file nor clobber its handler.
         $staleDrain($this->connection);
         $this->assertSame($currentDrain, $this->connection->onBufferDrain, 'stale handler must not clobber the active one');
         $this->assertFileExists($secondFile, 'stale handler must not delete a newer download\'s pending file');
@@ -845,8 +815,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
                 $strategy->convert($binaryResponse, [], $this->connection, '1.1');
             }
 
-            // Early disconnect before any drain: the close fallback must
-            // delete every pending file exactly once.
             $onClose = $this->connection->onClose;
             $this->assertNotNull($onClose);
             assert(is_callable($onClose));
@@ -866,11 +834,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         }
     }
 
-    /**
-     * A HEAD request must not stream the file body (RFC 9110 §9.3.2). The
-     * strategy emits a bodyless HeadResponse carrying the file size as
-     * Content-Length and never calls withFile() (issue #683).
-     */
     public function testHeadRequestEmitsBodylessResponseWithFileSizeContentLength(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -896,11 +859,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * A HEAD request for a temp-file BinaryFileResponse must not read the
-     * temp file into memory (the GET path buffers it via withBody()) — only
-     * the size is needed for the bodyless HeadResponse (issue #683).
-     */
     public function testHeadRequestWithTempFileDoesNotReadBodyAndEmitsTempSize(): void
     {
         if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
@@ -931,12 +889,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * A HEAD request on a deleteFileAfterSend file must delete the file
-     * immediately: the GET path's onBufferDrain cleanup would not fire for a
-     * bodyless response, so a deferred delete would leak on keep-alive
-     * connections. No async cleanup callbacks are installed (issue #683).
-     */
     public function testHeadRequestWithDeleteFileAfterSendDeletesImmediately(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -963,11 +915,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNull($this->connection->onClose, 'HEAD must not install the async onClose cleanup');
     }
 
-    /**
-     * A HEAD request for a file that vanished before convert mirrors the GET
-     * path's 404 (Workerman's withFile() turns an absent file into a 404):
-     * a 404 HeadResponse with no body (issue #683).
-     */
     public function testHeadRequestWithMissingFileReturns404HeadResponse(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -990,12 +937,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD 404 must not emit a body');
     }
 
-    /**
-     * When the preserved Content-Length header is absent (prepare() did not
-     * set it — e.g. the file vanished and was restored, or a caller bypassed
-     * prepare()), the HEAD path falls back to the actual file size so the
-     * emitted length matches what the GET path would frame (issue #683).
-     */
     public function testHeadRequestFallsBackToFileSizeWhenContentLengthHeaderAbsent(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1006,7 +947,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
 
         $fileSize = (int) filesize($this->testFile);
 
-        // No Content-Length in $headers (simulates prepare() not setting it).
         $workermanResponse = $strategy->convert($binaryResponse, [
             'Content-Type' => ['text/plain'],
         ], $this->connection, '1.1', 'HEAD');
@@ -1017,11 +957,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * When the preserved Content-Length header is absent for a temp-file
-     * response, the HEAD path falls back to the temp file's fstat size
-     * (issue #683).
-     */
     public function testHeadRequestWithTempFileFallsBackToFstatWhenContentLengthAbsent(): void
     {
         if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
@@ -1039,7 +974,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $property = $reflection->getProperty('tempFileObject');
         $property->setValue($binaryResponse, $tempFile);
 
-        // No Content-Length in $headers — fallback reads the temp file fstat size.
         $workermanResponse = $strategy->convert($binaryResponse, [], $this->connection, '1.1', 'HEAD');
 
         $this->assertInstanceOf(HeadResponse::class, $workermanResponse);
@@ -1048,11 +982,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD must not emit a body');
     }
 
-    /**
-     * A HEAD request on a deleteFileAfterSend file whose unlink fails must log
-     * a warning, mirroring the GET path's scheduleFileCleanup behaviour
-     * (issue #683).
-     */
     public function testHeadRequestDeleteFileAfterSendLogsWarningWhenUnlinkFails(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
@@ -1077,7 +1006,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
             $property = $reflection->getProperty('deleteFileAfterSend');
             $property->setValue($binaryResponse, true);
 
-            // Suppress PHP warning from unlink() on the read-only directory.
             set_error_handler(static fn(): true => true);
             try {
                 $strategy->convert($binaryResponse, [
@@ -1093,13 +1021,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         }
     }
 
-    /**
-     * A 304 must not carry a body (RFC 9110 §15.4.5). Symfony's prepare()
-     * signals that with maxlen = 0 and removes Content-Length and
-     * Content-Type, and Workerman reads a length of 0 as "the whole file", so
-     * the strategy must emit a bodyless response and never call withFile()
-     * (issue #948).
-     */
     public function testNotModifiedResponseSendsNoFileAndNoBody(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1132,14 +1053,7 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 304 must not emit a body');
     }
 
-    /**
-     * A HEAD request that Symfony prepared as bodyless (304/204) must not
-     * fall back to the file size: prepare() removed Content-Length before
-     * the HEAD line, so the length is 0 exactly like the GET 304/204
-     * (issue #948 review R1-01).
-     *
-     * @dataProvider emptyStatusProvider
-     */
+    #[DataProvider('emptyStatusProvider')]
     public function testHeadRequestWithEmptyStatusEmitsZeroContentLength(int $status): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1173,11 +1087,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         yield 'no content' => [Response::HTTP_NO_CONTENT];
     }
 
-    /**
-     * A 204 must not carry content at all (RFC 9110 §15.3.5). prepare() sets
-     * maxlen = 0 for it, which Workerman would read as "the whole file"
-     * (issue #948).
-     */
     public function testNoContentResponseSendsNoFileAndNoBody(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1200,11 +1109,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a 204 must not emit a body');
     }
 
-    /**
-     * A bodyless response must not read a temp file into memory either: the
-     * GET path buffers it via withBody(), which is a body this response must
-     * not send (issue #948).
-     */
     public function testBodylessResponseWithTempFileDoesNotReadBody(): void
     {
         if (!property_exists(BinaryFileResponse::class, 'tempFileObject')) {
@@ -1231,19 +1135,8 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless response must not emit a body');
     }
 
-    /**
-     * The X-Sendfile / X-Accel-Redirect hand-off is the third case in which
-     * prepare() sets maxlen = 0: the front-end server sends the file, so
-     * Workerman must send neither the bytes nor a 404 for a file it never
-     * opens, and the prepared Content-Length has to survive over the empty
-     * body (Symfony keeps it, so the front-end server's reply is framed the
-     * same way as the file response it replaces) — issue #948.
-     */
     public function testXSendfileResponseHandsTheFileOverWithoutSendingIt(): void
     {
-        // trustXSendfileTypeHeader() is a one-way static flag with no public
-        // reset, so restore it after the test to keep the rest of the suite on
-        // the default.
         $flag = new \ReflectionProperty(BinaryFileResponse::class, 'trustXSendfileTypeHeader');
         $previous = $flag->getValue();
 
@@ -1283,12 +1176,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         }
     }
 
-    /**
-     * deleteFileAfterSend on a bodyless response deletes the file immediately,
-     * exactly like the HEAD path: no bytes are buffered, so the onBufferDrain
-     * cleanup would never fire and the file would leak on a keep-alive
-     * connection (issue #948).
-     */
     public function testBodylessResponseWithDeleteFileAfterSendDeletesImmediately(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1312,12 +1199,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertNull($this->connection->onClose, 'no async onClose cleanup may be installed');
     }
 
-    /**
-     * A bodyless response must not turn into a 404 when the file is gone:
-     * withFile() is the only reason the GET path ever synthesises that 404,
-     * and a 304 has to repeat the cached response, not a fresh error
-     * (issue #948).
-     */
     public function testBodylessResponseWithMissingFileKeepsPreparedStatus(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1339,11 +1220,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'a bodyless response must not emit a body');
     }
 
-    /**
-     * A HEAD request prepared as 200 for a file that vanishes after prepare()
-     * must 404 like the unprepared path does: the early bodyless branch must
-     * not return the stale prepared status and length (issue #948 review R2-02).
-     */
     public function testPreparedHeadRequestWithMissingFileReturns404(): void
     {
         $strategy = new BinaryFileResponseStrategy();
@@ -1370,11 +1246,6 @@ final class BinaryFileResponseStrategyTest extends TestCase
         $this->assertSame('', explode("\r\n\r\n", $wire, 2)[1] ?? '', 'HEAD 404 must not emit a body');
     }
 
-    /**
-     * A prepared 200 with a byte range still sends the range: maxlen 0 is the
-     * only bodyless marker, and the guard must not swallow the GET file path
-     * (issue #948).
-     */
     public function testPreparedRangeRequestStillSendsTheRange(): void
     {
         $strategy = new BinaryFileResponseStrategy();

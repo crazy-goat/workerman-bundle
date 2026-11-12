@@ -12,16 +12,11 @@ use Workerman\Protocols\Http\Response;
 final readonly class StaticFilesMiddleware implements MiddlewareInterface
 {
     private const LEAK_EXTENSIONS = [
-        // PHP source spellings — the middleware never executes PHP, so
-        // blocking these is about source disclosure, not execution. A leak
-        // signal wherever it appears in a compound suffix (`x.php.bak`,
-        // `x.phar.gz`), for directories and files alike.
         'php',
         'phar',
         'phtml',
         'phps',
         'inc',
-        // Credentials, dumps and logs — also leak signals in any position.
         'sql',
         'log',
         'pem',
@@ -33,12 +28,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     ];
 
     private const RESIDUE_EXTENSIONS = [
-        // Editor backup and deploy residue — vim/emacs backups, conflicted
-        // merges, interrupted saves. These appear in production directories
-        // without anyone intending them to, and often contain the source
-        // (and credentials) of the file they back up. A leak signal only as
-        // the *final* extension of a *file*: a directory named `assets.dist`
-        // or `backup.bak` is legitimate and must not deny its contents.
         'bak',
         'orig',
         'rej',
@@ -61,10 +50,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     private const CACHE_MAX_SIZE = 1024;
     private const CACHE_TTL = 60;
     private const CACHE_NEGATIVE_TTL = 5;
-    // DEC-014 plausibility skip: keys larger than this (request paths are data
-    // the bundle does not control) are probed on every request and never enter
-    // the cache — mirroring Workerman's MAX_CACHE_STRING_LENGTH approach in
-    // HeaderNameNormalizer. Servable files are unaffected (fail-open, DEC-013).
     private const CACHE_KEY_MAX_BYTES = 512;
 
     private string $rootRealPath;
@@ -74,8 +59,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
 
     /**
      * @param string[] $allowedExtensions
-     * @param bool     $followSymlinks When false (default), symlinks under the root directory are not followed.
-     *                                 Set to true to allow serving files through symlinks.
      */
     public function __construct(string $rootDirectory, array $allowedExtensions = [], private bool $followSymlinks = false)
     {
@@ -98,10 +81,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         $method = $request->method();
         $isHead = strcasecmp($method, 'HEAD') === 0;
 
-        // Static files are only served for GET and HEAD. HEAD carries the
-        // same headers the GET would produce but no body (RFC 9110 §9.3.2);
-        // any other method is passed to the application so POST, PUT and
-        // DELETE to a static path never return the file (issue #903).
         if (!$isHead && strcasecmp($method, 'GET') !== 0) {
             return $next($request);
         }
@@ -135,9 +114,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         }
 
         if ($isHead) {
-            // Reuse HeadResponse from issue #683: headers only, carrying the
-            // Content-Length the GET would produce — the file is never
-            // attached, so Http::encode() sends no body.
             return $this->headResponse($filePath, [
                 'Last-Modified' => $this->formatHttpDate($fileMtime),
                 'ETag' => $etag,
@@ -153,19 +129,10 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Build a headers-only HEAD response carrying the Content-Length the
-     * corresponding GET would produce (RFC 9110 §9.3.2), without attaching
-     * the file (issue #903). A file that is gone by now gives 404.
-     *
-     * Workerman adds Content-Type, Accept-Ranges (and Content-Disposition
-     * for unknown types) only when it sends a file, so they are set here the
-     * same way; without them the HEAD response would fall back to text/html.
-     *
      * @param array<string, string> $headers
      */
     private function headResponse(string $filePath, array $headers): Response
     {
-        // The file went away after is_file(): no length to announce.
         $size = filesize($filePath);
         if ($size === false) {
             return new Response(404);
@@ -246,19 +213,12 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return true;
         }
 
-        // Editor backup residue: `index.php~` (vim/emacs) and
-        // `#index.php#` (emacs autosave) bypass the extension checks below.
         if (str_ends_with($name, '~') || (str_starts_with($name, '#') && str_ends_with($name, '#'))) {
             return true;
         }
 
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
 
-        // Leak extensions are blocked wherever they appear in the suffix
-        // chain (after the *first* dot), so a blocked extension is caught
-        // in every position of a compound name (`x.php.bak`, `x.php.txt`,
-        // `x.phar.gz`) — `pathinfo()` alone only sees the segment after the
-        // last dot.
         $firstDot = strpos($name, '.');
         if ($firstDot !== false) {
             $chain = strtolower(substr($name, $firstDot + 1));
@@ -269,12 +229,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             }
         }
 
-        // Residue suffixes are a leak signal only as the final extension of
-        // a file. An interior or directory occurrence (`app.dist.js`,
-        // `assets.dist/`) is not — its contents are still protected by the
-        // checks above, and the allowlist below when configured. Directory
-        // components never reach this branch: the file/directory distinction
-        // is carried by the $isFile flag, so no per-component stat is needed.
         if ($isFile && in_array($ext, self::RESIDUE_EXTENSIONS, true)) {
             return true;
         }
@@ -283,8 +237,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             return true;
         }
 
-        // The allowlist applies to files only: directory components have no
-        // extension and must never be denied by it (issue #637).
         return $isFile && $this->allowedExtensions !== [] && !in_array($ext, $this->allowedExtensions, true);
     }
 
@@ -309,11 +261,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return $resolved;
     }
 
-    /**
-     * Reject an obviously disallowed final-file extension before filesystem work.
-     * Paths that are ambiguous or may be directories continue through the normal
-     * resolver and component checks (fail-open, DEC-013; FAQ-004).
-     */
     private function isAllowlistExtensionMismatch(string $path): bool
     {
         if ($this->allowedExtensions === [] || $path === '' || str_ends_with($path, '/') || str_contains($path, '\\') || str_contains($path, "\0") || str_contains($path, '%00')) {
@@ -339,9 +286,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     {
         $now = time();
 
-        // DEC-014 plausibility skip: an implausibly long key would occupy a
-        // cache slot with a multi-KB string payload. Probe without touching
-        // the cache — the file is still served, it just is not cached.
         if (strlen($cacheKey) > self::CACHE_KEY_MAX_BYTES) {
             return $this->probeRealPath($cacheKey);
         }
@@ -354,7 +298,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
             $cached = $cache[$cacheIndex];
             $ttl = $cached['path'] === false ? self::CACHE_NEGATIVE_TTL : self::CACHE_TTL;
             if ($now - $cached['time'] < $ttl) {
-                // Refresh hit preserves the original timestamp: TTL stays fixed, only LRU position moves.
                 return $this->cacheStore($cache, $cacheIndex, $cached['path'], $cached['time']);
             }
             unset($cache[$cacheIndex]);
@@ -363,12 +306,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
         return $this->cacheStore($cache, $cacheIndex, $this->probeRealPath($cacheKey), $now);
     }
 
-    /**
-     * Resolves the real path of a request path without touching the cache.
-     * Returns the absolute path for an existing file, false otherwise
-     * (missing file, symlink in the component chain when followSymlinks is
-     * off — the middleware never follows symlinks by default).
-     */
     private function probeRealPath(string $cacheKey): string|false
     {
         $path = $this->joinPaths($this->rootRealPath, $cacheKey);
@@ -394,8 +331,6 @@ final readonly class StaticFilesMiddleware implements MiddlewareInterface
     }
 
     /**
-     * Inserts an entry into the realpath cache, enforcing CACHE_MAX_SIZE on every insert.
-     *
      * @param array<string, array{path: string|false, time: int}> $cache
      */
     private function cacheStore(array &$cache, string $index, string|false $path, int $now): string|false

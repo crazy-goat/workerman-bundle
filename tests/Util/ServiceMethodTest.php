@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Util;
 
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class ServiceMethodTest extends TestCase
@@ -38,7 +39,7 @@ final class ServiceMethodTest extends TestCase
         $this->assertTrue($reflection->isReadOnly());
     }
 
-    /** @dataProvider provideEmptyStrings */
+    #[DataProvider('provideEmptyStrings')]
     public function testConstructorThrowsOnEmptyString(string $serviceId, string $method): void
     {
         $this->expectException(\InvalidArgumentException::class);

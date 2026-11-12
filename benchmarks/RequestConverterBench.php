@@ -6,30 +6,18 @@ namespace CrazyGoat\WorkermanBundle\Benchmark;
 
 use CrazyGoat\WorkermanBundle\DTO\RequestConverter;
 use CrazyGoat\WorkermanBundle\Http\Request;
-use PhpBench\Benchmark\Metadata\Annotations\BeforeMethods;
-use PhpBench\Benchmark\Metadata\Annotations\Iterations;
-use PhpBench\Benchmark\Metadata\Annotations\Revs;
-use PhpBench\Benchmark\Metadata\Annotations\Warmup;
+use PhpBench\Attributes\BeforeMethods;
+use PhpBench\Attributes\Iterations;
+use PhpBench\Attributes\ParamProviders;
+use PhpBench\Attributes\Revs;
+use PhpBench\Attributes\Warmup;
 
-/**
- * Benchmark RequestConverter::toSymfonyRequest — the first hot-path stage
- * where a Workerman HTTP request is transformed into a Symfony Request.
- *
- * @BeforeMethods("init")
- * @Revs(1000)
- * @Iterations(5)
- * @Warmup(1)
- */
+#[BeforeMethods('init')]
+#[Revs(1000)]
+#[Iterations(5)]
+#[Warmup(1)]
 final class RequestConverterBench
 {
-    /**
-     * Every byte rejected in header values (reject {0-8, 10-31, 127}; TAB and
-     * all other bytes accepted). Listed byte-by-byte for strpbrk()/strcspn().
-     *
-     * Must mirror RequestConverter::HEADER_VALUE_CONTROL_CHARS exactly — the
-     * micro-benchmark's old-vs-new comparison is only valid if the mask equals
-     * production (pinned by the benchmark-mask equality test).
-     */
     private const CONTROL_CHAR_MASK = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0A\x0B\x0C\x0D\x0E\x0F"
         . "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F";
 
@@ -130,33 +118,27 @@ final class RequestConverterBench
     }
 
     /**
-     * Micro-comparison for the header-value control-character filter (#630):
-     * preg_match vs strpbrk vs strcspn over representative values.
-     *
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterRegex(array $params): bool
     {
         return (bool) \preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $params['value']);
     }
 
     /**
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterStrpbrk(array $params): bool
     {
         return \strpbrk($params['value'], self::CONTROL_CHAR_MASK) !== false;
     }
 
     /**
-     * @ParamProviders("provideFilterValues")
-     *
      * @param array{value: string} $params
      */
+    #[ParamProviders('provideFilterValues')]
     public function benchFilterStrcspn(array $params): bool
     {
         return \strcspn($params['value'], self::CONTROL_CHAR_MASK) < \strlen($params['value']);

@@ -9,16 +9,13 @@ use Workerman\Worker;
 
 abstract class FileMonitorWatcher
 {
-    /** Default seconds between polling sweeps (issue #734). */
     public const DEFAULT_POLLING_INTERVAL = 3;
 
-    /** Default maximum entries inspected per polling tick (issue #734). */
     public const DEFAULT_MAX_FILES_PER_TICK = 500;
 
     /** @var string[] */
     protected readonly array $sourceDir;
 
-    /** Compiled regex pattern (empty string when no patterns) */
     private readonly string $filePatternRegex;
 
     /**
@@ -143,15 +140,8 @@ abstract class FileMonitorWatcher
     }
 
     /**
-     * Create a recursive directory iterator with the given flags and mode.
-     *
-     * Both PollingMonitorWatcher and InotifyMonitorWatcher need this same
-     * boilerplate; centralising it here means traversal behaviour (skip
-     * dot-dirs, follow symlinks, etc.) can be changed in one place.
-     *
-     * @param int<0, max> $flags FilesystemIterator flags (e.g. SKIP_DOTS | UNIX_PATHS)
-     * @param 0|1|2       $mode  RecursiveIteratorIterator mode (LEAVES_ONLY=0, SELF_FIRST=1, CHILD_FIRST=2)
-     *
+     * @param int<0, max> $flags
+     * @param 0|1|2       $mode
      * @return \RecursiveIteratorIterator<\RecursiveDirectoryIterator>
      */
     protected function createRecursiveIterator(string $dir, int $flags, int $mode): \RecursiveIteratorIterator

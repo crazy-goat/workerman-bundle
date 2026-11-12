@@ -6,9 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Benchmark;
 
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
 
-/**
- * No-op reboot strategy for benchmarking.
- */
 final class BenchRebootStrategy implements RebootStrategyInterface
 {
     public function shouldReboot(): bool

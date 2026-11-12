@@ -7,18 +7,8 @@ namespace CrazyGoat\WorkermanBundle\Event;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
- * Dispatched right before a scheduled task is executed.
- *
- * Listeners receive the fully-qualified service class name and the
- * configured task name. The event is fired after the service has been
- * resolved from the container but before the configured method is
- * invoked.
- *
- * This is an extension point — use it to implement pre-task logic
- * such as logging, metrics, or dynamic configuration changes.
- *
- * @see TaskErrorEvent Fired when the task throws
- * @see \CrazyGoat\WorkermanBundle\Handler\ServiceHandlerTrait The dispatch site in the shared invoke flow
+ * @see TaskErrorEvent
+ * @see \CrazyGoat\WorkermanBundle\Handler\ServiceHandlerTrait
  */
 final class TaskStartEvent extends Event
 {

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class TestNamespaceConventionTest extends TestCase
 {
     private const EXPECTED_PREFIX = 'CrazyGoat\\WorkermanBundle\\Test';
@@ -43,9 +43,7 @@ final class TestNamespaceConventionTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideTestFiles
-     */
+    #[DataProvider('provideTestFiles')]
     public function testNamespaceUsesTestNotTests(string $path, string $content): void
     {
         $this->assertStringNotContainsString(
@@ -60,9 +58,7 @@ final class TestNamespaceConventionTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider provideTestFiles
-     */
+    #[DataProvider('provideTestFiles')]
     public function testNamespaceStartsWithExpectedPrefix(string $path, string $content): void
     {
         if (!preg_match('/^namespace\s+(.+);/m', $content, $matches)) {
@@ -83,9 +79,7 @@ final class TestNamespaceConventionTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider provideTestFiles
-     */
+    #[DataProvider('provideTestFiles')]
     public function testClassIsAutoloadableWithCorrectNamespace(string $path, string $content): void
     {
         if (!preg_match('/^(?:final\s+)?(?:readonly\s+)?(?:abstract\s+)?(?:class|interface|trait|enum)\s+(\w+)/m', $content, $classMatch)) {

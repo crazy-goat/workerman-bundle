@@ -47,9 +47,6 @@ final class MiddlewareTest extends WebTestCase
         assertIsArray($responseHeaders['X-Third-Middleware']);
     }
 
-    /**
-     * Verify middleware-added request headers do not leak across keep-alive requests (closes #533).
-     */
     public function testMiddlewareRequestHeadersDoNotLeakAcrossRequests(): void
     {
         $client = $this->createHttpClient();
@@ -73,7 +70,6 @@ final class MiddlewareTest extends WebTestCase
 
     /**
      * @param mixed[] $options
-     *
      * @return mixed[]
      */
     private function createResponse(string $method, array $options = [], ?Client $client = null): array

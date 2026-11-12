@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Every config key must be in docs/configuration.md, with its default (issue #878, section 5).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class ConfigReferenceDocTest extends TestCase
 {
     private const PAGE = 'docs/configuration.md';

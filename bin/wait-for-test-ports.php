@@ -3,20 +3,6 @@
 
 declare(strict_types=1);
 
-/**
- * Waits for the three test daemon ports resolved by
- * {@see \CrazyGoat\WorkermanBundle\Test\App\TestPorts}.
- *
- * The composer `test` and `test:coverage` scripts call this instead of
- * spelling the ports out in composer.json: the WMB_PORT_* overrides and their
- * defaults stay in one place and do not depend on shell expansion.
- *
- * The connect host follows WMB_LISTEN_ADDR (wildcards map to loopback), so
- * the readiness check reaches the daemon on a non-default bind address too.
- *
- * Usage: php bin/wait-for-test-ports.php [--timeout=<seconds>]
- */
-
 use CrazyGoat\WorkermanBundle\Test\App\TestPorts;
 
 require __DIR__ . '/../vendor/autoload.php';

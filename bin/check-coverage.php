@@ -2,16 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * Parses a PHPUnit Clover coverage file and exits non-zero if total line
- * coverage is below the requested threshold.
- *
- * Usage: php bin/check-coverage.php <clover.xml> <threshold-percent>
- *
- * The threshold is required: a default would disable the gate for a caller
- * that forgets it. It must be a number from 0 to 100.
- */
-
 $argc = $_SERVER['argc'] ?? 0;
 $argv = $_SERVER['argv'] ?? [];
 
@@ -41,9 +31,6 @@ if ($xml === false) {
     exit(2);
 }
 
-// Prefer the single project-level aggregate (so class/file/project nodes are
-// not double-counted). If Clover has no <project> layer, fall back to summing
-// the per-file aggregates, which covers multi-file output without a project:
 $aggregate = $xml->xpath('/coverage/project/metrics');
 if (is_array($aggregate) && $aggregate !== []) {
     $metric = $aggregate[0];

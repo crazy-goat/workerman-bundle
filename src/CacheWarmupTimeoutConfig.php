@@ -6,15 +6,6 @@ namespace CrazyGoat\WorkermanBundle;
 
 use CrazyGoat\WorkermanBundle\Exception\InvalidCacheWarmupTimeoutException;
 
-/**
- * Static configuration holder and validator for the cache warmup timeout.
- *
- * The bundle's extension loader runs during kernel boot and needs to propagate
- * the configured timeout to {@see Runner}, which is constructed later by
- * {@see Runtime::getRunner()} or {@see ServerManager::start()}/`restart()`
- * outside the DI container. This holder bridges the two phases without
- * resorting to superglobal mutation.
- */
 final class CacheWarmupTimeoutConfig
 {
     public const DEFAULT = 30;
@@ -41,15 +32,7 @@ final class CacheWarmupTimeoutConfig
     }
 
     /**
-     * Read the raw env var across the three channels.
-     *
-     * Shared bridge for {@see self::resolve()} and
-     * {@see WorkermanBundle::loadExtension()} so precedence cannot drift
-     * again (issue #759 review F-1). Precedence: `$_SERVER`, then `$_ENV`,
-     * then `getenv()`. Trims before the emptiness check (whitespace-only is
-     * absent) and treats non-scalar superglobal values as absent.
-     *
-     * @internal Shared with WorkermanBundle; not part of the public API.
+     * @internal
      */
     public static function readEnvRaw(): ?string
     {
@@ -58,17 +41,10 @@ final class CacheWarmupTimeoutConfig
             $raw = $_ENV[self::ENV_VAR] ?? null;
         }
         if (!is_scalar($raw) || trim((string) $raw) === '') {
-            // function_exists(): getenv() may be disabled via disable_functions;
-            // resolve() runs pre-boot on the Runner path, so it must not fatal
-            // even in strict mode when the fallback is unavailable.
             $env = function_exists('getenv') ? getenv(self::ENV_VAR) : false;
             $raw = $env === false ? null : $env;
         }
 
-        // Whitespace-only is treated as absent (matches the
-        // ConfigCacheGuardConfig sibling, which trims before its emptiness
-        // check); non-scalar superglobal values (pathological — SAPIs deliver
-        // strings) are treated as absent rather than cast.
         if (!is_scalar($raw) || trim((string) $raw) === '') {
             return null;
         }
@@ -77,19 +53,7 @@ final class CacheWarmupTimeoutConfig
     }
 
     /**
-     * Strictly parse an already-trimmed env value into a positive timeout.
-     *
-     * `filter_var()` with `min_range=1` accepts only plain decimal integers
-     * with an optional sign (`+45` passes as 45) and rejects floats
-     * (`45.9`), unit suffixes (`60s`), hex (`0x2D`) and non-numeric input
-     * (`abc`) — the same class of values a Symfony `intNode` rejects — so
-     * nothing is silently truncated by an `(int)` cast. Leading-zero decimals
-     * (`007`, `08`, `010`) are also rejected: default `filter_var()` flags
-     * disallow octal notation. The raw value (not
-     * the cast result) is quoted in the error message. Leading/trailing
-     * whitespace is already trimmed by {@see self::readEnvRaw()}.
-     *
-     * @internal Shared with WorkermanBundle; not part of the public API.
+     * @internal
      */
     public static function parseEnvRaw(string $trimmed): int
     {
@@ -105,19 +69,6 @@ final class CacheWarmupTimeoutConfig
         return $timeout;
     }
 
-    /**
-     * Resolve the effective timeout.
-     *
-     * An explicit {@see self::set()} value (written by
-     * {@see WorkermanBundle::loadExtension()} during kernel boot) always wins.
-     * Otherwise the environment is read lazily via {@see self::readEnvRaw()}
-     * on every call — the same precedence as
-     * {@see ConfigCacheGuardConfig::resolve()} — because
-     * {@see Runtime::getRunner()} constructs the {@see Runner} before any
-     * kernel boot on the Runner path, where no `set()` has run yet (issue
-     * #759). Absent or empty resolves to {@see self::DEFAULT}; a present but
-     * non-positive value throws, consistent with {@see self::set()}.
-     */
     public static function resolve(): int
     {
         if (self::$timeout !== null) {
@@ -133,7 +84,7 @@ final class CacheWarmupTimeoutConfig
     }
 
     /**
-     * @internal Test affordance only. Production code must not call this.
+     * @internal
      */
     public static function reset(): void
     {

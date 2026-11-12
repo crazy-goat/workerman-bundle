@@ -17,52 +17,6 @@ use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-/**
- * Handles the per-request lifecycle for the HTTP worker.
- *
- * Each incoming Workerman request flows through these stages:
- *
- * 1. **Middleware pipeline dispatch** — The Workerman Request runs through a
- *    pre-composed middleware chain (see getPipeline()). The pipeline closure
- *    is built ONCE and cached across requests, eliminating per-request
- *    array_reverse + closure composition churn. At dispatch time a single
- *    {@see MiddlewareDispatcher} object walks the middleware array by index,
- *    so per-request allocations are independent of the middleware count. The
- *    innermost layer is the controller callable that delegates to
- *    SymfonyController.
- *
- * 2. **Response send** — The Http\Response returned by the pipeline is encoded
- *    and sent via TcpConnection::send(). The response is stamped with the
- *    request's protocol version and, when the connection will be closed,
- *    Connection: close. If a response strategy already sent the response
- *    directly (StreamedResponseStrategy for streamed responses), this step
- *    is skipped via the responseSentDirectly context flag.
- *
- * 3. **Kernel termination** — TerminateIfNeeded() is called synchronously.
- *    The method is run inline after send() because send() is non-blocking.
- *    Errors are logged but never propagated.
- *
- * 4. **Connection close** — If the request uses HTTP/1.0 or carries a
- *    Connection: close header, the TCP connection is closed immediately.
- *
- * 5. **Reload check** — After the response is fully handled, the reboot
- *    strategy is consulted. If shouldReboot() returns true, Utils::reload()
- *    sends SIGUSR1 to trigger a graceful worker restart.
- *
- * Middleware composition: middlewares are added via withMiddlewares() /
- * withRootDirectory(). The pipeline is invalidated on every setter call and
- * rebuilt lazily on the next request. The response-send step is skipped
- * when $connection->context->responseSentDirectly is set — typically by a
- * response strategy (StreamedResponseStrategy) that has already sent the
- * response directly, though a middleware may also set it.
- *
- * Per-request allocations: one thin controller closure
- * (fn(Request): Http\Response) which captures the current TcpConnection, and
- * one {@see MiddlewareDispatcher} object that carries the controller through
- * the middleware array by index. Both are independent of the middleware
- * count — the pipeline closure and all middleware instances are reused across
- * requests.
- */
 final class HttpRequestHandler implements StaticFileHandlerInterface, MiddlewareDispatchInterface
 {
     /** @var MiddlewareInterface[] */
@@ -71,19 +25,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     private array $staticFileConfig = [];
     private ?StaticFilesMiddleware $staticFilesMiddleware = null;
 
-    /**
-     * Pre-composed middleware dispatch pipeline.
-     *
-     * Built once and cached across requests to eliminate per-request
-     * array_reverse + closure composition. Invalidated whenever
-     * the middleware set changes (withMiddlewares / withRootDirectory).
-     *
-     * Signature: fn(Request $request, callable $controller): Http\Response
-     *
-     * At dispatch time the closure creates a single MiddlewareDispatcher
-     * that walks the middleware array by index, so per-request allocations
-     * are independent of the middleware count (issue #563).
-     */
     private ?\Closure $pipeline = null;
 
     public function __construct(
@@ -96,7 +37,7 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
     public function withMiddlewares(MiddlewareInterface ...$middlewares): self
     {
         $this->middlewares = $middlewares;
-        $this->pipeline = null; // invalidate cached pipeline
+        $this->pipeline = null;
 
         return $this;
     }
@@ -106,16 +47,9 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         if ($rootDirectory === null) {
             return $this;
         }
-        // Kept apart from the user middleware and added last in getPipeline():
-        // the static layer is the innermost pipeline layer, so user middleware
-        // runs first and may short-circuit, authenticate or decorate
-        // static-file responses (DEC-022, issue #730). Do not hoist it outward
-        // without superseding that decision. A separate property makes the
-        // result independent of the order of withMiddlewares() and
-        // withRootDirectory() (issue #898).
         $allowedExtensions = $this->staticFileConfig['allowed_extensions'] ?? [];
         $this->staticFilesMiddleware = new StaticFilesMiddleware(rtrim($rootDirectory, '/'), $allowedExtensions);
-        $this->pipeline = null; // invalidate cached pipeline
+        $this->pipeline = null;
 
         return $this;
     }
@@ -126,27 +60,12 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         return $this;
     }
 
-    /**
-     * Get or build the cached middleware dispatch pipeline.
-     *
-     * The pipeline is a closure: fn(Request, callable $controller): Http\Response
-     * that runs the request through all middlewares and finally the controller.
-     * It is composed ONCE and reused across requests, eliminating per-request
-     * array_reverse and closure composition churn documented in issue #266.
-     *
-     * At dispatch time the closure instantiates a single
-     * {@see MiddlewareDispatcher} that walks the middleware array by index,
-     * so the per-request allocation count (one dispatcher + one controller
-     * closure) is independent of the middleware count (issue #563).
-     */
     private function getPipeline(): \Closure
     {
         if ($this->pipeline instanceof \Closure) {
             return $this->pipeline;
         }
 
-        // Capture the middleware array in registration order (first
-        // registered = first executed). The dispatcher walks it by index.
         $middlewares = $this->middlewares;
         if ($this->staticFilesMiddleware instanceof StaticFilesMiddleware) {
             $middlewares[] = $this->staticFilesMiddleware;
@@ -158,16 +77,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         return $this->pipeline;
     }
 
-    /**
-     * Send the response to the connection, unless already sent by a middleware.
-     *
-     * The response is stamped with the request's protocol version so the
-     * status line matches the client (e.g. HTTP/1.0 requests receive an
-     * HTTP/1.0 response line). When the connection will be closed after
-     * this response (HTTP/1.0 or a Connection: close request header), a
-     * matching Connection: close header is emitted instead of Workerman's
-     * default keep-alive.
-     */
     private function sendResponse(TcpConnection $connection, Http\Response $response, Request $request): void
     {
         $responseAlreadySent = $connection->context instanceof \stdClass
@@ -185,9 +94,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
 
         $connection->send(Http::encode($response, $connection), true);
 
-        // The file of a deleteFileAfterSend response is now read or open, so
-        // it can go. Waiting for the buffer to drain or the connection to
-        // close would keep it on disk on a keep-alive connection (issue #906).
         if ($connection->context instanceof \stdClass
             && ($connection->context->pendingCleanup ?? null) instanceof FileCleanupState
         ) {
@@ -195,12 +101,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         }
     }
 
-    /**
-     * Execute kernel termination with error logging.
-     *
-     * This is the single location where terminateIfNeeded() is called,
-     * ensuring consistent error handling on every request.
-     */
     private function doTerminate(string $errorPrefix = 'Kernel termination failed'): void
     {
         try {
@@ -225,45 +125,16 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         }
     }
 
-    /**
-     * Determine if the connection should be closed after the response is sent.
-     *
-     * The rule is shared with
-     * {@see \CrazyGoat\WorkermanBundle\Middleware\SymfonyController::__invoke()}
-     * via {@see ConnectionIntent::shouldClose()} so a future change to the
-     * close intent cannot drift between the two call sites (issue #621).
-     */
     private function shouldCloseConnection(Request $request): bool
     {
         return ConnectionIntent::shouldClose($request);
     }
 
-    /**
-     * Classify a throwable as a client-caused error (400) or a server fault (500).
-     *
-     * Client errors are caused by malformed input that the bundle rejects
-     * during request conversion (control bytes in headers, malformed
-     * multipart uploads, invalid URI/method). They are marked with
-     * ClientInputExceptionInterface and logged at debug level to prevent
-     * log flooding by an unauthenticated attacker (see issue #577).
-     *
-     * Server faults are everything else: middleware bugs, response
-     * conversion failures, misconfiguration, kernel errors that escaped
-     * HttpKernel::handle()'s own try block, etc. They are logged at error
-     * level because they indicate a real defect. Notably a middleware
-     * throwing \InvalidArgumentException is a server fault — only
-     * bundle-internal conversion exceptions implement
-     * ClientInputExceptionInterface.
-     */
     private function isClientError(\Throwable $e): bool
     {
         return $e instanceof ClientInputExceptionInterface;
     }
 
-    /**
-     * Build a Workerman error response for a throwable caught in the
-     * request lifecycle.
-     */
     private function buildErrorResponse(bool $clientError): WorkermanResponse
     {
         if ($clientError) {
@@ -273,14 +144,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         return new WorkermanResponse(500, [], 'Internal Server Error');
     }
 
-    /**
-     * Log a throwable caught in the request lifecycle.
-     *
-     * Client errors are logged at debug level so an attacker cannot flood
-     * the log. Server faults are logged at error level with the full
-     * exception. When no PSR-3 logger is configured, only server faults
-     * fall back to error_log(); client errors are silent.
-     */
     private function logThrowable(\Throwable $e, bool $clientError): void
     {
         if ($this->logger instanceof LoggerInterface) {
@@ -306,28 +169,6 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
         }
     }
 
-    /**
-     * Handle one Workerman HTTP request through the full lifecycle.
-     *
-     * The entire pipeline → send → terminate → close → reboot chain is
-     * wrapped in a single try/catch so that any throwable — whether from
-     * request conversion, a middleware, response conversion, or response
-     * preparation — is converted into a 400/500 response instead of
-     * escaping into Workerman's TcpConnection error handler, which (in
-     * the absence of an installed errorHandler) terminates the worker
-     * process. See issue #577.
-     *
-     * On the failure path, doTerminate() and the reboot check still run,
-     * because the kernel may have partially handled the request before
-     * the throwable escaped, and services_resetter must be invoked to
-     * avoid state leakage into the next request (see issue #572).
-     *
-     * @param TcpConnection $connection The incoming TCP connection.
-     * @param Request       $request    The Workerman HTTP request (extended by
-     *                                  this bundle with setHeader/withHeader).
-     *                                  Symfony conversion happens inside
-     *                                  SymfonyController.
-     */
     public function __invoke(TcpConnection $connection, Request $request): void
     {
         $controllerCall = fn(Request $input): Http\Response => ($this->controller)($input, $connection);
@@ -341,37 +182,23 @@ final class HttpRequestHandler implements StaticFileHandlerInterface, Middleware
             $this->logThrowable($e, $clientError);
             try {
                 if ($connection->context instanceof \stdClass && isset($connection->context->responseSentDirectly)) {
-                    // The head is already sent (for example a streamed body
-                    // that failed in the middle). A second response would
-                    // land inside the open body. The body has no valid end,
-                    // so close the connection (issue #901).
                     unset($connection->context->responseSentDirectly);
                     $connection->close();
                 } else {
                     $this->sendResponse($connection, $this->buildErrorResponse($clientError), $request);
                 }
             } catch (\Throwable $sendError) {
-                // Best-effort: if even the error-response send fails, log
-                // and close. We must not let the throwable escape __invoke()
-                // — otherwise doTerminate() and the reboot check (which
-                // run after this block) would be skipped, regressing #572,
-                // and Workerman's TcpConnection error handler would fire.
                 $this->logThrowable($sendError, false);
                 $connection->close();
             }
         }
 
-        // Terminate synchronously on both success and failure paths.
-        // On the failure path the controller may not have set its
-        // request/response, in which case terminateIfNeeded() is a no-op.
         $this->doTerminate();
 
-        // Close connection if protocol demands it.
         if ($this->shouldCloseConnection($request)) {
             $connection->close();
         }
 
-        // Reload if strategy signals — runs on both success and failure paths.
         if ($this->rebootStrategy->shouldReboot()) {
             Utils::reload();
         }

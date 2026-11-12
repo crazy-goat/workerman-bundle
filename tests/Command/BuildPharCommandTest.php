@@ -105,7 +105,6 @@ final class BuildPharCommandTest extends TestCase
         self::assertStringContainsString('Console\\Application', $stub);
         self::assertStringContainsString("'prod'", $stub);
         self::assertStringContainsString('__HALT_COMPILER();', $stub);
-        // No silent error suppression in the stub
         self::assertStringNotContainsString('@mkdir', $stub);
     }
 
@@ -138,8 +137,6 @@ final class BuildPharCommandTest extends TestCase
 
     public function testCommandFailsWhenPharReadonlyIsSet(): void
     {
-        // Use PharCapabilities with pharReadOnly=true to simulate the error
-        // path without depending on the runtime INI setting.
         $pharBuilder = new PharBuilder($this->tempDir, 'test', new PharCapabilities(true, true));
         $command = new BuildPharCommand($this->makeConfigLoader(), $pharBuilder, new BuildPathResolver(), $this->tempDir);
 

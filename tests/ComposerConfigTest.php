@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @coversNothing
- */
+#[CoversNothing]
 final class ComposerConfigTest extends TestCase
 {
     private const COMPOSER_JSON = __DIR__ . '/../composer.json';
@@ -88,19 +87,6 @@ final class ComposerConfigTest extends TestCase
         self::assertIsArray($this->composerConfig['config']['audit']['ignore']);
     }
 
-    /**
-     * The audit.ignore list must be empty. Suppressing Composer audit
-     * advisories globally shadows real risk: if a transitive non-dev
-     * dependency ever pulls in the affected package, the suppression
-     * hides the warning. Any advisory that affects only require-dev
-     * dependencies is already excluded from `composer audit --no-dev`,
-     * which is the audit mode used in CI and production.
-     *
-     * If an advisory must be suppressed temporarily, add it to the
-     * audit.ignore list AND document the justification in docs/security.md
-     * under "Composer Audit Advisory Suppression Policy". Remove the entry
-     * as soon as the underlying package is patched.
-     */
     public function testAuditIgnoreListIsEmpty(): void
     {
         self::assertArrayHasKey('config', $this->composerConfig);
@@ -118,11 +104,6 @@ final class ComposerConfigTest extends TestCase
         );
     }
 
-    /**
-     * `composer audit --no-dev` (the mode used by CI and production)
-     * must report zero advisories. This guards against vulnerabilities
-     * shipped to production users via the `require` dependency set.
-     */
     public function testComposerAuditNoDevIsClean(): void
     {
         $output = $this->runComposerAuditNoDev();
@@ -176,7 +157,6 @@ final class ComposerConfigTest extends TestCase
         $stdout = \is_string($stdout) ? $stdout : '';
         $stderr = \is_string($stderr) ? $stderr : '';
 
-        // composer audit exits 0 (clean) or 1 (advisories/abandoned found)
         if ($exitCode !== 0 && $exitCode !== 1) {
             self::fail(\sprintf(
                 "composer audit --no-dev failed unexpectedly (exit code %d):\nstdout: %s\nstderr: %s",
@@ -197,13 +177,6 @@ final class ComposerConfigTest extends TestCase
         return $stdout;
     }
 
-    /**
-     * Benchmark numbers are unreliable with Xdebug enabled (per-call
-     * overhead and variance). The bench script must disable it via
-     * XDEBUG_MODE=off, matching the unix env-prefix convention of the
-     * test scripts. Coverage workflows are separate (test:coverage
-     * uses pcov), so this does not affect coverage.
-     */
     public function testBenchScriptDisablesXdebug(): void
     {
         self::assertArrayHasKey('scripts', $this->composerConfig);

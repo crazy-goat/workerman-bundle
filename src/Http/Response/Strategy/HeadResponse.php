@@ -6,25 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Http\Response\Strategy;
 
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-/**
- * Workerman response for a response with no body that still has to carry an
- * application-provided Content-Length. The name comes from its first user, a
- * HEAD request, which carries the length the corresponding GET would produce
- * (RFC 9110 §9.3.2); a bodyless BinaryFileResponse reuses it when Symfony's
- * prepare() kept the length — a 1xx/204/304 status (where prepare() removes it
- * and the length is 0) and the X-Sendfile / X-Accel-Redirect hand-off, where the
- * front-end server sends the file (issue #948).
- *
- * Workerman's Response::__toString() always computes Content-Length
- * from the body — 0 for the empty body — and would emit a duplicate
- * header if one was supplied, so this subclass rewrites the computed value
- * at serialization time (issue #643).
- */
 final class HeadResponse extends WorkermanResponse
 {
     /**
-     * @param array<string, string|list<string|null>> $headers Headers without
-     *                                                          Content-Length (carried separately)
+     * @param array<string, string|list<string|null>> $headers
      */
     public function __construct(
         int $status,
@@ -38,14 +23,6 @@ final class HeadResponse extends WorkermanResponse
     {
         $wire = parent::__toString();
 
-        // Workerman appends the computed body length as a header line;
-        // replace that value with the application-provided one so the HEAD
-        // response carries exactly one, correct Content-Length. Two
-        // serialization shapes exist: the regular branch emits
-        // "Content-Length: N" last (just before the terminating empty line),
-        // while the empty-headers fast path appends "Connection: keep-alive"
-        // after it. When neither tail matches (e.g. the text/event-stream
-        // branch omits Content-Length), keep the transport output unchanged.
         $replaced = preg_replace(
             '/\r\nContent-Length: \d+\r\n\r\n$/',
             "\r\nContent-Length: {$this->contentLength}\r\n\r\n",

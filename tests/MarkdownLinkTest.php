@@ -4,35 +4,13 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Bootstrap gate mined from `.pi-subagents/artifacts/` review history (issue
- * #686 phase 4): "markdown structural defects" (broken cross-directory links,
- * wrong anchors, list-breaking fences) recurred across ~6 review artifacts.
- * This is the automated check the rule of two calls for on a second
- * occurrence — see `docs/workflow.md`, step 4c.
- *
- * For every tracked `.md` file: every internal `[text](target)` link resolves
- * (case-sensitively — this repo runs CI on Linux, where a case-insensitive
- * macOS checkout would otherwise hide a broken path; the `tests/Fixtures` vs.
- * `tests/fixtures` case collision that motivated LintScopeTest (#688) is now
- * resolved — the lowercase tree is gone) relative to the file
- * that contains it; a `#anchor` on an internal link resolves against the
- * target file's GitHub-slugified headings; and fenced code blocks are
- * balanced, and excluded from both checks so a `[…](…)` inside an example
- * snippet is never mistaken for a real link.
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class MarkdownLinkTest extends TestCase
 {
-    // GitHub's slugger keeps letters and digits from any script, not just
-    // ASCII (`\p{L}`/`\p{N}` under the `u` modifier) — only punctuation is
-    // dropped. An ASCII-only class would strip an accented letter instead of
-    // preserving it, e.g. turning "Café Meeting" into "caf-meeting" rather
-    // than "café-meeting".
     private const GITHUB_SLUG_DISALLOWED_CHARS = '/[^\p{L}\p{N} _\-]/u';
 
     /**
@@ -89,7 +67,6 @@ final class MarkdownLinkTest extends TestCase
             $baseDir = dirname($relativePath);
             $baseDir = $baseDir === '.' ? '' : $baseDir;
 
-            // "[x](#anchor)" — same-file anchor, nothing to resolve on disk.
             if ($path === '') {
                 self::assertNotNull($anchor, sprintf('%s: link target "%s" is empty', $relativePath, $target));
                 $this->assertAnchorExists($root, $relativePath, $relativePath, $anchor);
@@ -110,12 +87,6 @@ final class MarkdownLinkTest extends TestCase
         }
     }
 
-    /**
-     * Dormant today — no tracked `.md` file has a non-ASCII heading — but a
-     * latent false positive the moment one appears (e.g. an author's name).
-     * GitHub preserves non-ASCII letters in its heading anchors instead of
-     * stripping them, so the slugger must too.
-     */
     public function testGithubSlugPreservesNonAsciiLetters(): void
     {
         self::assertSame('café-meeting', $this->invokeGithubSlug('Café Meeting'));
@@ -147,8 +118,6 @@ final class MarkdownLinkTest extends TestCase
         $targetFile = $root . '/' . $targetRelative;
 
         if (!is_file($targetFile)) {
-            // A directory link with an anchor makes no sense; the file-
-            // resolution assertion above already covers missing targets.
             return;
         }
 
@@ -175,10 +144,6 @@ final class MarkdownLinkTest extends TestCase
         return $contents;
     }
 
-    /**
-     * Removes fenced code blocks (``` or ~~~, three or more) so links and
-     * headings inside example snippets are never evaluated as real ones.
-     */
     private function stripFencedBlocks(string $content): string
     {
         $lines = explode("\n", $content);
@@ -201,8 +166,7 @@ final class MarkdownLinkTest extends TestCase
     }
 
     /**
-     * @return list<string> raw link targets, images and external anchors
-     *                       already excluded by the caller
+     * @return list<string>
      */
     private function extractLinks(string $content): array
     {
@@ -218,15 +182,6 @@ final class MarkdownLinkTest extends TestCase
         return preg_match('#^(https?://|mailto:|tel:)#i', $target) === 1;
     }
 
-    /**
-     * Resolves `$path` (relative to `$baseDir`, both relative to `$root`)
-     * against the real directory entries, case-sensitively — `is_file()`
-     * alone would pass a wrong-case path on a case-insensitive filesystem
-     * (macOS/APFS) and only fail on Linux CI.
-     *
-     * @return string|null the resolved path relative to $root, or null when
-     *                      any path segment does not exist under that exact case
-     */
     private function resolveCaseSensitive(string $root, string $baseDir, string $path): ?string
     {
         $path = rtrim($path, '/');
@@ -264,11 +219,6 @@ final class MarkdownLinkTest extends TestCase
     }
 
     /**
-     * GitHub's heading-anchor algorithm: link text resolved, lower-cased,
-     * anything but letters/digits/spaces/hyphens/underscores dropped, spaces
-     * turned into hyphens, duplicates suffixed `-1`, `-2`, ... in document
-     * order.
-     *
      * @return list<string>
      */
     private function headingSlugs(string $content): array
@@ -292,10 +242,7 @@ final class MarkdownLinkTest extends TestCase
 
     private function githubSlug(string $heading): string
     {
-        // "[text](url)" inside a heading contributes only its text.
         $text = (string) preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $heading);
-        // mb_strtolower (not strtolower, which only touches A-Z) so a
-        // non-ASCII uppercase letter is lower-cased instead of left alone.
         $text = mb_strtolower($text, 'UTF-8');
         $text = (string) preg_replace(self::GITHUB_SLUG_DISALLOWED_CHARS, '', $text);
         $text = trim($text);

@@ -6,14 +6,10 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * The tests must run on Alpine (musl) PHP builds too, where some constants do not exist (#813).
- */
 final class PortableTestCodeTest extends TestCase
 {
     public function testTestsDoNotUseGlobBrace(): void
     {
-        // The glob brace flag is not defined on musl: PHP 8 throws "Undefined constant". The name is split so this file does not match itself.
         $needle = 'GLOB_' . 'BRACE';
         $found = [];
 

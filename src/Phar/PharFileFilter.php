@@ -5,11 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Phar;
 
 /**
- * Filters files for PHAR inclusion based on exclusion rules.
- *
- * Applies built-in exclusion patterns (tests, var, build, .git, etc.),
- * custom regex exclude patterns, and exact file exclusions.
- *
  * @internal
  */
 final readonly class PharFileFilter

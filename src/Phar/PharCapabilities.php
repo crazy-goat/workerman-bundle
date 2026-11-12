@@ -5,13 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Phar;
 
 /**
- * Probes the runtime environment for PHAR-building capabilities.
- *
- * Centralises the side-effectful checks that `PharBuilder` previously
- * performed inline (`phar.readonly` INI probe, `\Phar` extension presence).
- * Extracting them into a dedicated collaborator makes the checks
- * individually testable and lets `PharBuilder` accept a stub in unit tests.
- *
  * @internal
  */
 final readonly class PharCapabilities
@@ -22,9 +15,6 @@ final readonly class PharCapabilities
     ) {
     }
 
-    /**
-     * Probe the live PHP runtime.
-     */
     public static function probe(): self
     {
         return new self(
@@ -44,9 +34,7 @@ final readonly class PharCapabilities
     }
 
     /**
-     * Assert that the runtime can build PHAR archives.
-     *
-     * @throws \RuntimeException when a required capability is missing
+     * @throws \RuntimeException
      */
     public function assertCanBuild(): void
     {

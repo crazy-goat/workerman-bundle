@@ -8,9 +8,6 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
 
-/**
- * Minimal kernel implementation for benchmarking.
- */
 final class BenchKernel implements KernelInterface, TerminableInterface
 {
     public function terminate(\Symfony\Component\HttpFoundation\Request $request, \Symfony\Component\HttpFoundation\Response $response): void

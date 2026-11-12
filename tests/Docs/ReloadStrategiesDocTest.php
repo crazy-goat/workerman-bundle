@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\RebootStrategyInterface;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * docs/reload-strategies.md must have a section for every reload strategy and name every option of it (issue #878, section 5).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class ReloadStrategiesDocTest extends TestCase
 {
     private const PAGE = 'docs/reload-strategies.md';

@@ -6,15 +6,12 @@ namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
 use CrazyGoat\WorkermanBundle\Http\Response\RequestMethodAwareResponseConverterStrategyInterface;
 use CrazyGoat\WorkermanBundle\Http\Response\ResponseConverterStrategyInterface;
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/events.md and docs/extending.md must name every event, its methods, every tag and the built-in strategy priorities (issue #878, section 5).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class EventsAndTagsDocTest extends TestCase
 {
     /**

@@ -58,9 +58,6 @@ final readonly class SfxSourceResolver
     }
 
     /**
-     * Returns the resolved PHP version if the URL was built from the default template,
-     * or null when a custom URL was provided.
-     *
      * @param mixed[] $buildConfig
      */
     private function resolvePhpVersion(InputInterface $input, array $buildConfig): ?string

@@ -4,21 +4,15 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Docs;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Every environment variable that the bundle reads must be in docs/configuration.md (issue #878, section 5).
- *
- * @coversNothing
- */
+#[CoversNothing]
 final class EnvVarDocTest extends TestCase
 {
     private const PAGE = 'docs/configuration.md';
 
-    /**
-     * Upper-case names that are not settings of the bundle: HTTP method names.
-     */
     private const IGNORED = [
         'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT',
     ];

@@ -15,6 +15,8 @@ use CrazyGoat\WorkermanBundle\ServerManager;
 use CrazyGoat\WorkermanBundle\StatusFileReader;
 use CrazyGoat\WorkermanBundle\Util\Wait;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -23,9 +25,6 @@ use Workerman\Worker;
 final class ServerManagerTest extends TestCase
 {
     /**
-     * Signals reset by prepareWorkerStart(); their handlers are restored after
-     * every test so an in-process call cannot leak into the rest of the suite.
-     *
      * @var list<int>
      */
     private const MANAGED_SIGNALS = [
@@ -82,9 +81,6 @@ final class ServerManagerTest extends TestCase
             cacheDir: sys_get_temp_dir(),
             isDebug: false,
         );
-        // Use a minimal stop_timeout so timeout-based tests complete quickly.
-        // ProcessInspector always adds TIMEOUT_BUFFER (3s), so effective
-        // minimum wait is 3 seconds regardless of this value.
         $this->configLoader->setWorkermanConfig([
             'pid_file' => $this->pidFile,
             'stop_timeout' => 0,
@@ -103,9 +99,6 @@ final class ServerManagerTest extends TestCase
 
         CacheWarmupTimeoutConfig::reset();
 
-        // resolve() reads the env lazily, so a stray
-        // WORKERMAN_CACHE_WARMUP_TIMEOUT in the test environment would flip
-        // the defaults assertions below — save/clear/restore all channels.
         $this->savedServerTimeout = $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
         $this->savedEnvTimeout = $_ENV[CacheWarmupTimeoutConfig::ENV_VAR] ?? null;
         unset($_SERVER[CacheWarmupTimeoutConfig::ENV_VAR], $_ENV[CacheWarmupTimeoutConfig::ENV_VAR]);
@@ -146,16 +139,9 @@ final class ServerManagerTest extends TestCase
         Worker::$daemonize = $this->savedWorkerDaemonize;
 
         foreach ($this->savedSignalHandlers as $signal => $handler) {
-            // PHP ignores SIGPIPE at the OS level but pcntl reports SIG_DFL
-            // for it, so re-applying the saved value would arm the default
-            // action and a later write to a closed socket would kill PHPUnit.
             \pcntl_signal($signal, $signal === \SIGPIPE ? \SIG_IGN : $handler);
         }
     }
-
-    // ──────────────────────────────────────────────
-    // Construction
-    // ──────────────────────────────────────────────
 
     public function testCanBeConstructedWithCollaborators(): void
     {
@@ -184,10 +170,6 @@ final class ServerManagerTest extends TestCase
 
         $this->assertSame(77, $ref->invoke($this->manager));
     }
-
-    // ──────────────────────────────────────────────
-    // writeMasterFingerprint()
-    // ──────────────────────────────────────────────
 
     public function testWriteMasterFingerprintSkipsWithoutPidFile(): void
     {
@@ -273,11 +255,6 @@ final class ServerManagerTest extends TestCase
         (new \ReflectionMethod($manager, 'writeMasterFingerprint'))->invoke($manager, $daemon);
     }
 
-    /**
-     * Create a directory inside the test temp dir that denies writes.
-     *
-     * Skips on Windows and as root, where the permission bits do not apply.
-     */
     private function makeReadOnlyDir(): string
     {
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -300,10 +277,6 @@ final class ServerManagerTest extends TestCase
         return $dir;
     }
 
-    // ──────────────────────────────────────────────
-    // isRunning()
-    // ──────────────────────────────────────────────
-
     public function testIsRunningReturnsFalseWhenNoPidFile(): void
     {
         $this->assertFalse($this->manager->isRunning());
@@ -321,10 +294,8 @@ final class ServerManagerTest extends TestCase
         $this->assertFalse($this->manager->isRunning());
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningReturnsTrueWhenMasterIsRunning(): void
     {
         $pid = $this->forkMasterLikeChild();
@@ -337,27 +308,17 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningReturnsFalseAfterMasterDies(): void
     {
         $pid = $this->forkSleepingChild();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Kill and fully reap the child before checking — zombies are
-        // excluded by ProcessInspector::isProcessAlive only for zombie
-        // state Z, but posix_kill(pid, 0) still returns true for zombies
-        // until the parent reaps them. Blocking wait ensures cleanup.
         $this->killChildBlocking($pid);
 
         $this->assertFalse($this->manager->isRunning());
     }
-
-    // ──────────────────────────────────────────────
-    // stop()
-    // ──────────────────────────────────────────────
 
     public function testStopThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
@@ -370,10 +331,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopForcefulSendsSIGINT(): void
     {
         $pid = $this->forkMasterLikeChild();
@@ -381,7 +340,6 @@ final class ServerManagerTest extends TestCase
 
         try {
             $result = $this->manager->stop(false);
-            // Reap the zombie left by waitForProcessToStop so isAlive works.
             pcntl_waitpid($pid, $status);
 
             $this->assertTrue($result, 'stop() should return true when process is stopped');
@@ -391,10 +349,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopGracefullyReturnsFalseWhenChildIgnoresSIGQUIT(): void
     {
         $pid = $this->forkChildIgnoringSignals();
@@ -410,10 +366,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopGracefulSendsSIGQUIT(): void
     {
         $pid = $this->forkMasterLikeChild();
@@ -430,10 +384,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopThrowsServerNotRunningExceptionWhenProcessAlreadyDead(): void
     {
         $pid = $this->forkSleepingChild();
@@ -465,10 +417,6 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // reload()
-    // ──────────────────────────────────────────────
-
     public function testReloadThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
         try {
@@ -480,10 +428,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReloadSendsSIGUSR1(): void
     {
         $signalFile = $this->tmpDir . '/sigusr1_received';
@@ -501,10 +447,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReloadGracefulSendsSIGUSR2(): void
     {
         $signalFile = $this->tmpDir . '/sigusr2_received';
@@ -522,10 +466,6 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // getStatus()
-    // ──────────────────────────────────────────────
-
     public function testGetStatusThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
         try {
@@ -537,10 +477,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetStatusReturnsParsedContentFromStatusFile(): void
     {
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIOT, $this->statusFile, "ignored header\nworker: running\nmemory: 42MB");
@@ -560,10 +498,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetStatusDeletesStatusFileAfterReading(): void
     {
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIOT, $this->statusFile, "header\ndata");
@@ -577,10 +513,6 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // getConnections()
-    // ──────────────────────────────────────────────
-
     public function testGetConnectionsThrowsServerNotRunningExceptionWhenNoPidFile(): void
     {
         try {
@@ -592,10 +524,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetConnectionsReturnsContentFromConnectionsFile(): void
     {
         $expectedContent = "127.0.0.1:54321\n127.0.0.1:54322";
@@ -614,10 +544,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetConnectionsDeletesConnectionsFileAfterReading(): void
     {
         $pid = $this->forkMasterLikeChildWithSignalHandler(SIGIO, $this->connectionsFile, "data");
@@ -631,14 +559,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // getStatus() / getConnections() — no file created
-    // ──────────────────────────────────────────────
-
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetStatusReturnsNullWhenStatusFileNotCreated(): void
     {
         $pid = $this->forkChildIgnoringSignal(SIGIOT);
@@ -652,10 +574,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetConnectionsReturnsNullWhenFileNotCreated(): void
     {
         $pid = $this->forkChildIgnoringSignal(SIGIO);
@@ -669,14 +589,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // start() — exception when already running
-    // ──────────────────────────────────────────────
-
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStartThrowsServerAlreadyRunningExceptionWhenRunning(): void
     {
         $pid = $this->forkMasterLikeChild();
@@ -690,20 +604,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // restart() — ServerStopFailedException
-    // ──────────────────────────────────────────────
-
-    /**
-     * Test that restart() throws ServerStopFailedException when stop() fails
-     * because the process ignores the stop signal and times out.
-     *
-     * ProcessInspector's TIMEOUT_BUFFER forces a minimum 3-second wait,
-     * so this test is unavoidably slow (~3s).
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testRestartThrowsServerStopFailedExceptionWhenStopFails(): void
     {
         $pid = $this->forkChildIgnoringSignals();
@@ -717,18 +619,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // consumeFile() — atomic read-and-remove (TOCTOU fix)
-    // ──────────────────────────────────────────────
-
-    // ──────────────────────────────────────────────
-    // prepareWorkerStart() — mode flags
-    // ──────────────────────────────────────────────
-
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testPrepareWorkerStartKeepsDaemonModeWhenGracefulIsAlsoSet(): void
     {
         $fixture = __DIR__ . '/Fixtures/prepare_worker_start_test.php';
@@ -765,13 +657,8 @@ final class ServerManagerTest extends TestCase
         yield 'restart in daemon mode with graceful stop' => [ServerAction::RESTART, true, true, 'restart -d -g'];
     }
 
-    /**
-     * Workerman parses the raw argv and keeps the first mode it finds, so the
-     * command string must carry the daemon flag before the graceful flag.
-     *
-     * @requires extension pcntl
-     */
     #[DataProvider('prepareWorkerStartProvider')]
+    #[RequiresPhpExtension('pcntl')]
     public function testPrepareWorkerStartBuildsWorkerCommand(
         ServerAction $action,
         bool $daemon,
@@ -785,13 +672,7 @@ final class ServerManagerTest extends TestCase
         $this->assertSame($daemon, Worker::$daemonize);
     }
 
-    /**
-     * A stale SIGUSR1 handler from a previous command must not survive into
-     * the next Workerman run, otherwise a reload signal can reach the old
-     * process handler.
-     *
-     * @requires extension pcntl
-     */
+    #[RequiresPhpExtension('pcntl')]
     public function testPrepareWorkerStartResetsSignalHandlersToDefault(): void
     {
         \pcntl_signal(\SIGUSR1, static function (): void {
@@ -814,7 +695,6 @@ final class ServerManagerTest extends TestCase
         $result = $method->invoke($this->manager, $file);
 
         $this->assertSame('hello world', $result);
-        // Original file should no longer exist (renamed + unlinked)
         $this->assertFileDoesNotExist($file);
     }
 
@@ -850,21 +730,10 @@ final class ServerManagerTest extends TestCase
         $method = $reflection->getMethod('consumeFile');
         $method->invoke($this->manager, $file);
 
-        // After consumeFile, there should be no .*.tmp files left in the directory
         $remaining = glob($this->tmpDir . '/.cleanup.status.*.tmp');
         $this->assertEmpty($remaining, 'No orphaned temp files should remain after consumeFile');
     }
 
-    /**
-     * Verify that a symlink swap at the original path cannot redirect
-     * the unlink: after rename(), the original path is gone, and the
-     * temp path is the one being unlinked.
-     *
-     * We verify this by checking that:
-     * 1. The original path no longer exists after consumeFile
-     * 2. A new file at the same path contains our new content (not the
-     *    original content, proving the old inode was renamed away)
-     */
     public function testConsumeFileRemovesOriginalInodeAfterRename(): void
     {
         $file = $this->tmpDir . '/inode.status';
@@ -874,37 +743,21 @@ final class ServerManagerTest extends TestCase
         $method = $reflection->getMethod('consumeFile');
         $method->invoke($this->manager, $file);
 
-        // Original path should be gone
         clearstatcache(true, $file);
         $this->assertFileDoesNotExist($file);
 
-        // Create a new file at the same path; it should contain our
-        // new data, proving the old inode was renamed (not overwritten)
         file_put_contents($file, 'new-data');
         $this->assertFileExists($file);
         $this->assertSame('new-data', file_get_contents($file));
     }
 
-    // ──────────────────────────────────────────────
-    // Master fingerprint integration (issue #327)
-    // ──────────────────────────────────────────────
-
-    /**
-     * Regression test for issue #327: `isRunning()` must use the
-     * fingerprint file when available to verify the master PID.
-     *
-     * Writes a fingerprint file with a matching PID, then asserts
-     * that `isRunning()` returns true.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningUsesFingerprintWhenAvailable(): void
     {
         $pid = $this->forkSleepingChild();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Write a fingerprint matching the child PID.
         $fingerprintPath = $this->pidFile . '.fingerprint';
         $matchingFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
             pid: $pid,
@@ -924,20 +777,13 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `isRunning()` must reject a live
-     * plain PHP process when no fingerprint is present, instead of
-     * accepting it because its cmdline contains "php".
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningWithoutFingerprintRejectsPlainPhpProcess(): void
     {
         $pid = $this->forkSleepingChild();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Ensure no fingerprint file exists.
         $fingerprintPath = $this->pidFile . '.fingerprint';
         @unlink($fingerprintPath);
 
@@ -951,15 +797,9 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `isRunning()` without a
-     * fingerprint falls back to the strict cmdline check and accepts
-     * a process carrying the Workerman master title.
-     *
-     * @requires OS Linux
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresOperatingSystem('Linux')]
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningWithoutFingerprintAcceptsMasterTitleProcess(): void
     {
         $pid = $this->forkChildWithMasterTitle();
@@ -978,27 +818,16 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #327: `isRunning()` must reject a PID
-     * whose fingerprint does not match, even if the PID is alive.
-     *
-     * This is the core security test: an unrelated co-located process
-     * whose PID is alive must not be misidentified as the Workerman
-     * master.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testIsRunningRejectsUnrelatedProcessWithFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Write a fingerprint with a DIFFERENT PID — the child is alive
-        // but its PID does not match the fingerprint's PID.
         $fingerprintPath = $this->pidFile . '.fingerprint';
         $mismatchedFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
-            pid: $pid + 1_000_000, // PID that does not exist
+            pid: $pid + 1_000_000,
             startTime: 0,
             uid: \posix_getuid(),
         );
@@ -1015,23 +844,16 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #327: `stop()` must refuse to send
-     * SIGINT to a PID whose fingerprint does not match.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopRefusesToSignalUnrelatedProcessWithFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
         file_put_contents($this->pidFile, (string) $pid);
 
-        // Write a fingerprint with a DIFFERENT PID — the child is alive
-        // but its PID does not match the fingerprint's PID.
         $fingerprintPath = $this->pidFile . '.fingerprint';
         $mismatchedFingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
-            pid: $pid + 1_000_000, // PID that does not exist
+            pid: $pid + 1_000_000,
             startTime: 0,
             uid: \posix_getuid(),
         );
@@ -1062,13 +884,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #327: `reload()` must refuse to send
-     * SIGUSR1 to a PID whose fingerprint does not match.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReloadRefusesToSignalUnrelatedProcessWithFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1107,18 +924,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `stop()` must refuse to signal a
-     * plain PHP process (stale/reused PID) when no fingerprint exists.
-     *
-     * This is the stale-pid scenario: the master died, the PID was
-     * reassigned to an unrelated PHP process, and no fingerprint is
-     * available (e.g. the fingerprint file was not written). The signal
-     * must not be sent.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopRefusesToSignalPlainPhpProcessWithoutFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1151,13 +958,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `reload()` must refuse to signal a
-     * plain PHP process (stale/reused PID) when no fingerprint exists.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testReloadRefusesToSignalPlainPhpProcessWithoutFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1190,13 +992,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `getStatus()` must refuse to signal
-     * a plain PHP process (stale/reused PID) when no fingerprint exists.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetStatusRefusesToSignalPlainPhpProcessWithoutFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1229,14 +1026,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #584: `getConnections()` must refuse to
-     * signal a plain PHP process (stale/reused PID) when no fingerprint
-     * exists.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testGetConnectionsRefusesToSignalPlainPhpProcessWithoutFingerprint(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1269,13 +1060,8 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Regression test for issue #327: `stop()` must remove the
-     * fingerprint sidecar file after a successful stop.
-     *
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopRemovesFingerprintFileAfterSuccessfulStop(): void
     {
         $pid = $this->forkSleepingChild();
@@ -1306,25 +1092,15 @@ final class ServerManagerTest extends TestCase
         }
     }
 
-    /**
-     * Negative test: when the status file is a symlink (attacker swap),
-     * consumeFile reads the symlink target's content but does NOT delete
-     * the target — only the symlink itself (the renamed temp path) is unlinked.
-     *
-     * This verifies the TOCTOU fix prevents a symlink-swap attack from
-     * deleting an arbitrary file.
-     */
     public function testConsumeFileDoesNotDeleteSymlinkTarget(): void
     {
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             $this->markTestSkipped('Symlink test requires POSIX');
         }
 
-        // Create a "victim" file
         $victim = $this->tmpDir . '/victim.txt';
         file_put_contents($victim, 'sensitive data');
 
-        // Create a symlink at the status file path pointing to the victim
         $statusFile = $this->tmpDir . '/symlinked.status';
         symlink($victim, $statusFile);
 
@@ -1334,26 +1110,17 @@ final class ServerManagerTest extends TestCase
         $method = $reflection->getMethod('consumeFile');
         $result = $method->invoke($this->manager, $statusFile);
 
-        // consumeFile should read through the symlink
         $this->assertSame('sensitive data', $result);
 
-        // The symlink itself should be gone (renamed + unlinked)
         clearstatcache(true, $statusFile);
         $this->assertFileDoesNotExist($statusFile);
 
-        // The victim file must still exist — consumeFile must not have
-        // followed the symlink and deleted the target
         $this->assertFileExists($victim, 'Symlink target must not be deleted');
         $this->assertSame('sensitive data', file_get_contents($victim));
 
-        // No orphaned temp files should remain
         $remaining = glob($this->tmpDir . '/.symlinked.status.*.tmp');
         $this->assertEmpty($remaining, 'No orphaned temp files should remain after consumeFile');
     }
-
-    // ──────────────────────────────────────────────
-    // Helper — fork a child that sleeps forever
-    // ──────────────────────────────────────────────
 
     private function forkSleepingChild(): int
     {
@@ -1371,14 +1138,6 @@ final class ServerManagerTest extends TestCase
         return $pid;
     }
 
-    /**
-     * Fork a child that looks like a Workerman master: it carries the
-     * master process title and a matching fingerprint is written by the
-     * parent. Used by signal-path tests so verification passes on every
-     * platform (fingerprint) and the strict cmdline fallback also passes
-     * on Linux (title, simulated via execve argv[0] — see
-     * {@see forkChildWithMasterTitle}).
-     */
     private function forkMasterLikeChild(): int
     {
         $marker = \sys_get_temp_dir() . '/workerman_master_title_' . \bin2hex(\random_bytes(4));
@@ -1398,14 +1157,6 @@ final class ServerManagerTest extends TestCase
         return $pid;
     }
 
-    /**
-     * Fork a child that looks like a Workerman master AND installs an
-     * async signal handler for the given signal (same behaviors as
-     * {@see forkChildWithAsyncSignalHandler}). The master identity is
-     * established by the matching fingerprint only — the process title
-     * is irrelevant here and is intentionally not simulated (it cannot
-     * survive the exec that a signal handler requires).
-     */
     private function forkMasterLikeChildWithSignalHandler(int $signal, string $signalFile, ?string $content = null): int
     {
         $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
@@ -1415,19 +1166,15 @@ final class ServerManagerTest extends TestCase
         }
 
         if ($pid === 0) {
-            // Enable async signal delivery so handlers fire immediately.
             pcntl_async_signals(true);
 
             pcntl_signal($signal, static function () use ($signalFile, $content): void {
                 file_put_contents($signalFile, $content ?? 'received');
             });
 
-            // Signal the parent that handlers are installed.
             @touch($readyMarker);
 
             for (;;) {
-                // Keep-alive loop — NOT a wait. The usleep paces signal
-                // delivery; it must not be replaced with Wait::until().
                 usleep(100_000);
             }
         }
@@ -1438,15 +1185,6 @@ final class ServerManagerTest extends TestCase
         return $pid;
     }
 
-    /**
-     * Fork a child that carries the Workerman master title but gets NO
-     * fingerprint — used by strict fallback tests (Linux cmdline check).
-     *
-     * The title is simulated with `execve()` (argv[0]) rather than
-     * `cli_set_process_title()`, whose effect on /proc/$pid/cmdline
-     * varies by PHP build (PHP >= 8.5 keeps the original argv on some
-     * builds) — execve is kernel behaviour, identical everywhere.
-     */
     private function forkChildWithMasterTitle(): int
     {
         $marker = \sys_get_temp_dir() . '/workerman_master_title_' . \bin2hex(\random_bytes(4));
@@ -1465,10 +1203,6 @@ final class ServerManagerTest extends TestCase
         return $pid;
     }
 
-    /**
-     * Write a fingerprint file matching the given PID (current UID,
-     * real start time) next to the test PID file.
-     */
     private function writeMatchingFingerprint(int $pid): void
     {
         $fingerprint = new \CrazyGoat\WorkermanBundle\MasterFingerprint(
@@ -1479,21 +1213,6 @@ final class ServerManagerTest extends TestCase
         $fingerprint->writeTo($this->pidFile . '.fingerprint');
     }
 
-    /**
-     * Replace the current process with one that carries the Workerman
-     * master process title in its command line (used by the fork
-     * helpers). The title is simulated with `bash -c 'exec -a ...'`
-     * (execve argv[0]) rather than `cli_set_process_title()`, whose
-     * effect on /proc/$pid/cmdline varies by PHP build (PHP >= 8.5
-     * keeps the original argv on some builds). Execve is kernel
-     * behaviour, identical everywhere. The child touches $marker AFTER
-     * the exec so the parent can synchronise on it.
-     *
-     * The exec'd process redirects stdio to `/dev/null` so it cannot
-     * keep PHPUnit's output descriptors open, and it uses a tiny PHP
-     * loop (not `/bin/sh`) because the shell loop ignores SIGINT/SIGQUIT
-     * on macOS and makes stop() tests hang in `waitpid()`.
-     */
     private function execAsMasterTitle(string $marker): never
     {
         $title = 'WorkerMan: master process  start_file=' . __FILE__;
@@ -1518,12 +1237,6 @@ PHP;
         exit(1);
     }
 
-    /**
-     * Fork a child that catches SIGINT and SIGQUIT with an empty handler
-     * (prevents default termination). Used for timeout tests. A matching
-     * fingerprint is written so verification of the master identity
-     * passes on every platform (issue #584 fail-closed behaviour).
-     */
     private function forkChildIgnoringSignals(): int
     {
         $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
@@ -1538,10 +1251,8 @@ PHP;
             });
             pcntl_signal(SIGQUIT, static function (): void {
             });
-            // Signal the parent that handlers are installed.
             @touch($readyMarker);
             for (;;) {
-                // Keep-alive loop — NOT a wait.
                 usleep(100_000);
             }
         }
@@ -1552,13 +1263,6 @@ PHP;
         return $pid;
     }
 
-    /**
-     * Fork a child that catches a signal with an empty handler (prevents
-     * default termination but does not create the status/connections file).
-     * Used for getStatus/getConnections timeout tests. A matching
-     * fingerprint is written so verification passes on every platform
-     * (issue #584 fail-closed behaviour).
-     */
     private function forkChildIgnoringSignal(int $signal): int
     {
         $readyMarker = $this->tmpDir . '/child_ready_' . bin2hex(random_bytes(4));
@@ -1571,10 +1275,8 @@ PHP;
             pcntl_async_signals(true);
             pcntl_signal($signal, static function (): void {
             });
-            // Signal the parent that the handler is installed.
             @touch($readyMarker);
             for (;;) {
-                // Keep-alive loop — NOT a wait.
                 usleep(100_000);
             }
         }
@@ -1585,20 +1287,11 @@ PHP;
         return $pid;
     }
 
-    // ──────────────────────────────────────────────
-    // File / process helpers
-    // ──────────────────────────────────────────────
-
     private function waitForFile(string $path, int $timeout): void
     {
         Wait::until(static fn(): bool => file_exists($path), $timeout);
     }
 
-    /**
-     * Wait until a forked child has installed its signal handlers by
-     * polling for a readiness marker file, replacing the fixed
-     * `usleep(200_000)` that guessed at handler-install latency.
-     */
     private function waitForChildReady(string $marker): void
     {
         $ready = Wait::until(static fn(): bool => file_exists($marker), 5);
@@ -1606,12 +1299,6 @@ PHP;
         $this->assertTrue($ready, 'Child did not install signal handlers within 5s');
     }
 
-    /**
-     * Wait for a child readiness marker, killing the child when the wait
-     * fails: waitForChildReady's AssertionFailedError would propagate
-     * out of the fork helper before the test method's try/finally is
-     * entered, orphaning the child.
-     */
     private function waitForChildReadyOrKill(string $marker, int $pid): void
     {
         try {
@@ -1627,9 +1314,6 @@ PHP;
         return $pid > 0 && posix_kill($pid, 0);
     }
 
-    /**
-     * Kill a child and block until fully reaped (no zombie left behind).
-     */
     private function killChildBlocking(int $pid): void
     {
         if ($this->isAlive($pid)) {

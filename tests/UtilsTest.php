@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test;
 
 use CrazyGoat\WorkermanBundle\Utils;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresOperatingSystem;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Utils
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Utils::class)]
 final class UtilsTest extends TestCase
 {
     /** @var list<string> */
@@ -32,24 +33,16 @@ final class UtilsTest extends TestCase
 
     public function testCpuCountNeverReturnsZero(): void
     {
-        // Regression test for #150: Utils::cpuCount() must NEVER return 0,
-        // even when shell_exec('nproc') returns null (command not available)
-        // or produces empty/unexpected output. Returning 0 would cause
-        // downstream issues: zero workers spawned in ServerWorker.
         $this->assertNotSame(0, Utils::cpuCount());
     }
 
-    /**
-     * @requires OS Windows
-     */
+    #[RequiresOperatingSystem('Windows')]
     public function testCpuCountReturnsOneOnWindows(): void
     {
         $this->assertSame(1, Utils::cpuCount());
     }
 
-    /**
-     * @requires OS Linux|Darwin
-     */
+    #[RequiresOperatingSystem('Linux|Darwin')]
     public function testCpuCountReturnsOneWhenShellExecDisabled(): void
     {
         if (function_exists('shell_exec')) {
@@ -77,9 +70,7 @@ final class UtilsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider cgroupV2Provider
-     */
+    #[DataProvider('cgroupV2Provider')]
     public function testCgroupCpuLimitReadsFakeFiles(string $content, string $version, ?int $expected): void
     {
         $root = $this->makeFakeCgroup();
@@ -102,9 +93,7 @@ final class UtilsTest extends TestCase
         $this->assertNull(Utils::cgroupCpuLimit('/this/path/does/not/exist'));
     }
 
-    /**
-     * @requires OS Linux
-     */
+    #[RequiresOperatingSystem('Linux')]
     public function testCpuCountIsLimitedByCgroupQuota(): void
     {
         $root = $this->makeFakeCgroup();
@@ -113,9 +102,7 @@ final class UtilsTest extends TestCase
         $this->assertSame(1, Utils::cpuCount($root));
     }
 
-    /**
-     * @requires OS Linux
-     */
+    #[RequiresOperatingSystem('Linux')]
     public function testCpuCountIgnoresQuotaAboveRealCpuCount(): void
     {
         $root = $this->makeFakeCgroup();
@@ -166,7 +153,6 @@ final class UtilsTest extends TestCase
         $this->expectException(\Error::class);
         $this->expectExceptionMessageMatches('/(private|cannot be accessed)/');
 
-        // PHPStan doesn't understand expectException() - this line is expected to throw
         /** @phpstan-ignore-next-line */
         new Utils();
     }

@@ -9,18 +9,17 @@ use CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy;
 use CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
-/**
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy
- * @covers \CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy
- */
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\AlwaysRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\ExceptionRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\MaxJobsRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\MemoryRebootStrategy::class)]
+#[CoversClass(\CrazyGoat\WorkermanBundle\Reboot\Strategy\StackRebootStrategy::class)]
 final class RebootStrategyTest extends TestCase
 {
     public function testMaxJobsRebootStrategyReturnsFalseUntilLimit(): void
@@ -29,7 +28,6 @@ final class RebootStrategyTest extends TestCase
 
         $this->assertFalse($strategy->shouldReboot());
         $this->assertFalse($strategy->shouldReboot());
-        // Issue #967: the 3rd request triggers the reload, not the 4th.
         $this->assertTrue($strategy->shouldReboot());
     }
 
@@ -69,8 +67,6 @@ final class RebootStrategyTest extends TestCase
         $randomizer = new \Random\Randomizer($engine);
         $strategy = new MaxJobsRebootStrategy(100, 10, $randomizer);
 
-        // With 10% dispersion on 100 jobs, range is 90-100
-        // With this specific seed, the randomizer produces 90
         $rebootAt = null;
         for ($i = 1; $i <= 100; ++$i) {
             if ($strategy->shouldReboot()) {
@@ -79,8 +75,6 @@ final class RebootStrategyTest extends TestCase
             }
         }
 
-        // With seeded randomizer, we should reboot at exactly 90: the
-        // drawn limit is 90 and the 90th job triggers the reload (issue #967).
         $this->assertSame(90, $rebootAt, 'Should reboot at deterministic job count with seeded randomizer');
     }
 
@@ -127,13 +121,11 @@ final class RebootStrategyTest extends TestCase
         $exception1 = new \RuntimeException('First exception');
         $exception2 = new \RuntimeException('Second exception');
 
-        // First exception cycle
         $event1 = new ExceptionEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception1);
         $strategy->onException($event1);
         $this->assertTrue($strategy->shouldReboot(), 'First exception should trigger reboot');
         $this->assertFalse($strategy->shouldReboot(), 'State should be reset after first check');
 
-        // Second exception cycle - strategy should re-arm
         $event2 = new ExceptionEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception2);
         $strategy->onException($event2);
         $this->assertTrue($strategy->shouldReboot(), 'Second exception should also trigger reboot');
@@ -264,7 +256,6 @@ final class RebootStrategyTest extends TestCase
         $strategy->shouldReboot();
         $strategy->shouldReboot();
 
-        // The second call falls inside the cooldown, so the scheduler ran once, not twice.
         $this->assertSame(1, $schedulerCallCount);
     }
 
@@ -292,7 +283,6 @@ final class RebootStrategyTest extends TestCase
     {
         gc_collect_cycles();
 
-        // The automatic GC must not collect the cycles before the scheduler runs.
         $gcWasEnabled = gc_enabled();
         gc_disable();
 
@@ -357,8 +347,6 @@ final class RebootStrategyTest extends TestCase
             $freed += gc_collect_cycles();
         };
 
-        // The limit sits just below the pre-GC reading: only the strategy's own
-        // collection can keep the worker from being reloaded.
         $strategy = new MemoryRebootStrategy(memory_get_usage() - 1, 1, 60, $scheduler);
 
         $this->assertFalse(
@@ -409,9 +397,6 @@ final class RebootStrategyTest extends TestCase
         }
         unset($garbage, $a, $b);
 
-        // Default scheduler: the preventive collection is deferred via
-        // Timer::add(0, ...), which never fires in this unit test, so the
-        // cycles must still be present after shouldReboot().
         $strategy = new MemoryRebootStrategy(PHP_INT_MAX, 1);
         $this->assertFalse($strategy->shouldReboot());
 
@@ -442,8 +427,6 @@ final class RebootStrategyTest extends TestCase
         $this->assertTrue($strategy->shouldReboot());
         $this->assertSame(1, $schedulerCalls);
 
-        // Within gc_cooldown no collection is attempted; the verdict must fall
-        // back to the current reading instead of pretending memory is fine.
         $this->assertTrue($strategy->shouldReboot());
         $this->assertSame(1, $schedulerCalls);
     }

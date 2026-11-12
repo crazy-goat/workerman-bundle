@@ -1,20 +1,5 @@
 <?php
 
-/**
- * Standalone SIGCHLD handler test runner.
- *
- * Runs outside PHPUnit process to avoid inheriting output buffers,
- * shutdown functions, and other PHPUnit state that interferes with
- * pcntl_fork() + exit() behavior.
- *
- * Usage: php sigchld_test_runner.php <test_name>
- *
- * Exit codes:
- *   0 = test passed
- *   1 = test failed (message on stderr)
- *   2 = invalid usage
- */
-
 declare(strict_types=1);
 
 /** @var int<1, max> $argc */
@@ -27,15 +12,12 @@ if ($argc < 2) {
 
 $testName = $argv[1];
 
-// Wait::until() is used by the shared helper functions below.
 require __DIR__ . '/../../vendor/autoload.php';
 
 /** @var array<string> */
 $logMessages = [];
 
 /**
- * Install the same SIGCHLD handler pattern used in SchedulerWorker.
- *
  * @param array<string> $logMessages
  */
 function installSigchldHandler(array &$logMessages): void
@@ -56,9 +38,6 @@ function installSigchldHandler(array &$logMessages): void
 }
 
 /**
- * Wait for child processes to terminate and signals to be dispatched.
- * Uses condition-based waiting: polls until expected count is reached or timeout.
- *
  * @param array<string> $logMessages
  */
 function waitForChildren(array &$logMessages, int $expectedCount, int $timeoutMs = 5000): void
@@ -74,23 +53,14 @@ function waitForChildren(array &$logMessages, int $expectedCount, int $timeoutMs
         maxDelayMs: 10,
     );
 
-    // Final dispatch attempt
     pcntl_signal_dispatch();
 }
 
-/**
- * Wait for a child to terminate without expecting log messages (exit code 0).
- *
- * WARNING: This function reaps the child via pcntl_waitpid(), which means
- * the SIGCHLD handler will NOT fire for this child. Only use when no log
- * messages are expected (i.e. the child exits with code 0).
- */
 function waitForChildReap(int $childPid, int $timeoutMs = 5000): void
 {
     \CrazyGoat\WorkermanBundle\Util\Wait::until(
         function () use ($childPid): bool {
             pcntl_signal_dispatch();
-            // Check if child is still alive
             $result = pcntl_waitpid($childPid, $status, WNOHANG);
 
             return $result === $childPid || $result === -1;
@@ -123,8 +93,6 @@ function assertContains(string $needle, string $haystack, string $message): void
         fail("$message (expected '$needle' in '$haystack')");
     }
 }
-
-// --- Test implementations ---
 
 match ($testName) {
     'nonzero_exit' => testNonZeroExit(),
@@ -178,11 +146,8 @@ function testZeroExit(): void
         fail('Fork failed');
     }
 
-    // For zero exit, we don't expect messages — but we need to wait
-    // for the child to actually terminate before checking
     waitForChildReap($pid);
 
-    // Dispatch any pending signals
     pcntl_signal_dispatch();
 
     assertCount(0, $logMessages, 'Should not log anything for exit code 0');
@@ -198,7 +163,6 @@ function testSignalKill(): void
 
     $pid = pcntl_fork();
     if ($pid === 0) {
-        // Sleep until parent sends SIGTERM
         sleep(60);
         exit(0);
     }
@@ -206,7 +170,6 @@ function testSignalKill(): void
         fail('Fork failed');
     }
 
-    // Wait until the child process is scheduled by the kernel before signalling.
     \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid, 0), 2);
 
     posix_kill($pid, SIGTERM);
@@ -260,15 +223,10 @@ function testMultipleChildren(): void
     exit(0);
 }
 
-// --- SchedulerWorker-specific behavioral tests ---
-// These tests use reflection to invoke the actual SchedulerWorker::handleSigchld
-// method, providing regression protection if the handler implementation changes.
-
 function testSchedulerWorkerHandler(): void
 {
     requireAutoloader();
 
-    // Capture Worker log output via logFile + outputStream
     $logFilePath = tempnam(sys_get_temp_dir(), 'test_sigchld_');
     if ($logFilePath === false) {
         fail('Failed to create temp log file');
@@ -301,7 +259,6 @@ function testSchedulerWorkerHandler(): void
         ));
     };
 
-    // Test 1: Non-zero exit code triggers warning log
     $pid1 = pcntl_fork();
     if ($pid1 === 0) {
         exit(42);
@@ -329,13 +286,11 @@ function testSchedulerWorkerHandler(): void
         fail('Should have logged non-zero exit (expected "exited with code 42")');
     }
 
-    // Verify handler reaped the child
     $reapResult = pcntl_waitpid(-1, $status, WNOHANG);
     if ($reapResult > 0) {
         fail(sprintf('Child should have been reaped by handler (waitpid returned %d)', $reapResult));
     }
 
-    // Test 2: Zero exit code produces no warning log
     $logCountBefore = count($readLogs());
     $pid2 = pcntl_fork();
     if ($pid2 === 0) {
@@ -357,7 +312,6 @@ function testSchedulerWorkerHandler(): void
     );
     pcntl_signal_dispatch();
 
-    // Check that no warning log was produced for zero exit
     $newLogs = array_slice($readLogs(), $logCountBefore);
     foreach ($newLogs as $log) {
         if (str_contains($log, 'exited with code')) {
@@ -365,7 +319,6 @@ function testSchedulerWorkerHandler(): void
         }
     }
 
-    // Test 3: Signal-killed child triggers warning log
     $logCountBefore = count($readLogs());
     $pid3 = pcntl_fork();
     if ($pid3 === 0) {
@@ -376,7 +329,6 @@ function testSchedulerWorkerHandler(): void
         fail('Fork failed for signal kill test');
     }
 
-    // Wait until the child process is scheduled by the kernel before signalling.
     \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid3, 0), 2);
     posix_kill($pid3, SIGTERM);
 
@@ -400,7 +352,6 @@ function testSchedulerWorkerHandler(): void
         fail('Should have logged signal kill message (expected "was killed by signal")');
     }
 
-    // Verify handler reaped the killed child
     $reapResult2 = pcntl_waitpid(-1, $status, WNOHANG);
     if ($reapResult2 > 0) {
         fail(sprintf('Killed child should have been reaped by handler (waitpid returned %d)', $reapResult2));
@@ -456,7 +407,6 @@ function testSchedulerWorkerExceptionLogging(): void
     $service = new \CrazyGoat\WorkermanBundle\Util\ServiceMethod('test.exception.service', '__invoke');
     $taskName = 'test_exception_task';
 
-    // Create mocks that cause TaskHandler to throw during dispatchAndInvoke
     $container = new class implements \Psr\Container\ContainerInterface {
         public function get(string $id): mixed
         {
@@ -540,12 +490,6 @@ function testSchedulerWorkerExceptionLogging(): void
     exit(0);
 }
 
-/**
- * A task child must not run PHP shutdown in the fork: that shutdown runs
- * libevent cleanup on the inherited EventBase and kills the scheduler's
- * signal events (issue #1023). The child is replaced with `php -n -r exit()`,
- * so a shutdown function registered in the fork must never run.
- */
 function testSchedulerWorkerChildSkipsShutdown(): void
 {
     requireAutoloader();
@@ -624,8 +568,6 @@ function testSchedulerWorkerChildSkipsShutdown(): void
     }
 
     if ($pid === 0) {
-        // Mimic Workerman's resetStd() in a daemon worker child: STDOUT and
-        // STDERR are closed. A flush on them would throw a TypeError.
         fclose(STDOUT);
         fclose(STDERR);
 
@@ -706,16 +648,10 @@ function createSchedulerWorkerInstance(): \CrazyGoat\WorkermanBundle\Worker\Sche
     return $schedulerWorker;
 }
 
-/**
- * Simulates a grpc host for signals tests: SIGKILL is the normal
- * task-completion path (ProcessTerminator is active).
- */
 function testSigkillNormalWhenGrpc(): void
 {
     requireAutoloader();
 
-    // Simulate a grpc host: SIGKILL becomes the normal task-completion path
-    // (as when ProcessTerminator is active).
     \CrazyGoat\WorkermanBundle\Worker\SchedulerWorker::setSigkillNormalCompletion(true);
 
     $logFilePath = tempnam(sys_get_temp_dir(), 'test_sigchld_');
@@ -741,7 +677,6 @@ function testSigkillNormalWhenGrpc(): void
 
     pcntl_signal(SIGCHLD, $handleSigchld);
 
-    // SIGKILL self-kill = normal completion on grpc hosts: must stay silent.
     $pid = pcntl_fork();
     if ($pid === 0) {
         \posix_kill(\posix_getpid(), \SIGKILL);
@@ -753,8 +688,6 @@ function testSigkillNormalWhenGrpc(): void
     $reaped = \CrazyGoat\WorkermanBundle\Util\Wait::until(
         function () use ($pid): bool {
             pcntl_signal_dispatch();
-            // The handler reaps the child silently (normal completion), so
-            // existence-check the pid instead of waitpid.
             return !\posix_kill($pid, 0);
         },
         5,
@@ -764,9 +697,6 @@ function testSigkillNormalWhenGrpc(): void
     if (!$reaped) {
         fail('SIGKILL child was not reaped by SIGCHLD handler');
     }
-    // Brief settle for the log file write to flush before checking it.
-    // This is a pacing delay, not a condition wait — the test asserts the
-    // log does NOT contain a crash message, so there is no condition to poll.
     usleep(50_000);
     pcntl_signal_dispatch();
 
@@ -774,7 +704,6 @@ function testSigkillNormalWhenGrpc(): void
         fail('SIGKILL completion must not be logged as a crash on grpc hosts');
     }
 
-    // A non-SIGKILL signal must still be logged as a crash.
     $pid2 = pcntl_fork();
     if ($pid2 === 0) {
         sleep(60);
@@ -783,9 +712,6 @@ function testSigkillNormalWhenGrpc(): void
     if ($pid2 === -1) {
         fail('Fork failed');
     }
-    // Wait until the child process is scheduled by the kernel before signalling.
-    // SIGUSR1 is SIG_IGN in this process (inherited from the PHPUnit
-    // bootstrap across exec), so use SIGTERM to kill the child.
     \CrazyGoat\WorkermanBundle\Util\Wait::until(static fn(): bool => \posix_kill($pid2, 0), 2);
     \posix_kill($pid2, \SIGTERM);
 
@@ -831,8 +757,6 @@ function testSigkillWarnsWithoutGrpc(): void
 
     pcntl_signal(SIGCHLD, $handleSigchld);
 
-    // Without grpc (plain php -n process) SIGKILL is NOT the normal
-    // completion path and must still produce a warning.
     $pid = pcntl_fork();
     if ($pid === 0) {
         \posix_kill(\posix_getpid(), \SIGKILL);

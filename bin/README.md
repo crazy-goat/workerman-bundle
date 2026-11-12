@@ -100,6 +100,26 @@ Exit codes: 0 = every type is referenced, 1 = one or more unused types,
 does not match `InvalidCacheDirectoryException`; a `use` import counts as a
 reference, and a self-reference inside the class's own file does not.
 
+### `check-test-annotations.php`
+
+Fails when a PHPUnit or PHPBench doc annotation (`@requires`, `@dataProvider`,
+`@group`, `@covers`, `@Revs`, `@Bench\Revs`, …) is left in a docblock under
+`src/`, `tests/`, `benchmarks/`, `bin/`, `e2e/` or `tools/`. The
+`CrazyGoat/no_narrative_comments` PHP-CS-Fixer rule leaves such docblocks alone so
+the annotation is never lost silently (#1194); this check makes sure it is
+converted to the matching attribute. The tag list is shared with the rule
+(`tools/php-cs-fixer/TestAnnotationTags.php`). Wired into `composer lint`;
+`tests/TestAnnotationsLintTest.php` drives the script as a subprocess against
+synthetic fixtures.
+
+**Usage:**
+```bash
+php bin/check-test-annotations.php               # what composer lint runs
+php bin/check-test-annotations.php --root=/path/to/checkout
+```
+
+Exit codes: 0 = no doc annotations, 1 = one or more found, 2 = usage error.
+
 ### `check-upgrade-exceptions.php`
 
 Verifies that the exception-hierarchy tree in `UPGRADE.md` (the `text` fenced
@@ -134,7 +154,7 @@ missing root, missing/unreadable `UPGRADE.md` or `src/Exception/`).
 
 Runs every static analysis, linter and formatter check: `composer validate --strict`,
 `composer audit`, PHP-CS-Fixer (dry run), PHPStan, Rector (dry run), `kb-lint.php`,
-`check-changelog.php`, `check-exception-usage.php`, `check-upgrade-exceptions.php`, `shellcheck` on every shell script
+`check-changelog.php`, `check-exception-usage.php`, `check-upgrade-exceptions.php`, `check-test-annotations.php`, `shellcheck` on every shell script
 (including extensionless ones such as `docker-test`) and `hadolint` on the Dockerfile.
 It runs every step, even after one failed, and exits non-zero if any failed. A missing
 tool (`shellcheck`, `hadolint`) is a failure. `composer lint` calls this script.

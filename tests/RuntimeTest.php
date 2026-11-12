@@ -104,11 +104,6 @@ final class RuntimeTest extends TestCase
         self::assertSame(45, $ref->getValue($runner));
     }
 
-    /**
-     * Issue #759: on the Runner path Runtime::getRunner() runs pre-kernel-boot
-     * (no set() from WorkermanBundle::loadExtension() has run), so the env var
-     * must flow into the Runner without any prior set() call.
-     */
     public function testGetRunnerReadsTimeoutFromEnvWithoutPriorSet(): void
     {
         $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '77';

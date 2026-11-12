@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Test\Worker;
 
 use CrazyGoat\WorkermanBundle\Worker\RestartBackoff;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Workerman\Worker;
 
@@ -58,7 +59,6 @@ final class RestartBackoffTest extends TestCase
             $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         }
 
-        // First start: no wait. Then 1, 2, 4, and 5 (the cap) twice.
         $this->assertSame([1, 2, 4, 5, 5], $this->sleeps);
     }
 
@@ -66,18 +66,15 @@ final class RestartBackoffTest extends TestCase
     {
         $backoff = $this->backoff(delay: 1, healthyAfter: 30);
 
-        // Three fast starts: waits 1 and 2.
         $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         $this->assertSame([1, 2], $this->sleeps);
 
-        // The next start happens after a healthy run, so the counter resets.
         $this->now += 30;
         $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         $this->assertSame([1, 2], $this->sleeps);
 
-        // The following fast failure starts the ramp again.
         $backoff->beforeStart('slot', 'Process', 'worker', $this->noopLog());
         $this->assertSame([1, 2, 1], $this->sleeps);
     }
@@ -169,10 +166,8 @@ final class RestartBackoffTest extends TestCase
         $this->assertSame(10, $backoff->delayForFailures(100));
     }
 
-    /**
-     * @requires extension pcntl
-     * @requires extension posix
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
     public function testStopSignalEndsTheWaitEarly(): void
     {
         $readyFile = $this->tempDir . '/ready';
@@ -191,7 +186,6 @@ final class RestartBackoffTest extends TestCase
             );
             $this->assertTrue($ready, 'The child did not reach the backoff wait');
 
-            // Give the child time to enter the sleep loop, then stop it.
             usleep(200_000);
             $pid = proc_get_status($process)['pid'];
             $this->assertGreaterThan(0, $pid);

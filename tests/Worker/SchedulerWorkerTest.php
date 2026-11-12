@@ -18,14 +18,6 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Events\EventInterface;
 use Workerman\Worker;
 
-/**
- * Tests for SchedulerWorker.
- *
- * Structural tests verify constructor behavior and closure configuration.
- * Behavioral tests (fork, flock, PID lifecycle) run in isolated PHP processes
- * via proc_open to avoid PHPUnit state interference with pcntl_fork().
- */
-
 final class SchedulerWorkerTest extends TestCase
 {
     private KernelFactory $kernelFactory;
@@ -240,9 +232,6 @@ final class SchedulerWorkerTest extends TestCase
 
     public function testZeroIntervalTaskIsSkippedWithIncorrectTriggerLog(): void
     {
-        // Int 0 is already caught by the empty() check earlier; a
-        // non-empty zero-length interval exercises the PeriodicalTrigger
-        // constructor validation instead (issue #667).
         $output = $this->invokeOnWorkerStartWithConfig(
             ['my_service' => ['schedule' => 'PT0S']],
         );
@@ -253,12 +242,6 @@ final class SchedulerWorkerTest extends TestCase
         $this->assertStringNotContainsString('Task "my_service" scheduled', $output);
     }
 
-    /**
-     * The trigger rejection log must carry the underlying exception message
-     * so operators can see *why* the trigger was rejected, not just that it
-     * was (issue #700). A malformed ISO-8601 duration that fails
-     * DateInterval parsing exercises a different rejection path than PT0S.
-     */
     public function testIncorrectTriggerLogIncludesExceptionMessage(): void
     {
         $output = $this->invokeOnWorkerStartWithConfig(
@@ -267,19 +250,13 @@ final class SchedulerWorkerTest extends TestCase
 
         $this->assertStringContainsString('Task "my_service" skipped.', $output);
         $this->assertStringContainsString('Trigger "PT" is incorrect:', $output);
-        // The exact DateInterval parse error text varies by PHP version, but
-        // it always contains the offending input or a descriptive phrase.
         $this->assertStringNotContainsString('Task "my_service" scheduled', $output);
-        // The log line must not end at "is incorrect" — the exception message
-        // must be appended after the colon.
         $this->assertMatchesRegularExpression(
             '/Trigger "PT" is incorrect: .+/',
             $output,
             'The trigger rejection log must append the exception message after "is incorrect:"',
         );
     }
-
-    // --- Behavioral tests via isolated runner ---
 
     private const RUNNER_SCRIPT = __DIR__ . '/../Fixtures/scheduler_worker_runner.php';
 
@@ -355,10 +332,6 @@ final class SchedulerWorkerTest extends TestCase
         return $output;
     }
 
-    /**
-     * Run a SchedulerWorker test in an isolated PHP process to avoid
-     * PHPUnit state inheritance issues with pcntl_fork().
-     */
     private function runIsolatedTest(string $testName): void
     {
         $this->assertFileExists(self::RUNNER_SCRIPT, 'Test runner script must exist');
@@ -474,8 +447,6 @@ final class SchedulerWorkerTest extends TestCase
         return $ref->getValue();
     }
 
-    // --- PID file handle caching tests ---
-
     public function testOpenPidFileReturnsSameResourceOnSubsequentCalls(): void
     {
         $tempDir = sys_get_temp_dir() . '/workerman_cache_test_' . uniqid();
@@ -526,19 +497,15 @@ final class SchedulerWorkerTest extends TestCase
             $fp = $refOpen->invoke($scheduler, $pidFile, 'testTask');
             $this->assertIsResource($fp);
 
-            // Acquire lock
             $this->assertTrue($refAcquire->invoke($scheduler, $fp));
 
-            // Release without closing
             $refRelease->invoke($scheduler, $fp);
 
-            // Handle should still be valid — re-acquire lock
             $this->assertTrue(
                 $refAcquire->invoke($scheduler, $fp),
                 'Should be able to re-acquire lock after releaseLock without re-opening',
             );
 
-            // Release again
             $refRelease->invoke($scheduler, $fp);
         } finally {
             @unlink($tempDir . '/test.pid');
@@ -546,15 +513,6 @@ final class SchedulerWorkerTest extends TestCase
         }
     }
 
-    // --- Tick callback args test (Issue #293) ---
-
-    /**
-     * Fixed-rate cadence (issue #565): the next run of a PeriodicalTrigger
-     * task is computed from the previous run's scheduled time, not from the
-     * current time, so the fire times stay on the interval grid even when
-     * rescheduling happens late. The delays shrink to absorb the overhead
-     * instead of growing.
-     */
     public function testPeriodicalTriggerKeepsFixedRateCadence(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -577,21 +535,13 @@ final class SchedulerWorkerTest extends TestCase
 
         $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
 
-        // First run scheduled from the origin (12:00:00) -> fires at 12:01:00.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
-        // Rescheduled 45 s late: from-now would fire 75 s later; fixed-rate fires 15 s later (12:02:00).
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
-        // Rescheduled 50 s late: fixed-rate fires 10 s later (12:03:00).
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
 
         $this->assertSame([60.0, 15.0, 10.0], $capturedDelays);
     }
 
-    /**
-     * A reschedule arriving after several slots have passed (lock
-     * contention, long run) must skip the missed ticks and resume on the
-     * next grid slot with a single delay — no burst of catch-up executions.
-     */
     public function testPeriodicalTriggerLateRescheduleSkipsMissedTicks(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -614,19 +564,12 @@ final class SchedulerWorkerTest extends TestCase
 
         $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
 
-        // First run scheduled at 12:00:00, fires at 12:01:00.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
-        // Lock held by the 12:01 run until 12:06:30: slots 12:02..12:06 are
-        // missed, the next one is 12:07:00 (single 30 s delay).
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:06:30'));
 
         $this->assertSame([60.0, 30.0], $capturedDelays);
     }
 
-    /**
-     * Sub-second intervals (a DateInterval carrying a fraction) must be
-     * honoured: the delay is fractional, not truncated to 0 whole seconds.
-     */
     public function testSubSecondIntervalSchedulesFloatDelay(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -657,11 +600,6 @@ final class SchedulerWorkerTest extends TestCase
         $this->assertEqualsWithDelta(0.5, $capturedDelays[0], 1e-6, 'Sub-second interval must not be truncated to whole seconds');
     }
 
-    /**
-     * Async signals are off (issue #987), so SIGCHLD must be registered
-     * through the event loop. A plain pcntl_signal() would not run on the
-     * Event loop, which never calls pcntl_signal_dispatch().
-     */
     public function testSigchldIsRegisteredThroughTheEventLoop(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -690,13 +628,6 @@ final class SchedulerWorkerTest extends TestCase
         }
     }
 
-    /**
-     * A JitterTrigger-wrapped PeriodicalTrigger must hold the same
-     * fixed-rate grid (issue #565): the random jitter decorates each run
-     * about its grid slot, but the schedule is still rebased on the
-     * previous scheduled target, so delays shrink to absorb overhead
-     * instead of accumulating drift. Deterministic via a seeded Randomizer.
-     */
     public function testJitteredPeriodicalTriggerKeepsFixedRateCadence(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -710,7 +641,6 @@ final class SchedulerWorkerTest extends TestCase
         Worker::$globalEvent = $eventMock;
 
         $scheduler = new SchedulerWorker($this->kernelFactory, null, null, []);
-        // Seeded Mt19937: getInt(0, 1) rolls are 1, 1, 0, 1, 0, 0.
         $trigger = new JitterTrigger(
             new PeriodicalTrigger(60),
             1,
@@ -724,23 +654,13 @@ final class SchedulerWorkerTest extends TestCase
 
         $refMethod = new \ReflectionMethod(SchedulerWorker::class, 'scheduleCallback');
 
-        // First run: grid origin 12:00:00 -> target 12:01:00, jitter +1 s -> fires 12:01:01.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:00:00'));
-        // 45 s late: the grid slot is 12:02:00 (no jitter inside), jitter +1 s
-        // -> fires 12:02:01; from-now would fire ~61 s later, the grid 16 s later.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:01:45'));
-        // 50 s late: the grid slot is 12:03:00, jitter +0 s -> fires 10 s later.
         $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, new \DateTimeImmutable('2024-01-15 12:02:50'));
 
-        // From-now semantics would give roughly [61.0, 61.0, 60.0]; fixed-rate
-        // keeps the delays shrinking onto the grid.
         $this->assertSame([61.0, 16.0, 10.0], $capturedDelays);
     }
 
-    /**
-     * The jitter must not add up (issue #969): the stored grid time has no
-     * jitter, so after many runs the grid is still exactly interval * runs.
-     */
     public function testJitterDoesNotAddUpOnIntervalSchedule(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -771,11 +691,9 @@ final class SchedulerWorkerTest extends TestCase
         $now = $start;
         for ($i = 1; $i <= 200; ++$i) {
             $refMethod->invoke($scheduler, $trigger, $service, 'test_task', $handler, $now);
-            // The task fires on time: the next call comes at the fire time.
             $now = $now->modify(sprintf('+%d seconds', (int) round($capturedDelays[$i - 1])));
         }
 
-        // The jitter (at most 30 s) is below the interval, so no slot is skipped.
         $grid = new \ReflectionProperty(SchedulerWorker::class, 'nextRunDates');
         $this->assertCount(200, $capturedDelays);
         $this->assertSame(
@@ -784,10 +702,6 @@ final class SchedulerWorkerTest extends TestCase
         );
     }
 
-    /**
-     * Test that scheduleCallback passes task parameters as $args to delay()
-     * instead of capturing them in a closure, avoiding per-tick allocations.
-     */
     public function testScheduleCallbackPassesArgsToDelay(): void
     {
         $eventMock = $this->createMock(EventInterface::class);
@@ -824,9 +738,6 @@ final class SchedulerWorkerTest extends TestCase
         $this->assertSame($handler, $capturedArgs[0][3]);
     }
 
-    /**
-     * Test that scheduleCallback does not create a closure (uses first-class callable).
-     */
     public function testScheduleCallbackUsesFirstClassCallable(): void
     {
         $eventMock = $this->createMock(EventInterface::class);

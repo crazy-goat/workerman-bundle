@@ -163,8 +163,6 @@ final class FileMonitorWatcherTest extends TestCase
         );
 
         $this->assertInstanceOf(\RecursiveIteratorIterator::class, $iterator);
-        /* Verifying the mode indirectly: SELF_FIRST yields directories too,
-           while LEAVES_ONLY skips them — both constructors accept the flag. */
         $this->assertInstanceOf(\RecursiveDirectoryIterator::class, $iterator->getInnerIterator());
     }
 
@@ -219,8 +217,6 @@ final class FileMonitorWatcherTest extends TestCase
         $compilePatterns = new \ReflectionMethod(FileMonitorWatcher::class, 'compilePatterns');
         $regexProp->setValue($instance, $compilePatterns->invoke($instance, $filePattern));
 
-        // Promoted readonly polling tuning is initialized by the constructor;
-        // this fixture bypasses it, so set the defaults explicitly.
         $reflection->getProperty('pollingInterval')->setValue($instance, PollingMonitorWatcher::DEFAULT_POLLING_INTERVAL);
         $reflection->getProperty('maxFilesPerTick')->setValue($instance, PollingMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK);
 

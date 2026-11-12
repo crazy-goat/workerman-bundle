@@ -290,12 +290,6 @@ final class MasterFingerprintTest extends TestCase
         $this->assertSame($captured->uid, $loaded->uid);
     }
 
-    /**
-     * Create a directory inside the test temp dir that denies writes.
-     *
-     * Returns a read-only directory, or skips the test on Windows and when
-     * running as root (where the permission bits do not apply).
-     */
     private function makeReadOnlyDir(): string
     {
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -362,24 +356,6 @@ final class MasterFingerprintTest extends TestCase
     }
 }
 
-/**
- * User stream wrapper that lets `MasterFingerprint::writeTo()` reach its inner
- * try block, then fails exactly one step on demand.
- *
- * A read-only directory can only make `fopen()` fail; it never reaches
- * `chmod()` or `fwrite()`. This wrapper reports a writable directory via
- * `url_stat()`, accepts `fopen(..., 'xb')` via `stream_open()`, and then:
- *
- * - `chmodFails: true` -> `stream_metadata()` returns false, so `chmod()` fails;
- * - `writeFails: true` -> `stream_write()` returns 0, so `fwrite()` writes
- *   fewer bytes than expected.
- *
- * Both paths must run the inner catch, which closes and unlinks the temp file;
- * `openFiles()`/`unlinkedPaths()` expose that for assertions. `fclose()`
- * returning false cannot be reached here: PHP returns true from `fclose()` even
- * when `stream_flush()` returns false and ignores the `void` result of
- * `stream_close()` (verified on PHP 8.5; that branch needs a production seam).
- */
 final class MasterFingerprintFailureStreamWrapper
 {
     private const PROTOCOL = 'fingerprintfail';
@@ -397,9 +373,6 @@ final class MasterFingerprintFailureStreamWrapper
     private static array $unlinkedPaths = [];
 
     /**
-     * Set by PHP's stream layer on every wrapper instance; declared so PHP 8.2+
-     * does not report a dynamic property.
-     *
      * @var resource|null
      */
     public $context;
@@ -444,9 +417,6 @@ final class MasterFingerprintFailureStreamWrapper
     }
 
     /**
-     * Report every path under the wrapper protocol as an existing writable
-     * directory (mode 0700) so `is_dir(dirname($path))` succeeds.
-     *
      * @return array<int|string, int>|false
      */
     public function url_stat(string $path): array|false

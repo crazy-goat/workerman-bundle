@@ -17,6 +17,7 @@ in `tests/RequestConverterTest.php` is the only exception.
 | `tests/` | PHPUnit tests; most sit flat in `tests/`, named after the class. `tests/App/` is the test application |
 | `benchmarks/` | PHPBench subjects (`composer bench`) |
 | `e2e/` | Minimal Symfony app used by the PHAR/binary build tests |
+| `tools/` | Contributor tooling loaded by the linters: the `CrazyGoat/no_narrative_comments` PHP-CS-Fixer rule (see CONTRIBUTING.md) |
 | `bin/` | Lint script, worktree scripts, `pick-issue.sh`, project tools (see [bin/README.md](bin/README.md)) |
 | `docs/` | Product docs (`build-packaging.md`, `security.md`, `troubleshooting.md`), process docs, `helpers/` knowledge base |
 | `.pi/agents/` | Prompts of the coder and review subagents |
@@ -41,7 +42,7 @@ composer bench           # PHPBench
 `LINT_SKIP_AUDIT=1`, which the pre-push hook sets: audit needs the network and a new advisory
 would block every push; CI always audits), PHP-CS-Fixer (dry run),
 PHPStan (**level 8**), Rector (dry run), `bin/kb-lint.php`, `bin/check-changelog.php`,
-`bin/check-exception-usage.php`, `shellcheck` on every shell script (including extensionless
+`bin/check-exception-usage.php`, `bin/check-test-annotations.php`, `shellcheck` on every shell script (including extensionless
 ones such as `bin/docker-test`) and `hadolint` on the Dockerfile. It runs every step and fails
 if any step failed. `shellcheck` and `hadolint` must be installed; a missing tool is a failure.
 `bin/pick-issue.sh`, `bin/worktree.sh` and `bin/worktree-done.sh` are byte-identical copies of

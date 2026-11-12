@@ -6,27 +6,12 @@ namespace CrazyGoat\WorkermanBundle\Validator;
 
 use CrazyGoat\WorkermanBundle\Exception\FileUploadValidationException;
 
-/**
- * Validates the structure of uploaded files array.
- *
- * This validator ensures that file upload data follows the expected structure
- * with required fields (name, tmp_name, type, size, error) and provides
- * clear error messages when validation fails.
- *
- * All methods are static as this validator has no state.
- */
 final class FileUploadValidator
 {
-    /** @var list<string> Required fields for a single file upload */
+    /** @var list<string> */
     private const REQUIRED_FIELDS = ['name', 'tmp_name', 'type', 'size', 'error'];
 
     /**
-     * Determine whether the given array is a single file entry.
-     *
-     * A single file entry has either 'tmp_name' or 'name' key.
-     * This is the single source of truth for file-entry shape recognition,
-     * shared between this validator and RequestConverter.
-     *
      * @param array<mixed, mixed> $data
      */
     public static function isSingleFileEntry(array $data): bool
@@ -35,10 +20,6 @@ final class FileUploadValidator
     }
 
     /**
-     * Determine whether the given array is a list of file entries.
-     *
-     * A file list is an indexed array whose first element is itself an array.
-     *
      * @param array<mixed, mixed> $data
      */
     public static function isFileList(array $data): bool
@@ -51,20 +32,8 @@ final class FileUploadValidator
     }
 
     /**
-     * Validate the structure of uploaded files array.
-     *
-     * Workerman should always return properly structured file data, but this
-     * provides clearer error messages if something goes wrong.
-     *
-     * Kept as a standalone entry point for callers that validate without
-     * converting (e.g. FileUploadValidatorTest). The RequestConverter hot
-     * path no longer calls this — processFiles() performs the same checks
-     * inline during its single traversal, using the predicates and
-     * error-construction helpers below as the single source of truth.
-     *
      * @param array<string, mixed> $files
-     *
-     * @throws FileUploadValidationException if file structure is malformed
+     * @throws FileUploadValidationException
      */
     public static function validate(array $files): void
     {
@@ -78,16 +47,8 @@ final class FileUploadValidator
     }
 
     /**
-     * Assert that a single file entry array contains all required fields.
-     *
-     * Called by RequestConverter::processFiles() inline during conversion so
-     * the required-field check happens in the same pass as shape recognition
-     * and UploadedFile construction — no second traversal.
-     *
-     * @param string               $fieldName The form field name
-     * @param array<string, mixed> $file      The file array to check
-     *
-     * @throws FileUploadValidationException if required fields are missing
+     * @param array<string, mixed> $file
+     * @throws FileUploadValidationException
      */
     public static function assertRequiredFields(string $fieldName, array $file): void
     {
@@ -107,15 +68,6 @@ final class FileUploadValidator
         }
     }
 
-    /**
-     * Build the "expected array, got X" error for a field.
-     *
-     * Single source of truth for this message — RequestConverter calls this
-     * from processFiles() instead of constructing its own copy.
-     *
-     * @param string $fieldName The form field name
-     * @param mixed  $value     The non-array value that was encountered
-     */
     public static function expectedArrayError(string $fieldName, mixed $value): FileUploadValidationException
     {
         return new FileUploadValidationException(
@@ -128,13 +80,7 @@ final class FileUploadValidator
     }
 
     /**
-     * Build the "unrecognized structure" error for a nested field.
-     *
-     * Single source of truth for this message — RequestConverter calls this
-     * from processFiles() instead of constructing its own copy.
-     *
-     * @param string               $fieldName The form field name
-     * @param array<string, mixed> $data      The unrecognized array
+     * @param array<string, mixed> $data
      */
     public static function unrecognizedStructureError(string $fieldName, array $data): FileUploadValidationException
     {
@@ -149,12 +95,7 @@ final class FileUploadValidator
     }
 
     /**
-     * Validate a single file entry structure.
-     *
-     * @param string $fieldName The form field name
-     * @param mixed  $fileData  The file data to validate
-     *
-     * @throws FileUploadValidationException if file structure is malformed
+     * @throws FileUploadValidationException
      */
     private static function validateFileEntry(string $fieldName, mixed $fileData): void
     {
@@ -178,12 +119,8 @@ final class FileUploadValidator
     }
 
     /**
-     * Validate an indexed list of file entries.
-     *
-     * @param string            $fieldName The form field name
-     * @param array<int, mixed> $list      The list of file entries
-     *
-     * @throws FileUploadValidationException if file structure is malformed
+     * @param array<int, mixed> $list
+     * @throws FileUploadValidationException
      */
     private static function validateFileList(string $fieldName, array $list): void
     {
@@ -197,15 +134,8 @@ final class FileUploadValidator
     }
 
     /**
-     * Validate a nested associative array structure.
-     *
-     * Each sub-field is validated as a file list, single file entry, or falls through
-     * to an unrecognized-structure error.
-     *
-     * @param string               $fieldName The form field name
-     * @param array<string, mixed> $data      The nested associative array
-     *
-     * @throws FileUploadValidationException if file structure is malformed
+     * @param array<string, mixed> $data
+     * @throws FileUploadValidationException
      */
     private static function validateNestedAssociative(string $fieldName, array $data): void
     {

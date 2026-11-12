@@ -4,26 +4,14 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test;
 
-/**
- * Builds the `php` command for isolated test subprocesses (#823).
- *
- * The subprocess runs with `-n` (no php.ini), so the grpc extension is not loaded: its shutdown
- * handler deadlocks in forked children (FAQ-007). `-n` also drops every extension that is a
- * shared module (pcntl in the official Docker images), and an extension that is built in (posix
- * there) must not be loaded again. So the module is added with `-d extension=` only when this
- * PHP has it loaded but a `-n` PHP does not.
- */
 final class IsolatedPhp
 {
-    /** Extensions that the isolated fixtures call. Never add grpc here. */
     private const REQUIRED = ['pcntl', 'posix'];
 
     /** @var list<string>|null */
     private static ?array $loadedWithoutIni = null;
 
     /**
-     * The command prefix: add the script and its arguments after it.
-     *
      * @return list<string>
      */
     public static function command(): array
@@ -42,10 +30,9 @@ final class IsolatedPhp
 
     /**
      * @param list<string> $required
-     * @param list<string> $loadedHere extensions of the normal runtime
-     * @param list<string> $loadedWithoutIni extensions of the runtime started with `-n`
-     *
-     * @return list<string> shared modules to load explicitly
+     * @param list<string> $loadedHere
+     * @param list<string> $loadedWithoutIni
+     * @return list<string>
      */
     public static function extensionsToLoad(array $required, array $loadedHere, array $loadedWithoutIni): array
     {

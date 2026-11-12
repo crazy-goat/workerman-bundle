@@ -40,8 +40,6 @@ final readonly class ServerManager
     }
 
     /**
-     * @return bool true if stopped within timeout
-     *
      * @throws ServerNotRunningException
      */
     public function stop(bool $graceful = false): bool
@@ -62,14 +60,6 @@ final readonly class ServerManager
             return false;
         }
 
-        // $parentPid was read while the master was still alive
-        // (verified by getRunningMasterPid() above). Pass it as ancestry
-        // proof: a post-mortem getParentPid() re-read inside
-        // killOrphanedIntermediateFork() can observe an already-reaped
-        // master (/proc/$master gone, read returns 0) and fail closed,
-        // leaking the intermediate (issue #790). An unreadable pre-kill
-        // read yields 0, which refuses inside killOrphanedIntermediateFork()
-        // — fail-closed is preserved.
         $this->processInspector->killOrphanedIntermediateFork($parentPid, $fingerprint, $parentPid);
         $this->cleanupMasterFingerprint();
 
@@ -169,9 +159,6 @@ final readonly class ServerManager
 
     private function prepareWorkerStart(ServerAction $action, bool $daemon, bool $graceful): void
     {
-        // Workerman parses the real argv first and keeps only the first mode
-        // it finds, so `restart -g -d` would lose daemon mode. Set the flag
-        // directly; parseCommand() never clears it (issue #957).
         Worker::$daemonize = $daemon;
 
         $command = $action->value;
@@ -205,17 +192,6 @@ final readonly class ServerManager
         return $masterPid;
     }
 
-    /**
-     * Build a cause-specific {@see ServerNotRunningException} for the
-     * current failure mode.
-     *
-     * Called only after {@see ProcessInspector::isMasterRunning()} has
-     * already returned false, so the fail-closed behaviour is decided: this
-     * method only improves the message quality. A TOCTOU between the
-     * isMasterRunning() call and the isProcessAlive() call here can at worst
-     * mislabel "dead" as "unverifiable" — a minor message inaccuracy, not a
-     * behaviour change.
-     */
     private function notRunningException(int $masterPid, ?MasterFingerprint $fingerprint): ServerNotRunningException
     {
         if ($masterPid <= 0) {
@@ -272,40 +248,17 @@ final readonly class ServerManager
         return CacheWarmupTimeoutConfig::resolve();
     }
 
-    /**
-     * Atomically read and remove a status/connections file.
-     *
-     * Closes the TOCTOU window between read and unlink: the file at
-     * $path is atomically renamed to a unique temporary path within
-     * the same directory. After the rename, $path no longer refers to
-     * any file (the inode was moved to $tempPath), so a symlink swap
-     * at $path cannot redirect the subsequent read or unlink.
-     *
-     * The unlink always targets the renamed temp file, which is owned
-     * by us and is not subject to symlink swaps at the original path.
-     *
-     * @return string|null The file content, or null if the file was not
-     *                     available, was consumed by a concurrent process,
-     *                     or could not be read.
-     */
     private function consumeFile(string $path): ?string
     {
         $directory = \dirname($path);
         $tempPath = $directory . '/.' . \basename($path) . '.' . \bin2hex(\random_bytes(8)) . '.tmp';
 
-        // The rename may fail if the file was consumed by a concurrent
-        // process between waitForFile() and rename(); this is a normal
-        // race condition and not an error.
         if (!@\rename($path, $tempPath)) {
             return null;
         }
 
         $content = @\file_get_contents($tempPath);
 
-        // Best-effort cleanup. The unlink always targets our own temp
-        // path, which is not subject to symlink swaps at the original
-        // $path. Unlink failures are surfaced to the logger rather
-        // than being silently suppressed.
         $this->unlinkSafely($tempPath, $path);
 
         if (!\is_string($content) || $content === '') {
@@ -322,14 +275,6 @@ final readonly class ServerManager
         return $content;
     }
 
-    /**
-     * Unlink a file, logging a warning when the unlink fails.
-     *
-     * Used by {@see consumeFile()} to clean up the renamed temp file.
-     * The temp file is always a path we created via rename(), so a
-     * symlink swap at the original status file path cannot affect
-     * this operation.
-     */
     private function unlinkSafely(string $tempPath, string $originalPath): void
     {
         if (!@\unlink($tempPath)) {
@@ -341,29 +286,6 @@ final readonly class ServerManager
         }
     }
 
-    /**
-     * Write the master process fingerprint to a sidecar file.
-     *
-     * The fingerprint records the PID, start time, and UID of the
-     * current process (which will become the Workerman master after
-     * `Runner::run()` is invoked). {@see ProcessInspector} reads this
-     * fingerprint to verify that a candidate PID really is the master
-     * before sending signals — preventing the `/proc/cmdline`
-     * substring-match vulnerability described in issue #327.
-     *
-     * Daemon mode: `Worker::daemonize()` forks twice and the launcher
-     * process exits, so the launcher PID is not the master PID and no
-     * fingerprint is written here. The gap is closed by
-     * {@see \CrazyGoat\WorkermanBundle\Worker\MasterWorker::saveMasterPid()},
-     * which records the fingerprint from inside the real master process
-     * right after the PID file is written (issue #584). Until the master
-     * starts, `ProcessInspector` fails closed rather than signalling on
-     * an unverifiable PID.
-     *
-     * Failures are logged but do not abort the start sequence: if the
-     * fingerprint cannot be written, the strict cmdline-based check
-     * (master process title) is used as a fallback.
-     */
     private function writeMasterFingerprint(bool $daemon): void
     {
         $pidFile = $this->getConfiguredPidFile();
@@ -390,14 +312,6 @@ final readonly class ServerManager
         }
     }
 
-    /**
-     * Remove the master fingerprint sidecar file.
-     *
-     * Called after a successful `stop()` to prevent stale fingerprint
-     * data from being used in subsequent `isRunning()` / `stop()` /
-     * `reload()` calls. Unlink failures are logged but do not abort
-     * the stop sequence.
-     */
     private function cleanupMasterFingerprint(): void
     {
         $pidFile = $this->getConfiguredPidFile();
@@ -414,14 +328,6 @@ final readonly class ServerManager
         }
     }
 
-    /**
-     * Load the master fingerprint from the sidecar file.
-     *
-     * Returns null if the fingerprint file does not exist, is unreadable,
-     * or contains malformed content. Callers should treat a null result
-     * as "no fingerprint available" and fall back to the legacy
-     * cmdline-based check.
-     */
     private function loadMasterFingerprint(): ?MasterFingerprint
     {
         $pidFile = $this->getConfiguredPidFile();
@@ -432,9 +338,6 @@ final readonly class ServerManager
         return MasterFingerprint::readFrom($pidFile . '.fingerprint');
     }
 
-    /**
-     * Return the configured PID file path, or an empty string if not set.
-     */
     private function getConfiguredPidFile(): string
     {
         $config = $this->configLoader->getWorkermanConfig();
