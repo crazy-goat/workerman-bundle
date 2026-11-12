@@ -43,7 +43,7 @@ FAQ-007, FAQ-028, FAQ-029, FAQ-031, FAQ-035, FAQ-037.
 
 ## 2. Earlier findings
 
-None. This is round 1 and `findings-review.md` did not exist.
+None. This is round 1 and the review findings file did not exist.
 
 ## 3. Mechanical verification
 
