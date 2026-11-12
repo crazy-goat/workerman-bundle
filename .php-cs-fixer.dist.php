@@ -1,10 +1,18 @@
 <?php
 
+use CrazyGoat\WorkermanBundle\Tools\PhpCsFixer\NoNarrativeCommentsFixer;
+
+require_once __DIR__ . '/tools/php-cs-fixer/autoload.php';
+
 $finder = PhpCsFixer\Finder::create()
     ->in(__DIR__ . '/src')
     ->in(__DIR__ . '/tests')
     ->in(__DIR__ . '/benchmarks')
     ->in(__DIR__ . '/bin')
+    ->in(__DIR__ . '/tools')
+    ->in(__DIR__ . '/e2e')
+    ->exclude(['vendor', 'var', 'build'])
+    ->append([__DIR__ . '/e2e/console', __FILE__, __DIR__ . '/rector.php'])
 ;
 
 $rules = [
@@ -70,10 +78,17 @@ $rules = [
 
     // Empty body of class, interface, trait, enum or function must be abbreviated as {} and placed on the same line
     'single_line_empty_body' => false,
+
+    // Docblocks keep only bare type tags; line and block comments are removed unless they are tool directives (#1194).
+    NoNarrativeCommentsFixer::NAME => true,
+
+    // A docblock emptied by no_narrative_comments or no_superfluous_phpdoc_tags is removed.
+    'no_empty_phpdoc' => true,
 ];
 
 return (new PhpCsFixer\Config())
     ->setCacheFile(__DIR__ . '/var/.php-cs-fixer.cache')
+    ->registerCustomFixers([new NoNarrativeCommentsFixer()])
     ->setFinder($finder)
     ->setRules($rules)
     ->setRiskyAllowed(true)

@@ -1,6 +1,8 @@
 parameters:
 	level: 8
 	treatPhpDocTypesAsCertain: false
+	bootstrapFiles:
+		- tools/php-cs-fixer/autoload.php
 	scanFiles:
 		- phpstan-stubs/inotify.stub
 	paths:
@@ -8,6 +10,7 @@ parameters:
 		- tests
 		- benchmarks
 		- bin
+		- tools
 	ignoreErrors:
 		-
 			message: '#never returns string so it can be removed from the return type#'
