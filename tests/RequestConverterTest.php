@@ -1725,6 +1725,60 @@ final class RequestConverterTest extends TestCase
         $this->assertTrue($result['isFormData']);
     }
 
+    public function testDetectFormDataWithBoundaryOnNonMultipartContentType(): void
+    {
+        // Workerman parses a multipart body for any media type carrying a
+        // boundary parameter, so the bundle must treat it as multipart too (#1113).
+        $result = $this->callPrivateStaticMethod('detectFormData', ['application/json; boundary=----b']);
+
+        $this->assertTrue($result['isMultipart']);
+        $this->assertTrue($result['isFormData']);
+    }
+
+    public function testDetectFormDataWithQuotedBoundaryOnNonMultipartContentType(): void
+    {
+        $result = $this->callPrivateStaticMethod('detectFormData', ['application/json; boundary="----b"']);
+
+        $this->assertTrue($result['isMultipart']);
+        $this->assertTrue($result['isFormData']);
+    }
+
+    public function testDetectFormDataWithEmptyBoundaryIsNotMultipart(): void
+    {
+        // No boundary value: Workerman has nothing to split on, so this is
+        // not a multipart body even though the parameter name is present.
+        $result = $this->callPrivateStaticMethod('detectFormData', ['application/json; boundary=']);
+
+        $this->assertFalse($result['isMultipart']);
+        $this->assertFalse($result['isFormData']);
+    }
+
+    public function testNonMultipartContentTypeWithBoundaryIsConvertedAsMultipart(): void
+    {
+        $buffer = $this->createMultipartRequest(
+            boundary: 'TestBoundaryJson',
+            fields: [
+                [
+                    'name' => 'note',
+                    'content' => 'hello',
+                ],
+                [
+                    'name' => 'test_file',
+                    'filename' => 'test.txt',
+                    'content' => 'test content',
+                ],
+            ],
+            contentType: 'application/json',
+        );
+
+        $rawRequest = new Request($buffer);
+        $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
+
+        $this->assertTrue($symfonyRequest->files->has('test_file'));
+        $this->assertSame('hello', $symfonyRequest->request->get('note'));
+        $this->assertSame('', $symfonyRequest->getContent());
+    }
+
     public function testBuildServerBagWithConnection(): void
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -1820,16 +1874,20 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * @param array<int, array{name: string, filename: string, content: string}> $fields
+     * @param array<int, array{name: string, filename?: string, content: string}> $fields
      */
-    private function createMultipartRequest(string $boundary, array $fields): string
+    private function createMultipartRequest(string $boundary, array $fields, string $contentType = 'multipart/form-data'): string
     {
         $body = '';
 
         foreach ($fields as $field) {
             $body .= "--{$boundary}\r\n";
-            $body .= "Content-Disposition: form-data; name=\"{$field['name']}\"; filename=\"{$field['filename']}\"\r\n";
-            $body .= "Content-Type: text/plain\r\n\r\n";
+            if (isset($field['filename'])) {
+                $body .= "Content-Disposition: form-data; name=\"{$field['name']}\"; filename=\"{$field['filename']}\"\r\n";
+                $body .= "Content-Type: text/plain\r\n\r\n";
+            } else {
+                $body .= "Content-Disposition: form-data; name=\"{$field['name']}\"\r\n\r\n";
+            }
             $body .= $field['content'] . "\r\n";
         }
 
@@ -1837,7 +1895,7 @@ final class RequestConverterTest extends TestCase
 
         $buffer = "POST /test HTTP/1.1\r\n";
         $buffer .= "Host: localhost\r\n";
-        $buffer .= "Content-Type: multipart/form-data; boundary={$boundary}\r\n";
+        $buffer .= "Content-Type: {$contentType}; boundary={$boundary}\r\n";
         $buffer .= 'Content-Length: ' . strlen($body) . "\r\n";
         $buffer .= "\r\n";
 

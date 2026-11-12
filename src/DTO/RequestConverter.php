@@ -92,7 +92,13 @@ final class RequestConverter
     {
         $contentType = strtolower($contentType);
         $isFormUrlEncoded = str_starts_with($contentType, 'application/x-www-form-urlencoded');
-        $isMultipart = str_starts_with($contentType, 'multipart/form-data');
+        // Workerman parses a multipart body whenever the Content-Type carries
+        // a boundary parameter, for any media type (Request::parsePost()
+        // matches /boundary="?(\S+)"?/). Treat the same requests as multipart
+        // here, so files Workerman already parsed are not paired with a raw
+        // multipart body in getContent() and an empty POST bag (#1113).
+        $isMultipart = str_starts_with($contentType, 'multipart/form-data')
+            || preg_match('/;\s*boundary\s*=\s*"?\S/', $contentType) === 1;
 
         return [
             'isMultipart' => $isMultipart,
