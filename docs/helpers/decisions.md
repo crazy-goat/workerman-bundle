@@ -298,15 +298,16 @@ per request (~0.12 us each, linear in middleware count); the dispatcher is
 one allocation per request regardless of count, with a +0.09 us fixed cost
 (crossover ~2 middlewares). Do not revert to nested closures: the shape is
 pinned by `tests/MiddlewareDispatcherTest.php` (registration order =
-outermost first, double-`$next` re-entrancy, fresh-instance isolation) and
-the handler's docblock documents the allocation model. `tests/MiddlewarePipelineTest.php`
+outermost first, double-`$next` re-entrancy, fresh-instance isolation); this
+entry is the only record of the allocation model (code carries no narrative
+comments, #1194). `tests/MiddlewarePipelineTest.php`
 intentionally re-implements the old nested composition — it is a
 contract-only test kept independent of the shipped implementation.
 
 ### `StaticFilesMiddleware` is intentionally the innermost pipeline layer (#730)
 <!-- kb: id=DEC-022 date=2026-09-24 tags=middleware,static-files,architecture,http trigger="changing HttpRequestHandler::withRootDirectory() middleware order, or considering hoisting StaticFilesMiddleware" hits=0 status=active -->
 
-`HttpRequestHandler::getPipeline()` appends `StaticFilesMiddleware` last (innermost), so user middleware runs first and may short-circuit, authenticate or decorate static-file responses (#730). Hoisting it outward would let static assets bypass those hooks. Do not reorder without a superseding decision and acceptance criteria; the `withRootDirectory()` docblock points here.
+`HttpRequestHandler::getPipeline()` appends `StaticFilesMiddleware` last (innermost), so user middleware runs first and may short-circuit, authenticate or decorate static-file responses (#730). Hoisting it outward would let static assets bypass those hooks. Do not reorder without a superseding decision and acceptance criteria.
 
 ### Upload structure is traversed once — validate-while-converting; do not reintroduce a separate validate() pass (#566)
 <!-- kb: id=DEC-019 date=2026-09-08 tags=http,performance,uploads,validation trigger="touching RequestConverter::processFileNode()/processFileEntry(), FileUploadValidator shape predicates, or thinking about adding a validate() call before conversion" hits=0 status=active -->
