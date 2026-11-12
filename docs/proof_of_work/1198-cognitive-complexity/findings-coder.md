@@ -58,3 +58,30 @@ A second, smaller obstacle: `composer lint-fix` needed **two passes**. The first
   - Tags: `lint`
   - Trigger: "`composer lint` fails on Rector right after `lint-fix`"
   - Prefer fixing `bin/lint.sh` (finding 3) over adding an entry.
+
+## Round 2 (review R1-1, R1-2), coder-high
+
+### Biggest problem: deciding which bare ignores can hide the rule, without forbidding them everywhere
+
+PHPStan ignores the text after `@phpstan-ignore-next-line` and `@phpstan-ignore-line`. A bare ignore therefore cannot be told apart from a complexity ignore by reading the comment. I solved this by checking where a complexity error is reported, with a scratch `function: 0` run: the node's start line, which is the first attribute line if there is one, otherwise the `function` or `class` line. The scan then flags a bare ignore only when its target line holds such a token. This found one real hole in the tree, `tests/PollingMonitorWatcherTest.php:81`. A `@phpstan-ignore-next-line missingType.generics` docblock there silenced *every* error on the `findProperty()` declaration line, cognitive complexity included. It is now an exact `@phpstan-ignore missingType.generics`.
+
+### Discovered bugs and weak spots
+
+1. **A committed review file broke `composer test`.**
+   - Where: `tests/BinDirectoryTest.php:347`, `testNoTrackedDocMentionsTheRemovedProcessTooling`.
+   - Problem: the test forbids the literal names of the coder and review findings files, and the proof-of-work directory name, in every tracked `*.md` except `CHANGELOG.md`. The workflow (`docs/workflow.md` step 3/4 and the agent prompts) tells agents to write exactly those file names inside the proof-of-work directory. Review round 1 named the review findings file in §2, so the full suite failed on this branch. I reworded the two mentions; the meaning is unchanged.
+   - Suggested fix: exempt the proof-of-work directory in that test, or say in the review and coder prompts that file names must not be spelled out in proof-of-work Markdown. The first is the safer choice, because the process tells agents to produce these files.
+2. **`bin/lint.sh:60` runs `phpstan analyse` without `-c phpstan.neon.dist`.**
+   - Problem: an untracked local `phpstan.neon` silently replaces the project config, gate and level included, for that developer's lint and pre-push hook. CI is safe, because the new test forbids a tracked file with that name.
+   - Suggested fix: pass `-c phpstan.neon.dist` explicitly in `bin/lint.sh`.
+3. **The other bare ignore, `tests/UtilsTest.php:156`** (`/** @phpstan-ignore-next-line */` above `new Utils();`), silences every error on that statement.
+   - It is harmless for complexity, but it is broader than needed.
+   - Suggested fix: `@phpstan-ignore new.private` or the exact identifier PHPStan reports.
+
+### Knowledge-base candidate
+
+- **FAQ: "`@phpstan-ignore-next-line <text>` ignores everything on the next line; the text is not an identifier"**
+  - Tags: `phpstan`, `lint`
+  - Trigger: "writing or reviewing a PHPStan ignore comment"
+  - Body: only `@phpstan-ignore id1, id2` restricts the ignore to identifiers. `-next-line` and `-line` treat trailing text as a comment and silence every error on the target line, including errors from rules added later, such as `complexity.functionLike`. `CognitiveComplexityGateTest` flags them on declaration and attribute lines. Elsewhere, prefer the identifier form.
+  - Prefer a gate: a php-cs-fixer or test rule that rejects `-next-line` / `-line` with trailing text would make this entry unnecessary.

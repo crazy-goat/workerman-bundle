@@ -21,9 +21,9 @@ I read the entries tagged `lint`, `phpstan`, `bin`, `tests` and `coverage`/`poli
 - **DEC-021.** The CHANGELOG entry is under `[Unreleased]`, and `bin/check-changelog.php` passes.
 - **FAQ-032.** No workflow YAML changed, so it does not apply.
 
-## 2. Earlier findings (`findings-review.md`)
+## 2. Earlier findings (the review findings file)
 
-This is the first round, so `findings-review.md` did not exist and there was nothing open to re-check.
+This is the first round, so the review findings file did not exist and there was nothing open to re-check.
 
 ## 3. Verification
 
