@@ -156,3 +156,41 @@ They were deleted as decided; listed so the maintainer can move any of them to `
   Suggested: drop that clause.
 - **DEC-020** mentions docblocks only as the reason the exception-usage check uses tokens. Still
   valid, no change needed.
+
+## Round 2
+
+### Biggest problem: making an unparsable type fail visibly
+
+- Throwing from the fixer makes php-cs-fixer exit 64 and list the file under "not fixed due to
+  errors", but with `-v` (what `bin/lint.sh` uses) the exception message itself is hidden; only
+  `-vv` prints it. The test runs with `-vv`. Lint still fails and the output says to re-run with
+  `-vvv`, so the failure is visible, but the reason needs one more command.
+- Suggested improvement (not done, it changes the shared lint script): run php-cs-fixer with `-vv`
+  in `bin/lint.sh`, or print a hint when it exits 64.
+
+### Surprises
+
+- `tests/BinDirectoryTest.php:347` (`testNoTrackedDocMentionsTheRemovedProcessTooling`) forbids
+  every tracked Markdown file from naming the workflow scratch files or the proof-of-work directory.
+  Committed proof-of-work files therefore break `composer test` as soon as they name them. The
+  round-1 review did (line 46); I reworded that one line in a separate commit.
+  - Suggested fix: exclude the proof-of-work directory from that scan, or drop those names from the
+    forbidden list now that proof-of-work files are committed again. Until then, coders and
+    reviewers must avoid those literal names in committed Markdown.
+- Rector's `LocallyCalledStaticMethodToNonStaticRector` rewrote a new private static helper in the
+  fixer test; applied.
+
+### Weak spots
+
+1. `tools/php-cs-fixer/TestAnnotationTags.php`: the list is hand-maintained. A new PHPUnit or
+   PHPBench annotation not on the list would still be stripped silently. Low risk (PHPUnit 12 drops
+   annotations entirely), but worth checking when bumping PHPBench.
+2. The fixer test now spawns about 40 php-cs-fixer processes (~10 s).
+
+### Knowledge-base candidate
+
+- **FAQ — committed proof-of-work Markdown must not name the workflow scratch files**
+  - tags: `tests`, `docs`, `workflow`
+  - trigger: "`testNoTrackedDocMentionsTheRemovedProcessTooling` fails on a proof-of-work file"
+  - The test scans every tracked `.md`. Refer to "the review findings file" instead of its name,
+    or fix the test as suggested above.

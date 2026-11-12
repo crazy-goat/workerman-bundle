@@ -328,6 +328,12 @@ Superseded pull-request runs are cancelled, but a `master` run is never cancelle
     `docs/helpers/` instead of a comment
   - PHPUnit and PHPBench metadata use attributes (`#[DataProvider]`, `#[RequiresPhpExtension]`,
     `#[CoversClass]`, `#[Revs]`, `#[BeforeMethods]`, …), never doc annotations
+    (Rector's `PHPUnitSetList::ANNOTATIONS_TO_ATTRIBUTES` converts PHPUnit annotations in `composer lint-fix`;
+    the rule leaves a docblock with a PHPUnit or PHPBench annotation untouched, and
+    `tests/Tools/NoTestDocAnnotationsTest.php` fails until it is converted by hand)
+  - a typed tag whose type cannot be parsed makes `composer lint` fail; fix the type or use the
+    `@phpstan-` form of the tag
+  - a comment counts as a directive only when the directive starts it (`// @phpstan-ignore …`)
 
 ## Deprecation Policy
 
