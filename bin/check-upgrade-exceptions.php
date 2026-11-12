@@ -251,91 +251,119 @@ function checkUpgradeExceptionsDeclaredTypes(string $exceptionDir): array
         }
 
         $source = (string) file_get_contents((string) $file->getRealPath());
-        $tokens = \token_get_all($source);
-        $count = \count($tokens);
 
-        for ($i = 0; $i < $count; ++$i) {
-            if (!\is_array($tokens[$i])) {
-                continue;
-            }
-
-            $id = $tokens[$i][0];
-
-            if (!\in_array($id, [\T_INTERFACE, \T_CLASS, \T_TRAIT], true) && (\defined('T_ENUM') === false || $id !== \T_ENUM)) {
-                continue;
-            }
-
-            for ($k = $i - 1; $k >= 0; --$k) {
-                if (\is_array($tokens[$k]) && \in_array($tokens[$k][0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true)) {
-                    continue;
-                }
-
-                if (\is_array($tokens[$k]) && $tokens[$k][0] === \T_DOUBLE_COLON) {
-                    continue 2;
-                }
-
-                break;
-            }
-
-            $name = null;
-
-            for ($j = $i + 1; $j < $count; ++$j) {
-                if (!\is_array($tokens[$j])) {
-                    break;
-                }
-
-                if (\in_array($tokens[$j][0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true)) {
-                    continue;
-                }
-
-                if ($tokens[$j][0] === \T_STRING) {
-                    $name = $tokens[$j][1];
-                }
-
-                $i = $j;
-
-                break;
-            }
-
-            if ($name === null) {
-                continue;
-            }
-
-            $parent = null;
-            $interfaces = [];
-
-            for ($j = $i + 1; $j < $count; ++$j) {
-                if (!\is_array($tokens[$j])) {
-                    if ($tokens[$j] === '{' || $tokens[$j] === ';') {
-                        $i = $j;
-
-                        break;
-                    }
-
-                    continue;
-                }
-
-                $tid = $tokens[$j][0];
-
-                if ($tid === \T_EXTENDS) {
-                    $parent = checkUpgradeExceptionsShortName(checkUpgradeExceptionsReadName($tokens, $j + 1, $count));
-                } elseif ($tid === \T_IMPLEMENTS) {
-                    $interfaces = array_map(
-                        checkUpgradeExceptionsShortName(...),
-                        checkUpgradeExceptionsReadNameList($tokens, $j + 1, $count),
-                    );
-                } elseif (\in_array($tid, [\T_CLASS, \T_INTERFACE, \T_TRAIT], true) || (\defined('T_ENUM') && $tid === \T_ENUM)) {
-                    $i = $j - 1;
-
-                    break;
-                }
-            }
-
-            $declared[$name] = ['parent' => $parent, 'interfaces' => $interfaces];
+        foreach (checkUpgradeExceptionsDeclaredTypesInTokens(\token_get_all($source)) as $name => $declaration) {
+            $declared[$name] = $declaration;
         }
     }
 
     return $declared;
+}
+
+/**
+ * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+ * @return array<string, array{parent: string|null, interfaces: list<string>}>
+ */
+function checkUpgradeExceptionsDeclaredTypesInTokens(array $tokens): array
+{
+    $declared = [];
+    $count = \count($tokens);
+
+    for ($i = 0; $i < $count; ++$i) {
+        if (!\is_array($tokens[$i]) || !checkUpgradeExceptionsIsTypeKeyword($tokens[$i][0])) {
+            continue;
+        }
+
+        if (checkUpgradeExceptionsFollowsDoubleColon($tokens, $i)) {
+            continue;
+        }
+
+        [$name, $i] = checkUpgradeExceptionsReadDeclaredName($tokens, $i, $count);
+
+        if ($name === null) {
+            continue;
+        }
+
+        [$declared[$name], $i] = checkUpgradeExceptionsReadHeritage($tokens, $i, $count);
+    }
+
+    return $declared;
+}
+
+function checkUpgradeExceptionsIsTypeKeyword(mixed $id): bool
+{
+    return \in_array($id, [\T_CLASS, \T_INTERFACE, \T_TRAIT], true) || (\defined('T_ENUM') && $id === \T_ENUM);
+}
+
+function checkUpgradeExceptionsIsTrivia(mixed $token): bool
+{
+    return \is_array($token) && \in_array($token[0], [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT], true);
+}
+
+/**
+ * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+ */
+function checkUpgradeExceptionsFollowsDoubleColon(array $tokens, int $keyword): bool
+{
+    $k = $keyword - 1;
+
+    while ($k >= 0 && checkUpgradeExceptionsIsTrivia($tokens[$k])) {
+        --$k;
+    }
+
+    return $k >= 0 && \is_array($tokens[$k]) && $tokens[$k][0] === \T_DOUBLE_COLON;
+}
+
+/**
+ * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+ * @return array{0: string|null, 1: int}
+ */
+function checkUpgradeExceptionsReadDeclaredName(array $tokens, int $keyword, int $count): array
+{
+    for ($j = $keyword + 1; $j < $count && \is_array($tokens[$j]); ++$j) {
+        if (checkUpgradeExceptionsIsTrivia($tokens[$j])) {
+            continue;
+        }
+
+        return [$tokens[$j][0] === \T_STRING ? $tokens[$j][1] : null, $j];
+    }
+
+    return [null, $keyword];
+}
+
+/**
+ * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+ * @return array{0: array{parent: string|null, interfaces: list<string>}, 1: int}
+ */
+function checkUpgradeExceptionsReadHeritage(array $tokens, int $nameAt, int $count): array
+{
+    $parent = null;
+    $interfaces = [];
+
+    for ($j = $nameAt + 1; $j < $count; ++$j) {
+        $token = $tokens[$j];
+
+        if (!\is_array($token)) {
+            if ($token === '{' || $token === ';') {
+                return [['parent' => $parent, 'interfaces' => $interfaces], $j];
+            }
+
+            continue;
+        }
+
+        if ($token[0] === \T_EXTENDS) {
+            $parent = checkUpgradeExceptionsShortName(checkUpgradeExceptionsReadName($tokens, $j + 1, $count));
+        } elseif ($token[0] === \T_IMPLEMENTS) {
+            $interfaces = array_map(
+                checkUpgradeExceptionsShortName(...),
+                checkUpgradeExceptionsReadNameList($tokens, $j + 1, $count),
+            );
+        } elseif (checkUpgradeExceptionsIsTypeKeyword($token[0])) {
+            return [['parent' => $parent, 'interfaces' => $interfaces], $j - 1];
+        }
+    }
+
+    return [['parent' => $parent, 'interfaces' => $interfaces], $nameAt];
 }
 
 /**
