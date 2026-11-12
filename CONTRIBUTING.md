@@ -317,7 +317,7 @@ Superseded pull-request runs are cancelled, but a `master` run is never cancelle
 - Cognitive complexity is capped by PHPStan (`tomasvotruba/cognitive-complexity`, included explicitly in
   `phpstan.neon.dist` because `phpstan/extension-installer` is not installed):
   - the limits are `cognitive_complexity.function` and `cognitive_complexity.class` in `phpstan.neon.dist`
-    (currently 50 per function or method and 150 per class); a score equal to the limit passes
+    (currently 40 per function or method and 150 per class); a score equal to the limit passes
   - the same limits apply to every analysed path (`src/`, `tests/`, `benchmarks/`, `bin/`, `tools/`)
   - closures and arrow functions count into the enclosing function or method, so moving a branch into a
     closure does not lower the score; extract a named function or method instead

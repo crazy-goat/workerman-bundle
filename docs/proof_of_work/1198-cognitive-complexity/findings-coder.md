@@ -85,3 +85,35 @@ PHPStan ignores the text after `@phpstan-ignore-next-line` and `@phpstan-ignore-
   - Trigger: "writing or reviewing a PHPStan ignore comment"
   - Body: only `@phpstan-ignore id1, id2` restricts the ignore to identifiers. `-next-line` and `-line` treat trailing text as a comment and silence every error on the target line, including errors from rules added later, such as `complexity.functionLike`. `CognitiveComplexityGateTest` flags them on declaration and attribute lines. Elsewhere, prefer the identifier form.
   - Prefer a gate: a php-cs-fixer or test rule that rejects `-next-line` / `-line` with trailing text would make this entry unnecessary.
+
+## Round 3 (stage 2: function limit 40), coder-high
+
+### Biggest problem: a pure refactor of worker-process callbacks whose tests did not reach every branch
+
+The `ServerWorker` constructor (48) is almost entirely nested closures that run later, inside a Workerman child process: `onConnect` → `errorHandler`, `onWorkerStart` → the sweeper timer → the per-connection loop, and `onMessage`. Moving them into methods risks three things:
+
+- a changed `$this` binding (static versus bound)
+- changed captured variables, which `testOnConnectClosureCapturesBodySizeCap` inspects through reflection
+- a changed order of side effects in `onWorkerStart`
+
+A Clover run of `ServerWorkerTest` on the **original** class showed three statements that were never executed: the body-cap assignment, and the sweeper's two skip branches. I added and strengthened tests for them first, ran them against the original, and then refactored. I kept every closure literal unchanged and only moved where it is created. First-class callables were rejected because they would change `getStaticVariables()`.
+
+### Discovered bugs and weak spots
+
+1. **A vacuous test, fixed in this PR as characterisation.** At `tests/ServerWorkerTest.php:936`, `testOnConnectSetsBodySizeCap` asserted only that `onConnect` was set, never that the cap reached the connection. It now calls `onConnect` and asserts `maxPackageSize === 8192`.
+2. **`onClose` is a non-static closure that never uses `$this`.** At `src/Worker/ServerWorker.php:76`, the same applies to `errorHandler`, `connectHandler`'s closure and `messageHandler`'s closure. They bind the `ServerWorker` for no reason.
+   - This is harmless today, because `onWorkerStart` and `onWorkerReload` need `$this` anyway.
+   - Suggested fix: make the closures that do not use `$this` `static`, in a separate change. It changes closure binding, so it is not a pure refactor, and that is why it is not done here.
+3. **`assert(is_string($listen))` in `ServerWorker::__construct()`** (`src/Worker/ServerWorker.php:61`) is a no-op in production (`zend.assertions=-1`).
+   - `ServerConfig['listen']` is `string|null`, and `?? ''` already makes it a string, so the assert is dead code.
+   - Suggested fix: remove it, or tighten the phpstan-type.
+4. **The old `parseFile()` used a by-reference alias into `$entries`, plus a dead `$current` variable.** This was a latent hazard: any later `$entries[] = …` copy-on-write while the reference was alive would have been subtle. It was replaced by an integer index, and the dead variable was removed. This is noted only for the record.
+5. **Stage-3 note.** `GithubWorkflowsTest::testMatrixRewriteExclusionsCoverOffSchemeSymfonyPackages()` (36) is a test method. Splitting it means extracting assertion helpers, which is a natural split.
+
+### Knowledge-base candidate
+
+- **FAQ: "Extracting a closure into a method: return the closure literal, don't switch to a first-class callable"**
+  - Tags: `phpstan`, `closures`, `tests`
+  - Trigger: "refactoring a callback-heavy constructor such as ServerWorker or another worker for the cognitive-complexity limit"
+  - Body: a method that returns the same `function () use (...)` literal keeps the `$this` binding, the static/non-static kind and the captured variable names. Tests such as `testOnConnectClosureCapturesBodySizeCap` read those names through `ReflectionFunction::getStaticVariables()`. `$this->method(...)` changes all three.
+  - Prefer a gate: the reflection test is already the gate for `onConnect`, so this entry is optional.

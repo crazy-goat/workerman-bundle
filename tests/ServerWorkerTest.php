@@ -951,6 +951,15 @@ final class ServerWorkerTest extends TestCase
         $worker = $this->findWorkerByName('[Server] ows-body-cap');
         $this->assertNotNull($worker);
         $this->assertNotNull($worker->onConnect, 'onConnect should be set when body_size_cap is configured');
+
+        $connection = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $defaultMaxPackageSize = $connection->maxPackageSize;
+        $this->assertNotSame(8192, $defaultMaxPackageSize);
+
+        $onConnect = $worker->onConnect;
+        $onConnect($connection);
+
+        $this->assertSame(8192, $connection->maxPackageSize);
     }
 
     public function testOnConnectWithoutBodySizeCapDoesNotCrash(): void
@@ -1236,6 +1245,38 @@ final class ServerWorkerTest extends TestCase
         } finally {
             Timer::delAll();
             @fclose($peer);
+        }
+    }
+
+    public function testSweeperLeavesConnectionsWithoutContextOrLastActivityOpen(): void
+    {
+        $eventLoop = new Select();
+        $worker = $this->createStartedWorkerForTimerTests('ows-sweeper-skips', 1, 1, $eventLoop);
+
+        [$withoutContext, $firstPeer] = $this->createRealConnection($eventLoop);
+        [$withoutActivity, $secondPeer] = $this->createRealConnection($eventLoop);
+        $this->bindConnectionToWorker($withoutContext, $worker);
+        $this->bindConnectionToWorker($withoutActivity, $worker);
+
+        try {
+            $onConnect = $worker->onConnect;
+            $this->assertNotNull($onConnect);
+            $onConnect($withoutActivity);
+            $this->assertInstanceOf(\stdClass::class, $withoutActivity->context);
+            $withoutActivity->context->lastActivity = null;
+            $withoutContext->context = null;
+            (new \ReflectionProperty(TcpConnection::class, 'sendBuffer'))->setValue($withoutContext, 'pending');
+            (new \ReflectionMethod(ServerWorker::class, 'sweepConnection'))->invoke(null, $withoutContext, time() + 10, 1, 1);
+            $this->assertNull($withoutContext->context);
+
+            $this->runEventLoopFor($eventLoop, 2.2);
+
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $withoutContext->getStatus());
+            $this->assertSame(TcpConnection::STATUS_ESTABLISHED, $withoutActivity->getStatus());
+        } finally {
+            Timer::delAll();
+            @fclose($firstPeer);
+            @fclose($secondPeer);
         }
     }
 

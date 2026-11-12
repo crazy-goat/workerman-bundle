@@ -73,13 +73,17 @@ final readonly class ServerWorker
         $worker->transport = $transport;
         $worker->reusePort = (bool) ($serverConfig['reuse_port'] ?? false);
 
-        $bodySizeCap = $serverConfig['body_size_cap'] ?? null;
-
         $worker->onClose = function (TcpConnection $connection): void {
             $connection->context = null;
         };
+        $worker->onConnect = $this->connectHandler($serverConfig['body_size_cap'] ?? null);
+        $worker->onWorkerReload = $this->workerReloadHandler($serverConfig);
+        $worker->onWorkerStart = $this->workerStartHandler($kernelFactory, $serverConfig, $connectionTimeout, $keepaliveTimeout);
+    }
 
-        $worker->onConnect = function (TcpConnection $connection) use ($bodySizeCap): void {
+    private function connectHandler(?int $bodySizeCap): \Closure
+    {
+        return function (TcpConnection $connection) use ($bodySizeCap): void {
             if ($bodySizeCap !== null) {
                 $connection->maxPackageSize = $bodySizeCap;
             }
@@ -88,81 +92,49 @@ final readonly class ServerWorker
             $connection->context->lastActivity = time();
             $connection->context->requestCompleted = false;
 
-            $connection->errorHandler = function (\Throwable $e) use ($connection): void {
-                error_log(sprintf(
-                    'Unhandled throwable escaped HttpRequestHandler; closing connection: %s in %s:%d',
-                    $e->getMessage(),
-                    $e->getFile(),
-                    $e->getLine(),
-                ));
-
-                $connection->close();
-            };
+            $connection->errorHandler = $this->connectionErrorHandler($connection);
         };
+    }
 
-        $worker->onWorkerReload = function (Worker $worker) use ($serverConfig): void {
-            $this->restartBackoff->forget(sprintf(
-                'server:%s:%s:%d',
-                $serverConfig['name'],
-                (string) ($serverConfig['listen'] ?? ''),
-                $worker->id,
+    private function connectionErrorHandler(TcpConnection $connection): \Closure
+    {
+        return function (\Throwable $e) use ($connection): void {
+            error_log(sprintf(
+                'Unhandled throwable escaped HttpRequestHandler; closing connection: %s in %s:%d',
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine(),
             ));
-        };
 
-        $worker->onWorkerStart = function (Worker $worker) use ($connectionTimeout, $kernelFactory, $keepaliveTimeout, $serverConfig): void {
+            $connection->close();
+        };
+    }
+
+    /**
+     * @param ServerConfig $serverConfig
+     */
+    private function workerReloadHandler(array $serverConfig): \Closure
+    {
+        return function (Worker $worker) use ($serverConfig): void {
+            $this->restartBackoff->forget($this->restartBackoffKey($serverConfig, $worker));
+        };
+    }
+
+    /**
+     * @param ServerConfig $serverConfig
+     */
+    private function workerStartHandler(KernelFactory $kernelFactory, array $serverConfig, int $connectionTimeout, int $keepaliveTimeout): \Closure
+    {
+        return function (Worker $worker) use ($connectionTimeout, $kernelFactory, $keepaliveTimeout, $serverConfig): void {
             Http::requestClass(Request::class);
 
-            $timeouts = array_filter(
-                [$connectionTimeout, $keepaliveTimeout],
-                static fn(int $timeout): bool => $timeout > 0,
-            );
-            if ($timeouts !== []) {
-                $sweepInterval = max(1, intdiv(min($timeouts), 4));
-                Timer::add($sweepInterval, static function () use ($connectionTimeout, $keepaliveTimeout, $worker): void {
-                    $now = time();
-                    foreach ($worker->connections as $connection) {
-                        if (!$connection->context instanceof \stdClass) {
-                            continue;
-                        }
-
-                        $isSending = ($connection->context->streamSending ?? false) === true
-                            || $connection->getSendBufferQueueSize() > 0;
-                        if ($isSending && $connection->bytesWritten !== ($connection->context->lastBytesWritten ?? null)) {
-                            $connection->context->lastBytesWritten = $connection->bytesWritten;
-                            $connection->context->lastActivity = $now;
-
-                            continue;
-                        }
-
-                        if (($connection->context->requestCompleted ?? false) === true && $connection->getRecvBufferQueueSize() > 0) {
-                            $connection->context->requestCompleted = false;
-                            $connection->context->lastActivity = $now;
-                        }
-
-                        $lastActivity = $connection->context->lastActivity ?? null;
-                        $requestCompleted = $connection->context->requestCompleted ?? false;
-                        if (!is_int($lastActivity)) {
-                            continue;
-                        }
-
-                        $timeout = $requestCompleted ? $keepaliveTimeout : $connectionTimeout;
-                        if ($timeout > 0 && $now - $lastActivity >= $timeout) {
-                            $connection->close();
-                        }
-                    }
-                }, [], true);
-            }
+            $this->armIdleConnectionSweeper($worker, $connectionTimeout, $keepaliveTimeout);
 
             $serveFiles = $serverConfig['serve_files'] ?? false;
             $rootDir = $serveFiles ? $serverConfig['root_dir'] ?? null : null;
 
             $this->restartBackoff->beforeStart(
-                sprintf(
-                    'server:%s:%s:%d',
-                    $serverConfig['name'],
-                    (string) ($serverConfig['listen'] ?? ''),
-                    $worker->id,
-                ),
+                $this->restartBackoffKey($serverConfig, $worker),
                 'HTTP server',
                 $serverConfig['name'],
                 static fn(string $message) => $worker->log($message),
@@ -174,19 +146,88 @@ final readonly class ServerWorker
 
             $handler = $this->configureHandler($kernel, $serverConfig, $rootDir);
 
-            $worker->onMessage = function (TcpConnection $connection, Request $request) use ($handler): void {
-                try {
-                    $handler($connection, $request);
-                } finally {
-                    $request->resetHeaders();
-                }
-
-                if ($connection->context instanceof \stdClass) {
-                    $connection->context->lastActivity = time();
-                    $connection->context->requestCompleted = true;
-                }
-            };
+            $worker->onMessage = $this->messageHandler($handler);
         };
+    }
+
+    /**
+     * @param ServerConfig $serverConfig
+     */
+    private function restartBackoffKey(array $serverConfig, Worker $worker): string
+    {
+        return sprintf(
+            'server:%s:%s:%d',
+            $serverConfig['name'],
+            (string) ($serverConfig['listen'] ?? ''),
+            $worker->id,
+        );
+    }
+
+    private function messageHandler(callable $handler): \Closure
+    {
+        return function (TcpConnection $connection, Request $request) use ($handler): void {
+            try {
+                $handler($connection, $request);
+            } finally {
+                $request->resetHeaders();
+            }
+
+            if ($connection->context instanceof \stdClass) {
+                $connection->context->lastActivity = time();
+                $connection->context->requestCompleted = true;
+            }
+        };
+    }
+
+    private function armIdleConnectionSweeper(Worker $worker, int $connectionTimeout, int $keepaliveTimeout): void
+    {
+        $timeouts = array_filter(
+            [$connectionTimeout, $keepaliveTimeout],
+            static fn(int $timeout): bool => $timeout > 0,
+        );
+        if ($timeouts === []) {
+            return;
+        }
+
+        $sweepInterval = max(1, intdiv(min($timeouts), 4));
+        Timer::add($sweepInterval, static function () use ($connectionTimeout, $keepaliveTimeout, $worker): void {
+            $now = time();
+            foreach ($worker->connections as $connection) {
+                self::sweepConnection($connection, $now, $connectionTimeout, $keepaliveTimeout);
+            }
+        }, [], true);
+    }
+
+    private static function sweepConnection(TcpConnection $connection, int $now, int $connectionTimeout, int $keepaliveTimeout): void
+    {
+        if (!$connection->context instanceof \stdClass) {
+            return;
+        }
+
+        $isSending = ($connection->context->streamSending ?? false) === true
+            || $connection->getSendBufferQueueSize() > 0;
+        if ($isSending && $connection->bytesWritten !== ($connection->context->lastBytesWritten ?? null)) {
+            $connection->context->lastBytesWritten = $connection->bytesWritten;
+            $connection->context->lastActivity = $now;
+
+            return;
+        }
+
+        if (($connection->context->requestCompleted ?? false) === true && $connection->getRecvBufferQueueSize() > 0) {
+            $connection->context->requestCompleted = false;
+            $connection->context->lastActivity = $now;
+        }
+
+        $lastActivity = $connection->context->lastActivity ?? null;
+        $requestCompleted = $connection->context->requestCompleted ?? false;
+        if (!is_int($lastActivity)) {
+            return;
+        }
+
+        $timeout = $requestCompleted ? $keepaliveTimeout : $connectionTimeout;
+        if ($timeout > 0 && $now - $lastActivity >= $timeout) {
+            $connection->close();
+        }
     }
 
     /**
