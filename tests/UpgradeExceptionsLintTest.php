@@ -277,6 +277,49 @@ final class UpgradeExceptionsLintTest extends LintScriptTestCase
         self::assertStringContainsString('no exception-hierarchy tree', $result['err']);
     }
 
+    public function testAHeadingWithoutATextBlockFails(): void
+    {
+        $this->writeException('BaseException', "abstract class BaseException extends \\RuntimeException\n{\n}\n");
+        $this->writeUpgrade(<<<'MD'
+            # Upgrade Guide
+
+            **Exception hierarchy:**
+
+            BaseException
+            MD);
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('error: no ```text block found in UPGRADE.md', $result['err']);
+    }
+
+    public function testAnUnparsableTreeLineFails(): void
+    {
+        $this->writeFixture(
+            ['BaseException' => "abstract class BaseException extends \\RuntimeException\n{\n}\n"],
+            "BaseException\n└── 9Broken",
+        );
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('error: cannot parse tree line: └── 9Broken', $result['err']);
+    }
+
+    public function testATreeLineWithoutAParentLevelFails(): void
+    {
+        $this->writeFixture(
+            [
+                'BaseException' => "abstract class BaseException extends \\RuntimeException\n{\n}\n",
+                'ChildException' => "final class ChildException extends BaseException\n{\n}\n",
+            ],
+            "BaseException\n│   └── ChildException",
+        );
+
+        $result = $this->runChecked();
+
+        self::assertStringContainsString('error: cannot determine parent of tree line: │   └── ChildException', $result['err']);
+    }
+
     public function testAMissingExceptionDirectoryIsAUsageError(): void
     {
         $this->writeUpgrade(<<<'MD'
