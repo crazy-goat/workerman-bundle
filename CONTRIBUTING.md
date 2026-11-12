@@ -314,6 +314,16 @@ Superseded pull-request runs are cancelled, but a `master` run is never cancelle
 - PHP 8.2+ syntax
 - Follow PSR-12 coding standards (enforced by PHP-CS-Fixer)
 - Static analysis with PHPStan level 8
+- Cognitive complexity is capped by PHPStan (`tomasvotruba/cognitive-complexity`, included explicitly in
+  `phpstan.neon.dist` because `phpstan/extension-installer` is not installed):
+  - the limits are `cognitive_complexity.function` and `cognitive_complexity.class` in `phpstan.neon.dist`
+    (currently 50 per function or method and 150 per class); a score equal to the limit passes
+  - the same limits apply to every analysed path (`src/`, `tests/`, `benchmarks/`, `bin/`, `tools/`)
+  - closures and arrow functions count into the enclosing function or method, so moving a branch into a
+    closure does not lower the score; extract a named function or method instead
+  - the limits only go down (#1198): there is no baseline and no `complexity.*` ignore, and
+    `tests/LintScopeTest.php` fails if either appears or a limit is raised; a function over the limit is
+    refactored, never excluded
 - Automated refactoring with Rector
 - No narrative comments (enforced by the custom PHP-CS-Fixer rule `CrazyGoat/no_narrative_comments` in
   `tools/php-cs-fixer/`; `composer lint` reports a violation, `composer lint-fix` removes it):
