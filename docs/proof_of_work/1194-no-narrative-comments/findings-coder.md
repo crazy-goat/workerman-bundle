@@ -194,3 +194,25 @@ They were deleted as decided; listed so the maintainer can move any of them to `
   - trigger: "`testNoTrackedDocMentionsTheRemovedProcessTooling` fails on a proof-of-work file"
   - The test scans every tracked `.md`. Refer to "the review findings file" instead of its name,
     or fix the test as suggested above.
+
+## Round 3
+
+### Biggest problem: keeping the annotation lists honest across upgrades
+
+- PHPUnit keeps its annotation names in a `switch` in `Metadata/Parser/AnnotationParser.php`, and
+  some (`requires`, `testWith`, `*External`) are parsed in other places. There is no public list.
+  The sync test reads the `case` labels and adds those four by name; it skips when a PHPUnit
+  version has no annotation parser.
+- PHPBench is easy: one class per annotation under `Benchmark/Metadata/Annotations/`.
+
+### Surprises
+
+- PHPBench's annotation reader accepts aliased imports (`use PhpBench\Attributes as Bench;` then
+  `@Bench\Revs`) and FQCN tags, so the short-name list alone missed them.
+
+### Weak spots
+
+1. `bin/check-test-annotations.php` duplicates the dir list of `.php-cs-fixer.dist.php`. If a new
+   PHP directory is added to the Finder, add it here too. A follow-up could read the Finder dirs
+   from one shared constant.
+2. R2-F4 (double space after `<?php` when the rule runs alone) is still open as a nit.
