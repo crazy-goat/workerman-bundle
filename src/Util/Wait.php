@@ -5,39 +5,12 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Util;
 
 /**
- * Polls a condition until it returns true or a timeout elapses, using
- * exponential backoff between checks.
- *
- * Shared waiting strategy for all bundle polling helpers (e.g. waiting
- * for a status file to appear, or for a child process to exit). The
- * backoff starts at {@see DEFAULT_INITIAL_DELAY_MS} milliseconds and
- * doubles after each unsuccessful check up to {@see DEFAULT_MAX_DELAY_MS}.
- *
- * The deadline is checked before each sleep, so no extra sleep is
- * performed once the timeout has elapsed. The total wall time may
- * still exceed `$timeoutSeconds` by up to `$maxDelayMs` plus the
- * runtime of the final condition evaluation, because an in-flight
- * sleep started just before the deadline runs to completion.
- *
  * @internal
  */
 final class Wait
 {
-    /**
-     * Initial delay between condition checks, in milliseconds.
-     *
-     * Kept small so short-lived conditions (file already exists,
-     * process already gone) are observed without a perceptible wait.
-     */
     public const DEFAULT_INITIAL_DELAY_MS = 10;
 
-    /**
-     * Upper bound for the per-iteration delay, in milliseconds.
-     *
-     * Caps the exponential backoff so longer waits remain responsive
-     * (a process that exits after several seconds is observed within
-     * at most this many milliseconds).
-     */
     public const DEFAULT_MAX_DELAY_MS = 250;
 
     private function __construct()
@@ -45,14 +18,7 @@ final class Wait
     }
 
     /**
-     * @param callable(): bool $condition         predicate evaluated on each tick;
-     *                                            return true to stop waiting
-     * @param int              $timeoutSeconds    upper bound on total wall time, in seconds
-     * @param int              $initialDelayMs    initial sleep between checks, in milliseconds
-     * @param int              $maxDelayMs        cap for the exponential backoff, in milliseconds
-     *
-     * @return bool true if the condition became satisfied within the
-     *              timeout, false if the timeout elapsed first
+     * @param callable(): bool $condition
      */
     public static function until(
         callable $condition,

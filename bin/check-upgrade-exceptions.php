@@ -2,50 +2,11 @@
 
 declare(strict_types=1);
 
-/**
- * Verifies that the exception-hierarchy tree in UPGRADE.md matches the types
- * declared in src/Exception/.
- *
- * PR #814 fixed the tree by hand (four classes were missing — pre-existing
- * drift), but nothing prevented the next drift: the doc tree is a static
- * copy of a hierarchy the code owns. This gate parses the `text` fenced
- * block under "**Exception hierarchy:**" in UPGRADE.md and compares it
- * against the tokenizer-discovered declarations in src/Exception/:
- *
- *   1. the SET of type short names must be identical (missing/extra fail);
- *   2. every nesting edge in the tree (child indented under a parent) must
- *      match the child's real parent class or one of its directly
- *      implemented/extended interfaces (short names);
- *   3. every explicit "(extends X)" annotation in the tree must match the
- *      type's real parent class / extended interface (short name);
- *   4. every exception type named in UPGRADE.md outside the tree block —
- *      the `| Before | After |` table, per-version prose and the `use` /
- *      `catch` / `new` references in the PHP examples — must be declared
- *      in src/Exception/ (issue #1045). A leading backslash marks an
- *      external type (PHP built-ins like `\InvalidArgumentException`) and
- *      is skipped, as is the bare word `Exception` (the namespace name,
- *      not a type).
- *
- * Usage: php bin/check-upgrade-exceptions.php [options]
- *
- * Options:
- *   --root=DIR            repository root holding UPGRADE.md and src/Exception/
- *                         (default: the parent of bin/)
- *   --help                show this help
- *
- * Exit codes:
- *   0  the doc tree matches src/Exception/
- *   1  the doc tree drifts from src/Exception/ (missing/extra types, wrong
- *      parent links, missing tree block)
- *   2  usage error (unknown option, missing root, missing/unreadable files)
- */
-
 const UPGRADE_EXCEPTIONS_DIR_REL = 'src/Exception';
 const UPGRADE_EXCEPTIONS_FILE = 'UPGRADE.md';
 
 /**
  * @param list<string> $argv
- *
  * @return array{root: string}
  */
 function checkUpgradeExceptionsParseArgs(array $argv): array
@@ -62,8 +23,6 @@ function checkUpgradeExceptionsParseArgs(array $argv): array
         if (str_starts_with($arg, '--root=')) {
             $value = substr($arg, 7);
 
-            // An empty value would resolve via realpath('') to the working
-            // directory (issue #1044), silently checking the wrong tree.
             if ($value === '') {
                 fwrite(STDERR, "--root= requires a directory path (see --help)\n");
                 exit(2);
@@ -99,10 +58,6 @@ function checkUpgradeExceptionsPrintUsage(array $argv): void
     fwrite(STDOUT, "  --help                show this help\n");
 }
 
-/**
- * Short name of a (possibly qualified) type reference: strip the leading
- * backslash and keep the segment after the last namespace separator.
- */
 function checkUpgradeExceptionsShortName(string $name): string
 {
     $name = ltrim(trim($name), '\\');
@@ -112,8 +67,6 @@ function checkUpgradeExceptionsShortName(string $name): string
 }
 
 /**
- * Parse the exception-hierarchy tree out of UPGRADE.md.
- *
  * @return array{names: array<string, true>, edges: list<array{child: string, parent: string}>, explicit: list<array{child: string, parent: string}>}
  */
 function checkUpgradeExceptionsParseTree(string $path): array
@@ -200,16 +153,7 @@ function checkUpgradeExceptionsParseTree(string $path): array
 }
 
 /**
- * Collect every exception-type name referenced in UPGRADE.md outside the
- * exception-hierarchy tree: inline code spans (the `| Before | After |`
- * table cells, per-version prose) and `use` / `catch` / `new` references in
- * the PHP examples (issue #1045).
- *
- * The tree block itself (the first ```text block at or after
- * "**Exception hierarchy:**") is removed before scanning so its names are
- * not double-reported.
- *
- * @return array<string, true> referenced type short names
+ * @return array<string, true>
  */
 function checkUpgradeExceptionsParseNamedTypes(string $path): array
 {
@@ -227,8 +171,6 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
         $after = substr($source, $markerPos);
 
         if (preg_match('/```text\n(.*?)\n```/s', $after, $blocks)) {
-            // The regex match is leftmost, so the first occurrence of the
-            // matched block is the tree block itself.
             $blockPos = strpos($after, $blocks[0][0]);
 
             if ($blockPos !== false) {
@@ -240,10 +182,6 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
 
     $names = [];
 
-    // Inline code spans: the Before/After table cells and prose mentions.
-    // The backtick must not touch another backtick, otherwise a fenced
-    // block's closing ``` pairs with the next inline span and shifts every
-    // following pair (the table sits right after a ```php block).
     if (preg_match_all('/(?<!`)`([^`\n]+)`(?!`)/', $scope, $spans)) {
         foreach ($spans[1] as $span) {
             $span = trim($span);
@@ -256,8 +194,6 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
         }
     }
 
-    // `use` imports, `catch` clauses and `new` instantiations in the PHP
-    // examples.
     if (preg_match_all('/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)\s*;/m', $scope, $uses)) {
         foreach ($uses[1] as $name) {
             checkUpgradeExceptionsAddNamedType($names, $name);
@@ -280,10 +216,6 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
 }
 
 /**
- * Record a referenced type unless it is external: a leading backslash marks
- * a global-namespace type (PHP built-ins like `\InvalidArgumentException`),
- * and the bare word `Exception` is the namespace name, not a type.
- *
  * @param array<string, true> $names
  */
 function checkUpgradeExceptionsAddNamedType(array &$names, string $name): void
@@ -302,11 +234,6 @@ function checkUpgradeExceptionsAddNamedType(array &$names, string $name): void
 }
 
 /**
- * Discover every type declared in src/Exception/ with its parent class and
- * directly implemented/extended interfaces (short names), using the
- * tokenizer so that "class"/"interface" inside comments or strings is never
- * mistaken for a declaration.
- *
  * @return array<string, array{parent: string|null, interfaces: list<string>}>
  */
 function checkUpgradeExceptionsDeclaredTypes(string $exceptionDir): array
@@ -412,8 +339,6 @@ function checkUpgradeExceptionsDeclaredTypes(string $exceptionDir): array
 }
 
 /**
- * Read a single (possibly qualified) name starting at token $from.
- *
  * @param list<mixed> $tokens
  */
 function checkUpgradeExceptionsReadName(array $tokens, int $from, int $count): string
@@ -448,11 +373,7 @@ function checkUpgradeExceptionsReadName(array $tokens, int $from, int $count): s
 }
 
 /**
- * Read a comma-separated list of (possibly qualified) names starting at
- * token $from.
- *
  * @param list<mixed> $tokens
- *
  * @return list<string>
  */
 function checkUpgradeExceptionsReadNameList(array $tokens, int $from, int $count): array

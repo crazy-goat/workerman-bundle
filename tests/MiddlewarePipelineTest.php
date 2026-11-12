@@ -87,7 +87,6 @@ final class MiddlewarePipelineTest extends TestCase
         try {
             $this->executeMiddlewarePipeline([$before, $throwing, $after]);
         } catch (\RuntimeException) {
-            // expected
         }
 
         self::assertSame(['before'], $tracker->getInvocationOrder(), 'Only "before" should run; "after" is skipped due to exception');

@@ -63,11 +63,6 @@ final class PeriodicalTriggerTest extends TestCase
         new PeriodicalTrigger('not a valid interval');
     }
 
-    /**
-     * A zero or negative interval would make getNextRunDate() return null
-     * forever, silently never scheduling the task (issue #667): it must be
-     * rejected at construction time instead.
-     */
     #[DataProvider('nonPositiveIntervalProvider')]
     public function testNonPositiveIntervalThrowsException(string|int|\DateInterval $interval): void
     {
@@ -98,8 +93,6 @@ final class PeriodicalTriggerTest extends TestCase
 
     public function testMixedSignIntervalIsAccepted(): void
     {
-        // '-1 day +25 hours' nets +1 hour forward: a field-wise positivity
-        // check would wrongly reject it, the add-based one must accept it.
         $trigger = new PeriodicalTrigger('-1 day +25 hours');
         $now = new \DateTimeImmutable('2024-01-15 12:00:00');
 

@@ -24,7 +24,7 @@ final class SfxDownloaderTest extends TestCase
 
     private string $tempDir;
 
-    /** @var list<string> Directories created outside $this->tempDir that tearDown() must remove */
+    /** @var list<string> */
     private array $cleanupDirs = [];
 
     public static function setUpBeforeClass(): void
@@ -76,8 +76,6 @@ final class SfxDownloaderTest extends TestCase
             }
             $path = $dir . '/' . $item;
             if (is_link($path)) {
-                // Never follow a symlink into its target: the tree may
-                // contain links planted by the tests to outside directories.
                 unlink($path);
             } elseif (is_dir($path)) {
                 $this->rmdirRecursive($path);
@@ -88,14 +86,6 @@ final class SfxDownloaderTest extends TestCase
         rmdir($dir);
     }
 
-    /**
-     * Create a zip archive containing a single symlink entry.
-     *
-     * ZipArchive has no API to mark an entry as a symlink, so the archive is
-     * assembled by hand: one STORED entry whose Unix external attributes
-     * carry the symlink mode (S_IFLNK | 0777) and whose content is the link
-     * target path.
-     */
     private function createZipWithSymlinkEntry(string $zipPath, string $linkName, string $linkTarget): void
     {
         $name = $linkName;
@@ -103,65 +93,61 @@ final class SfxDownloaderTest extends TestCase
         $crc = hexdec(hash('crc32b', $content));
         $size = strlen($content);
 
-        // One STORED entry: local file header followed by the raw content at
-        // offset 0; the central directory points back to that header.
         $localHeader = pack(
             'VvvvvvVVVvv',
-            0x04034b50, // local file header signature
-            20,         // version needed to extract
-            0x0800,     // general purpose bit flags (UTF-8)
-            0,          // compression method: stored
-            0,          // last mod time
-            0,          // last mod date
+            0x04034b50,
+            20,
+            0x0800,
+            0,
+            0,
+            0,
             $crc,
-            $size,      // compressed size
-            $size,      // uncompressed size
+            $size,
+            $size,
             strlen($name),
-            0,          // extra field length
+            0,
         ) . $name;
 
-        // version made by: 0x031E (Unix, 3.0); symlink mode (S_IFLNK | 0777)
-        // lives in the upper 16 bits of the external attributes.
         $externalAttrs = (0120000 | 0777) << 16;
 
         $centralDirectory = pack(
             'VvvvvvvVVVvvvvvVV',
-            0x02014b50,   // central directory signature
-            0x031E,       // version made by (Unix, 3.0)
-            20,           // version needed to extract
-            0x0800,       // general purpose bit flags (UTF-8)
-            0,            // compression method: stored
-            0,            // last mod time
-            0,            // last mod date
+            0x02014b50,
+            0x031E,
+            20,
+            0x0800,
+            0,
+            0,
+            0,
             $crc,
             $size,
             $size,
             strlen($name),
-            0,            // extra field length
-            0,            // file comment length
-            0,            // disk number start
-            0,            // internal attributes
+            0,
+            0,
+            0,
+            0,
             $externalAttrs,
-            0,            // local header offset
+            0,
         ) . $name;
 
         $endOfCentralDirectory = pack(
             'VvvvvVVv',
-            0x06054b50,   // end of central directory signature
-            0,            // disk number
-            0,            // disk with central directory
-            1,            // entries on this disk
-            1,            // total entries
+            0x06054b50,
+            0,
+            0,
+            1,
+            1,
             strlen($centralDirectory),
-            strlen($localHeader) + strlen($content), // central directory offset
-            0,            // comment length
+            strlen($localHeader) + strlen($content),
+            0,
         );
 
         file_put_contents($zipPath, $localHeader . $content . $centralDirectory . $endOfCentralDirectory);
     }
 
     /**
-     * @param array<string, string> $entries Map of entry name to content
+     * @param array<string, string> $entries
      */
     private function createZipWithEntry(string $zipPath, array $entries): void
     {
@@ -192,7 +178,7 @@ final class SfxDownloaderTest extends TestCase
         $expected = hash('sha256', 'hello world');
 
         SfxDownloader::verifyChecksum($file, $expected);
-        SfxDownloader::verifyChecksum($file, strtoupper($expected)); // case-insensitive
+        SfxDownloader::verifyChecksum($file, strtoupper($expected));
         $this->addToAssertionCount(2);
     }
 
@@ -240,14 +226,11 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('removed', $e->getMessage());
         }
 
-        // The poisoned artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($existing);
     }
 
     public function testFetchRetriesDownloadAfterChecksumMismatch(): void
     {
-        // First fetch fails the checksum; the failed artifact is unlinked, so
-        // the second fetch re-downloads instead of re-verifying bad bytes.
         $url = sprintf('http://127.0.0.1:%d/sfx', self::$serverPort);
         $destination = $this->tempDir . '/sfx';
 
@@ -290,13 +273,6 @@ final class SfxDownloaderTest extends TestCase
         }
     }
 
-    /**
-     * A cached (already downloaded) zip in a directory that has since become
-     * non-writable must fail fast with the directory-permissions message
-     * instead of failing late per-entry inside extractToDirectory()
-     * (issue #1052). The valid cached artifact must survive: it is neither
-     * extracted nor treated as a poisoned artifact.
-     */
     #[RequiresPhpExtension('zip')]
     public function testFetchFailsFastWhenCachedZipDestinationIsNotWritable(): void
     {
@@ -326,16 +302,10 @@ final class SfxDownloaderTest extends TestCase
             chmod($dir, 0755);
         }
 
-        // The valid cached artifact must not be extracted or removed.
         self::assertFileExists($zipPath);
         self::assertFileDoesNotExist($dir . '/phpmicro.sfx');
     }
 
-    /**
-     * A read-only directory that already holds every entry of the cached zip
-     * keeps working: extractTo() overwrites the existing writable file in
-     * place, so the fail-fast guard of issue #1052 must not fire.
-     */
     #[RequiresPhpExtension('zip')]
     public function testFetchReextractsInPlaceWhenNonWritableDirectoryAlreadyHoldsEntries(): void
     {
@@ -396,7 +366,6 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString($expectedMessage, $e->getMessage());
         }
 
-        // The poisoned artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
     }
 
@@ -418,16 +387,9 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('path traversal', $e->getMessage());
         }
 
-        // The poisoned artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
     }
 
-    /**
-     * An entry that would resolve outside the destination directory via a
-     * pre-existing symlink inside the destination tree must be rejected: the
-     * name rules alone cannot see it (no "..", no absolute path), so the
-     * destination-containment backstop has to catch it.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRejectsEntryEscapingViaSymlinkedSubdirectory(): void
     {
@@ -454,15 +416,9 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
         }
 
-        // The poisoned artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
     }
 
-    /**
-     * A corrupt archive whose ZipArchive::open() fails must be unlinked even
-     * when no checksum is configured, so a later fetch() re-downloads
-     * instead of failing on the same bad bytes forever.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesCorruptArchiveWhenOpenFails(): void
     {
@@ -476,22 +432,12 @@ final class SfxDownloaderTest extends TestCase
             );
             self::fail('Expected a RuntimeException for the corrupt archive.');
         } catch (\RuntimeException $e) {
-            // The rethrown exception must keep its original type and message
-            // exactly — no removal note is appended on the zip path.
             self::assertSame(sprintf('Failed to open zip archive "%s".', $zipPath), $e->getMessage());
         }
 
-        // The corrupt artifact must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
     }
 
-    /**
-     * When the failed archive cannot be unlinked (e.g. the destination
-     * directory lost its write permission), the removal failure must be
-     * surfaced via error_log(): the rethrown exception keeps its original
-     * message, so without the warning the operator would never learn that
-     * the bad artifact is still on disk, poisoning every later fetch().
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenFailedArchiveCannotBeRemoved(): void
     {
@@ -500,11 +446,6 @@ final class SfxDownloaderTest extends TestCase
         $zipPath = $dir . '/phpmicro.sfx.zip';
         file_put_contents($zipPath, str_repeat('not-a-zip-', 100));
 
-        // Remove the directory's write permission so unlink() fails with
-        // EACCES while is_file() (which needs only execute permission) still
-        // reports the artifact. As root — or on filesystems that ignore the
-        // mode bits — the directory stays writable and the failure cannot be
-        // simulated; skip in that case.
         chmod($dir, 0555);
         if (is_writable($dir)) {
             chmod($dir, 0755);
@@ -521,8 +462,6 @@ final class SfxDownloaderTest extends TestCase
                 );
                 self::fail('Expected a RuntimeException for the corrupt archive.');
             } catch (\RuntimeException $e) {
-                // The rethrown exception must keep its original type and
-                // message exactly — nothing is claimed about the removal.
                 self::assertSame(sprintf('Failed to open zip archive "%s".', $zipPath), $e->getMessage());
             }
         } finally {
@@ -530,8 +469,6 @@ final class SfxDownloaderTest extends TestCase
             chmod($dir, 0755);
         }
 
-        // The failed removal must be signalled: the operator has to know the
-        // bad artifact is still on disk.
         $logContent = @file_get_contents($logFile);
         self::assertIsString($logContent, 'Failed to read error_log capture file.');
         self::assertStringContainsString(
@@ -540,16 +477,9 @@ final class SfxDownloaderTest extends TestCase
             'The error_log should contain the removal-failure warning.',
         );
 
-        // The unlink failed, so the bad artifact must still be there.
         self::assertFileExists($zipPath);
     }
 
-    /**
-     * A crafted archive containing a symlink entry must not produce a symlink
-     * on disk: ZipArchive::extractTo() materialises link entries as regular
-     * files containing the link target, which the current extraction design
-     * depends on.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipDoesNotCreateSymlinkFromSymlinkEntry(): void
     {
@@ -619,11 +549,6 @@ final class SfxDownloaderTest extends TestCase
         self::assertStringEqualsFile($result, 'static-php-binary-content');
     }
 
-    /**
-     * When a mid-extraction failure occurs (e.g. a later entry escapes the
-     * destination via a pre-existing symlink), entries extracted before the
-     * failure must be removed so the destination directory is left as it was.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesPreviouslyExtractedEntriesOnMidExtractionFailure(): void
     {
@@ -637,9 +562,7 @@ final class SfxDownloaderTest extends TestCase
 
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
         $this->createZipWithEntry($zipPath, [
-            // First entry is valid and will be extracted before the failure.
             'goodfile.bin' => 'good-content',
-            // Second entry escapes via the pre-existing symlink.
             'sub/evil.bin' => 'escaped-content',
         ]);
 
@@ -653,29 +576,16 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
         }
 
-        // The archive must be removed.
         self::assertFileDoesNotExist($zipPath);
 
-        // The previously extracted entry must also be removed — a failed
-        // fetch must leave the destination directory as it was.
         self::assertFileDoesNotExist($this->tempDir . '/goodfile.bin');
     }
 
-    /**
-     * When locateSfxEntry() fails (archive has no usable SFX entry), all
-     * extracted files must be removed so the destination directory is left
-     * as it was — not just the zip archive.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesExtractedEntriesWhenNoSfxEntryFound(): void
     {
         $zipPath = $this->tempDir . '/orphan.sfx.zip';
 
-        // Create an archive containing only empty directory entries.
-        // Since there are no file entries, locateSfxEntry() cannot find
-        // a usable SFX entry and throws SfxExtractionException. The
-        // nested directories verify that cleanup removes both parent
-        // and child directories created during extraction.
         $zip = new \ZipArchive();
         if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
             throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
@@ -694,19 +604,11 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
         }
 
-        // The archive must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
 
-        // The extracted directories must also be removed — a failed fetch
-        // must leave the destination directory as it was.
         self::assertDirectoryDoesNotExist($this->tempDir . '/subdir');
     }
 
-    /**
-     * When a mid-extraction failure occurs, directories extracted before
-     * the failure (including auto-created parent directories) must be
-     * removed — not just files.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesDirectoriesOnMidExtractionFailure(): void
     {
@@ -720,12 +622,8 @@ final class SfxDownloaderTest extends TestCase
 
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
         $this->createZipWithEntry($zipPath, [
-            // First two entries are valid and will be extracted before
-            // the failure: a file in a subdirectory (which auto-creates
-            // the "gooddir/" parent) and a standalone file.
             'gooddir/goodfile.bin' => 'good-content',
             'standalone.bin' => 'standalone-content',
-            // Third entry escapes via the pre-existing symlink.
             'sub/evil.bin' => 'escaped-content',
         ]);
 
@@ -739,24 +637,14 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
         }
 
-        // The archive must be removed.
         self::assertFileDoesNotExist($zipPath);
 
-        // The extracted files must be removed.
         self::assertFileDoesNotExist($this->tempDir . '/gooddir/goodfile.bin');
         self::assertFileDoesNotExist($this->tempDir . '/standalone.bin');
 
-        // The auto-created parent directory must also be removed.
         self::assertDirectoryDoesNotExist($this->tempDir . '/gooddir');
     }
 
-    /**
-     * Multi-level nested file entries (e.g. "a/b/c/d.txt") auto-create
-     * parent directories that have no zip entry. On mid-extraction failure,
-     * all levels of auto-created parents must be removed — not just the
-     * deepest or shallowest. This tests the depth-descending sort of the
-     * cleanup paths.
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRemovesMultiLevelParentsOnMidExtractionFailure(): void
     {
@@ -770,9 +658,7 @@ final class SfxDownloaderTest extends TestCase
 
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
         $this->createZipWithEntry($zipPath, [
-            // A deeply nested file — extraction auto-creates a/, a/b/, a/b/c/.
             'a/b/c/d.txt' => 'deep-content',
-            // Failing entry escapes via symlink.
             'sub/evil.bin' => 'escaped-content',
         ]);
 
@@ -786,23 +672,14 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
         }
 
-        // The archive must be removed.
         self::assertFileDoesNotExist($zipPath);
 
-        // The extracted file and all auto-created parent directories
-        // must be removed, leaving the destination as it was.
         self::assertFileDoesNotExist($this->tempDir . '/a/b/c/d.txt');
         self::assertDirectoryDoesNotExist($this->tempDir . '/a/b/c');
         self::assertDirectoryDoesNotExist($this->tempDir . '/a/b');
         self::assertDirectoryDoesNotExist($this->tempDir . '/a');
     }
 
-    /**
-     * A mid-extraction failure that is not caused by zip-slip validation —
-     * here the third entry targets a pre-existing, non-writable directory —
-     * must still remove the entries already extracted and the parent
-     * directories they created (issue #933).
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipRollsBackEntriesWhenLaterEntryCannotBeExtracted(): void
     {
@@ -818,8 +695,6 @@ final class SfxDownloaderTest extends TestCase
             'blocked/third.bin' => 'third-content',
         ]);
 
-        // extractTo() needs write permission on the target directory to
-        // create a new file; 0500 fails the third entry mid-extraction.
         chmod($blocked, 0500);
         if (is_writable($blocked)) {
             chmod($blocked, 0755);
@@ -827,8 +702,6 @@ final class SfxDownloaderTest extends TestCase
         }
 
         try {
-            // extractTo() emits a PHP warning for the deliberate permission
-            // failure; suppress it so the test output stays clean.
             @(new SfxDownloader())->fetch(
                 'https://example.invalid/phpmicro.sfx.zip',
                 $dir,
@@ -840,32 +713,20 @@ final class SfxDownloaderTest extends TestCase
             chmod($blocked, 0755);
         }
 
-        // The poisoned archive must be removed.
         self::assertFileDoesNotExist($zipPath);
 
-        // Entries 1 and 2, and the "gooddir/" parent created for entry 1,
-        // must be rolled back — no partial tree may remain. The pre-existing
-        // "blocked/" directory is not ours and must survive.
         self::assertFileDoesNotExist($dir . '/gooddir/goodfile.bin');
         self::assertDirectoryDoesNotExist($dir . '/gooddir');
         self::assertFileDoesNotExist($dir . '/standalone.bin');
         self::assertSame(['.', '..', 'blocked'], scandir($dir));
     }
 
-    /**
-     * When the rollback cannot remove an already-extracted file because its
-     * parent directory is no longer writable, the failure must be surfaced
-     * via error_log(): the rethrown extraction exception says nothing about
-     * the leftover file (issue #933).
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedFile(): void
     {
         $dir = $this->tempDir . '/dest';
         $locked = $dir . '/locked';
         mkdir($locked, 0755, true);
-        // A pre-existing writable file lets extractTo() overwrite it in
-        // place even though the containing directory is read-only.
         file_put_contents($locked . '/goodfile.bin', 'pre-existing');
         $blocked = $dir . '/blocked';
         mkdir($blocked, 0755, true);
@@ -910,16 +771,9 @@ final class SfxDownloaderTest extends TestCase
             'The error_log should contain the cleanup warning for the file that stayed on disk.',
         );
 
-        // The cleanup failed, so the file must still be there.
         self::assertFileExists($locked . '/goodfile.bin');
     }
 
-    /**
-     * The same cleanup warning for an empty directory: rmdir() fails because
-     * its parent is read-only, and an empty directory can never disappear on
-     * its own, so the operator must be told that it stayed behind
-     * (issue #933).
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedDirectory(): void
     {
@@ -934,8 +788,6 @@ final class SfxDownloaderTest extends TestCase
         if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
             throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
         }
-        // An already-existing directory entry: extractTo() accepts it, and
-        // rollback cannot rmdir() it because "locked/" is read-only.
         $zip->addEmptyDir('locked/empty');
         $zip->addFromString('blocked/newfile.bin', 'new-content');
         $zip->close();
@@ -974,17 +826,9 @@ final class SfxDownloaderTest extends TestCase
             'The error_log should contain the cleanup warning for the empty directory that stayed on disk.',
         );
 
-        // The cleanup failed, so the directory must still be there.
         self::assertDirectoryExists($locked . '/empty');
     }
 
-    /**
-     * The cleanup warning must also fire for a symlink that is a tracked
-     * entry and cannot be unlinked: extractTo() writes through a pre-existing
-     * symlink whose target stays inside the destination, so the entry is
-     * extracted but stays a link that a read-only parent prevents removing
-     * (issue #933).
-     */
     #[RequiresPhpExtension('zip')]
     public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedSymlink(): void
     {
@@ -1038,16 +882,9 @@ final class SfxDownloaderTest extends TestCase
             'The error_log should contain the cleanup warning for the symlink that stayed on disk.',
         );
 
-        // The cleanup failed, so the symlink must still be there.
         self::assertTrue(is_link($locked . '/link.bin'));
     }
 
-    /**
-     * A filesystem that accepts only part of a write must abort the download
-     * instead of leaving a truncated artifact. No local filesystem can be
-     * made to short-write on demand, so a user stream wrapper reports a
-     * one-byte-short write (issue #933).
-     */
     public function testWriteStreamThrowsWhenWriteIsShort(): void
     {
         $shortWriteDir = $this->tempDir . '/shortwrite';
@@ -1066,8 +903,6 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('Failed to write to "shortwrite://dest" (short write).', $e->getMessage());
         }
 
-        // The failed write must remove the partial artifact even though the
-        // stream wrapper accepted the bytes it reported.
         self::assertFileDoesNotExist($shortWriteDir . '/dest');
     }
 
@@ -1093,7 +928,6 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
         }
 
-        // The useless archive must not survive for a later fetch() to trust.
         self::assertFileDoesNotExist($zipPath);
     }
 
@@ -1270,8 +1104,6 @@ final class SfxDownloaderTest extends TestCase
 
     public function testHttpsToHttpDowngradeRejectedInDefaultMode(): void
     {
-        // The scheme policy is applied on every hop in every mode: the check
-        // does not depend on $allowInsecure at all.
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Blocked cross-scheme redirect from HTTPS to "http://attacker.example/sfx". Disable redirects or use a trusted mirror.');
 
@@ -1288,8 +1120,6 @@ final class SfxDownloaderTest extends TestCase
 
     public function testHttpsToHttpDowngradeRejectedWithMixedCaseSchemes(): void
     {
-        // A hostile mirror may emit an uppercase-scheme Location header; the
-        // policy must not be bypassable via case differences.
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Blocked cross-scheme redirect from HTTPS to "HTTP://attacker.example/sfx".');
 
@@ -1353,9 +1183,6 @@ final class SfxDownloaderTest extends TestCase
 
     public function testRedirectLimitEnforcedForMixedCaseSchemeUrl(): void
     {
-        // An uppercase-scheme URL must still get the manual redirect loop
-        // (follow_location => 0), not the default context that follows
-        // redirects inside the wrapper.
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Too many redirects (max 5)');
 
@@ -1409,28 +1236,11 @@ final class SfxDownloaderTest extends TestCase
             self::assertStringContainsString('maximum allowed size of 1024 bytes', $e->getMessage());
         }
 
-        // The partial artifact must not be left behind for a later fetch() to reuse.
         self::assertFileDoesNotExist($this->tempDir . '/big');
     }
 
-    /**
-     * When the partial-download artifact cannot be unlinked on transfer abort
-     * (read-only mount, foreign ownership, SELinux denial), the failure must
-     * be surfaced via error_log(): otherwise a truncated file stays on disk
-     * and the next fetch() trusts it as a complete download — silent data
-     * corruption that never self-heals.
-     *
-     * A custom stream wrapper forces unlink() to fail deterministically. The
-     * read-only-directory trick used by the zip-extraction test cannot be
-     * reused here: writeStream() opens the destination with fopen('wb') *before*
-     * the try, so a read-only directory makes that fopen() throw and the
-     * finally-block cleanup (where the unlink lives) is never reached.
-     */
     public function testWriteStreamLogsWarningWhenPartialArtifactCannotBeRemoved(): void
     {
-        // The wrapper maps "failunlink:///..." to a real path under the temp
-        // dir; a "wrap" subdir is created so fetch()'s is_dir() check passes
-        // and the download writes a genuine partial file there.
         $wrapDir = $this->tempDir . '/wrap';
         mkdir($wrapDir, 0755, true);
         FailingUnlinkStreamWrapper::register($this->tempDir);
@@ -1441,8 +1251,6 @@ final class SfxDownloaderTest extends TestCase
 
         try {
             try {
-                // maxDownloadBytes small enough that the /big (65536-byte) body
-                // aborts mid-stream, leaving a partial artifact behind.
                 (new SfxDownloader(1024))->fetch($url, 'failunlink:///wrap');
                 self::fail('Expected a RuntimeException for the oversized download.');
             } catch (\RuntimeException $e) {
@@ -1452,8 +1260,6 @@ final class SfxDownloaderTest extends TestCase
             ini_restore('error_log');
         }
 
-        // The failed removal must be signalled: the operator has to know the
-        // truncated artifact is still on disk.
         $logContent = @file_get_contents($logFile);
         self::assertIsString($logContent, 'Failed to read error_log capture file.');
         self::assertStringContainsString(
@@ -1462,7 +1268,6 @@ final class SfxDownloaderTest extends TestCase
             'The error_log should contain the removal-failure warning.',
         );
 
-        // The unlink failed, so the partial artifact must still be there.
         self::assertFileExists($wrapDir . '/big');
     }
 
@@ -1497,8 +1302,6 @@ final class SfxDownloaderTest extends TestCase
 
     public function testChecksumIsVerifiedBeforeZipExtraction(): void
     {
-        // A corrupt archive that would fail ZipArchive::open(): the SHA-256
-        // mismatch must surface before any extraction is attempted.
         $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
         file_put_contents($zipPath, 'PK' . random_bytes(64));
 
@@ -1578,7 +1381,6 @@ PHP_WRAP);
         }
         self::$serverProcess = $process;
 
-        // Wait until the server accepts connections.
         $port = (int) self::$serverPort;
         $ready = Wait::until(static function () use ($port): bool {
             $sock = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
@@ -1624,17 +1426,6 @@ PHP_WRAP);
     }
 }
 
-/**
- * Stream wrapper that proxies every filesystem operation to a real base
- * directory except unlink(), which always fails — used to exercise the
- * writeStream() finally-block cleanup when partial-artifact removal fails.
- *
- * Registered for the "failunlink://" protocol. A destination directory of
- * "failunlink://" maps to a real directory under the registered base, so the
- * download writes a genuine partial file while its eventual unlink() is
- * forced to fail deterministically (no dependence on filesystem permissions
- * or running as root).
- */
 final class FailingUnlinkStreamWrapper
 {
     private const PROTOCOL = 'failunlink';
@@ -1644,8 +1435,6 @@ final class FailingUnlinkStreamWrapper
     private static string $baseDir = '';
 
     /**
-     * Set by PHP's stream layer on every wrapper instance; declared so PHP 8.2+ does not report a dynamic property.
-     *
      * @var resource|null
      */
     public $context;
@@ -1653,11 +1442,6 @@ final class FailingUnlinkStreamWrapper
     /** @var resource|null */
     private $handle;
 
-    /**
-     * Register the wrapper once for the whole PHPUnit process (single
-     * consumer — only testWriteStreamLogsWarningWhenPartialArtifactCannotBeRemoved
-     * uses the `failunlink://` protocol; never unregistered on purpose).
-     */
     public static function register(string $baseDir): void
     {
         self::$baseDir = rtrim($baseDir, '/');
@@ -1671,9 +1455,6 @@ final class FailingUnlinkStreamWrapper
 
     private function realPath(string $path): string
     {
-        // "failunlink:///wrap/big" -> "/realBase/wrap/big". Strip the scheme
-        // prefix literally (parse_url would split it into path "/wrap/big"
-        // plus a trailing-slash quirk), then re-root under the real base.
         $inner = preg_replace('#^' . self::PROTOCOL . '://#', '', $path);
 
         return self::$baseDir . '/' . ltrim((string) $inner, '/');
@@ -1697,7 +1478,6 @@ final class FailingUnlinkStreamWrapper
 
     public function unlink(): bool
     {
-        // Intentionally fail so the caller's cleanup path is exercised.
         return false;
     }
 
@@ -1765,15 +1545,6 @@ final class FailingUnlinkStreamWrapper
     }
 }
 
-/**
- * Stream wrapper whose writes always report one byte less than the data it
- * was handed, exercising the short-write guard in writeStream(). A local
- * filesystem cannot be forced to short-write on demand.
- *
- * Registered for the "shortwrite://" protocol; paths map to a real directory
- * under the registered base so the wrapper is a faithful file stream apart
- * from the short write.
- */
 final class ShortWriteStreamWrapper
 {
     private const PROTOCOL = 'shortwrite';
@@ -1783,8 +1554,6 @@ final class ShortWriteStreamWrapper
     private static string $baseDir = '';
 
     /**
-     * Set by PHP's stream layer on every wrapper instance; declared so PHP 8.2+ does not report a dynamic property.
-     *
      * @var resource|null
      */
     public $context;
@@ -1827,9 +1596,6 @@ final class ShortWriteStreamWrapper
 
     public function stream_write(string $data): int
     {
-        // Write the chunk for real (so the stream is consistent), but report
-        // one byte less: fwrite() returns this count, which writeStream()
-        // compares against the chunk length.
         $written = is_resource($this->handle) ? fwrite($this->handle, $data) : false;
         if ($written === false) {
             return 0;

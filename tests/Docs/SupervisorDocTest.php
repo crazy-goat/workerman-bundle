@@ -12,9 +12,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/supervisor.md must name the attribute parameters, the tag and the events, and its YAML examples must be valid (issue #878, section 5).
- */
 #[CoversNothing]
 final class SupervisorDocTest extends TestCase
 {
@@ -54,15 +51,11 @@ final class SupervisorDocTest extends TestCase
             $parsed = Yaml::parse($block);
             self::assertIsArray($parsed);
             if (!isset($parsed['services'])) {
-                // Top-level examples (for example the restart config) do not
-                // define services; only a pure `workerman:` block may skip the
-                // tag-attribute contract.
                 self::assertSame([], array_diff(array_keys($parsed), ['workerman']));
                 continue;
             }
             foreach ($parsed['services'] as $definition) {
                 foreach ($definition['tags'] as $tag) {
-                    // The second form is `{ workerman.process: { attributes } }`; in the first form `name` is the tag name.
                     self::assertTrue(isset($tag['workerman.process']) || ($tag['name'] ?? null) === 'workerman.process');
                     $attributes = $tag['workerman.process'] ?? $tag;
                     if (!isset($tag['workerman.process'])) {

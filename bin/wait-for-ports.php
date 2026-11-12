@@ -2,31 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * Polls one or more TCP ports until each accepts a connection or a
- * timeout elapses, then exits non-zero with a clear message.
- *
- * Replaces the fixed-duration `sleep 1` in the `composer test` /
- * `composer test:coverage` scripts: if the test daemon needs longer
- * than one second to bind its ports (cold cache, slow CI runner), the
- * readiness check waits for it instead of racing ahead and failing
- * every network-dependent test with a misleading connection error.
- *
- * Uses {@see CrazyGoat\WorkermanBundle\Util\Wait::until()} for
- * exponential backoff — a daemon that is already ready costs one
- * check, a slow one is observed within the backoff cap.
- *
- * Usage: php bin/wait-for-ports.php <port> [<port> ...] [--host=<host>] [--timeout=<seconds>]
- *
- * --host defaults to 127.0.0.1 and accepts an IPv6 literal with or without
- * brackets (brackets are added when missing).
- *
- * Exit codes:
- *   0 = all ports accept connections
- *   1 = at least one port did not become ready within the timeout
- *   2 = invalid usage
- */
-
 $argv = $_SERVER['argv'] ?? [];
 
 $ports = [];

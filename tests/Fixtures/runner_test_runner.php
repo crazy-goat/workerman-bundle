@@ -1,20 +1,5 @@
 <?php
 
-/**
- * Standalone test runner for Runner::warmUpCache() fork error handling.
- *
- * Runs outside the PHPUnit process to avoid inheriting output buffers,
- * shutdown functions, and other PHPUnit state that interferes with
- * pcntl_fork() + exit() behavior.
- *
- * Usage: php runner_test_runner.php <test_name>
- *
- * Exit codes:
- *   0 = test passed
- *   1 = test failed (message on stderr)
- *   2 = invalid usage
- */
-
 declare(strict_types=1);
 
 use CrazyGoat\WorkermanBundle\ConfigLoader;
@@ -54,8 +39,6 @@ final readonly class UnexpectedSignalRunner extends Runner
     {
         $pid = \pcntl_fork();
         if ($pid === 0) {
-            // The parent process may ignore SIGUSR1; reset it so the child
-            // is really killed by the signal.
             \pcntl_signal(\SIGUSR1, \SIG_DFL);
             \posix_kill((int) \getmypid(), \SIGUSR1);
             exit(0);
@@ -69,7 +52,6 @@ final readonly class InvalidPidRunner extends Runner
 {
     protected function fork(): int
     {
-        // Never a child of this process; pcntl_waitpid() returns -1 (ECHILD).
         return \posix_getpid();
     }
 }
@@ -99,11 +81,6 @@ match ($testName) {
     })(),
 };
 
-/**
- * Kernel boot throws in the child, which then SIGTERMs itself. The parent
- * must throw the SIGTERM-specific message and the child message must be on
- * stderr.
- */
 function testWarmupBootFailureSigterm(): void
 {
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_boot_' . uniqid();
@@ -132,9 +109,6 @@ function testWarmupBootFailureSigterm(): void
     pass();
 }
 
-/**
- * The child exits with a non-zero code; the parent must report that code.
- */
 function testWarmupExitCodeNonzero(): void
 {
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_exit_' . uniqid();
@@ -159,10 +133,6 @@ function testWarmupExitCodeNonzero(): void
     pass();
 }
 
-/**
- * The child is killed by a signal other than SIGTERM or SIGKILL; the parent
- * must report the unexpected signal.
- */
 function testWarmupUnexpectedSignal(): void
 {
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_signal_' . uniqid();
@@ -187,10 +157,6 @@ function testWarmupUnexpectedSignal(): void
     pass();
 }
 
-/**
- * pcntl_waitpid() fails: the PID is a real process that is not a child, so
- * the call returns -1 (ECHILD) even when other children exist.
- */
 function testWarmupWaitFailed(): void
 {
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_wait_' . uniqid();
@@ -215,14 +181,6 @@ function testWarmupWaitFailed(): void
     pass();
 }
 
-/**
- * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
- * constructor argument. Verifies that when the child process is stuck
- * (simulated by sleep), the parent throws RuntimeException with the
- * expected message after the configured timeout elapses.
- *
- * Uses a 1-second timeout to keep the test fast.
- */
 function testWarmupTimeoutKicksIn(): void
 {
     $tmpDir = sys_get_temp_dir() . '/workerman_warmup_timeout_' . uniqid();
@@ -244,10 +202,6 @@ function testWarmupTimeoutKicksIn(): void
                 fail('Unexpected exception message: ' . $e->getMessage());
             }
 
-            // Should fire roughly at the 1s deadline. Allow generous slack
-            // for slow CI but fail loudly if it took way too long.
-            // Wait::until() uses microtime(true), so the timeout fires
-            // shortly after the 1s deadline (about 1.0-1.25s).
             if ($elapsed > 3.0) {
                 fail(sprintf('Timeout fired too late: %.2fs (expected ~1s)', $elapsed));
             }

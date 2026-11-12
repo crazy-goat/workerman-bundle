@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
 
 final class ListenSchemeTest extends TestCase
 {
-    // --- fromListen() ---
     #[DataProvider('provideValidListenUrls')]
     public function testFromListenReturnsCorrectScheme(string $listen, ListenScheme $expected): void
     {
@@ -73,7 +72,6 @@ final class ListenSchemeTest extends TestCase
         yield 'wss with hostname' => ['wss://chat.example.com:443'];
     }
 
-    // --- workermanPrefix() ---
     #[DataProvider('providePrefixExpectations')]
     public function testWorkermanPrefix(ListenScheme $scheme, string $expectedPrefix): void
     {
@@ -87,7 +85,6 @@ final class ListenSchemeTest extends TestCase
         yield 'https becomes http' => [ListenScheme::Https, 'http://'];
     }
 
-    // --- transport() ---
     #[DataProvider('provideTransportExpectations')]
     public function testTransport(ListenScheme $scheme, string $expectedTransport): void
     {
@@ -101,7 +98,6 @@ final class ListenSchemeTest extends TestCase
         yield 'https uses ssl' => [ListenScheme::Https, 'ssl'];
     }
 
-    // --- requiresSslContext() ---
     #[DataProvider('provideSslExpectations')]
     public function testRequiresSslContext(ListenScheme $scheme, bool $expected): void
     {
@@ -114,8 +110,6 @@ final class ListenSchemeTest extends TestCase
         yield 'http needs no ssl' => [ListenScheme::Http, false];
         yield 'https needs ssl' => [ListenScheme::Https, true];
     }
-
-    // --- enum value consistency ---
 
     public function testEnumValuesMatchListenPrefixes(): void
     {

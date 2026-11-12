@@ -9,9 +9,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Processor;
 
-/**
- * Every YAML example with a `workerman:` root in the user docs must pass the config tree (issue #878, section 5).
- */
 #[CoversNothing]
 final class YamlSnippetConfigTest extends TestCase
 {

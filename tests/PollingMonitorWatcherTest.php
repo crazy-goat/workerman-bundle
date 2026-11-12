@@ -78,14 +78,6 @@ final class PollingMonitorWatcherTest extends TestCase
     }
 
     /**
-     * Walks the hierarchy and returns a ReflectionProperty bound to the
-     * declaring class's scope. Required on PHP 8.2/8.3 because
-     * ReflectionProperty::setValue() on a readonly property checks the
-     * scope of the reflection (where getProperty() was called from), not
-     * the property's actual declaring class. Binding to a subclass scope
-     * makes the readonly initializer throw even when the underlying
-     * property is uninitialized.
-     *
      * @phpstan-ignore-next-line missingType.generics
      */
     private function findProperty(\ReflectionClass $class, string $name): \ReflectionProperty
@@ -146,9 +138,6 @@ final class PollingMonitorWatcherTest extends TestCase
         $targetTime = $originalMTime - 5;
         $this->setLastMTime($watcher, $targetTime);
 
-        // Ensure the file mtime advances past targetTime — a 1ms sleep
-        // guarantees the write timestamp differs. Semantically required, not
-        // a condition wait.
         \usleep(1000);
         \file_put_contents($watchedFile, '<?php // v2');
         \clearstatcache(true, $watchedFile);
@@ -281,9 +270,6 @@ final class PollingMonitorWatcherTest extends TestCase
             ['*.php'],
             CountingPollingMonitorWatcher::class,
         );
-        // Set lastMTime to the future so no file is treated as modified and
-        // the watcher iterates the full set instead of triggering reload on
-        // the first match.
         $this->setLastMTime($watcher, \time() + 3600);
 
         $this->invokeCheckFileSystemChanges($watcher);
@@ -342,8 +328,6 @@ final class PollingMonitorWatcherTest extends TestCase
         if ($stream === false) {
             throw new \RuntimeException('Failed to open php://memory stream');
         }
-        // Worker::log() is static, so a real Worker is used instead of a mock;
-        // route its output to a memory stream to keep the test quiet.
         Worker::$globalEvent = $event;
         Worker::$outputStream = $stream;
         Worker::$logFile = '/dev/null';
@@ -400,7 +384,6 @@ final class PollingMonitorWatcherTest extends TestCase
             2,
         );
 
-        // Budget 2 over 5 files: the sweep must span several ticks.
         $this->invokeCheckFileSystemChanges($watcher);
         $this->assertNotEmpty($this->getIterators($watcher), 'With max_files_per_tick=2 the 5-file sweep must not finish in one tick');
 
@@ -441,26 +424,17 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
 
-        // Tick 1: process first 500 files, stop at boundary
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertNotEmpty($this->getIterators($watcher), 'Tick 1 should keep a persisted iterator');
 
-        // Tick 2: continue from resume point, process remaining files
         $this->invokeCheckFileSystemChanges($watcher);
 
         $this->assertSame([], $this->getIterators($watcher), 'iterators should be empty after completing full scan across multiple ticks');
     }
 
-    /**
-     * A full sweep spanning multiple ticks must advance the iterator exactly
-     * N times (O(N)), not N²/budget.  The old code rebuilt the iterator on
-     * every tick and fast-forwarded through already-seen entries, causing
-     * repeated traversals.
-     */
     public function testFullSweepIsLinearNotQuadratic(): void
     {
-        // Create a tree with enough files to span several ticks (600 > 500).
         $fileCount = 600;
         for ($i = 0; $i < $fileCount; $i++) {
             \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
@@ -476,10 +450,8 @@ final class PollingMonitorWatcherTest extends TestCase
             ['*.php'],
             CountingPollingMonitorWatcher::class,
         );
-        // Future lastMTime so no reload is triggered mid-sweep.
         $this->setLastMTime($watcher, \time() + 3600);
 
-        // Drive ticks until the sweep completes.
         $maxTicks = 10;
         for ($tick = 0; $tick < $maxTicks; $tick++) {
             $this->invokeCheckFileSystemChanges($watcher);
@@ -488,10 +460,6 @@ final class PollingMonitorWatcherTest extends TestCase
             }
         }
 
-        // Total advances should be ~N, not N²/budget (which would be ~720).
-        // Allow a small margin for filesystem overhead (e.g. the iterator
-        // may yield dir entries on some platforms), but it must be well
-        // below the quadratic bound.
         $this->assertLessThanOrEqual(
             $fileCount + 50,
             CountingRecursiveDirectoryIterator::$advanceCount,
@@ -501,7 +469,6 @@ final class PollingMonitorWatcherTest extends TestCase
                 CountingRecursiveDirectoryIterator::$advanceCount,
             ),
         );
-        // Sanity: at least N advances happened (every file was visited).
         $this->assertGreaterThanOrEqual(
             $fileCount,
             CountingRecursiveDirectoryIterator::$advanceCount,
@@ -513,15 +480,9 @@ final class PollingMonitorWatcherTest extends TestCase
         );
     }
 
-    /**
-     * No tick may process more than the configured per-tick budget, including
-     * resumed ones.  The old code did not count skipped entries against
-     * the budget, so a tick could do far more filesystem work than the
-     * budget allowed.
-     */
     public function testBudgetBoundsAllEntriesIncludingResumedOnes(): void
     {
-        $fileCount = 1200; // spans at least 3 ticks at 500/tick
+        $fileCount = 1200;
         for ($i = 0; $i < $fileCount; $i++) {
             \file_put_contents($this->tempDir . '/file' . $i . '.php', '<?php');
         }
@@ -543,9 +504,6 @@ final class PollingMonitorWatcherTest extends TestCase
             CountingRecursiveDirectoryIterator::reset();
             $this->invokeCheckFileSystemChanges($watcher);
 
-            // Each tick must not exceed the configured per-tick budget.
-            // Allow +1 because the budget check is > (strictly greater than)
-            // so the entry that trips the boundary is still counted.
             $this->assertLessThanOrEqual(
                 501,
                 CountingRecursiveDirectoryIterator::$advanceCount,
@@ -562,16 +520,6 @@ final class PollingMonitorWatcherTest extends TestCase
         }
     }
 
-    /**
-     * A file modified in an already-scanned region (before the resume
-     * point) must still trigger a reload on the next sweep.  Because the
-     * iterator is held across ticks and only rewinds when the sweep
-     * completes, a change in the already-scanned prefix is detected on
-     * the *next* sweep.
-     *
-     * Runs in a subprocess (like the E2E test) because Utils::reload()
-     * sends SIGUSR1 to the parent process.
-     */
     public function testFileModifiedInAlreadyScannedRegionTriggersReloadOnNextSweep(): void
     {
         $autoloadPath = \realpath(__DIR__ . '/../vendor/autoload.php');
@@ -603,15 +551,6 @@ final class PollingMonitorWatcherTest extends TestCase
         self::assertSame(0, $exitCode, 'A file at the end of a sweep should be detected on its second tick.');
     }
 
-    /**
-     * Adding or removing a directory between ticks must not throw, and
-     * the sweep must still converge.  APFS readdir order is hash-based (not
-     * alphabetical), so the removed directory may or may not have been
-     * visited yet — either way the worker must not crash and the sweep
-     * must eventually complete.  The dedicated
-     * testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow covers the
-     * deleted-file RuntimeException path deterministically.
-     */
     public function testTreeMutationBetweenTicksDoesNotThrow(): void
     {
         for ($i = 0; $i < 600; $i++) {
@@ -630,24 +569,17 @@ final class PollingMonitorWatcherTest extends TestCase
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
         $this->setLastMTime($watcher, \time() + 3600);
 
-        // Tick 1: processes first 500 entries, stops at budget (mid-sweep).
         $this->invokeCheckFileSystemChanges($watcher);
 
-        // Between ticks: add a new directory with a file.
         $newDir = $this->tempDir . '/newdir';
         \mkdir($newDir, 0700, true);
         \file_put_contents($newDir . '/new.php', '<?php');
 
-        // Between ticks: remove zzz_subdir and its files. Whether the
-        // iterator had already visited it or not, resuming must not throw.
         for ($i = 0; $i < 10; $i++) {
             \unlink($removedDir . '/child' . $i . '.php');
         }
         \rmdir($removedDir);
 
-        // Drive ticks until the sweep (and the next one, which now includes
-        // newdir) completes. 600 root files + newdir/new.php means the
-        // post-mutation tree needs up to 3 ticks to sweep; allow margin.
         $converged = false;
         for ($tick = 0; $tick < 8; $tick++) {
             $this->invokeCheckFileSystemChanges($watcher);
@@ -659,18 +591,10 @@ final class PollingMonitorWatcherTest extends TestCase
 
         $this->assertTrue($converged, 'Sweep should converge after tree mutation without throwing');
 
-        // Cleanup
         \unlink($newDir . '/new.php');
         \rmdir($newDir);
     }
 
-    /**
-     * Deleting the file at the iterator's current() position between ticks
-     * must not throw.  The iterator is held across ticks, so the file it
-     * stopped at may be gone by the next tick; SplFileInfo::getMTime()
-     * then throws \RuntimeException ("stat failed"), which must be caught
-     * and skipped rather than crashing the worker.
-     */
     public function testFileDeletedAtIteratorPositionBetweenTicksDoesNotThrow(): void
     {
         for ($i = 0; $i < 600; $i++) {
@@ -682,17 +606,8 @@ final class PollingMonitorWatcherTest extends TestCase
         $worker->name = 'test';
 
         $watcher = $this->createWatcher($worker, [$this->tempDir], ['*.php']);
-        // Future lastMTime so no file triggers a reload — the watcher just
-        // walks the tree, which is what we need to hold the iterator.
         $this->setLastMTime($watcher, \time() + 3600);
 
-        // Tick 1: processes 500 entries, stops at the budget boundary with
-        // the iterator positioned on the 501st entry (the one that tripped
-        // the budget). readdir order is filesystem-dependent (hash-based on
-        // APFS / ext4+htree), so do NOT assume which file that is — read it
-        // from the persisted iterator's current(). Hardcoding a filename
-        // would make the test pass vacuously when the parked file is
-        // elsewhere in the readdir order.
         $this->invokeCheckFileSystemChanges($watcher);
 
         $iterators = $this->getIterators($watcher);
@@ -705,23 +620,13 @@ final class PollingMonitorWatcherTest extends TestCase
         self::assertInstanceOf(\SplFileInfo::class, $parkedFile, 'Parked entry must be an SplFileInfo');
         $parkedPath = $parkedFile->getPathname();
         $this->assertFileExists($parkedPath, 'Parked file must exist before deletion');
-        // The parked file must match the watched pattern, otherwise
-        // checkPattern() returns false and getMTime() is never called on
-        // it — deleting it would not exercise the RuntimeException path.
         $this->assertStringEndsWith('.php', $parkedPath, 'Parked file must match the watched pattern so getMTime() is actually called on it');
 
-        // Delete the file the iterator is parked on.
         \unlink($parkedPath);
         \clearstatcache(true, $parkedPath);
 
-        // Tick 2 must not throw: getMTime() on the deleted parked file
-        // raises \RuntimeException, which the inner catch skips. Without
-        // that catch the exception escapes the outer
-        // catch(\UnexpectedValueException) and crashes the worker — so
-        // this test is a real regression guard for the F1 fix.
         $this->invokeCheckFileSystemChanges($watcher);
 
-        // Drive remaining ticks to completion — still must not throw.
         for ($tick = 0; $tick < 10; $tick++) {
             $this->invokeCheckFileSystemChanges($watcher);
             if ($this->getIterators($watcher) === []) {

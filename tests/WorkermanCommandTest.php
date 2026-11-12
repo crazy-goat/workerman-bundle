@@ -82,8 +82,6 @@ final class WorkermanCommandTest extends KernelTestCase
             $this->assertHttpReadyAfterReload($client);
             self::assertSame(200, $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'))->getStatusCode());
         } finally {
-            // A failed assertion must not leave the shared daemon down for
-            // the rest of the suite.
             if (!$this->waitForPortUp(TestPorts::http(), 1)) {
                 \exec(\workerman_create_console_command('start -d') . ' 2>&1');
                 $this->waitForPortUp(TestPorts::http(), 10);
@@ -95,22 +93,18 @@ final class WorkermanCommandTest extends KernelTestCase
     {
         $client = BoundedHttpClient::create();
 
-        // Server is running (started by bootstrap.php) — verify HTTP works.
         $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         self::assertSame(200, $response->getStatusCode());
 
-        // Stop via console command.
         \shell_exec(\workerman_create_console_command('stop'));
         self::assertTrue($this->waitForPortDown(TestPorts::http(), 5), sprintf('Server port %d should be down after stop', TestPorts::http()));
 
-        // Server should be down.
         try {
             $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
             self::fail('Expected connection to fail after stop');
         } catch (ConnectException) {
         }
 
-        // Restart via index.php (Runtime path — works with proc_open).
         $descriptor = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $process = \proc_open(\workerman_create_command('start -d'), $descriptor, $pipes);
 
@@ -123,10 +117,8 @@ final class WorkermanCommandTest extends KernelTestCase
 
         self::assertTrue($this->waitForPortUp(TestPorts::http(), 10), sprintf('Server port %d should be back up after restart', TestPorts::http()));
 
-        // The port is open before every worker is ready, so wait for the first 200 with bounded probes.
         $this->assertHttpReadyAfterReload($client);
 
-        // Server should be back up.
         $response = $client->request('GET', TestPorts::url(TestPorts::http(), '/response_test'));
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('hello from test controller', (string) $response->getBody());
@@ -140,7 +132,6 @@ final class WorkermanCommandTest extends KernelTestCase
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('reload signal sent', $tester->getDisplay());
 
-        // The listening socket can stay up while workers are restarting.
         $this->assertHttpReadyAfterReload(BoundedHttpClient::create());
     }
 
@@ -173,7 +164,6 @@ final class WorkermanCommandTest extends KernelTestCase
         $this->expectException(AssertionFailedError::class);
         $this->expectExceptionMessage('HTTP 200 after reload within 0 seconds; last transport error: Connection reset by peer');
 
-        // A zero deadline deterministically exercises exhaustion after the first failed probe.
         try {
             $this->assertHttpReadyAfterReload(BoundedHttpClient::create([], $handler), 0);
         } finally {
@@ -218,9 +208,6 @@ final class WorkermanCommandTest extends KernelTestCase
                     'allow_redirects' => false,
                 ]);
             } catch (NetworkException $exception) {
-                // Guzzle 8 transport failures without a response: connect failure, timeout,
-                // empty reply, receive/reset failure. HTTP responses and other
-                // RequestException types are not caught and propagate.
                 $lastError = $exception->getMessage();
 
                 return false;
@@ -238,15 +225,6 @@ final class WorkermanCommandTest extends KernelTestCase
         ));
     }
 
-    /**
-     * Regression test for issue #584: the real master process must
-     * record a fingerprint in daemon mode.
-     *
-     * The test server is started with `start -d` by phpunit's bootstrap,
-     * so this asserts the daemon-mode path end to end: the fingerprint
-     * sidecar exists next to the PID file, describes the same PID, and
-     * passes `ProcessInspector::matchesFingerprint()`.
-     */
     public function testDaemonModeWritesMasterFingerprint(): void
     {
         $pidFile = self::bootKernel()->getProjectDir() . '/var/run/workerman.pid';
@@ -273,15 +251,6 @@ final class WorkermanCommandTest extends KernelTestCase
         );
     }
 
-    /**
-     * End-to-end regression test for issue #584: a stale pid file that
-     * points at a reused (unrelated) PID must not result in any signal
-     * being sent by the console `stop` command.
-     *
-     * Simulates the reported scenario: master died, kernel reassigned
-     * the PID to a plain PHP process, no fingerprint is present. The
-     * stop command must fail without signalling the foreign process.
-     */
     #[RequiresPhpExtension('pcntl')]
     #[RequiresPhpExtension('posix')]
     public function testStopWithStalePidFileDoesNotSignalForeignProcess(): void
@@ -296,8 +265,6 @@ final class WorkermanCommandTest extends KernelTestCase
         $originalPid = (string) file_get_contents($pidFile);
         $originalFingerprint = \is_file($fingerprintPath) ? (string) file_get_contents($fingerprintPath) : null;
 
-        // Foreign "reused" process: a plain PHP child whose cmdline
-        // contains "php" but not the Workerman master title.
         $child = pcntl_fork();
         if ($child === -1) {
             self::markTestSkipped('pcntl_fork failed');
@@ -328,7 +295,6 @@ final class WorkermanCommandTest extends KernelTestCase
                 'The foreign process must not have been signaled',
             );
         } finally {
-            // Restore the real server's pid/fingerprint files.
             file_put_contents($pidFile, $originalPid);
             if ($originalFingerprint !== null) {
                 file_put_contents($fingerprintPath, $originalFingerprint);

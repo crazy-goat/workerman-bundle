@@ -6,19 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test\Phar;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Guard test that ensures PHAR-build tests are never silently skipped
- * due to `phar.readonly` being enabled.
- *
- * In CI (no WORKERMAN_ALLOW_PHAR_READONLY_SKIP env var), this test fails
- * if `phar.readonly` is set — catching misconfigured CI runners before
- * they hide PHAR regressions behind a green build.
- *
- * Developers who cannot disable `phar.readonly` locally (e.g. shared
- * hosting, restricted Docker images) can opt out by setting:
- *
- *   WORKERMAN_ALLOW_PHAR_READONLY_SKIP=1
- */
 final class PharReadOnlyGuardTest extends TestCase
 {
     public function testPharReadOnlyIsDisabled(): void
@@ -26,7 +13,6 @@ final class PharReadOnlyGuardTest extends TestCase
         $pharReadOnly = (bool) ini_get('phar.readonly');
 
         if (!$pharReadOnly) {
-            // phar.readonly is Off — PHAR tests will execute normally.
             $this->addToAssertionCount(1);
 
             return;

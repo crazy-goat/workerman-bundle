@@ -23,7 +23,7 @@ final class SchedulerWorker
     /** @var array<string, resource> */
     private array $pidFileHandles = [];
 
-    /** @var array<string, \DateTimeImmutable> Scheduled target times per task (fixed-rate rebasing). */
+    /** @var array<string, \DateTimeImmutable> */
     private array $nextRunDates = [];
 
     /**
@@ -52,9 +52,6 @@ final class SchedulerWorker
     }
 
     /**
-     * Schedule every task. A task that cannot be set up is skipped with a log
-     * line, so one bad task never stops the other tasks (issue #970).
-     *
      * @param mixed[] $schedulerConfig
      */
     private function scheduleTasks(array $schedulerConfig, TaskHandler $handler): void
@@ -97,19 +94,11 @@ final class SchedulerWorker
         $this->scheduleCallback($trigger, $service, $taskName, $handler);
     }
 
-    /**
-     * Register the handler through the event loop. Async signals are off
-     * (see MasterWorker::runAll), and only Select calls pcntl_signal_dispatch(),
-     * so a plain pcntl_signal() would never run on the Event loop (issue #987).
-     */
     private function installSigchldHandler(): void
     {
         $this->worker::$globalEvent?->onSignal(SIGCHLD, $this->handleSigchld(...));
     }
 
-    /**
-     * Reap terminated child processes and log non-zero exits or signal kills.
-     */
     private function handleSigchld(): void
     {
         while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
@@ -123,10 +112,6 @@ final class SchedulerWorker
             } elseif (pcntl_wifsignaled($status)) {
                 $signal = pcntl_wtermsig($status);
                 if ($signal === \SIGKILL && self::sigkillIsNormalCompletion()) {
-                    // SIGKILL is the normal completion path when the exec
-                    // hand-off is unavailable (or grpc forces it): a failed
-                    // task is already logged by the child with its stack trace
-                    // (SIGKILL carries no exit code).
                     continue;
                 }
                 $this->worker->log(
@@ -136,10 +121,6 @@ final class SchedulerWorker
         }
     }
 
-    /**
-     * True when SIGKILL is the normal task-completion path: the exec hand-off
-     * is unavailable, or the grpc extension forces the SIGKILL backstop.
-     */
     protected static function sigkillIsNormalCompletion(): bool
     {
         return self::$sigkillNormalCompletion ?? (\extension_loaded('grpc') || !\function_exists('pcntl_exec'));
@@ -148,27 +129,13 @@ final class SchedulerWorker
     private static bool|null $sigkillNormalCompletion = null;
 
     /**
-     * Test hook: force the SIGKILL-completion decision. Pass null to
-     * restore auto-detection (grpc loaded or pcntl_exec unavailable).
-     *
-     * @internal test-only
+     * @internal
      */
     public static function setSigkillNormalCompletion(?bool $value): void
     {
         self::$sigkillNormalCompletion = $value;
     }
 
-    /**
-     * Schedule the next run of a task.
-     *
-     * PeriodicalTrigger tasks (also when wrapped in a JitterTrigger) are
-     * rebased on their scheduled target time (fixed-rate contract, see
-     * PeriodicalTrigger), so per-run overhead does not accumulate; the
-     * elapsed delay is computed in fractional seconds.
-     *
-     * @param \DateTimeImmutable|null $now Test-only hook: the reference clock
-     *                                     (defaults to the current time).
-     */
     private function scheduleCallback(TriggerInterface $trigger, ServiceMethod $service, string $taskName, TaskHandler $handler, ?\DateTimeImmutable $now = null): void
     {
         static $tickCallbacks = [];
@@ -176,8 +143,6 @@ final class SchedulerWorker
         $currentDate = $now ?? new \DateTimeImmutable();
         $key = $service->toString();
 
-        // Jitter only decorates the schedule: unwrap it so the underlying
-        // periodical grid is detected and rebased on its planned times.
         $jitterTriggers = [];
         $scheduleTrigger = $trigger;
         while ($scheduleTrigger instanceof JitterTrigger) {
@@ -186,7 +151,6 @@ final class SchedulerWorker
         }
 
         if ($scheduleTrigger instanceof PeriodicalTrigger) {
-            // The stored grid time has no jitter, so the jitter never adds up.
             $nextRunDate = $scheduleTrigger->getNextRunDate($this->nextRunDates[$key] ?? $currentDate);
             while ($nextRunDate instanceof \DateTimeImmutable && $nextRunDate <= $currentDate) {
                 $nextRunDate = $scheduleTrigger->getNextRunDate($nextRunDate);
@@ -359,9 +323,6 @@ final class SchedulerWorker
 
         $childExitCode = 0;
         register_shutdown_function(function () use (&$childExitCode, $taskName, $service): void {
-            // A task that calls exit() or hits a fatal error skips the
-            // finally block below and would otherwise run PHP module shutdown
-            // (libevent cleanup) in the fork. Take the exec hand-off here too.
             $error = error_get_last();
             if ($error !== null && \in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
                 $childExitCode = 1;
@@ -394,27 +355,12 @@ final class SchedulerWorker
             ));
             $childExitCode = 1;
         } finally {
-            // Remove the PID file while the lock is still held: a new run
-            // cannot create its own file until this one is gone, and an old
-            // child can never delete the file of a newer run (issue #973).
             $this->deleteTaskPid($service);
             $this->releaseLockAndClose($fp);
             $this->terminateTaskChild($childExitCode);
         }
     }
 
-    /**
-     * End the task child without running PHP shutdown in the fork.
-     *
-     * A child that calls exit() runs PHP module shutdown, which includes
-     * libevent's cleanup of the EventBase it inherited from the scheduler.
-     * That cleanup shares the parent's signal socketpair and silently kills
-     * the parent's signal events, so SIGCHLD, stop and reload never run again
-     * on the ext-event loop (issue #1023). Replacing the process image with a
-     * bare `php -n -r 'exit(<code>);'` skips that shutdown and still gives the
-     * parent a normal exit code. If exec is unavailable, SIGKILL is the
-     * backstop (it also skips shutdown, but the exit code is lost).
-     */
     private function terminateTaskChild(int $childExitCode): never
     {
         $level = ob_get_level();
@@ -484,15 +430,6 @@ final class SchedulerWorker
         @unlink($this->getTaskPidPath($service));
     }
 
-    /**
-     * Remove a symlink left at the task PID path.
-     *
-     * A regular PID file is deliberately not deleted here: a scheduler reload
-     * leaves a running task child alive, and deleting its file would let the
-     * new scheduler lock a fresh file and overlap the old run (issue #973).
-     * An unlocked stale file is harmless — the next run locks and overwrites
-     * it. A symlink is only ever unlinked, never followed.
-     */
     private function deleteTaskPidSymlink(ServiceMethod $service): void
     {
         $pidFile = $this->getTaskPidPath($service);

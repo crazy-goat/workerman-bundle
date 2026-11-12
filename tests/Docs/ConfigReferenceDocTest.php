@@ -8,9 +8,6 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Every config key must be in docs/configuration.md, with its default (issue #878, section 5).
- */
 #[CoversNothing]
 final class ConfigReferenceDocTest extends TestCase
 {

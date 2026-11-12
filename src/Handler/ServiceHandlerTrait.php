@@ -7,18 +7,13 @@ namespace CrazyGoat\WorkermanBundle\Handler;
 use CrazyGoat\WorkermanBundle\Util\ServiceMethod;
 
 /**
- * Shared __invoke body for TaskHandler and ProcessHandler.
- *
- * Both classes have identical dispatch+invoke logic that differs only
- * in the dispatched event classes. This trait owns that common flow.
- *
  * @internal
  */
 trait ServiceHandlerTrait
 {
     /**
-     * @param class-string $startEventClass FQCN of the start event (e.g. TaskStartEvent::class)
-     * @param class-string $errorEventClass FQCN of the error event (e.g. TaskErrorEvent::class)
+     * @param class-string $startEventClass
+     * @param class-string $errorEventClass
      */
     private function dispatchAndInvoke(
         ServiceMethod $serviceMethod,

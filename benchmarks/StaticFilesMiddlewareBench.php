@@ -13,14 +13,6 @@ use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 use Workerman\Protocols\Http\Response;
 
-/**
- * Benchmarks StaticFilesMiddleware::__invoke — the static asset hot path.
- *
- * The per-path-component block check (denylist, backup-suffix rules,
- * allowlist) runs on every request that resolves to an existing file, so
- * regressions here translate directly into per-request latency for
- * legitimate assets.
- */
 #[BeforeMethods('init')]
 #[AfterMethods('tearDown')]
 #[Revs(1000)]
@@ -105,10 +97,6 @@ final class StaticFilesMiddlewareBench
         ($this->middleware)($this->blockedBackupRequest, $this->next(...));
     }
 
-    /**
-     * Exercise unique negative cache keys beyond CACHE_MAX_SIZE instead of
-     * repeatedly hitting the same realpath-cache entry.
-     */
     public function benchThrashingUniquePaths(): void
     {
         $request = $this->uniquePathRequests[$this->nextUniquePath];

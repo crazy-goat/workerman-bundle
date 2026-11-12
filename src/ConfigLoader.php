@@ -17,22 +17,11 @@ final class ConfigLoader implements CacheWarmerInterface
     private readonly string $yamlConfigFilePath;
 
     /**
-     * Names of the environment variables used in the workerman config
-     * (without the `%env()%` processor prefix, e.g. `PORT` for
-     * `%env(PORT)%` or `%env(int:PORT)%`). Recorded at container build
-     * time by the compiler pass, snapshotted at warmup, and compared
-     * again at server start so a changed value re-warms the cache
-     * (issue #996).
-     *
      * @var list<string>
      */
     private array $envVarNames = [];
 
     /**
-     * Env snapshot stored in the cache file, keyed by variable name.
-     * `null` means the loader holds in-memory config (warmup path) or
-     * the cache file carries no snapshot (legacy cache).
-     *
      * @var array<string, string|null>|null
      */
     private ?array $trackedEnv = null;
@@ -111,15 +100,7 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Reads the raw payload array from the cache file (issue #1036).
-     *
-     * The shared preamble for every cache-file read: a missing file
-     * fails open with `null` (callers fall through to the next source),
-     * while a present file passes the permission guard first — so the
-     * fail-closed behaviour stays identical in every reader.
-     *
-     * @return array<string, mixed>|null the raw payload written by
-     *         warmUp(), or null when there is no cache file
+     * @return array<string, mixed>|null
      */
     private function readCachePayload(): ?array
     {
@@ -158,15 +139,6 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->config = $cached;
     }
 
-    /**
-     * Whether an env var used in the workerman config changed since warmup.
-     *
-     * Compares the snapshot stored in the cache file with the current
-     * process environment. Returns false when the config did not come
-     * from the cache (warmup path), when the cache carries no snapshot
-     * (legacy cache, or no `%env()%` in the config), or when every
-     * tracked value is unchanged.
-     */
     public function hasTrackedEnvChanged(): bool
     {
         if ($this->trackedEnv === null) {
@@ -180,11 +152,6 @@ final class ConfigLoader implements CacheWarmerInterface
         return $this->readEnvValues(array_keys($this->trackedEnv)) !== $this->trackedEnv;
     }
 
-    /**
-     * Loads only the env snapshot from the cache file, without touching
-     * the in-memory config. A legacy cache (no snapshot) or a missing
-     * file leaves the snapshot unset.
-     */
     private function loadTrackedEnvFromCache(): void
     {
         $cached = $this->readCachePayload();
@@ -200,66 +167,7 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Validate that the cached configuration file and its containing directory
-     * have safe permissions.
-     *
-     * The config cache file is a PHP file that gets {@see require}d. An
-     * attacker who can write to the cache directory can replace the file and
-     * achieve arbitrary code execution at boot. On POSIX, replacing a file
-     * requires write permission on the containing directory — not on the file
-     * — so the directory is the primary object to check.
-     *
-     * The checks, in order:
-     * 1. the containing directory must not be world-writable;
-     * 2. the containing directory must not be group-writable by a group the
-     *    process does not belong to (effective group plus supplementary
-     *    groups are allowed);
-     * 3. the cache file must be owned by the process's effective user
-     *    (a file replaced by an attacker would be owned by the attacker);
-     * 4. the cache file itself must not be world-writable (secondary signal).
-     *
-     * Deployments that explicitly trust the cache directory — managed build
-     * systems, sudoless image builders, frozen base images — can downgrade
-     * the refusals to warnings by setting the documented opt-out
-     * `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` (see
-     * {@see ConfigCacheGuardConfig}); the strict behaviour is the default.
-     * The downgrade is a documented security deviation: the cache file is
-     * executed PHP, and every refused signal is still surfaced as a warning
-     * so misconfiguration stays visible at boot.
-     *
-     * If the metadata cannot be read, a warning naming the path is emitted
-     * (logged via the PSR-3 logger when one is available, otherwise written
-     * directly to the configured log via `error_log()`) and loading proceeds
-     * (fail-open with a signal). `error_log()` is a deliberate choice over
-     * `trigger_error(..., \E_USER_WARNING)` for the no-logger path: it does
-     * not invoke the PHP error handler, so a throwing error handler (e.g.
-     * Symfony's `DebugErrorHandler` in debug mode, which escalates
-     * `E_USER_WARNING` to `ErrorException`) cannot turn this advisory
-     * fail-open warning into a hard boot failure — fail-open stays fail-open
-     * while unrelated warnings are still handled as before. The
-     * fail-open warning is a defensive guard: `loadFromCache()` gates on
-     * `is_file($cachePath)` first, and on POSIX statting `dir/file` requires
-     * search (`x`) permission on the containing directory and every ancestor
-     * — strictly more than statting `dir` itself — so whenever `is_file()`
-     * returns `true`, the four metadata reads (`fileperms`/`filegroup` on the
-     * directory, `fileperms`/`fileowner` on the file) all succeed too. The
-     * warn branch is therefore reachable through the public API only in a
-     * TOCTOU window (the file is unlinked between the gate and the reads) or
-     * on filesystems where the POSIX implication does not hold (ACLs,
-     * extended attributes). When `is_file()` itself returns `false` — e.g.
-     * the containing directory is not searchable (no `x` permission), so
-     * `stat()` on paths inside it fails with `EACCES` — loading falls through
-     * to `loadFresh()`: when no config was set via setters (the normal server
-     * boot path) the caller gets a `LogicException` ("Configuration not
-     * available"), not the warning; in a process that did set config via
-     * setters (e.g. cache warmup) the in-memory config wins and no exception
-     * occurs. The check is best-effort: it does not cover ACLs, extended
-     * attributes, or filesystems that do not support POSIX permissions.
-     *
-     * @throws \RuntimeException if the cache directory or file is unsafe
-     *                          (unless the documented opt-out
-     *                          `WORKERMAN_TRUST_UNSAFE_CONFIG_CACHE` is set,
-     *                          which downgrades the refusals to warnings)
+     * @throws \RuntimeException
      */
     private function validateCacheFilePermissions(string $cachePath): void
     {
@@ -291,31 +199,9 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Pure permission decision for a cached configuration file.
-     *
-     * Concentrates every permission check in one place so that all branches
-     * can be unit-tested without root privileges (no real chown/chgrp needed).
-     *
      * @internal
-     *
-     * @param int|false $dirPerms fileperms() of the containing directory
-     * @param int|false $dirGroup filegroup() of the containing directory
-     * @param int|false $filePerms fileperms() of the cache file
-     * @param int|false $fileOwner fileowner() of the cache file
-     * @param int $euid effective user id of the loading process
-     * @param int[] $processGroups every group the loading process belongs to
-     *                             (effective group id plus supplementary groups)
-     * @param bool $trustCacheDir explicit opt-out (issue #648): when true,
-     *                            the four refusal branches below degrade to
-     *                            the advisory `warn` path and loading may
-     *                            proceed. This is a documented security
-     *                            downgrade for deployments that explicitly
-     *                            trust the cache directory; the default
-     *                            (false/absent) keeps the strict behaviour.
-     * @return array{warn: string|null, error: string|null} both null when the
-     *         file is safe to load; `warn` set (and no `error`) when the
-     *         file should be loaded with an advisory warning; `error` set
-     *         (and no `warn`) when loading must be refused
+     * @param int[] $processGroups
+     * @return array{warn: string|null, error: string|null}
      */
     public static function checkCacheFilePermissions(
         string $cachePath,
@@ -339,7 +225,6 @@ final class ConfigLoader implements CacheWarmerInterface
 
         $cacheDir = \dirname($cachePath);
 
-        // 1. Replacing the cache file only needs write access to the directory.
         if (($dirPerms & 0002) !== 0) {
             return self::verdict(
                 $trustCacheDir,
@@ -353,7 +238,6 @@ final class ConfigLoader implements CacheWarmerInterface
             );
         }
 
-        // 2. A group-writable directory is only acceptable when the group is one of the process's own.
         if (($dirPerms & 0020) !== 0 && !\in_array($dirGroup, $processGroups, true)) {
             return self::verdict(
                 $trustCacheDir,
@@ -370,7 +254,6 @@ final class ConfigLoader implements CacheWarmerInterface
             );
         }
 
-        // 3. Ownership: a file replaced by another user would be owned by that user.
         if ($fileOwner !== $euid) {
             return self::verdict(
                 $trustCacheDir,
@@ -386,7 +269,6 @@ final class ConfigLoader implements CacheWarmerInterface
             );
         }
 
-        // 4. World-writable file: secondary signal, kept from the original check.
         if (($filePerms & 0002) !== 0) {
             return self::verdict(
                 $trustCacheDir,
@@ -404,9 +286,6 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Route a refusal verdict through the strict path or the documented
-     * opt-out downgrade (issue #648).
-     *
      * @return array{warn: string|null, error: string|null}
      */
     private static function verdict(bool $trustCacheDir, string $message): array
@@ -460,18 +339,6 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Records the env vars used in the workerman config (issue #996).
-     *
-     * Called by the compiler pass with the raw `%env()%` references
-     * (e.g. `PORT`, `int:WORKERS`); only the variable name is kept
-     * (the processor prefix is dropped), duplicates are removed.
-     *
-     * Stacked processors (e.g. `%env(int:default:FOO:bar)%`) carry the
-     * variable name plus literal fallback segments after the processor
-     * chain. Every remaining segment is tracked, not just the variable:
-     * over-tracking only causes a spurious re-warm (self-healing), while
-     * under-tracking would keep stale config.
-     *
      * @param mixed[] $names
      */
     public function setWorkermanEnvVarNames(array $names): void
@@ -492,12 +359,6 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Env processors shipped by Symfony DI (keys of
-     * `EnvVarProcessor::getProvidedTypes()`). Only leading segments
-     * matching this list are treated as processors: an unknown custom
-     * processor stays tracked, so a custom prefix can only cause a
-     * spurious re-warm, never a missed one.
-     *
      * @var array<string, true>
      */
     private const ENV_PROCESSORS = [
@@ -524,21 +385,12 @@ final class ConfigLoader implements CacheWarmerInterface
         'urlencode' => true,
     ];
 
-    /**
-     * Drops the `%env()%` processor prefix: `PORT` stays `PORT`,
-     * `int:WORKERS` becomes `WORKERS`, `default:FOO:bar` becomes `FOO`.
-     */
     public static function shortEnvName(string $name): string
     {
         return self::envNameCandidates($name)[0] ?? $name;
     }
 
     /**
-     * Every trackable segment of a `%env()%` reference: the leading
-     * processor chain is stripped and every remaining non-empty segment
-     * is returned, the variable name first.
-     * `int:default:FOO:bar` gives `['FOO', 'bar']`.
-     *
      * @return list<string>
      */
     private static function envNameCandidates(string $name): array
@@ -563,13 +415,8 @@ final class ConfigLoader implements CacheWarmerInterface
     }
 
     /**
-     * Reads the raw values of the given env vars: `$_SERVER` first,
-     * then `$_ENV`, then `getenv()` — the same order the bundle uses
-     * for its own env-based settings.
-     *
      * @param list<string> $names
-     *
-     * @return array<string, string|null> `null` when the var is not set
+     * @return array<string, string|null>
      */
     private function readEnvValues(array $names): array
     {

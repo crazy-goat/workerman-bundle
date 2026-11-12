@@ -119,17 +119,14 @@ final class RequestParametersTest extends KernelTestCase
 
         assertIsArray($response['files']);
 
-        // Nested files should be in an array under 'documents' key
         $this->assertIsArray($response['files']['documents'] ?? null);
         $this->assertCount(2, $response['files']['documents']);
 
-        // First file
         $this->assertSame('doc1.txt', $response['files']['documents'][0]['filename'] ?? null);
         $this->assertSame('content of document 1', $response['files']['documents'][0]['content'] ?? null);
         $this->assertSame(21, $response['files']['documents'][0]['size'] ?? null);
         $this->assertSame(0, $response['files']['documents'][0]['error'] ?? null);
 
-        // Second file
         $this->assertSame('doc2.txt', $response['files']['documents'][1]['filename'] ?? null);
         $this->assertSame('content of document 2', $response['files']['documents'][1]['content'] ?? null);
         $this->assertSame(21, $response['files']['documents'][1]['size'] ?? null);
@@ -161,7 +158,6 @@ final class RequestParametersTest extends KernelTestCase
 
         assertIsArray($response['files']);
 
-        // Nested file structure should be preserved
         $this->assertIsArray($response['files']['user'] ?? null);
         $this->assertSame('avatar.png', $response['files']['user']['avatar']['filename'] ?? null);
         $this->assertSame('resume.pdf', $response['files']['user']['resume']['filename'] ?? null);
@@ -185,9 +181,7 @@ final class RequestParametersTest extends KernelTestCase
             'body' => json_encode(['test-key' => 'test-value']),
         ]);
 
-        // POST bag should be empty for JSON requests (like PHP-FPM behavior)
         $this->assertSame([], $response['post']);
-        // Raw body should contain the JSON
         $this->assertSame('{"test-key":"test-value"}', $response['raw_request']);
     }
 
@@ -200,9 +194,7 @@ final class RequestParametersTest extends KernelTestCase
             'body' => json_encode(['test-key' => 'test-value']),
         ]);
 
-        // POST bag should be empty for JSON requests with charset (like PHP-FPM behavior)
         $this->assertSame([], $response['post']);
-        // Raw body should contain the JSON
         $this->assertSame('{"test-key":"test-value"}', $response['raw_request']);
     }
 
@@ -212,9 +204,7 @@ final class RequestParametersTest extends KernelTestCase
             'body' => 'test-body-content',
         ]);
 
-        // POST bag should be empty when Content-Type is missing
         $this->assertSame([], $response['post']);
-        // Raw body should be preserved
         $this->assertSame('test-body-content', $response['raw_request']);
     }
 
@@ -227,7 +217,6 @@ final class RequestParametersTest extends KernelTestCase
             'body' => "--TestBoundary123\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--TestBoundary123--",
         ]);
 
-        // POST bag should be populated for multipart/form-data
         $this->assertSame('value1', $response['post']['field1'] ?? null);
     }
 
@@ -237,9 +226,7 @@ final class RequestParametersTest extends KernelTestCase
             'query' => ['test' => 'file_with_error'],
         ], '/request_test_file_with_error');
 
-        // UPLOAD_ERR_NO_FILE should result in null, not an exception
         $this->assertTrue($response['optional_file_is_null'] ?? false);
-        // Valid file should still be processed
         $this->assertTrue($response['valid_file_exists'] ?? false);
     }
 
@@ -249,30 +236,19 @@ final class RequestParametersTest extends KernelTestCase
             'query' => ['test' => 'full_path'],
         ], '/request_test_full_path');
 
-        // Directory uploads with full_path should be handled
         $this->assertSame(2, $response['files_count'] ?? 0);
         $this->assertIsArray($response['files'] ?? null);
 
-        // Verify files are processed with their original names
-        // Note: Symfony FileBag uses 'full_path' if available, otherwise 'name'
-        // The exact value depends on Symfony version, but it should never be null
         $originalName1 = $response['files'][0]['original_name'] ?? null;
         $originalName2 = $response['files'][1]['original_name'] ?? null;
 
         $this->assertNotNull($originalName1);
         $this->assertNotNull($originalName2);
 
-        // Log actual values for debugging (helps verify full_path behavior)
-        // In Symfony 6.3+, full_path should be used: 'docs/readme.txt'
-        // In older versions, name is used: 'readme.txt'
         $this->assertContains($originalName1, ['readme.txt', 'docs/readme.txt']);
         $this->assertContains($originalName2, ['config.json', 'config/config.json']);
     }
 
-    /**
-     * Test file upload with error codes through actual HTTP request.
-     * This tests the RequestConverter path, not manual Request creation.
-     */
     public function testFileUploadWithErrorThroughRequestConverter(): void
     {
         $response = $this->createResponse('POST', [
@@ -286,27 +262,18 @@ final class RequestParametersTest extends KernelTestCase
                         'filename' => 'test.txt',
                         'contents' => 'test content for valid file',
                     ],
-                    // Note: We cannot easily simulate UPLOAD_ERR_NO_FILE through HTTP
-                    // because the browser/client won't send the field if no file is selected.
-                    // The endpoint handles missing files as null.
                 ],
                 boundary: 'TestBoundaryError',
             ),
         ], '/request_test_upload_with_error');
 
-        // Valid file should be processed correctly through RequestConverter
         $this->assertTrue($response['valid_file_exists'] ?? false);
         $this->assertSame('test.txt', $response['valid_file_name'] ?? null);
         $this->assertSame(0, $response['valid_file_error'] ?? null);
 
-        // Optional file (not sent) should be null
         $this->assertTrue($response['optional_file_is_null'] ?? false);
     }
 
-    /**
-     * Test directory upload with full_path through actual HTTP request.
-     * This tests the RequestConverter path with webkitdirectory uploads.
-     */
     public function testFullPathSupportThroughRequestConverter(): void
     {
         $response = $this->createResponse('POST', [
@@ -336,16 +303,13 @@ final class RequestParametersTest extends KernelTestCase
             ),
         ], '/request_test_upload_full_path');
 
-        // Both files should be processed
         $this->assertSame(2, $response['files_count'] ?? 0);
         $this->assertIsArray($response['files'] ?? null);
 
-        // Verify files have correct names
         $fileNames = array_column($response['files'], 'original_name');
         $this->assertContains('readme.txt', $fileNames);
         $this->assertContains('config.json', $fileNames);
 
-        // Both files should have no errors
         foreach ($response['files'] as $file) {
             $this->assertSame(0, $file['error'] ?? null);
         }
@@ -353,7 +317,6 @@ final class RequestParametersTest extends KernelTestCase
 
     /**
      * @param mixed[] $options
-     *
      * @return mixed[]
      */
     private function createResponse(string $method, array $options = [], string $path = '/request_test'): array

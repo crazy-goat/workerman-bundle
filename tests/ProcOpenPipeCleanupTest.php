@@ -6,14 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Tests for proc_open pipe cleanup in bootstrap.php and WorkermanCommandTest.php.
- *
- * Issue #170: tests/App/bootstrap.php: proc_open pipes not closed - file descriptor leak.
- *
- * Behavioral tests exercise the proc_open pipe cleanup pattern and verify
- * that all pipes are actually closed after fclose().
- */
 final class ProcOpenPipeCleanupTest extends TestCase
 {
     public function testBootstrapClosesProcOpenPipes(): void

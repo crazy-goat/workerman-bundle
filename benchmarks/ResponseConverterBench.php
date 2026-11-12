@@ -13,13 +13,6 @@ use PhpBench\Attributes\Warmup;
 use Symfony\Component\HttpFoundation\Response;
 use Workerman\Connection\TcpConnection;
 
-/**
- * Benchmark ResponseConverter::convert (and the inner extractHeaders) —
- * the stage where a Symfony Response is transformed into a Workerman Response.
- *
- * The header-normalisation cache is the key optimisation here; the benchmark
- * exercises both cold-cache and warm-cache paths.
- */
 #[BeforeMethods('init')]
 #[Revs(1000)]
 #[Iterations(5)]

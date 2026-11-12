@@ -37,8 +37,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         }
     }
 
-    // ---- Tests that do NOT require inotify extension ----
-
     public function testIsFlagSetExactMatch(): void
     {
         $watcher = $this->createWatcherInstance();
@@ -115,7 +113,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $this->assertCount(0, $pathByWd, 'pathByWd should be empty when inotify is not available');
     }
 
-    // ---- Tests that require inotify extension (skipped on macOS) ----
     #[RequiresPhpExtension('inotify')]
     public function testStartInitializesInotifyAndRegistersHandler(): void
     {
@@ -157,8 +154,6 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
 
-        // After start(), only the root directory should be watched.
-        // Subdirectories are watched lazily via deferredWalk().
         $this->assertCount(1, $pathByWd, 'pathByWd should contain only the root directory after start()');
         $this->assertContains($tmpDir, $pathByWd, 'pathByWd should contain the root source directory');
     }
@@ -177,7 +172,6 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
-        // Invoke the deferred walk explicitly
         $this->invokeDeferredWalk($watcher);
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -272,7 +266,6 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
-        // Invoke the deferred walk so that subdir is watched
         $this->invokeDeferredWalk($watcher);
 
         $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -383,7 +376,6 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
-        // Invoke the deferred walk to populate all subdirectories
         $this->invokeDeferredWalk($watcher);
 
         $pathByWd = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -422,7 +414,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
         $this->invokeDeferredWalk($watcher);
 
-        // Arm a pending reload with a matching file change.
         file_put_contents($tmpDir . '/a.php', '<?php');
         $this->waitForInotifyEvents($watcher);
 
@@ -435,7 +426,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         );
         $delaysBefore = $delayCount;
 
-        // Delete a watched subdirectory while the reload is still pending.
         rmdir($tmpDir . '/subdir');
         clearstatcache();
         $this->waitForInotifyEvents($watcher);
@@ -514,9 +504,6 @@ final class InotifyMonitorWatcherTest extends TestCase
     {
         $tmpDir = $this->createTempDir();
 
-        // Created BEFORE the watcher starts, so the root watch never queues a
-        // known-wd IN_CREATE|IN_ISDIR for it: the only events referencing it
-        // are the ones from the unrecorded watch below.
         $unrecordedDir = $tmpDir . '/unrecorded';
         mkdir($unrecordedDir, 0700);
 
@@ -529,9 +516,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $fd = $this->getPrivateProperty($watcher, 'fd');
         \assert(\is_resource($fd));
 
-        // Register a watch directly on the watcher's descriptor, bypassing the
-        // bookkeeping maps: its events then carry a descriptor onNotify() has
-        // never seen.
         \inotify_add_watch($fd, $unrecordedDir, self::IN_CREATE | self::IN_ISDIR);
 
         $pathByWdBefore = $this->getPrivateProperty($watcher, 'pathByWd');
@@ -568,8 +552,6 @@ final class InotifyMonitorWatcherTest extends TestCase
 
         $watcher->start();
 
-        // A directory moved into the tree arrives as IN_MOVED_TO|IN_ISDIR with
-        // its children already present (they were created outside any watch).
         rename($staging, $tmpDir . '/moved');
         $this->waitForInotifyEvents($watcher);
 
@@ -602,8 +584,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
         $this->invokeDeferredWalk($watcher);
 
-        // The watch follows the inode, so the kernel reports the same watch
-        // descriptor for the new location; the old path must not linger.
         rename($tmpDir . '/alpha', $tmpDir . '/beta');
         clearstatcache();
         $this->waitForInotifyEvents($watcher);
@@ -640,9 +620,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         \assert(\is_resource($fd));
 
         try {
-            // A watched directory moved out of the tree: the kernel watch
-            // follows the inode (no IN_IGNORED), so only IN_MOVED_FROM can
-            // clear the stale bookkeeping.
             rename($tmpDir . '/subdir', $outside . '/subdir');
             clearstatcache();
             $this->waitForInotifyEvents($watcher);
@@ -660,8 +637,6 @@ final class InotifyMonitorWatcherTest extends TestCase
             );
             $this->assertMapsConsistent($watcher);
 
-            // Moving it back in re-watches it: the surviving watch is
-            // re-mapped to the restored path.
             rename($outside . '/subdir', $tmpDir . '/subdir');
             clearstatcache();
             $this->waitForInotifyEvents($watcher);
@@ -683,7 +658,6 @@ final class InotifyMonitorWatcherTest extends TestCase
     public function testMovedOutMatchingFileTriggersReload(): void
     {
         $tmpDir = $this->createTempDir();
-        // Created before start(), so the only queued event is the move itself.
         file_put_contents($tmpDir . '/gone.php', '<?php');
 
         $outside = sys_get_temp_dir() . '/inotify_outside_' . bin2hex(random_bytes(4));
@@ -696,8 +670,6 @@ final class InotifyMonitorWatcherTest extends TestCase
         $watcher->start();
 
         try {
-            // A matching file moved out of the tree arrives as a plain
-            // IN_MOVED_FROM (no IN_ISDIR) and must behave like a deletion.
             rename($tmpDir . '/gone.php', $outside . '/gone.php');
             $this->waitForInotifyEvents($watcher);
 
@@ -746,9 +718,6 @@ PHP;
         $logFile = $tmpDir . '/workerman.log';
         $originalLogFile = Worker::$logFile;
         $originalOutputStream = Worker::$outputStream;
-        // Worker::log() -> safeEcho() requires a writable stream; in a unit
-        // test no stream has been initialised, so give it one (same convention
-        // as MasterWorkerTest::testFingerprintRenameFailureIsLogged).
         $testStream = \fopen('php://temp', 'w+');
         if ($testStream === false) {
             self::fail('Unable to open temp stream for test');
@@ -765,9 +734,6 @@ PHP;
 
             $fd = $this->getPrivateProperty($watcher, 'fd');
 
-            // Create a directory and remove it again before the queued event is
-            // processed: the IN_CREATE|IN_ISDIR then hits a path that no longer
-            // exists, so inotify_add_watch() fails.
             mkdir($tmpDir . '/ghost', 0700);
             $this->waitForInotifyEvents($watcher);
             rmdir($tmpDir . '/ghost');
@@ -792,7 +758,6 @@ PHP;
             $this->assertStringContainsString('ghost', $log, 'the warning must name the failed path');
             $this->assertStringContainsString('max_user_watches', $log, 'the warning must point to the watch limit');
 
-            // Repeat the same failing cycle: the warning is emitted once per path.
             mkdir($tmpDir . '/ghost', 0700);
             $this->waitForInotifyEvents($watcher);
             rmdir($tmpDir . '/ghost');
@@ -809,8 +774,6 @@ PHP;
         }
     }
 
-    // ---- Helper methods ----
-
     private function setUpEventLoop(): void
     {
         $eventLoop = $this->createMock(EventInterface::class);
@@ -822,19 +785,6 @@ PHP;
 
     private function waitForInotifyEvents(InotifyMonitorWatcher $watcher): void
     {
-        // Inotify events are queued synchronously at syscall time (see
-        // docs/helpers/faq.md FAQ-006): the kernel makes the watch descriptor
-        // readable as soon as the filesystem call that triggered the event
-        // returns, and InotifyMonitorWatcher::start() sets the fd
-        // non-blocking. stream_select() on the read set is therefore a
-        // condition wait, so the common case returns immediately instead of
-        // paying a fixed settle. The 1s timeout is a safety net: a missing
-        // event fails the assertion below instead of hanging the suite.
-        //
-        // This is not a general per-event wait: an earlier event still queued
-        // on the fd makes stream_select() return at once. That is fine here
-        // because the synchronous-enqueue invariant means the newly triggered
-        // event is already queued too when the filesystem call returned.
         $fd = $this->getPrivateProperty($watcher, 'fd');
         self::assertIsResource($fd, 'watcher must expose an inotify fd');
 

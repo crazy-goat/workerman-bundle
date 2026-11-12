@@ -8,9 +8,6 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/deployment.md must match the config tree and the systemd unit example must be sane (issue #878, section 11).
- */
 #[CoversNothing]
 final class DeploymentDocTest extends TestCase
 {
@@ -73,7 +70,6 @@ final class DeploymentDocTest extends TestCase
         self::assertSame(1, preg_match_all('/```dockerfile\n(FROM php:.*?)```/s', DocsHelper::read(self::PAGE), $blocks));
         $dockerfile = $blocks[1][0];
 
-        // COPY --chown must create /app before WORKDIR: a WORKDIR first makes /app owned by root and the build fails.
         $copy = strpos($dockerfile, 'COPY --chown=www-data:www-data . /app');
         $workdir = strpos($dockerfile, 'WORKDIR /app');
         $user = strpos($dockerfile, 'USER www-data');

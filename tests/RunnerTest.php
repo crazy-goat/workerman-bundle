@@ -23,18 +23,6 @@ use Workerman\Events\Select;
 use Workerman\Timer;
 use Workerman\Worker;
 
-/**
- * Tests for Runner fork error handling.
- *
- * Issue #23: Runner::run() — Fork Without Error Handling
- *
- * Behavioral tests run in isolated PHP processes (via proc_open) to avoid
- * inheriting PHPUnit's output buffers and shutdown functions, which interfere
- * with pcntl_fork() + exit() behavior.
- *
- * Fork-failure (pcntl_fork returning -1) is tested behaviorally via a
- * readonly anonymous subclass that overrides the fork() method.
- */
 final class RunnerTest extends TestCase
 {
     private const RUNNER_SCRIPT = __DIR__ . '/Fixtures/runner_test_runner.php';
@@ -102,12 +90,6 @@ final class RunnerTest extends TestCase
         $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
     }
 
-    /**
-     * The fork-failure path must throw the bundle's typed exception, not a
-     * bare \RuntimeException, and the typed exception must sit inside the
-     * hierarchy so a single `WorkermanExceptionInterface` catch covers it
-     * while a `\RuntimeException` catch still works (BC).
-     */
     public function testForkFailureThrowsTypedExceptionInHierarchy(): void
     {
         $kernelFactory = new KernelFactory(
@@ -136,9 +118,6 @@ final class RunnerTest extends TestCase
         $this->assertInstanceOf(\RuntimeException::class, $thrown);
     }
 
-    /**
-     * Structural test: verify getCacheWarmupTimeout returns the constructor value.
-     */
     public function testCacheWarmupTimeoutResolvesViaConfig(): void
     {
         $sourceFile = self::RUNNER_SOURCE;
@@ -172,11 +151,6 @@ final class RunnerTest extends TestCase
         );
     }
 
-    /**
-     * A kernel boot that throws makes the child SIGTERM itself; the real
-     * Runner::warmUpCache() must report the SIGTERM failure and the child
-     * message must reach stderr.
-     */
     public function testWarmupBootFailureThrowsSigtermMessage(): void
     {
         $output = $this->runIsolatedTest('warmup_boot_failure_sigterm');
@@ -184,34 +158,21 @@ final class RunnerTest extends TestCase
         self::assertStringContainsString('Boot failed intentionally', $output['stderr']);
     }
 
-    /**
-     * A child that exits with a non-zero code must be reported with that code.
-     */
     public function testWarmupNonZeroExitCodeThrows(): void
     {
         $this->runIsolatedTest('warmup_exit_code_nonzero');
     }
 
-    /**
-     * A child killed by a signal other than SIGTERM/SIGKILL must be reported.
-     */
     public function testWarmupUnexpectedSignalThrows(): void
     {
         $this->runIsolatedTest('warmup_unexpected_signal');
     }
 
-    /**
-     * A failing pcntl_waitpid() must be reported, not treated as a timeout.
-     */
     public function testWarmupWaitFailureThrows(): void
     {
         $this->runIsolatedTest('warmup_wait_failed');
     }
 
-    /**
-     * The waitpid-failure branch runs in-process: the subclass returns a PID
-     * that is never a child, so pcntl_waitpid() returns -1.
-     */
     public function testWarmupWaitFailureThrowsInProcess(): void
     {
         $tmpDir = sys_get_temp_dir() . '/workerman_warmup_wait_inproc_' . uniqid();
@@ -237,10 +198,6 @@ final class RunnerTest extends TestCase
         }
     }
 
-    /**
-     * The SIGTERM branch runs in-process: the child boots a throwing kernel
-     * and kills itself, without calling exit().
-     */
     public function testWarmupBootFailureThrowsSigtermMessageInProcess(): void
     {
         $tmpDir = sys_get_temp_dir() . '/workerman_warmup_boot_inproc_' . uniqid();
@@ -266,10 +223,6 @@ final class RunnerTest extends TestCase
         }
     }
 
-    /**
-     * The unexpected-signal branch runs in-process: the child kills itself
-     * with SIGUSR1, without calling exit().
-     */
     public function testWarmupUnexpectedSignalThrowsInProcess(): void
     {
         $tmpDir = sys_get_temp_dir() . '/workerman_warmup_signal_inproc_' . uniqid();
@@ -295,22 +248,11 @@ final class RunnerTest extends TestCase
         }
     }
 
-    /**
-     * End-to-end test: Runner::warmUpCache() honors the cacheWarmupTimeout
-     * constructor argument. Verifies that when the child process is stuck,
-     * the parent throws CacheWarmupException after the configured timeout.
-     */
     public function testWarmupTimeoutKicksIn(): void
     {
         $this->runIsolatedTest('warmup_timeout_kicks_in');
     }
 
-    /**
-     * Issue #564: fast-exiting warmup child is observed in ~10 ms rather than up to 100 ms.
-     * Verifies Runner::warmUpCache() uses Wait::until() backoff (10 ms initial) instead of
-     * the old fixed 100 ms sleep. A child that SIGKILLs immediately should be reaped well
-     * under the old 100 ms worst-case.
-     */
     public function testWarmupFastChildObservedQuickly(): void
     {
         $tmpDir = sys_get_temp_dir() . '/workerman_warmup_fast_' . uniqid();
@@ -338,9 +280,6 @@ final class RunnerTest extends TestCase
             $this->invokeRunnerMethod($runner, 'warmUpCache', $configLoader);
             $elapsed = microtime(true) - $start;
 
-            // Old fixed 100 ms sleep had expected overshoot ~50 ms and worst 100 ms.
-            // Wait::until() starts at 10 ms, so fast child should be observed in ~10-20 ms.
-            // Allow generous slack for loaded CI, but still well below 100 ms.
             $this->assertLessThan(
                 0.1,
                 $elapsed,
@@ -867,9 +806,6 @@ final class RunnerTest extends TestCase
             $this->expectException(InvalidCacheDirectoryException::class);
             $this->expectExceptionMessage('Unable to create directory');
 
-            // The failed mkdir is intentional here: the test places a file at
-            // the directory path. Suppress only PHP's expected warning; the
-            // RuntimeException is the behavior this test verifies.
             set_error_handler(static fn(int $severity, string $message): bool => $severity === \E_WARNING && \str_contains($message, 'mkdir(): Not a directory'));
             try {
                 $this->invokeRunnerMethod($runner, 'applyWorkermanConfig', $config);
@@ -882,15 +818,6 @@ final class RunnerTest extends TestCase
         }
     }
 
-    /**
-     * The mkdir-failure path must throw the bundle's typed exception, not a
-     * bare \RuntimeException, and the typed exception must sit inside the
-     * hierarchy so a single `WorkermanExceptionInterface` catch covers it
-     * while a `\RuntimeException` catch still works (BC).
-     *
-     * Triggers the real condition (a file blocks the directory path) rather
-     * than constructing and throwing the exception directly.
-     */
     public function testApplyWorkermanConfigMkdirFailureThrowsTypedExceptionInHierarchy(): void
     {
         $saved = $this->saveWorkerState();
@@ -1509,12 +1436,6 @@ final class RunnerTest extends TestCase
         $this->assertInstanceOf(ConfigLoader::class, $loader);
     }
 
-    /**
-     * Issue #612: the ConfigLoader built through Runner must receive the
-     * logger injected into Runner, so the fail-open cache-permission warning
-     * reaches the application logs instead of being raised as an
-     * \E_USER_WARNING on the `serve` path.
-     */
     public function testConfigLoaderLogsFailOpenWarningViaInjectedLogger(): void
     {
         $logger = new class extends \Psr\Log\AbstractLogger {
@@ -1538,7 +1459,6 @@ final class RunnerTest extends TestCase
 
         $loader = $this->invokeRunnerMethod($runner, 'createConfigLoader');
 
-        // Fail-open trigger from #586: cache metadata cannot be read (missing path).
         $missingPath = '/tmp/project/var/cache/test/workerman/does-not-exist.php';
         $triggered = null;
         set_error_handler(
@@ -1557,7 +1477,6 @@ final class RunnerTest extends TestCase
             restore_error_handler();
         }
 
-        // The warning must go to the injected logger, not trigger_error().
         $this->assertSame(null, $triggered, 'fail-open path must not raise E_USER_WARNING when a logger is injected');
         $this->assertCount(1, $logger->records, 'injected logger must receive the fail-open warning');
         $this->assertSame('warning', $logger->records[0]['level']);
@@ -1609,13 +1528,6 @@ final class RunnerTest extends TestCase
         }
     }
 
-    /**
-     * The test app sets APP_CACHE_DIR lazily from the kernel factory closure.
-     * createConfigLoader() must therefore build the ConfigLoader from the
-     * value that closure wrote, i.e. getProjectDir() must run before
-     * getCacheDir(). A reorder would silently reuse var/cache/<env> and the
-     * daemon would bind the previously cached ports (#868).
-     */
     public function testCreateConfigLoaderSeesAppCacheDirSetByTheLazyKernelFactory(): void
     {
         $hadAppCacheDir = \array_key_exists('APP_CACHE_DIR', $_SERVER);
@@ -1749,15 +1661,6 @@ final class RunnerTest extends TestCase
     }
 
     /**
-     * Run a test in an isolated PHP process to avoid PHPUnit
-     * state inheritance issues with pcntl_fork().
-     *
-     * Uses `php -n` (no php.ini) to prevent the grpc extension from loading.
-     * The grpc extension's shutdown handler deadlocks in forked child processes,
-     * making exit() hang indefinitely. The pcntl and posix
-     * extensions are loaded explicitly when this PHP needs a shared module for them
-     * (see IsolatedPhp, #823).
-     *
      * @return array{stdout: string, stderr: string}
      */
     private function runIsolatedTest(string $testName): array

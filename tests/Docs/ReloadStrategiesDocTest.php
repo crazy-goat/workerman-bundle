@@ -9,9 +9,6 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * docs/reload-strategies.md must have a section for every reload strategy and name every option of it (issue #878, section 5).
- */
 #[CoversNothing]
 final class ReloadStrategiesDocTest extends TestCase
 {

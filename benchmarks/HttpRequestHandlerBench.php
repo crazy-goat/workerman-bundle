@@ -15,14 +15,6 @@ use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 use Workerman\Connection\TcpConnection;
 
-/**
- * Benchmark HttpRequestHandler::__invoke — the composed middleware chain
- * that represents the full per-request dispatch hot path.
- *
- * The pipeline is built once and cached; per-request allocations are one
- * controller closure (capturing the connection) and one MiddlewareDispatcher
- * object — independent of the middleware count (issue #563).
- */
 #[BeforeMethods('init')]
 #[Revs(1000)]
 #[Iterations(5)]

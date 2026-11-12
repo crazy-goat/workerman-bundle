@@ -21,10 +21,6 @@ use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Contracts\Service\ResetInterface;
 use Workerman\Connection\TcpConnection;
 
-/**
- * Test kernel that implements both KernelInterface and TerminableInterface
- * with tracking capabilities for testing.
- */
 final class TestTerminableKernel implements KernelInterface, TerminableInterface
 {
     public bool $bootCalled = false;
@@ -130,9 +126,6 @@ final class TestTerminableKernel implements KernelInterface, TerminableInterface
     }
 }
 
-/**
- * Test kernel with container that has services_resetter for testing service reset.
- */
 final class TestKernelWithServicesResetter implements KernelInterface, TerminableInterface
 {
     public bool $bootCalled = false;
@@ -317,9 +310,6 @@ final class TestKernelWithServicesResetter implements KernelInterface, Terminabl
     }
 }
 
-/**
- * Test kernel with container that does NOT have services_resetter.
- */
 final class TestKernelWithoutServicesResetter implements KernelInterface, TerminableInterface
 {
     public bool $bootCalled = false;
@@ -486,9 +476,6 @@ final class TestKernelWithoutServicesResetter implements KernelInterface, Termin
     }
 }
 
-/**
- * Test kernel that only implements KernelInterface (not TerminableInterface).
- */
 final class TestNonTerminableKernel implements KernelInterface
 {
     public bool $bootCalled = false;
@@ -592,9 +579,6 @@ final class TestNonTerminableKernel implements KernelInterface
     }
 }
 
-/**
- * Test kernel that tracks the received request for E2E testing.
- */
 final class TestRequestTrackingKernel implements KernelInterface
 {
     public bool $bootCalled = false;
@@ -694,9 +678,6 @@ final class TestRequestTrackingKernel implements KernelInterface
     }
 }
 
-/**
- * Test kernel that throws during handle() to simulate crash.
- */
 final class TestThrowingKernel implements KernelInterface, TerminableInterface
 {
     public bool $bootCalled = false;
@@ -820,8 +801,6 @@ final class SymfonyControllerTest extends TestCase
 
     private function createResponseConverter(bool $withStreamedStrategy = false): ResponseConverter
     {
-        // IMPORTANT: StreamedResponseStrategy MUST come before DefaultResponseStrategy
-        // because DefaultResponseStrategy::supports() returns true for ALL responses.
         $strategies = [];
         if ($withStreamedStrategy) {
             $strategies[] = new StreamedResponseStrategy();
@@ -842,7 +821,6 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        // Invoke controller - this should NOT call terminate
         $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
@@ -851,7 +829,6 @@ final class SymfonyControllerTest extends TestCase
         $this->assertTrue($kernel->bootCalled, 'Kernel boot should be called');
         $this->assertFalse($kernel->terminateCalled, 'Terminate should not be called during __invoke');
 
-        // Now call terminateIfNeeded - this SHOULD call terminate
         $controller->terminateIfNeeded();
 
         $this->assertTrue($kernel->terminateCalled, 'Terminate should be called after terminateIfNeeded');
@@ -868,15 +845,12 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        // Invoke controller
         $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
 
-        // This should not throw or cause any issues
         $controller->terminateIfNeeded();
 
-        // No assertions needed - if we get here without error, test passes
         $this->addToAssertionCount(1);
     }
 
@@ -891,14 +865,11 @@ final class SymfonyControllerTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
 
-        // Invoke controller
         $controller($request, $this->connection);
 
-        // First call to terminateIfNeeded - should trigger terminate
         $controller->terminateIfNeeded();
         $this->assertSame(1, $kernel->terminateCount, 'Terminate should be called once');
 
-        // Second call should not trigger terminate again (request/response are nullified)
         $controller->terminateIfNeeded();
         $this->assertSame(1, $kernel->terminateCount, 'Terminate should not be called twice');
     }
@@ -978,7 +949,6 @@ final class SymfonyControllerTest extends TestCase
         $response = $controller($request, $this->connection);
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
-        // All headers are normalized to proper case (e.g., Content-Type, X-Custom-Header)
         $this->assertSame('application/json', $response->getHeader('Content-Type'));
         $this->assertSame('custom-value', $response->getHeader('X-Custom-Header'));
     }
@@ -1004,14 +974,12 @@ final class SymfonyControllerTest extends TestCase
 
     public function testBasicAuthHeadersAreParsedInServerBag(): void
     {
-        // E2E test: Workerman Request → RequestConverter → SymfonyController → Symfony Request
         $symfonyResponse = new SymfonyResponse('OK');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Create request with Basic Auth header
         $buffer = "GET /admin HTTP/1.1\r\n";
         $buffer .= "Host: localhost\r\n";
         $buffer .= "Authorization: Basic " . base64_encode('admin:secret123') . "\r\n";
@@ -1020,25 +988,20 @@ final class SymfonyControllerTest extends TestCase
 
         $response = $controller($request, $this->connection);
 
-        // Verify response is correct
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertSame(200, $response->getStatusCode());
 
-        // Verify kernel received request with parsed auth credentials
         $this->assertNotNull($kernel->receivedRequest, 'Kernel should have received the request');
         $symfonyRequest = $kernel->receivedRequest;
 
-        // These should work because HTTP_AUTHORIZATION is now in server bag
         $this->assertSame('admin', $symfonyRequest->getUser(), 'Basic auth user should be parsed');
         $this->assertSame('secret123', $symfonyRequest->getPassword(), 'Basic auth password should be parsed');
 
-        // Also verify server bag has the header
         $this->assertSame('Basic ' . base64_encode('admin:secret123'), $symfonyRequest->server->get('HTTP_AUTHORIZATION'));
     }
 
     public function testHeadersAreAvailableInServerBagE2E(): void
     {
-        // E2E test verifying headers are properly set in server bag for the whole stack
         $symfonyResponse = new SymfonyResponse('OK');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
@@ -1049,7 +1012,7 @@ final class SymfonyControllerTest extends TestCase
         $buffer .= "Host: api.example.com\r\n";
         $buffer .= "Accept: application/json\r\n";
         $buffer .= "X-Custom-Header: custom-value\r\n";
-        $buffer .= "Content-Type: application/json\r\n";  // Will be converted to CONTENT_TYPE
+        $buffer .= "Content-Type: application/json\r\n";
         $buffer .= "\r\n";
         $request = new Request($buffer);
 
@@ -1058,30 +1021,25 @@ final class SymfonyControllerTest extends TestCase
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // Headers should be in server bag with HTTP_ prefix
         $this->assertSame('api.example.com', $symfonyRequest->server->get('HTTP_HOST'));
         $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
         $this->assertSame('custom-value', $symfonyRequest->server->get('HTTP_X_CUSTOM_HEADER'));
 
-        // Content-Type should be in server bag without HTTP_ prefix (CGI convention)
         $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
 
-        // Headers should also be accessible via HeaderBag
         $this->assertSame('api.example.com', $symfonyRequest->headers->get('Host'));
         $this->assertSame('application/json', $symfonyRequest->headers->get('Accept'));
     }
 
     public function testServerProtocolHasHttpPrefixE2E(): void
     {
-        // E2E test: Verify SERVER_PROTOCOL includes HTTP/ prefix (#60)
         $symfonyResponse = new SymfonyResponse('OK');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Test HTTP/1.1
         $buffer = "GET /protocol HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
         $controller($request, $this->connection);
@@ -1089,22 +1047,18 @@ final class SymfonyControllerTest extends TestCase
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // SERVER_PROTOCOL should include HTTP/ prefix
         $this->assertSame('HTTP/1.1', $symfonyRequest->server->get('SERVER_PROTOCOL'));
-        // getProtocolVersion() should also return correct value
         $this->assertSame('HTTP/1.1', $symfonyRequest->getProtocolVersion());
     }
 
     public function testServerProtocolHttp2Prefix(): void
     {
-        // E2E test: Verify HTTP/2.0 protocol version is handled correctly
         $symfonyResponse = new SymfonyResponse('OK');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Test HTTP/2.0
         $buffer = "GET /protocol HTTP/2.0\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
         $controller($request, $this->connection);
@@ -1112,13 +1066,11 @@ final class SymfonyControllerTest extends TestCase
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // Verify prefix logic works for HTTP/2.0
         $this->assertStringStartsWith('HTTP/', $symfonyRequest->server->get('SERVER_PROTOCOL'));
     }
 
     public function testStreamedResponseE2E(): void
     {
-        // E2E test: Verify StreamedResponse content is properly streamed via connection
         $initialObLevel = ob_get_level();
         $this->connection->context = new \stdClass();
         $this->connection
@@ -1144,26 +1096,15 @@ final class SymfonyControllerTest extends TestCase
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertSame(200, $response->getStatusCode());
 
-        // Debug: check OB level didn't change
         $this->assertSame(
             $initialObLevel,
             ob_get_level(),
             'OB level should remain unchanged after test',
         );
 
-        // Content is sent directly via $connection->send(), not buffered in response
         $this->assertSame('', $response->rawBody());
     }
 
-    /**
-     * Issue #621 / finding F-1: the `$shouldClose` computation in
-     * SymfonyController::__invoke() must drive a StreamedResponse's head to
-     * echo `Connection: close` for an HTTP/1.1 `Connection: close` request.
-     * The StreamedResponseStrategy builds its own head (central stamping in
-     * sendResponse() is skipped), so the controller's close-intent flag is the
-     * sole signal the head gets. testStreamedResponseE2E above uses HTTP/1.1
-     * without `Connection: close`, so the close path is only covered here.
-     */
     public function testStreamedResponseHttp11ConnectionCloseEchoesConnectionClose(): void
     {
         $initialObLevel = ob_get_level();
@@ -1192,18 +1133,11 @@ final class SymfonyControllerTest extends TestCase
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
         $this->assertSame(200, $response->getStatusCode());
 
-        // The first send() call carries the head the strategy built itself.
         $this->assertNotEmpty($sendCalls, 'StreamedResponse must send its head via the connection');
         $this->assertStringContainsString("Connection: close\r\n", $sendCalls[0], 'HTTP/1.1 Connection: close request must echo Connection: close in the streamed head');
         $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
     }
 
-    /**
-     * Issue #621 / finding F-1: the complementary keep-alive path — an
-     * HTTP/1.1 request without `Connection: close` must NOT emit
-     * `Connection: close` in the streamed head (the default keep-alive is
-     * correct). Guards against a regression that always stamps close.
-     */
     public function testStreamedResponseHttp11KeepAliveDoesNotEchoConnectionClose(): void
     {
         $initialObLevel = ob_get_level();
@@ -1292,11 +1226,9 @@ final class SymfonyControllerTest extends TestCase
         $response = $controller($request, $this->connection);
 
         $this->assertSame($initialObLevel, ob_get_level(), 'OB level should remain unchanged after test');
-        // Content-Type may have charset added by Symfony
         $contentType = $response->getHeader('Content-Type');
         $this->assertIsString($contentType);
         $this->assertStringContainsString('text/event-stream', $contentType);
-        // Headers are normalized to proper case
         $this->assertSame('true', $response->getHeader('X-Stream'));
         $this->assertSame('', $response->rawBody());
     }
@@ -1310,7 +1242,6 @@ final class SymfonyControllerTest extends TestCase
             ->method('send');
 
         $streamedResponse = new StreamedResponse(function (): void {
-            // Echo nothing
         });
 
         $kernel = new TestNonTerminableKernel($streamedResponse);
@@ -1360,14 +1291,12 @@ final class SymfonyControllerTest extends TestCase
 
     public function testHttpsE2E(): void
     {
-        // E2E test: Verify port 443 without SSL transport is HTTP (#64)
         $symfonyResponse = new SymfonyResponse('plain');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Port 443 alone should NOT imply HTTPS — must use SSL transport
         $buffer = "GET /plain HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(443);
@@ -1377,7 +1306,6 @@ final class SymfonyControllerTest extends TestCase
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // Port 443 without SSL transport = HTTP (Symfony defaults to 80 for HTTP scheme)
         $this->assertNull($symfonyRequest->server->get('HTTPS'));
         $this->assertFalse($symfonyRequest->isSecure());
         $this->assertSame('http', $symfonyRequest->getScheme());
@@ -1386,14 +1314,12 @@ final class SymfonyControllerTest extends TestCase
 
     public function testHttpE2E(): void
     {
-        // E2E test: Verify plain HTTP (port 80) does NOT set HTTPS flag (#64)
         $symfonyResponse = new SymfonyResponse('insecure');
         $kernel = new TestRequestTrackingKernel($symfonyResponse);
         $responseConverter = $this->createResponseConverter();
 
         $controller = new SymfonyController($kernel, $responseConverter);
 
-        // Plain HTTP request on port 80, no X-Forwarded-Proto header
         $buffer = "GET /insecure HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $request = new Request($buffer);
         $request->connection = $this->createMockConnection(80);
@@ -1403,7 +1329,6 @@ final class SymfonyControllerTest extends TestCase
         $this->assertNotNull($kernel->receivedRequest);
         $symfonyRequest = $kernel->receivedRequest;
 
-        // HTTPS should NOT be set for plain HTTP
         $this->assertNull($symfonyRequest->server->get('HTTPS'));
         $this->assertFalse($symfonyRequest->isSecure());
         $this->assertSame('http', $symfonyRequest->getScheme());
@@ -1582,10 +1507,8 @@ final class SymfonyControllerTest extends TestCase
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
         $this->assertSame(400, $response->getStatusCode());
 
-        // Kernel should NOT have handled the request (early validation before boot)
         $this->assertNull($kernel->receivedRequest);
 
-        // Verify the static trusted hosts are still active for subsequent requests
         $suspiciousRequest = SymfonyRequest::create('http://attacker.com/');
         $this->expectException(SuspiciousOperationException::class);
         $suspiciousRequest->getHost();
@@ -1604,19 +1527,11 @@ final class SymfonyControllerTest extends TestCase
         $response = $controller(new Request("GET /test HTTP/1.1\r\nHost: attacker.com\r\n\r\n"), $this->connection);
         $this->assertSame(400, $response->getStatusCode());
 
-        // A second lifecycle call must be a no-op after the early return cleanup.
         $controller->terminateIfNeeded();
     }
 
     public function testSetTrustedHostsIsNotCalledOnCacheHit(): void
     {
-        // setTrustedHosts() must be skipped on a validated-host cache hit.
-        // The H1, H2, H1 sequence proves it: on the third request (H1, a cache
-        // hit) the reset is skipped, so Symfony's internal Request::$trustedHosts
-        // still holds H2 from request 2; getHost() does not find H1 in it,
-        // re-validates via the pattern, and appends H1 → 2 entries. With the
-        // old per-request reset, request 3 would wipe the list and re-add only
-        // H1 → 1 entry. Two entries prove the reset was skipped.
         $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1634,12 +1549,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testValidatedHostListStaysBoundedForManyDistinctHosts(): void
     {
-        // Regression test for the unbounded memory leak this fix could
-        // introduce (issue #560): with a wildcard pattern, drive 10 000
-        // requests carrying distinct matching hosts. The naive fix (stop
-        // resetting without a bound) would let Symfony's internal
-        // Request::$trustedHosts grow to 10 000 entries. The bounded cache
-        // keeps it small — each cache miss resets it via setTrustedHosts().
         $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1660,10 +1569,6 @@ final class SymfonyControllerTest extends TestCase
             $cacheCount,
             'Symfony Request::$trustedHosts must stay bounded, not grow towards 10000',
         );
-        // Memory must not grow linearly with the number of distinct hosts.
-        // The bounded cache retains at most 64 host strings (~3 KB); the
-        // generous 1 MB ceiling catches an unbounded leak while tolerating
-        // PHP allocator noise.
         $this->assertLessThan(
             1024 * 1024,
             $memoryAfter - $memoryBefore,
@@ -1673,10 +1578,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testHostResolutionStaysBoundedAfterManyDistinctHosts(): void
     {
-        // Host resolution (the in_array fast path in Request::getHost()) must
-        // stay O(bound), not O(distinct hosts seen). After 10 000 distinct
-        // hosts, a repeat cached-host lookup must be as fast as after a
-        // handful — because Request::$trustedHosts is bounded by the cache.
         $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1685,13 +1586,11 @@ final class SymfonyControllerTest extends TestCase
             ['^.+\\.test\\.local$'],
         );
 
-        // Warm the cache with a known host, then flood with 10 000 distinct hosts.
         $controller($this->requestWithHost('cached.test.local'), $this->connection);
         for ($i = 1; $i <= 10000; ++$i) {
             $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
         }
 
-        // The validated-host list is bounded, so a repeat request is O(bound).
         $this->assertLessThan(128, $this->validatedHostsCacheCount($controller));
 
         $start = \hrtime(true);
@@ -1700,9 +1599,6 @@ final class SymfonyControllerTest extends TestCase
         }
         $elapsedNs = \hrtime(true) - $start;
 
-        // 1000 repeat requests must complete in well under a second. With an
-        // unbounded 10 000-entry in_array scan the cost would be quadratic;
-        // the bounded cache keeps it flat.
         $this->assertLessThan(
             1_000_000_000,
             $elapsedNs,
@@ -1712,9 +1608,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testEvictedHostIsStillValidatedOnLaterRequest(): void
     {
-        // A host that was validated, then evicted from the bounded cache, must
-        // still be validated correctly on a later request (cache miss →
-        // setTrustedHosts reset → pattern re-match).
         $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1723,18 +1616,13 @@ final class SymfonyControllerTest extends TestCase
             ['^.+\\.test\\.local$'],
         );
 
-        // Fill the cache (MAX_VALIDATED_HOSTS = 64) with distinct hosts.
         for ($i = 1; $i <= 64; ++$i) {
             $controller($this->requestWithHost("h{$i}.test.local"), $this->connection);
         }
-        // The 65th distinct host evicts the oldest (h1) from the cache.
         $controller($this->requestWithHost('h65.test.local'), $this->connection);
 
-        // h1 is now evicted — verify via the controller's private cache.
         $this->assertNotContains('h1.test.local', $this->validatedHostsCache($controller));
 
-        // Re-request the evicted host: it is a cache miss, so setTrustedHosts()
-        // resets and getHost() re-validates via the pattern — must still pass.
         $response = $controller($this->requestWithHost('h1.test.local'), $this->connection);
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('h1.test.local', $kernel->receivedRequest?->getHost());
@@ -1742,9 +1630,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testTrustedHostsUnconfiguredDoesNotAccumulate(): void
     {
-        // With trusted_hosts unconfigured, the controller must never call
-        // setTrustedHosts(), so neither patterns nor the validated-host cache
-        // accumulate — unchanged from before the fix.
         $kernel = new TestNonTerminableKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController($kernel, $this->createResponseConverter());
 
@@ -1758,9 +1643,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testTrustedHostsAcceptThenRejectThenAcceptAcrossRequests(): void
     {
-        // Host rejection/acceptance must be unchanged across multiple sequential
-        // requests on the same controller instance: matching → 200, non-matching
-        // → 400, matching again → 200.
         $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1777,12 +1659,6 @@ final class SymfonyControllerTest extends TestCase
 
     public function testTrustedProxySkipsCacheAndResetsEveryRequest(): void
     {
-        // When the request comes from a trusted proxy, getHost() validates
-        // the value of X-Forwarded-Host rather than the direct Host header
-        // used as the cache key. The controller must therefore skip the
-        // validated-host cache and keep calling setTrustedHosts() on every
-        // request — that reset is what keeps Symfony's internal list bounded
-        // (issue #560 constraint).
         $kernel = new TestRequestTrackingKernel(new SymfonyResponse('OK'));
         $controller = new SymfonyController(
             $kernel,
@@ -1793,7 +1669,6 @@ final class SymfonyControllerTest extends TestCase
 
         SymfonyRequest::setTrustedProxies(['127.0.0.1'], SymfonyRequest::HEADER_X_FORWARDED_HOST);
         try {
-            // First request: host resolves from X-Forwarded-Host, not Host.
             $response = $controller(
                 $this->requestWithHost('direct.example.com', 'x1.example.com'),
                 $this->connection,
@@ -1801,9 +1676,6 @@ final class SymfonyControllerTest extends TestCase
             $this->assertSame(200, $response->getStatusCode());
             $this->assertSame('x1.example.com', $kernel->receivedRequest?->getHost());
 
-            // Second request with a different X-Forwarded-Host: the cache must
-            // be skipped again, so Symfony's internal list stays at one entry
-            // (reset on every request) instead of accumulating.
             $response = $controller(
                 $this->requestWithHost('direct.example.com', 'x2.example.com'),
                 $this->connection,
@@ -1831,16 +1703,6 @@ final class SymfonyControllerTest extends TestCase
         return new Request($buffer . "\r\n");
     }
 
-    /**
-     * Read the size of the bundle's validated-host cache (validatedHosts).
-     *
-     * Symfony's internal Request::$trustedHosts was used as a proxy in
-     * earlier versions, but Symfony 6.4.44+ (and 7.x/8.x) replaced the
-     * per-host append in getHost() with a single trustedHostsRegexp
-     * preg_match, so $trustedHosts is never populated. The bundle's own
-     * validatedHosts cache is the authoritative bounded structure and
-     * exists on all supported Symfony versions.
-     */
     private function validatedHostsCacheCount(SymfonyController $controller): int
     {
         return \count($this->validatedHostsCache($controller));

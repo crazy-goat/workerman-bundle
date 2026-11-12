@@ -8,20 +8,6 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Convention test for the subagent knowledge base and the project-scoped agents.
- *
- * `bin/kb-lint.php` is the enforcement half; this test re-checks the same
- * invariants against the committed knowledge base and pins the `.pi/agents/`
- * contract, so a broken agent prompt fails the suite rather than the next cycle.
- *
- * It is deliberately *not* an independent implementation: `renderIndex()` here
- * repeats the script's rendering rule, and the front-matter parser below is a
- * laxer regex than the script's tokenizer. A rendering bug would therefore be
- * agreed on by both. What this test does add is that the invariants hold on the
- * real files without running the script — the script's own behaviour is pinned
- * by `KbLintScriptTest`, which drives it as a subprocess over fixtures.
- */
 #[CoversNothing]
 final class KnowledgeBaseTest extends TestCase
 {
@@ -30,7 +16,6 @@ final class KnowledgeBaseTest extends TestCase
         'docs/helpers/decisions.md' => 'DEC',
     ];
 
-    /** The agents that must live in the repository, not in a per-machine ~/.agents. */
     private const PROJECT_AGENTS = [
         'scout',
         'coder',
@@ -276,8 +261,6 @@ final class KnowledgeBaseTest extends TestCase
         $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $pipes = [];
 
-        // An explicit environment, so an ambient KB_LINT_ROOT cannot point this
-        // run at another tree and turn it green.
         $process = proc_open(
             [\PHP_BINARY, $this->projectDir . '/bin/kb-lint.php'],
             $descriptors,
@@ -315,9 +298,6 @@ final class KnowledgeBaseTest extends TestCase
     }
 
     /**
-     * Entries of one knowledge-base file: a `###` heading plus the single-line
-     * `<!-- kb: … -->` comment that must follow it.
-     *
      * @return list<array{line: int, title: string, meta: array<string, string>}>
      */
     private function entries(string $relative): array
@@ -373,7 +353,6 @@ final class KnowledgeBaseTest extends TestCase
 
     /**
      * @param list<array{line: int, title: string, meta: array<string, string>}> $entries
-     *
      * @return list<string>
      */
     private function renderIndex(array $entries): array

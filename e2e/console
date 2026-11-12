@@ -8,7 +8,7 @@ use Symfony\Bundle\FrameworkBundle\Console\Application;
 
 require_once __DIR__ . '/vendor/autoload.php';
 
-$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'test', (bool)($_SERVER['APP_DEBUG'] ?? false));
+$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'test', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $kernel->boot();
 
 $application = new Application($kernel);

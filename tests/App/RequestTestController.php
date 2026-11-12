@@ -28,12 +28,9 @@ final class RequestTestController extends AbstractController
     #[Route('/request_test_file_with_error', name: 'app_request_test_file_with_error')]
     public function testFileWithError(Request $request): JsonResponse
     {
-        // Create a real temp file for the valid file test
         $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
         file_put_contents($tmpFile, 'test content');
 
-        // Simulate a file with UPLOAD_ERR_NO_FILE error
-        // This tests that FileBag properly handles error codes
         $files = [
             'optional_file' => [
                 'name' => '',
@@ -51,7 +48,6 @@ final class RequestTestController extends AbstractController
             ],
         ];
 
-        // Create a new request with simulated file data
         $testRequest = new Request(
             $request->query->all(),
             $request->request->all(),
@@ -67,7 +63,6 @@ final class RequestTestController extends AbstractController
             'valid_file_exists' => $testRequest->files->get('valid_file') instanceof UploadedFile,
         ];
 
-        // Cleanup
         if (file_exists($tmpFile)) {
             unlink($tmpFile);
         }
@@ -75,10 +70,6 @@ final class RequestTestController extends AbstractController
         return $this->json($result);
     }
 
-    /**
-     * Endpoint that receives actual file uploads and returns error information.
-     * This tests the RequestConverter path (not manual Request creation).
-     */
     #[Route('/request_test_upload_with_error', name: 'app_request_test_upload_with_error')]
     public function testUploadWithError(Request $request): JsonResponse
     {
@@ -96,13 +87,11 @@ final class RequestTestController extends AbstractController
     #[Route('/request_test_full_path', name: 'app_request_test_full_path')]
     public function testFullPath(Request $request): JsonResponse
     {
-        // Create real temp files for testing
         $tmpFile1 = tempnam(sys_get_temp_dir(), 'readme_');
         $tmpFile2 = tempnam(sys_get_temp_dir(), 'config_');
         file_put_contents($tmpFile1, 'readme content');
         file_put_contents($tmpFile2, '{}');
 
-        // Simulate directory upload with full_path (webkitdirectory)
         $files = [
             'project_files' => [
                 [
@@ -141,7 +130,7 @@ final class RequestTestController extends AbstractController
                 if ($file instanceof UploadedFile) {
                     $result[] = [
                         'original_name' => $file->getClientOriginalName(),
-                        'full_path' => $file->getClientOriginalName(), // full_path becomes original name in FileBag
+                        'full_path' => $file->getClientOriginalName(),
                     ];
                 }
             }
@@ -152,7 +141,6 @@ final class RequestTestController extends AbstractController
             'files' => $result,
         ]);
 
-        // Cleanup
         if (file_exists($tmpFile1)) {
             unlink($tmpFile1);
         }
@@ -163,10 +151,6 @@ final class RequestTestController extends AbstractController
         return $response;
     }
 
-    /**
-     * Endpoint that receives actual directory uploads with full_path.
-     * This tests the RequestConverter path (not manual Request creation).
-     */
     #[Route('/request_test_upload_full_path', name: 'app_request_test_upload_full_path')]
     public function testUploadFullPath(Request $request): JsonResponse
     {
@@ -194,7 +178,6 @@ final class RequestTestController extends AbstractController
 
     /**
      * @param array<string, mixed> $files
-     *
      * @return array<string, mixed>
      */
     private function normalizeFiles(array $files): array
@@ -209,7 +192,6 @@ final class RequestTestController extends AbstractController
 
     /**
      * @param UploadedFile|array<string, mixed>|null $file
-     *
      * @return array<string, mixed>|null
      */
     private function normalizeFileEntry(UploadedFile|array|null $file): ?array

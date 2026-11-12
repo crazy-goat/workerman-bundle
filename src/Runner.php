@@ -52,12 +52,6 @@ readonly class Runner implements RunnerInterface
         $this->warmUpCache($configLoader);
 
         if ($configLoader->hasTrackedEnvChanged()) {
-            // An env var used in workerman.yaml changed after warmup, so the
-            // frozen cache no longer matches the environment (issue #996).
-            // Boot the kernel again: Symfony re-resolves %env()% (with the
-            // int:, bool:, file:, ... processors) and re-runs validation.
-            // On a read-only cache dir this fails instead of silently
-            // keeping the stale values.
             try {
                 $this->warmUpCache($configLoader, true);
             } catch (\RuntimeException $e) {
@@ -75,8 +69,6 @@ readonly class Runner implements RunnerInterface
 
         $config = $configLoader->getWorkermanConfig();
         if ($this->firstMissingStaticRoot($config) !== null && $this->kernelFactory->isDebug()) {
-            // The root directory list comes from the container. The config cache is only
-            // checked against workerman.yaml, so it may be old: build it once again.
             $this->warmUpCache($configLoader, true);
             $configLoader = $this->createConfigLoader();
             $config = $configLoader->getWorkermanConfig();
@@ -91,9 +83,6 @@ readonly class Runner implements RunnerInterface
         $this->createWorkers($config, $schedulerConfig, $processConfig);
         $this->configureMasterWorker($config);
 
-        // Run through MasterWorker so the real master PID (which is only
-        // known after daemonize) gets a fingerprint — closing the daemon-mode
-        // verification gap described in issue #584.
         MasterWorker::runAll();
 
         return 0;
@@ -123,14 +112,7 @@ readonly class Runner implements RunnerInterface
     }
 
     /**
-     * Warm up cache in a forked process so the main process never boots the kernel.
-     *
-     * Uses posix_kill with different signals to distinguish success/failure:
-     * - SIGKILL (9) for success
-     * - SIGTERM (15) for error
-     * This avoids deadlock with extensions that register shutdown handlers (e.g., grpc).
-     *
-     * @throws CacheWarmupException on fork failure, timeout, or unexpected child status
+     * @throws CacheWarmupException
      */
     private function warmUpCache(ConfigLoader $configLoader, bool $force = false): void
     {
@@ -217,16 +199,8 @@ readonly class Runner implements RunnerInterface
     }
 
     /**
-     * Stop with one clear error when the root directory of a StaticFilesMiddleware
-     * does not exist. Else every worker would throw in the middleware constructor
-     * and be restarted again and again (issue #965). The directories come from the
-     * compiler pass. Only start and restart are checked: stop, reload, status and
-     * connections must work when the directory is gone. In PHAR mode the paths are
-     * resolved at runtime, so they are skipped.
-     *
      * @param mixed[] $config
-     *
-     * @throws \RuntimeException when a root directory does not exist
+     * @throws \RuntimeException
      */
     private function checkStaticRoots(array $config): void
     {
@@ -267,14 +241,8 @@ readonly class Runner implements RunnerInterface
     }
 
     /**
-     * Apply resolved config paths to Worker and TcpConnection static properties.
-     *
-     * Also ensures runtime directories exist. This is critical in PHAR mode
-     * where directories live outside the archive and may not exist yet.
-     *
      * @param mixed[] $config
-     *
-     * @throws InvalidCacheDirectoryException when a runtime directory cannot be created
+     * @throws InvalidCacheDirectoryException
      */
     private function applyWorkermanConfig(array $config): void
     {
@@ -319,15 +287,6 @@ readonly class Runner implements RunnerInterface
         };
     }
 
-    /**
-     * Emit one-time start-up warnings for grpc hosts (no-op otherwise).
-     *
-     * The grpc extension interacts badly with forked children in both
-     * directions: without GRPC_ENABLE_FORK_SUPPORT children deadlock early
-     * (see README), and with it set, grpc_shutdown() can hang when a child
-     * exits (mitigated via SIGKILL in ProcessTerminator). Must run after
-     * applyWorkermanConfig() so Worker::$logFile is already configured.
-     */
     private function warnAboutGrpcExtension(): void
     {
         if (!static::grpcLoaded()) {
@@ -344,29 +303,11 @@ readonly class Runner implements RunnerInterface
         $this->logStartupWarning('[WARN] grpc extension detected: supervised processes and forked task children are terminated with SIGKILL on completion because grpc_shutdown() can hang in forked children — destructors and shutdown functions are skipped for them. See docs/troubleshooting.md "gRPC Extension and Fork Safety".');
     }
 
-    /**
-     * Whether the grpc extension is loaded.
-     *
-     * Extracted as a seam so tests can exercise the start-up warnings on
-     * hosts (and CI) where grpc is not installed.
-     */
     protected static function grpcLoaded(): bool
     {
         return \extension_loaded('grpc');
     }
 
-    /**
-     * Write a start-up warning to the configured Workerman log file.
-     *
-     * Only the log file is used: writing to stderr before daemonize() is
-     * unsafe on grpc hosts where `start -d` is spawned with a closed stderr
-     * pipe (e.g. via proc_open in tests) - the write hits SIGPIPE and the
-     * launcher dies before forking the daemon. Worker::log() itself cannot
-     * be used either: its safeEcho() path reads Worker::$outputStream,
-     * which is only initialized inside runAll() and would throw feof() on
-     * null. This runs before daemonize, so the log entry is written once
-     * by the launcher process.
-     */
     private function logStartupWarning(string $msg): void
     {
         if (Worker::$logFile !== '') {
@@ -379,11 +320,6 @@ readonly class Runner implements RunnerInterface
     }
 
     /**
-     * Create and register all worker types based on config.
-     *
-     * Workers register themselves via constructor side-effects (no return value needed).
-     * File monitor is skipped in PHAR mode — files are frozen inside the archive.
-     *
      * @param mixed[] $config
      * @param mixed[] $schedulerConfig
      * @param mixed[] $processConfig
@@ -486,10 +422,6 @@ readonly class Runner implements RunnerInterface
         return $this->kernelFactory->getCacheDir();
     }
 
-    /**
-     * Resolves a path that was configured relative to project_dir,
-     * replacing the project_dir prefix with runtime_dir when in PHAR mode.
-     */
     private function resolveRuntimePath(string $path): string
     {
         return PharHelper::resolveRuntimePath($path, $this->kernelFactory->getProjectDir());

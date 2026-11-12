@@ -2,27 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * Minimal Workerman HTTP server for the async signals E2E tests
- * (issues #987 and #910).
- *
- * Creating a Symfony Console Application turns on pcntl_async_signals(true),
- * like bin/console does before it starts the server. The server is started
- * through MasterWorker::runAll(), like Runner does.
- *
- * argv:
- *   1 = vendor/autoload.php path
- *   2 = listen port
- *   3 = ready file path (written from onWorkerStart)
- *   4 = work dir for Workerman pid/log/status files
- *   5 = graceful_sigterm (1/0, default 0)
- *   6 = stop_timeout seconds (default 10)
- *   7 = graceful_stop_timeout seconds (default 30)
- *
- * The route keeps working for 3 seconds (busy loop, not sleep: a signal wakes
- * sleep() early). The default stop_timeout is 10 seconds.
- */
-
 /** @var list<string> $argv */
 
 if (($argc ?? 0) < 5) {
@@ -50,7 +29,6 @@ if (!is_dir($workDir) && !mkdir($workDir, 0700, true) && !is_dir($workDir)) {
     exit(2);
 }
 
-// Same as bin/console: this turns on pcntl_async_signals(true).
 new Application();
 
 Worker::$pidFile = $workDir . '/workerman.pid';
@@ -60,7 +38,6 @@ Worker::$stdoutFile = $workDir . '/stdout.log';
 Worker::$daemonize = false;
 Worker::$command = 'start';
 Worker::$stopTimeout = $stopTimeout;
-// The bug shows on the Select loop only.
 Worker::$eventLoopClass = Select::class;
 
 MasterWorker::configureGracefulSigterm($gracefulSigterm, $gracefulStopTimeout);
@@ -73,8 +50,6 @@ $worker->onWorkerStart = static function () use ($readyFile): void {
     file_put_contents($readyFile, (string) getmypid());
 };
 if ($blockingWorkerEnabled) {
-    // A supervised-process-like worker: onWorkerStart never returns, so it
-    // never dispatches SIGQUIT (issue #911).
     $blockingWorker = new Worker();
     $blockingWorker->name = 'blocking-e2e';
     $blockingWorker->count = 1;
@@ -86,8 +61,6 @@ if ($blockingWorkerEnabled) {
 }
 
 $worker->onMessage = static function (TcpConnection $connection, Request $request): void {
-    // Busy work, not sleep(): a signal wakes sleep() early, so it would not
-    // exercise the graceful/fast stop difference (issue #910).
     $deadline = microtime(true) + 3;
     while (microtime(true) < $deadline) {
         usleep(10_000);

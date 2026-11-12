@@ -92,14 +92,6 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
-    /**
-     * Marking a draft ready and pushing a moment later once left two full
-     * matrices — eighteen legs — running against the same pull request, and
-     * nothing cancelled the one that was already obsolete. Since #597 the
-     * group is per-ref and cancellation applies to pull requests only: a
-     * push-triggered master run is never cancelled by a later run, so a
-     * post-merge failure stays visible.
-     */
     public function testASupersededRunIsCancelledInsteadOfFinishing(): void
     {
         $this->assertMatchesRegularExpression(
@@ -153,10 +145,6 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
-    /**
-     * Issue #859: lint runs through bin/lint.sh only, so a CI run and a local run
-     * execute the same checks, and the shell tools are pinned.
-     */
     public function testLintJobRunsOnlyTheLintScriptWithPinnedTools(): void
     {
         $content = $this->jobContent('lint');
@@ -172,12 +160,6 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
-    /**
-     * Documentation-only changes skip the heavy jobs. The reusable `changes` job
-     * classifies the diff with a deliberately narrow docs regex (tests read every
-     * Markdown file), and `docs` runs always. `ci-ok` treats skipped as green only
-     * when no code changed.
-     */
     public function testDocsOnlyChangeSkipsHeavyJobsButKeepsCiOk(): void
     {
         $this->assertMatchesRegularExpression(
@@ -195,12 +177,6 @@ final class GithubWorkflowsTest extends TestCase
         $this->assertStringContainsString('if [ "$CODE" = "true" ]', $ciOk);
     }
 
-    /**
-     * Issue #760: the three root-only ConfigLoader permission cases skip on
-     * a non-root runner. A dedicated job must run them under sudo and be
-     * required by the ci aggregator, or the guard paths silently stop being
-     * exercised in CI.
-     */
     public function testRootOnlyPermissionTestsRunAsRootAndGateCi(): void
     {
         $content = $this->jobContent('tests-root-permissions');
@@ -244,15 +220,6 @@ final class GithubWorkflowsTest extends TestCase
         );
     }
 
-    /**
-     * Issue #807: every matrix `Update Symfony constraints` step rewrites
-     * symfony/* constraints with sed, excluding packages that do not follow
-     * the framework versioning scheme (today: deprecation-contracts 2.x/3.x).
-     * The exclusion lived only in the workflow, so adding or removing an
-     * off-scheme package in composer.json passed locally and broke the
-     * matrix. This test replays the workflow rewrite against composer.json
-     * and pins the exclusion set in both directions.
-     */
     public function testMatrixRewriteExclusionsCoverOffSchemeSymfonyPackages(): void
     {
         $composerPath = __DIR__ . '/../composer.json';
@@ -368,8 +335,6 @@ final class GithubWorkflowsTest extends TestCase
             }
         }
 
-        // The rewrite regex itself must match every symfony/* package name, so a
-        // future symfony/foo2bar-style name is never silently skipped (#1060).
         $rewriteClass = null;
         foreach ($steps[0] as $step) {
             preg_match_all('/(\[[a-z0-9\-^]+\])/', $step, $classes);

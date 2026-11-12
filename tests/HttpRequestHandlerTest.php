@@ -26,9 +26,6 @@ use Workerman\Events\EventInterface;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 use Workerman\Timer;
 
-/**
- * Mock TcpConnection for testing
- */
 class MockTcpConnection extends TcpConnection
 {
     /** @var list<string> */
@@ -37,7 +34,6 @@ class MockTcpConnection extends TcpConnection
 
     public function __construct()
     {
-        // Don't call parent constructor to avoid socket operations
     }
 
     public function send(mixed $sendBuffer, bool $raw = false): bool
@@ -52,9 +48,6 @@ class MockTcpConnection extends TcpConnection
     }
 }
 
-/**
- * Test kernel for HttpRequestHandler tests
- */
 final class HttpHandlerTestKernel implements KernelInterface, TerminableInterface
 {
     public bool $bootCalled = false;
@@ -162,9 +155,6 @@ final class HttpHandlerTestKernel implements KernelInterface, TerminableInterfac
     }
 }
 
-/**
- * Test reboot strategy
- */
 final class TestRebootStrategy implements RebootStrategyInterface
 {
     public bool $shouldReboot = false;
@@ -175,10 +165,6 @@ final class TestRebootStrategy implements RebootStrategyInterface
     }
 }
 
-/**
- * Dummy event implementation for Timer to work in unit tests.
- * Records timers that would have been scheduled.
- */
 final class TestTimerEvent implements EventInterface
 {
     /** @var list<array{delay: float, func: callable, args: array<mixed>}> */
@@ -259,10 +245,10 @@ final class HttpRequestHandlerTest extends TestCase
     private ResponseConverter $responseConverter;
     private TestTimerEvent $timerEvent;
 
-    /** @var string Minimal valid HTTP/1.1 request buffer */
+    /** @var string */
     private const HTTP11 = "GET / HTTP/1.1\r\nHost: test\r\n\r\n";
 
-    /** @var string Minimal valid HTTP/1.0 request buffer */
+    /** @var string */
     private const HTTP10 = "GET / HTTP/1.0\r\nHost: test\r\n\r\n";
 
     protected function setUp(): void
@@ -274,7 +260,6 @@ final class HttpRequestHandlerTest extends TestCase
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
         $this->handler = new HttpRequestHandler($controller, $this->rebootStrategy, new NullLogger());
 
-        // Initialize Timer with a test event so Timer::add() doesn't throw in unit tests
         $this->timerEvent = new TestTimerEvent();
         Timer::init($this->timerEvent);
     }
@@ -283,10 +268,6 @@ final class HttpRequestHandlerTest extends TestCase
     {
         Timer::delAll();
     }
-
-    // ──────────────────────────────────────────────
-    // Existing initialization tests (unchanged)
-    // ──────────────────────────────────────────────
 
     public function testHandlerInitializesCorrectly(): void
     {
@@ -356,10 +337,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertSame($controller, $controllerProperty->getValue($handler));
     }
 
-    // ──────────────────────────────────────────────
-    // __invoke() — happy path: response is sent
-    // ──────────────────────────────────────────────
-
     public function testInvokeSendsResponseToConnection(): void
     {
         $connection = new MockTcpConnection();
@@ -396,10 +373,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         $this->assertTrue($this->kernel->bootCalled, 'Kernel should be booted during request handling');
     }
-
-    // ──────────────────────────────────────────────
-    // Middleware chain — reverse order + headers
-    // ──────────────────────────────────────────────
 
     public function testInvokeWithMiddlewareAppliesMiddlewareHeaders(): void
     {
@@ -451,10 +424,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertCount(1, $connection->sentData, 'Response should be sent even without middlewares');
         $this->assertStringContainsString('Test response', $connection->sentData[0]);
     }
-
-    // ──────────────────────────────────────────────
-    // Connection close behavior (HTTP/1.0 vs 1.1)
-    // ──────────────────────────────────────────────
 
     public function testInvokeHttp10ClosesConnection(): void
     {
@@ -532,10 +501,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertFalse($connection->closed, 'Connection: keep-alive should keep the connection open');
     }
 
-    // ──────────────────────────────────────────────
-    // Response already sent by middleware
-    // ──────────────────────────────────────────────
-
     public function testInvokeSkipsSendWhenResponseAlreadySent(): void
     {
         $connection = new MockTcpConnection();
@@ -553,10 +518,6 @@ final class HttpRequestHandlerTest extends TestCase
         );
     }
 
-    // ──────────────────────────────────────────────
-    // Terminate is called synchronously after send
-    // ──────────────────────────────────────────────
-
     public function testInvokeCallsTerminateSynchronously(): void
     {
         $connection = new MockTcpConnection();
@@ -564,7 +525,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         ($this->handler)($connection, $request);
 
-        // Terminate is called synchronously after send(), no timer needed
         $this->assertTrue(
             $this->kernel->terminateCalled,
             'Kernel terminate should be called synchronously after response is sent',
@@ -582,7 +542,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         ($this->handler)($connection, $request);
 
-        // HTTP/1.0 closes connection, but terminate was already called synchronously
         $this->assertTrue($this->kernel->terminateCalled, 'Terminate called before close');
         $this->assertTrue($connection->closed, 'Connection closed after terminate');
     }
@@ -594,17 +553,12 @@ final class HttpRequestHandlerTest extends TestCase
 
         ($this->handler)($connection, $request);
 
-        // No timers should have been scheduled for terminate
         $this->assertCount(
             0,
             $this->timerEvent->delayed,
             'No deferred timers should be scheduled — terminate is synchronous',
         );
     }
-
-    // ──────────────────────────────────────────────
-    // Reboot path — terminate before reload
-    // ──────────────────────────────────────────────
 
     public function testInvokeRebootPathCalledOnEveryRequest(): void
     {
@@ -613,7 +567,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         ($this->handler)($connection, $request);
 
-        // terminate IS called synchronously on every request now
         $this->assertTrue(
             $this->kernel->terminateCalled,
             'Kernel terminate should be called on every request (no more timer deferral)',
@@ -675,11 +628,6 @@ final class HttpRequestHandlerTest extends TestCase
     }
 
     /**
-     * Run $callback with a SIGUSR1 counter installed and return the number of
-     * signals received. The previous handler — SIG_IGN from the test bootstrap
-     * — is restored afterwards so a signal sent by a later test cannot kill
-     * PHPUnit.
-     *
      * @param callable(): void $callback
      */
     private function countReloadSignals(callable $callback): int
@@ -704,13 +652,8 @@ final class HttpRequestHandlerTest extends TestCase
         return $count;
     }
 
-    // ──────────────────────────────────────────────
-    // Private method: doTerminate (via reflection)
-    // ──────────────────────────────────────────────
-
     public function testDoTerminateCallsControllerTerminateIfNeeded(): void
     {
-        // __invoke now calls doTerminate synchronously — verify terminate is called through the normal path
         $tempConn = new MockTcpConnection();
         ($this->handler)($tempConn, new Request(self::HTTP11));
 
@@ -911,7 +854,6 @@ final class HttpRequestHandlerTest extends TestCase
         $reflection = new \ReflectionClass($handler);
         $method = $reflection->getMethod('doTerminate');
 
-        // Capture error_log output and verify fallback
         $logFile = tempnam(sys_get_temp_dir(), 'test_terminate_');
         ini_set('error_log', $logFile);
         try {
@@ -931,10 +873,6 @@ final class HttpRequestHandlerTest extends TestCase
             'The error_log should contain the terminate failure message when no logger is provided',
         );
     }
-
-    // ──────────────────────────────────────────────
-    // Private method: shouldCloseConnection (via reflection)
-    // ──────────────────────────────────────────────
 
     public function testShouldCloseConnectionHttp10ReturnsTrue(): void
     {
@@ -1006,10 +944,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertFalse($result, 'Connection: keep-alive should return false');
     }
 
-    // ──────────────────────────────────────────────
-    // Private method: sendResponse (via reflection)
-    // ──────────────────────────────────────────────
-
     public function testSendResponseSendsToConnection(): void
     {
         $reflection = new \ReflectionClass($this->handler);
@@ -1046,10 +980,6 @@ final class HttpRequestHandlerTest extends TestCase
         );
     }
 
-    // ──────────────────────────────────────────────
-    // Pipeline caching — getPipeline (via reflection)
-    // ──────────────────────────────────────────────
-
     public function testGetPipelineReturnsClosure(): void
     {
         $reflection = new \ReflectionClass($this->handler);
@@ -1076,7 +1006,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         $this->assertInstanceOf(\Workerman\Protocols\Http\Response::class, $response);
 
-        // Workerman Response::header() is a setter only — use reflection to inspect headers
         $headerProp = new \ReflectionProperty($response, 'headers');
         $headers = $headerProp->getValue($response);
         $this->assertArrayHasKey('X-Chain-Test', $headers);
@@ -1105,7 +1034,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         $pipelineBefore = $method->invoke($this->handler);
 
-        // Change middlewares
         $this->handler->withMiddlewares(new TestMiddleware('X-B', '2'));
 
         $pipelineAfter = $method->invoke($this->handler);
@@ -1134,7 +1062,6 @@ final class HttpRequestHandlerTest extends TestCase
         file_put_contents($root . '/asset.txt', 'static content');
 
         try {
-            // This is the call order of ServerWorker::configureHandler() (issue #898).
             $this->handler->withRootDirectory($root);
             $this->handler->withMiddlewares(new TestMiddleware('X-Test', 'value'));
 
@@ -1157,10 +1084,6 @@ final class HttpRequestHandlerTest extends TestCase
         file_put_contents($root . '/secret.css', 'disallowed content');
 
         try {
-            // Mirrors ServerWorker::configureHandler() on the deprecated
-            // serve_files path: static_files config feeds
-            // withStaticFileConfig(), then withRootDirectory() builds the
-            // StaticFilesMiddleware from both.
             $this->handler->withStaticFileConfig(['allowed_extensions' => ['txt']]);
             $this->handler->withRootDirectory($root);
 
@@ -1181,10 +1104,6 @@ final class HttpRequestHandlerTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────
-    // Multiple middlewares header propagation
-    // ──────────────────────────────────────────────
-
     public function testMultipleMiddlewaresAllHeadersInResponse(): void
     {
         $connection = new MockTcpConnection();
@@ -1200,22 +1119,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertStringContainsString('X-Cache: miss', $connection->sentData[0]);
     }
 
-    // ──────────────────────────────────────────────
-    // Issue #577 — control byte / throw-site containment
-    //
-    // A single control byte in any request header value must NOT kill the
-    // worker process. The handler must catch every throwable from the
-    // pipeline (request conversion, middleware, response conversion,
-    // response preparation) and turn it into a 400 (client error) or
-    // 500 (server fault) response. doTerminate() and the reboot check
-    // must still run on the failure path (#572).
-    // ──────────────────────────────────────────────
-
-    /**
-     * A middleware that always throws, simulating a buggy third-party
-     * middleware or any throw site the handler does not specifically
-     * classify as a client error.
-     */
     private function throwingMiddleware(\Throwable $e): MiddlewareInterface
     {
         return new class ($e) implements MiddlewareInterface {
@@ -1232,12 +1135,7 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testControlByteInHeaderValueReturns400(): void
     {
-        // Reproduces the exact trigger from issue #577: a single 0x01 byte
-        // in a header value causes RequestConverter to throw
-        // \InvalidArgumentException during SymfonyController::__invoke().
-        // The handler must catch it and return 400 — not let it escape.
         $connection = new MockTcpConnection();
-        // 0x01 is a control byte rejected by buildServerHeaders()
         $request = new Request("GET /boom HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\nConnection: close\r\n\r\n");
 
         ($this->handler)($connection, $request);
@@ -1249,18 +1147,9 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testMalformedMultipartUploadReturns400(): void
     {
-        // Drive a real FileUploadValidationException through the full
-        // RequestConverter → SymfonyController → HttpRequestHandler path
-        // (AC #577 throw-site coverage). Workerman's multipart parser is
-        // tolerant of many malformed bodies, so we inject a structurally
-        // incomplete file entry into the Request's internal data — the
-        // same shape FileUploadValidator rejects — then let conversion
-        // throw naturally (no middleware stand-in).
         $connection = new MockTcpConnection();
         $request = new Request("POST /upload HTTP/1.1\r\nHost: test\r\nContent-Type: multipart/form-data; boundary=x\r\nConnection: close\r\n\r\n");
 
-        // Workerman's Request::file() drops entries whose tmp_name is not
-        // a real file on disk — so the injected path must exist.
         $tmpFile = \tempnam(\sys_get_temp_dir(), 'wmb577_');
         $this->assertNotFalse($tmpFile);
         \file_put_contents($tmpFile, 'x');
@@ -1273,7 +1162,6 @@ final class HttpRequestHandlerTest extends TestCase
                     'malformed_file' => [
                         'name' => 'test.txt',
                         'tmp_name' => $tmpFile,
-                        // missing type, size, error — FileUploadValidator rejects
                     ],
                 ],
             ]);
@@ -1290,9 +1178,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testThrowingMiddlewareReturns500(): void
     {
-        // A middleware that throws a server-side error must produce a 500,
-        // not kill the worker. This covers "any middleware in the pipeline"
-        // from the issue's reachable throw sites list.
         $connection = new MockTcpConnection();
         $request = new Request("GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
 
@@ -1364,8 +1249,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testErrorAfterResponseHeadWasSentClosesConnectionWithoutSecondResponse(): void
     {
-        // A streamed response sends its head and some body, then fails.
-        // The handler must not write a 500 into the open body (issue #901).
         $connection = new MockTcpConnection();
         $context = new \stdClass();
         $connection->context = $context;
@@ -1396,13 +1279,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testMiddlewareThrowingInvalidArgumentExceptionIsServerFaultNotClientError(): void
     {
-        // Major finding from review: a middleware that throws
-        // \InvalidArgumentException is a server-side defect (buggy
-        // middleware), NOT a client error. The classification must not
-        // be based on the broad \InvalidArgumentException type — only
-        // bundle-internal conversion exceptions are client errors.
-        // We assert a middleware throwing \InvalidArgumentException
-        // produces a 500 and is logged at error (not debug) level.
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->never())->method('debug');
         $logger->expects($this->once())->method('error');
@@ -1423,12 +1299,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testResponseWithNoMatchingStrategyReturns500(): void
     {
-        // NoResponseStrategyException is thrown by ResponseConverter when
-        // no strategy supports the response type. It extends \LogicException
-        // (a server misconfiguration), so it must be a 500 — not a 400.
-        // DefaultResponseStrategy::supports() always returns true, so to
-        // trigger the exception we use a ResponseConverter with no
-        // strategies at all.
         $emptyConverter = new ResponseConverter([]);
         $weirdResponse = new class extends SymfonyResponse {
         };
@@ -1448,12 +1318,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testDoTerminateStillRunsWhenPipelineThrows(): void
     {
-        // Acceptance criteria from #572/#577: doTerminate() must run on the
-        // failure path. We use a spy reboot strategy whose shouldReboot()
-        // is expected to be called exactly once — doTerminate() runs
-        // before shouldReboot(), so if doTerminate() threw or were
-        // skipped, shouldReboot() would never be reached. We assert the
-        // strategy was consulted AND a 500 was sent.
         $strategy = $this->createMock(RebootStrategyInterface::class);
         $strategy->expects($this->once())->method('shouldReboot')->willReturn(false);
 
@@ -1474,8 +1338,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testClientErrorIsLoggedAtDebugNotError(): void
     {
-        // Acceptance criteria: the 400 path must not be usable to flood the
-        // error log. Client errors are logged at debug level only.
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->never())->method('error');
         $logger->expects($this->once())->method('debug')->with(
@@ -1496,8 +1358,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testServerFaultIsLoggedAtError(): void
     {
-        // Server faults (500) must be logged at error level with the full
-        // exception, so operators can diagnose defects.
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->never())->method('debug');
         $logger->expects($this->once())->method('error')->with(
@@ -1524,10 +1384,7 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testServerFaultWithoutLoggerFallsBackToErrorLog(): void
     {
-        // When no PSR-3 logger is configured, server faults must still be
-        // surfaced via error_log() — mirroring doTerminate()'s fallback.
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
-        // No logger argument → null
         $handler = new HttpRequestHandler($controller, $this->rebootStrategy);
         $handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('server-fault-for-errorlog')),
@@ -1554,15 +1411,11 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testClientErrorWithoutLoggerIsSilent(): void
     {
-        // Without a logger, client errors (400) must NOT write to error_log,
-        // otherwise an attacker can flood the log. Only server faults fall
-        // back to error_log.
         $controller = new SymfonyController($this->kernel, $this->responseConverter);
         $handler = new HttpRequestHandler($controller, $this->rebootStrategy);
 
         $logFile = tempnam(sys_get_temp_dir(), 'test_handler_silent_');
         $this->assertNotFalse($logFile);
-        // Truncate so we can detect any write
         file_put_contents($logFile, '');
         ini_set('error_log', $logFile);
         try {
@@ -1583,16 +1436,11 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testKeepAliveConnectionServesNextRequestAfterError(): void
     {
-        // Acceptance criteria: a keep-alive connection must either serve the
-        // next request correctly or be closed cleanly after an error. Here
-        // we verify the handler does not throw out of __invoke, so Workerman
-        // can process the next request on the same connection.
         $connection = new MockTcpConnection();
         $request1 = new Request("GET / HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\n\r\n");
         $request2 = new Request(self::HTTP11);
 
         ($this->handler)($connection, $request1);
-        // Must not throw — second request on the same connection
         ($this->handler)($connection, $request2);
 
         $this->assertCount(2, $connection->sentData, 'Both requests must get a response on the keep-alive connection');
@@ -1603,10 +1451,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testSoakTest10kMalformedRequestsDoesNotThrow(): void
     {
-        // Acceptance criteria: a soak test drives 10 000 malformed requests
-        // and asserts the worker never throws (which would kill the process).
-        // In the unit test we assert the handler returns a 400 for every
-        // request and never lets the throwable escape.
         $connection = new MockTcpConnection();
         $raw = "GET /boom HTTP/1.1\r\nHost: x\r\nX-A: \x01\r\nConnection: close\r\n\r\n";
 
@@ -1614,7 +1458,6 @@ final class HttpRequestHandlerTest extends TestCase
             ($this->handler)($connection, new Request($raw));
         }
 
-        // Every one of the 10 000 requests must have produced a 400 response.
         $this->assertCount(10000, $connection->sentData, 'Every malformed request must produce a response');
         foreach ($connection->sentData as $i => $data) {
             $this->assertStringContainsString('400', $data, "Request #{$i} must yield 400");
@@ -1623,12 +1466,6 @@ final class HttpRequestHandlerTest extends TestCase
 
     public function testFailureToSendErrorResponseDoesNotEscapeHandler(): void
     {
-        // Blocker from code review: if sendResponse() itself throws while
-        // sending the error response, the throwable must NOT escape
-        // __invoke() — otherwise doTerminate() and the reboot check are
-        // skipped (the #572 regression) and the throwable reaches
-        // Workerman's TcpConnection error handler. We use a connection
-        // whose send() throws to verify the handler contains it.
         $connection = new class extends MockTcpConnection {
             public bool $errorSendThrowing = false;
 
@@ -1642,8 +1479,6 @@ final class HttpRequestHandlerTest extends TestCase
             }
         };
 
-        // First request: trigger a 500 (throwing middleware), and make the
-        // error-response send throw too. The handler must not escape.
         $this->handler->withMiddlewares(
             $this->throwingMiddleware(new \RuntimeException('middleware boom')),
         );
@@ -1665,16 +1500,6 @@ final class HttpRequestHandlerTest extends TestCase
         $this->assertTrue($connection->closed, 'Connection must be closed when error-response send fails');
     }
 
-    // ──────────────────────────────────────────────
-    // Issue #563 — handler safe for reuse across requests (stateless)
-    // ──────────────────────────────────────────────
-
-    /**
-     * Two different requests dispatched back-to-back through the same handler
-     * must not leak per-request state. A counting middleware tracks invocation
-     * order; the second request must see a fresh counter and a fresh response,
-     * proving the index-based dispatcher does not carry state across requests.
-     */
     public function testHandlerIsSafeForReuseAcrossTwoDifferentRequests(): void
     {
         /** @var list<string> $invocations */
@@ -1698,7 +1523,6 @@ final class HttpRequestHandlerTest extends TestCase
 
         $this->handler->withMiddlewares($countingMiddleware);
 
-        // First request: a 200 OK
         $connection1 = new MockTcpConnection();
         $request1 = new Request(self::HTTP11);
         ($this->handler)($connection1, $request1);
@@ -1706,24 +1530,14 @@ final class HttpRequestHandlerTest extends TestCase
         self::assertSame(['counting'], $invocations, 'First request should dispatch the middleware exactly once');
         self::assertStringContainsString('200', $connection1->sentData[0]);
 
-        // Second request: different connection, different request path,
-        // same handler. The dispatcher must start fresh — no index or
-        // state leak from the first request.
         $connection2 = new MockTcpConnection();
         $request2 = new Request("GET /other HTTP/1.1\r\nHost: test\r\n\r\n");
         ($this->handler)($connection2, $request2);
 
-        // The middleware should have been invoked exactly twice total (once
-        // per request), and the second request should produce a fresh 200.
         self::assertSame(['counting', 'counting'], $invocations, 'Second request should dispatch the middleware exactly once more');
         self::assertStringContainsString('200', $connection2->sentData[0], 'Second request via the same handler must get a fresh 200 response');
     }
 
-    /**
-     * The index-based dispatcher must correctly restore its index when a
-     * middleware returns without calling $next (short-circuit), proving no
-     * state leaks into a subsequent request on the same handler.
-     */
     public function testShortCircuitMiddlewareDoesNotLeakStateToNextRequest(): void
     {
         $shortCircuitResponse = new WorkermanResponse(200, ['X-Short' => 'true'], 'Short');
@@ -1742,16 +1556,12 @@ final class HttpRequestHandlerTest extends TestCase
 
         $this->handler->withMiddlewares($shortCircuit, $passThrough);
 
-        // First request: short-circuit middleware returns early, passThrough never runs
         $connection1 = new MockTcpConnection();
         ($this->handler)($connection1, new Request(self::HTTP11));
 
         self::assertStringContainsString('X-Short: true', $connection1->sentData[0]);
         self::assertStringNotContainsString('X-Pass: pass-value', $connection1->sentData[0]);
 
-        // Second request on the same handler: short-circuit still fires first,
-        // passThrough is still skipped — the dispatcher index was correctly
-        // restored and no state from the first request leaked.
         $connection2 = new MockTcpConnection();
         ($this->handler)($connection2, new Request(self::HTTP11));
 

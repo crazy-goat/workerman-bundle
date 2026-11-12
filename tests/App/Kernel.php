@@ -18,12 +18,6 @@ final class Kernel extends BaseKernel
 {
     use MicroKernelTrait;
 
-    /**
-     * Honour the bundle's APP_CACHE_DIR base directory. The test app entry
-     * points (index.php, console and bootstrap.php) point it at a per-port
-     * cache for non-default WMB_PORT_* values, because Symfony caches the
-     * resolved listen addresses.
-     */
     public function getCacheDir(): string
     {
         $cacheDir = $_SERVER['APP_CACHE_DIR'] ?? null;
@@ -83,9 +77,6 @@ final class Kernel extends BaseKernel
                 ],
             ]);
 
-            // Prevent log messages from leaking into HTTP responses.
-            // The default Logger uses error_log() which writes to STDOUT,
-            // which Workerman routes to the client socket.
             $container->register('logger', NullLogger::class)
                 ->setPublic(false);
 

@@ -45,7 +45,6 @@ final class TriggerFactoryTest extends TestCase
 
         $this->assertInstanceOf(DateTimeTrigger::class, $trigger);
 
-        // Verify the trigger's date is correctly parsed
         $now = new \DateTimeImmutable('2024-12-20 12:00:00');
         $nextRun = $trigger->getNextRunDate($now);
         $this->assertInstanceOf(\DateTimeImmutable::class, $nextRun);
@@ -164,7 +163,6 @@ final class TriggerFactoryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid interval');
 
-        // A string that is neither valid ISO8601 datetime, nor cron, nor valid interval
         TriggerFactory::create('not-a-date-or-interval');
     }
 
@@ -173,8 +171,6 @@ final class TriggerFactoryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid interval');
 
-        // Zero/negative intervals fall through to PeriodicalTrigger, which
-        // rejects them at construction time (issue #667).
         TriggerFactory::create(0);
     }
 }

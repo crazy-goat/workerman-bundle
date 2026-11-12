@@ -7,13 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Test\KnowledgeBase;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Drives `bin/kb-lint.php` as a subprocess inside a throw-away sandbox.
- *
- * The script only ever reads the knowledge base of the root it is pointed at
- * (`--root=`), so these tests never touch the real `docs/helpers/` and make no
- * network call at all.
- */
 #[CoversNothing]
 final class KbLintScriptTest extends TestCase
 {
@@ -21,7 +14,6 @@ final class KbLintScriptTest extends TestCase
 
     private const DECISIONS = 'docs/helpers/decisions.md';
 
-    /** The environment variable that can redirect the lint at another tree. */
     private const ROOT_ENV = 'KB_LINT_ROOT';
 
     private string $sandbox = '';
@@ -261,8 +253,6 @@ final class KbLintScriptTest extends TestCase
         self::assertStringNotContainsString('tag index regenerated', $fixed['out']);
         self::assertStringNotContainsString('tag index created', $fixed['out']);
 
-        // Restoring the dropped newline must reproduce the original bytes
-        // exactly: the index is left untouched and only the newline changes.
         self::assertSame($original, $this->read(self::FAQ));
     }
 
@@ -289,8 +279,6 @@ final class KbLintScriptTest extends TestCase
         self::assertStringContainsString("\n\n## Tag index", $content, 'the blank separator must not depend on the input');
         self::assertStringEndsWith("\n", $content);
 
-        // The equivalent input that *does* end in a newline must normalise to
-        // the exact same bytes.
         $this->write(self::FAQ, $withoutIndex);
         $withNewlineFixed = $this->kbLint('--fix');
         self::assertSame(0, $withNewlineFixed['code'], $withNewlineFixed['err']);
@@ -310,7 +298,6 @@ final class KbLintScriptTest extends TestCase
         self::assertIsString($withoutIndex);
         self::assertStringContainsString('## Section', $withoutIndex);
 
-        // Rebuild the blank line that used to precede the removed index block.
         $this->write(self::FAQ, rtrim($withoutIndex, "\n") . "\n");
 
         $fixed = $this->kbLint('--fix');
@@ -327,8 +314,6 @@ final class KbLintScriptTest extends TestCase
     {
         $this->writeValidKnowledgeBase();
 
-        // The index is left in sync; only the line endings are CRLF. The LF-only
-        // normalisation must not rewrite the tail and produce mixed endings.
         $crlf = str_replace("\n", "\r\n", $this->read(self::FAQ));
         $this->write(self::FAQ, rtrim($crlf, "\r\n"));
         $before = $this->read(self::FAQ);
@@ -350,8 +335,6 @@ final class KbLintScriptTest extends TestCase
         );
         self::assertIsString($withoutIndex);
 
-        // Two blank lines before EOF: the created heading must still be
-        // separated by exactly one blank line, not inherit the run.
         $this->write(self::FAQ, rtrim($withoutIndex, "\n") . "\n\n\n");
 
         $fixed = $this->kbLint('--fix');
@@ -539,10 +522,6 @@ final class KbLintScriptTest extends TestCase
         self::assertStringContainsString('Unknown argument: --nope', $result['err']);
     }
 
-    /**
-     * Two entries, one per file, plus a second FAQ entry so the index has more
-     * than one row. The index is already correct, so the base fixture passes.
-     */
     private function writeValidKnowledgeBase(): void
     {
         $this->write(self::FAQ, $this->file('FAQ', [
@@ -568,8 +547,6 @@ final class KbLintScriptTest extends TestCase
     }
 
     /**
-     * Renders a whole knowledge-base file, tag index included, from entry specs.
-     *
      * @param list<array{title: string, meta: string|null, body: string}> $entries
      */
     private function file(string $prefix, array $entries): string
@@ -629,12 +606,8 @@ final class KbLintScriptTest extends TestCase
     }
 
     /**
-     * Runs the script with exactly the given arguments and environment — no
-     * implicit `--root=`, so the environment can decide the root.
-     *
      * @param array<string, string> $env
      * @param list<string> $args
-     *
      * @return array{code: int, out: string, err: string}
      */
     private function runScript(array $env, array $args): array

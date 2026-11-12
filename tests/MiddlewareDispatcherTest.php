@@ -10,21 +10,8 @@ use CrazyGoat\WorkermanBundle\Middleware\MiddlewareInterface;
 use PHPUnit\Framework\TestCase;
 use Workerman\Protocols\Http\Response as WorkermanResponse;
 
-/**
- * Pins the contract of {@see MiddlewareDispatcher} — the shipped index-based
- * dispatcher that replaced the nested-closure pipeline composition (#563).
- *
- * These tests exercise the dispatcher directly (not via HttpRequestHandler)
- * so that flipping the index walk, removing the try/finally restore, or
- * reverting to a closure chain would fail a test here.
- */
 final class MiddlewareDispatcherTest extends TestCase
 {
-    /**
-     * Middlewares must execute in registration order: the first registered
-     * middleware is the outermost (runs first), the last registered is the
-     * innermost (runs last, closest to the controller).
-     */
     public function testMiddlewaresExecuteInRegistrationOrder(): void
     {
         /** @var list<string> $order */
@@ -42,12 +29,6 @@ final class MiddlewareDispatcherTest extends TestCase
         self::assertSame(['A', 'B', 'C'], $order, 'First registered must execute first (outermost)');
     }
 
-    /**
-     * If the middleware array were accidentally reversed (as the old
-     * array_reverse composition did), the order would be wrong. This test
-     * documents what "wrong" looks like so the correct order test is
-     * meaningful — and guards against a future revert to reverse composition.
-     */
     public function testReversedRegistrationOrderProducesDifferentSequence(): void
     {
         /** @var list<string> $orderCorrect */
@@ -76,9 +57,6 @@ final class MiddlewareDispatcherTest extends TestCase
         self::assertNotSame($orderCorrect, $orderReversed);
     }
 
-    /**
-     * The controller is the innermost layer — it runs after all middlewares.
-     */
     public function testControllerRunsAfterAllMiddlewares(): void
     {
         /** @var list<string> $order */
@@ -97,10 +75,6 @@ final class MiddlewareDispatcherTest extends TestCase
         self::assertSame(['mw', 'controller'], $order);
     }
 
-    /**
-     * With zero middlewares the dispatcher delegates directly to the
-     * controller — no error, no skipped layer.
-     */
     public function testZeroMiddlewaresDispatchesDirectlyToController(): void
     {
         $called = false;
@@ -117,10 +91,6 @@ final class MiddlewareDispatcherTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
     }
 
-    /**
-     * A middleware that short-circuits (returns without calling $next) must
-     * prevent all subsequent middlewares and the controller from running.
-     */
     public function testShortCircuitSkipsSubsequentMiddlewaresAndController(): void
     {
         /** @var list<string> $order */
@@ -148,22 +118,11 @@ final class MiddlewareDispatcherTest extends TestCase
         self::assertSame('short', $response->rawBody());
     }
 
-    /**
-     * The try/finally index restore allows a middleware to call $next more
-     * than once — each call dispatches the remaining chain from the same
-     * position. Deleting the restore would cause the second $next call to
-     * skip directly to the controller (index permanently advanced).
-     *
-     * This test pins the re-entrant double-$next parity semantics claimed
-     * in the MiddlewareDispatcher class docblock.
-     */
     public function testDoubleNextCallDispatchesRemainingChainTwice(): void
     {
         /** @var list<string> $order */
         $order = [];
 
-        // This middleware calls $next twice, recording the inner
-        // middleware's marker each time.
         $doubleCaller = new class ($order) implements MiddlewareInterface {
             /** @var list<string> */
             public array $order;
@@ -186,7 +145,6 @@ final class MiddlewareDispatcherTest extends TestCase
             }
         };
 
-        // The inner middleware records each time it is entered.
         $inner = $this->trackingMiddleware('inner', $order);
 
         $controller = function (Request $r) use (&$order): WorkermanResponse {
@@ -198,9 +156,6 @@ final class MiddlewareDispatcherTest extends TestCase
         $dispatcher = new MiddlewareDispatcher([$doubleCaller, $inner], $controller);
         $dispatcher(new Request("GET / HTTP/1.1\r\nHost: t\r\n\r\n"));
 
-        // The inner middleware and controller must each run twice — once
-        // per $next call. Without the try/finally restore, the second
-        // $next call would skip 'inner' and hit 'controller' only once.
         self::assertSame(
             ['double-start', 'inner', 'controller', 'between', 'inner', 'controller', 'double-end'],
             $order,
@@ -208,11 +163,6 @@ final class MiddlewareDispatcherTest extends TestCase
         );
     }
 
-    /**
-     * A fresh dispatcher instance must start with index 0 — no state leaks
-     * from a previous dispatch. (The handler creates a new dispatcher per
-     * request; this pins that the constructor resets the index.)
-     */
     public function testFreshDispatcherStartsAtZeroIndex(): void
     {
         $calls = 0;
@@ -226,11 +176,9 @@ final class MiddlewareDispatcherTest extends TestCase
         $unused = [];
         $mw = $this->trackingMiddleware('mw', $unused);
 
-        // First dispatch
         $d1 = new MiddlewareDispatcher([$mw], $controller);
         $d1(new Request("GET / HTTP/1.1\r\nHost: t\r\n\r\n"));
 
-        // Second dispatch with a fresh instance
         $d2 = new MiddlewareDispatcher([$mw], $controller);
         $d2(new Request("GET / HTTP/1.1\r\nHost: t\r\n\r\n"));
 
@@ -238,9 +186,6 @@ final class MiddlewareDispatcherTest extends TestCase
     }
 
     /**
-     * Build a tracking middleware that records its name in the shared
-     * list when entered, then delegates to $next.
-     *
      * @param list<string> $order
      */
     private function trackingMiddleware(string $name, array &$order): MiddlewareInterface

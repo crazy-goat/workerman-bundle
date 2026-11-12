@@ -32,7 +32,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         if (file_exists($this->rootDirectory . '/test.txt')) {
             unlink($this->rootDirectory . '/test.txt');
         }
-        // Clean up the test directory
         if (is_dir($this->rootDirectory)) {
             rmdir($this->rootDirectory);
         }
@@ -296,7 +295,6 @@ final class StaticFilesMiddlewareTest extends TestCase
 
         $response = $middleware($request, $next);
 
-        // Next should be called (file not served)
         $this->assertTrue($called, "Next should be called for path: $path");
         $this->assertEquals(200, $response->getStatusCode());
     }
@@ -310,11 +308,6 @@ final class StaticFilesMiddlewareTest extends TestCase
             'classic path traversal' => ['../../../etc/passwd'],
             'pattern with dots and slashes' => ['....//etc/passwd'],
             'multiple dot combinations' => ['....//....//etc/passwd'],
-            // Note: URL-encoded payloads test defense-in-depth.
-            // Workerman\Request::path() returns the raw path without URL-decoding,
-            // so realpath() receives literal strings like '%2e%2e%2f...'.
-            // These tests ensure that even if URL-decoding happened elsewhere,
-            // the path traversal protection remains effective.
             'url encoded dots' => ['%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd'],
             'double url encoded' => ['%252e%252e%252f%252e%252e%252f%252e%252e%252fetc%252fpasswd'],
             'path traversal in middle' => ['test.txt/../../../etc/passwd'],
@@ -335,7 +328,6 @@ final class StaticFilesMiddlewareTest extends TestCase
 
         $middleware($request, $next);
 
-        // Next should NOT be called (file should be served)
         $this->assertFalse($called, "Next should not be called for valid file");
     }
 
@@ -381,7 +373,6 @@ final class StaticFilesMiddlewareTest extends TestCase
             $requestAt = fn(int $i): Request => $this->createRequest(sprintf('/assets/pad-%d.css', $i));
             $batchSize = 5 * $maxSize;
 
-            // First batch: 5x the cap worth of unique symlink-traversing paths.
             for ($i = 0; $i < $batchSize; $i++) {
                 $middleware($requestAt($i), $next);
             }
@@ -389,13 +380,11 @@ final class StaticFilesMiddlewareTest extends TestCase
 
             $this->assertLessThanOrEqual($maxSize, $countAfterFirstBatch, 'Negative cache must never exceed CACHE_MAX_SIZE');
 
-            // Second batch: entry count must stay stable, not grow linearly with request count.
             for ($i = $batchSize; $i < 2 * $batchSize; $i++) {
                 $middleware($requestAt($i), $next);
             }
             $this->assertSame($countAfterFirstBatch, $cacheCount(), 'Cache size must stay stable across batches');
 
-            // Repeated lookups of a rejected path must still fall through to $next.
             $called = false;
             $nextBlocking = function (Request $req) use (&$called): Response {
                 $called = true;
@@ -428,10 +417,6 @@ final class StaticFilesMiddlewareTest extends TestCase
 
         $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
 
-        // Fill the cache past the cap with unique missing paths. setUp()
-        // resets the process-wide cache, and CACHE_MAX_SIZE is enforced on
-        // every insert, so after maxSize + 1 fresh inserts the survivors are
-        // exactly the last maxSize entries made here, in insertion order.
         $paths = [];
         for ($i = 0; $i <= $maxSize; $i++) {
             $paths[$i] = sprintf('/lru-pad-%d.css', $i);
@@ -445,12 +430,8 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertArrayHasKey($indexOf($oldest), $cache());
         $this->assertArrayHasKey($indexOf($secondOldest), $cache());
 
-        // Hitting the oldest entry must move it to the most-recently-used end.
         $middleware($this->createRequest($oldest), $next);
 
-        // One more unique path forces an eviction: the victim must be the
-        // least-recently-*used* entry (the previously second-oldest), not the
-        // least-recently-inserted one (which was just touched).
         $middleware($this->createRequest('/lru-evictor.css'), $next);
 
         $this->assertArrayHasKey($indexOf($oldest), $cache(), 'The most recently used entry must survive eviction');
@@ -463,7 +444,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
         $next = fn(Request $req): Response => new Response(404);
 
-        // Warm the positive cache with the existing file.
         $this->assertSame(200, $middleware($this->createRequest('/test.txt'), $next)->getStatusCode());
 
         $cacheIndex = '/test.txt' . "\0" . '0' . "\0" . realpath($this->rootDirectory);
@@ -475,8 +455,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         $ttl = $ttlReflection->getValue();
         assert(is_int($ttl));
 
-        // Age the entry past CACHE_TTL and delete the file: a stale hit would
-        // still serve it, a re-probe must fall through to the next handler.
         $cache[$cacheIndex]['time'] = time() - $ttl - 1;
         unlink($this->rootDirectory . '/test.txt');
 
@@ -496,18 +474,11 @@ final class StaticFilesMiddlewareTest extends TestCase
 
     public function testImplausiblyLongPathSkippedFromCacheButStillServed(): void
     {
-        // DEC-014 plausibility skip: a request path longer than
-        // CACHE_KEY_MAX_BYTES must never enter the cache (a 1024-entry cache
-        // of multi-KB keys would leak memory in a worker process), while a
-        // servable file under such a path must still be served (fail-open,
-        // DEC-013).
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
         $next = fn(Request $req): Response => new Response(404);
 
         $indexOf = fn(string $path): string => $path . "\0" . '0' . "\0" . realpath($this->rootDirectory);
 
-        // Relative path > 512 bytes, built from components well under the
-        // 255-byte per-segment filesystem limit.
         $segments = array_fill(0, 5, str_repeat('q', 110));
         $deepDir = implode('/', $segments);
         $servedPath = '/' . $deepDir . '/asset.txt';
@@ -519,7 +490,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         file_put_contents($directory . '/asset.txt', 'long-path payload');
 
         try {
-            // Positive control: the file must still be served (fail-open).
             $response = $middleware($this->createRequest($servedPath), $next);
             $this->assertSame(200, $response->getStatusCode(), 'A file under an implausibly long path must still be served');
             $this->assertArrayNotHasKey(
@@ -528,8 +498,6 @@ final class StaticFilesMiddlewareTest extends TestCase
                 'Implausibly long served-path keys must never enter the cache',
             );
 
-            // Missing file under an implausibly long path: falls through to
-            // next, and no negative entry is cached either.
             $missingPath = '/' . str_repeat('x', 600);
             $this->assertSame(404, $middleware($this->createRequest($missingPath), $next)->getStatusCode());
             $this->assertArrayNotHasKey(
@@ -540,7 +508,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         } finally {
             @unlink($directory . '/asset.txt');
 
-            // Remove the nested directories bottom-up.
             $dir = $directory;
             while ($segments !== []) {
                 if (is_dir($dir)) {
@@ -589,12 +556,10 @@ final class StaticFilesMiddlewareTest extends TestCase
                 return is_array($entry) && is_int($entry['time']) ? $entry['time'] : null;
             };
 
-            // Warm the negative cache.
             $middleware($this->createRequest($path), $next);
             $timeAfterWarm = $storedTime();
             $this->assertNotNull($timeAfterWarm, 'Rejected path should be present in the negative cache');
 
-            // A hit within CACHE_NEGATIVE_TTL must not slide the expiry forward.
             sleep(1);
             $middleware($this->createRequest($path), $next);
 
@@ -970,9 +935,6 @@ final class StaticFilesMiddlewareTest extends TestCase
         $middleware = new StaticFilesMiddleware($this->rootDirectory);
         $reflection = new \ReflectionMethod($middleware, 'isComponentBlocked');
 
-        // Emacs autosaves are `#name#`. They cannot be addressed through the
-        // HTTP path (the underlying parser strips everything after `#`), but
-        // the rule is enforced defensively at the component level.
         $this->assertTrue($reflection->invoke($middleware, '#index.php#'));
         $this->assertTrue($reflection->invoke($middleware, '#style.css#'));
     }
@@ -1558,22 +1520,17 @@ final class StaticFilesMiddlewareTest extends TestCase
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertInstanceOf(HeadResponse::class, $response);
 
-        // HEAD carries the same headers the GET would produce…
         $getResponse = $middleware($this->createRequest('/test.txt'), $next);
         $this->assertEquals($getResponse->getHeader('ETag'), $response->getHeader('ETag'));
         $this->assertEquals($getResponse->getHeader('Last-Modified'), $response->getHeader('Last-Modified'));
         $this->assertEquals($getResponse->getHeader('Cache-Control'), $response->getHeader('Cache-Control'));
         $this->assertSame('bytes', $response->getHeader('Accept-Ranges'));
 
-        // …with the Content-Length the GET body would have, and no body
-        // ('test file content' is 17 bytes; RFC 9110 §9.3.2, issue #903).
         $wire = (string) $response;
         $this->assertSame(1, substr_count($wire, 'Content-Length:'), 'must emit exactly one Content-Length');
         $this->assertStringContainsString("Content-Length: 17\r\n", $wire);
         $this->assertStringNotContainsString('test file content', $wire);
 
-        // …and the Content-Type Workerman adds when it sends the file for
-        // GET, not the text/html default of a bodyless response.
         $this->assertSame('text/plain', $response->getHeader('Content-Type'));
         $this->assertSame(1, substr_count($wire, 'Content-Type:'), 'must emit exactly one Content-Type');
     }
@@ -1665,8 +1622,6 @@ final class StaticFilesMiddlewareTest extends TestCase
 
             $response = $middleware($this->createRequest('/.env', 'POST'), $next);
 
-            // The static rules (denylist, allowlist) apply to GET and HEAD
-            // only; a POST goes to the application, never to the file.
             $this->assertTrue($called, 'Next should be called for POST to a blocked path');
             $this->assertStringNotContainsString('DB_PASSWORD', (string) $response);
         } finally {

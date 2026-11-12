@@ -9,13 +9,6 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class TaskTest extends KernelTestCase
 {
-    /**
-     * Timeout for waiting on a fresh scheduler timestamp, in seconds.
-     *
-     * The test task runs every second, so a few seconds is normally enough;
-     * the extra headroom keeps the test green on slow or loaded CI runners
-     * where a single read against a fixed window flakes (#1081).
-     */
     private const FRESH_TIMESTAMP_TIMEOUT_SECONDS = 10;
 
     public function testTaskIsRunning(): void
@@ -31,11 +24,6 @@ final class TaskTest extends KernelTestCase
         $this->assertTrue($found, 'No fresh task status timestamp appeared within 10 seconds');
     }
 
-    /**
-     * Test that flock-based locking prevents concurrent file access.
-     * This verifies the core mechanism used by SchedulerWorker to prevent
-     * double task execution.
-     */
     public function testFileLockPreventsConcurrentAccess(): void
     {
         $pidFile = sys_get_temp_dir() . '/workerman_test_' . uniqid() . '.pid';
@@ -44,7 +32,6 @@ final class TaskTest extends KernelTestCase
             $fp1 = fopen($pidFile, 'c');
             $this->assertNotFalse($fp1, 'Failed to open PID file for first handle');
 
-            // First lock should succeed (non-blocking)
             $this->assertTrue(
                 flock($fp1, LOCK_EX | LOCK_NB),
                 'First process should acquire lock successfully',
@@ -53,13 +40,11 @@ final class TaskTest extends KernelTestCase
             $fp2 = fopen($pidFile, 'c');
             $this->assertNotFalse($fp2, 'Failed to open PID file for second handle');
 
-            // Second lock should fail - another process holds the lock
             $this->assertFalse(
                 flock($fp2, LOCK_EX | LOCK_NB),
                 'Second process should fail to acquire lock while first holds it',
             );
 
-            // After first releases lock, second should succeed
             flock($fp1, LOCK_UN);
             fclose($fp1);
 

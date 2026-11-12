@@ -2,22 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * E2E test runner for PollingMonitorWatcher.
- *
- * Usage: php polling_watcher_e2e_runner.php <temp_dir> <autoload_path>
- *
- * Creates a PollingMonitorWatcher in a subprocess and verifies:
- * 1. The watcher can be instantiated with a real Worker
- * 2. checkFileSystemChanges runs without error
- * 3. No false positive detection before file changes
- *
- * File change detection triggering reload() is intentionally not tested
- * here because Utils::reload(reloadAllWorkers: true) sends SIGUSR1 to
- * the parent process via posix_getppid(), which would kill PHPUnit.
- * The detection logic is verified in the unit tests.
- */
-
 $tempDir = $argv[1] ?? '';
 $autoloadPath = $argv[2] ?? '';
 
@@ -61,13 +45,9 @@ $lastMTimeProp = $watcherClass->getProperty('lastMTime');
 $expectedBefore = time() - 5;
 $lastMTimeProp->setValue($watcher, $expectedBefore);
 
-// Promoted readonly polling tuning is initialized by the constructor; this
-// fixture bypasses it, so set the defaults explicitly.
 $watcherClass->getProperty('pollingInterval')->setValue($watcher, FileMonitorWatcher::DEFAULT_POLLING_INTERVAL);
 $watcherClass->getProperty('maxFilesPerTick')->setValue($watcher, FileMonitorWatcher::DEFAULT_MAX_FILES_PER_TICK);
 
-// Run checkFileSystemChanges — with no file changes, this should NOT
-// call reload() (which would send SIGUSR1 to parent).
 $checkMethod = $watcherClass->getMethod('checkFileSystemChanges');
 $checkMethod->invoke($watcher);
 

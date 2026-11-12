@@ -68,7 +68,6 @@ final class JitterTriggerTest extends TestCase
         $innerNextRun = $innerTrigger->getNextRunDate($now);
         $this->assertInstanceOf(\DateTimeImmutable::class, $innerNextRun);
 
-        // Collect multiple jitter values
         $values = [];
         for ($i = 0; $i < 50; ++$i) {
             $jitterNextRun = $jitterTrigger->getNextRunDate($now);
@@ -76,13 +75,11 @@ final class JitterTriggerTest extends TestCase
             $values[] = $jitterNextRun->getTimestamp() - $innerNextRun->getTimestamp();
         }
 
-        // Verify all values are within bounds
         foreach ($values as $value) {
             $this->assertGreaterThanOrEqual(0, $value);
             $this->assertLessThanOrEqual(5, $value);
         }
 
-        // Verify there's some variation (not all identical)
         $uniqueValues = array_unique($values);
         $this->assertGreaterThan(1, count($uniqueValues), 'Jitter should vary between calls');
     }
@@ -118,12 +115,9 @@ final class JitterTriggerTest extends TestCase
         /** @var \DateTimeImmutable $innerNextRun */
         /** @var \DateTimeImmutable $jitterNextRun */
 
-        // With seeded randomizer, we get deterministic results
-        // First value from this seed is 0 seconds
         $expectedTimestamp = $innerNextRun->getTimestamp();
         $this->assertSame($expectedTimestamp, $jitterNextRun->getTimestamp());
 
-        // Second call should also be deterministic (next value from the sequence is 10)
         $jitterNextRun2 = $jitterTrigger->getNextRunDate($now);
         $this->assertInstanceOf(\DateTimeImmutable::class, $jitterNextRun2);
         /** @var \DateTimeImmutable $jitterNextRun2 */

@@ -22,7 +22,6 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 final class WorkermanCompilerPass implements CompilerPassInterface
 {
-    /** One year: a longer integer interval is almost certainly a mistake. */
     private const MAX_INTERVAL_SECONDS = 31_536_000;
 
     public function process(ContainerBuilder $container): void
@@ -32,13 +31,8 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $rebootStrategies = $container->findTaggedServiceIds('workerman.reboot_strategy');
         $responseConverterStrategies = $container->findTaggedServiceIds('workerman.response_converter.strategy');
 
-        // Sort response converter strategies by priority (descending) so that
-        // higher-priority strategies are checked first in ResponseConverter::convert().
         uasort($responseConverterStrategies, fn(array $a, array $b): int => ($b[0]['priority'] ?? 0) <=> ($a[0]['priority'] ?? 0));
 
-        // Sort remaining tag sets by service ID for deterministic ordering in
-        // the ServiceLocator registrations. Tasks and processes do not carry a
-        // priority attribute; sorting by ID ensures reproducible container builds.
         ksort($tasksTagged);
         ksort($processesTagged);
         ksort($rebootStrategies);
@@ -80,8 +74,8 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             ->setArguments([
                 new Reference(KernelInterface::class),
                 new Reference('workerman.response_converter'),
-                null, // logger (optional)
-                '%workerman.trusted_hosts%', // trusted hosts patterns
+                null,
+                '%workerman.trusted_hosts%',
             ]);
 
         $container->setAlias(SymfonyController::class, 'workerman.symfony_controller');
@@ -113,15 +107,7 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * Validate the task tag at container build time.
-     *
-     * The jitter must be a whole number of seconds, 0 or more. A numeric
-     * string such as '30' (from YAML) is cast to int. An integer schedule
-     * (or a digits-only string) must be 1 to MAX_INTERVAL_SECONDS. Anything
-     * else fails with a clear message (issues #970, #971, #981).
-     *
      * @param array<string, mixed> $tag
-     *
      * @return array<string, mixed>
      */
     private function normalizeTaskTag(string $id, array $tag): array
@@ -196,15 +182,6 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         ));
     }
 
-    /**
-     * The server reads each middleware from the container by its ID at worker
-     * start. A private service is removed from the compiled container, so the
-     * worker would stop and be restarted again and again (issue #964). Make
-     * the services from servers[].middlewares public, and fail at container
-     * build time when one of them does not exist. Also record the root
-     * directories of the StaticFilesMiddleware services as `static_roots`
-     * in the config, for the check at server start (issue #965).
-     */
     private function prepareMiddlewares(ContainerBuilder $container, Definition $configLoader): void
     {
         $calls = $configLoader->getMethodCalls();
@@ -242,23 +219,6 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $configLoader->setMethodCalls($calls);
     }
 
-    /**
-     * Records the env vars used in the bundle config so a value changed
-     * after warmup can re-warm the cache at server start (issue #996).
-     *
-     * Every config-loader method call is scanned — the workerman section
-     * as well as the task and process tag attributes — because the
-     * container resolves `%env()%` in all of those arguments at build
-     * time and every one of them would otherwise freeze at warmup.
-     *
-     * The container resolves `%env()%` placeholders when the config loader
-     * service is built (at warmup), so the resolved values frozen in the
-     * cache would ignore `PORT` or `WORKERS` set later. The parameter bag
-     * turns `%env()%` into unique placeholders first, then resolving with
-     * a null format collects the used names without reading values — like
-     * {@see staticRoot()} does — and the loader snapshots the values at
-     * warmup and compares them again at start.
-     */
     private function recordUsedEnvs(ContainerBuilder $container, Definition $configLoader): void
     {
         $usedEnvs = [];
@@ -274,13 +234,6 @@ final class WorkermanCompilerPass implements CompilerPassInterface
         $configLoader->addMethodCall('setWorkermanEnvVarNames', [array_values(array_unique($usedEnvs ?? []))]);
     }
 
-    /**
-     * StaticFilesMiddleware throws in its constructor when the root directory
-     * is missing. That happens at worker start, so the workers would restart
-     * again and again (issue #965). Return the root directory so that the
-     * master process can check it before it forks the workers. The container
-     * build does not check it: the directory may not exist yet there.
-     */
     private function staticRoot(ContainerBuilder $container, string $id): ?string
     {
         if (!$container->hasDefinition($id)) {
@@ -303,7 +256,6 @@ final class WorkermanCompilerPass implements CompilerPassInterface
             return null;
         }
 
-        // The value of an env var is known only at runtime.
         $usedEnvs = [];
         $container->resolveEnvPlaceholders($root, null, $usedEnvs);
 
@@ -311,11 +263,8 @@ final class WorkermanCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * Creates a Reference map from tagged services for ServiceLocator registration.
-     *
-     * @param array<string, mixed> $taggedServices Associative array keyed by service IDs (values ignored, only keys used)
-     *
-     * @return array<string, Reference> Service id => Reference mapping
+     * @param array<string, mixed> $taggedServices
+     * @return array<string, Reference>
      */
     private function referenceMap(array $taggedServices): array
     {

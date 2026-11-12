@@ -4,30 +4,14 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle;
 
-/**
- * Utility methods for Workerman bundle runtime operations.
- *
- * This class is not intended to be instantiated (private constructor, final).
- * All methods are static helpers for process introspection and signalling.
- */
 final class Utils
 {
     private function __construct()
     {
     }
 
-    /**
-     * The number of CPUs this process may use.
-     *
-     * On Linux the container CPU limit (cgroup v2 or v1) is respected: the
-     * result is never more than the limit, rounded up. On macOS the number of
-     * logical CPUs is used.
-     *
-     * @param string $cgroupRoot Root of the cgroup file system. Tests pass a fake directory.
-     */
     public static function cpuCount(string $cgroupRoot = '/sys/fs/cgroup'): int
     {
-        // Windows does not support the number of processes setting.
         if (self::isWindows()) {
             return 1;
         }
@@ -41,7 +25,6 @@ final class Utils
 
         $result = shell_exec($command);
 
-        // shell_exec returns null (no output) or false (command failed)
         if (!\is_string($result)) {
             return 1;
         }
@@ -60,11 +43,6 @@ final class Utils
     }
 
     /**
-     * The CPU limit of the container, rounded up, or null when there is no limit.
-     *
-     * Reads cgroup v2 (cpu.max) first, then cgroup v1 (cpu.cfs_quota_us and
-     * cpu.cfs_period_us). Missing or broken files mean no limit.
-     *
      * @internal
      */
     public static function cgroupCpuLimit(string $cgroupRoot = '/sys/fs/cgroup'): ?int
@@ -92,7 +70,6 @@ final class Utils
 
     private static function quotaToCpus(string $quota, string $period): ?int
     {
-        // "max" (v2) and "-1" (v1) mean no limit.
         if (!\ctype_digit($quota) || !\ctype_digit($period)) {
             return null;
         }
@@ -122,28 +99,13 @@ final class Utils
         return \DIRECTORY_SEPARATOR !== '/';
     }
 
-    /**
-     * Gracefully reload worker processes by sending SIGUSR1.
-     *
-     * Call this method from application code to trigger a hot reload of all
-     * worker processes. This is useful after deploying new code or when a
-     * runtime condition (e.g., memory pressure, config change) requires a
-     * clean worker state.
-     *
-     * @api
-     *
-     * @param bool $reloadAllWorkers When true, SIGUSR1 is sent to the parent
-     *                               process, which reloads all workers. When
-     *                               false (default), only the current process
-     *                               is signalled.
-     */
     public static function reload(bool $reloadAllWorkers = false): void
     {
         posix_kill($reloadAllWorkers ? posix_getppid() : posix_getpid(), SIGUSR1);
     }
 
     /**
-     * @deprecated since 0.17.0, use Utils::reload() instead. Will be removed in 1.0.
+     * @deprecated
      */
     public static function reboot(bool $rebootAllWorkers = false): void
     {

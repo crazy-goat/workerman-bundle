@@ -15,10 +15,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 
-/**
- * Command-level tests that need no live server: a real ServerManager points
- * at a temporary PID file.
- */
 final class WorkermanCommandUnitTest extends TestCase
 {
     private string $tmpDir;

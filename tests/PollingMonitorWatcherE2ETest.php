@@ -6,12 +6,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * E2E tests for PollingMonitorWatcher.
- *
- * Verifies that file modification detection works with a real filesystem
- * in an isolated subprocess.
- */
 final class PollingMonitorWatcherE2ETest extends TestCase
 {
     private string $tempDir;

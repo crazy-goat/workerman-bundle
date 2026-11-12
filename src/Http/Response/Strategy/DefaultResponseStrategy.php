@@ -18,20 +18,9 @@ final readonly class DefaultResponseStrategy implements ResponseConverterStrateg
 
     public function convert(SymfonyResponse $response, array $headers, TcpConnection $connection, string $protocolVersion): WorkermanResponse
     {
-        // $protocolVersion is intentionally unused: this strategy returns a
-        // regular WorkermanResponse whose status line is derived by Workerman
-        // itself; HttpRequestHandler::sendResponse() stamps the request's
-        // protocol version centrally before encoding.
         $body = strval($response->getContent());
         $contentLength = null;
 
-        // ResponseConverter preserves the application-provided Content-Length
-        // for HEAD requests (the length the corresponding GET would produce,
-        // RFC 9110 §9.3.2 — issue #643). The transport computes 0 from the
-        // empty HEAD body, so serialize this case ourselves as exactly one
-        // Content-Length. Any other occurrence of the header (non-empty body,
-        // non-digit value) is stripped so the transport stays the sole
-        // framing authority (issue #579).
         if (isset($headers['Content-Length'])) {
             $appContentLength = $headers['Content-Length'];
             unset($headers['Content-Length']);

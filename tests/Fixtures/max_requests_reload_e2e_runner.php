@@ -2,25 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * Minimal Workerman HTTP server for the max_requests reload E2E test (#934).
- *
- * A single worker answers every request with its own PID and uses
- * MaxJobsRebootStrategy as the HttpRequestHandler reboot strategy — the same
- * strategy the `reload_strategy.max_requests` config registers. After
- * <requests> handled requests the strategy returns true, the handler calls
- * Utils::reload() (SIGUSR1 to the worker itself) and Workerman replaces the
- * worker, so the next request reports a new PID.
- *
- * argv:
- *   1 = vendor/autoload.php path
- *   2 = listen port
- *   3 = ready file path (written from onWorkerStart)
- *   4 = worker pid file path (rewritten by every worker generation)
- *   5 = work dir for Workerman pid/log/status files
- *   6 = requests before reload (default 3)
- */
-
 /** @var list<string> $argv */
 
 if (($argc ?? 0) < 6) {
@@ -71,8 +52,6 @@ Worker::$logFile = $workDir . '/workerman.log';
 Worker::$statusFile = $workDir . '/workerman.status';
 Worker::$daemonize = false;
 Worker::$stdoutFile = $workDir . '/stdout.log';
-// Workerman parses CLI argv for start/stop/... — force start without relying
-// on script argv (we already consumed it for our own options).
 Worker::$command = 'start';
 
 $worker = new Worker(sprintf('http://127.0.0.1:%d', $port));
@@ -80,8 +59,6 @@ $worker->name = 'max-requests-reload-e2e';
 $worker->count = 1;
 $worker->reusePort = false;
 
-// Built per worker, like ServerWorker does, so every replacement worker gets
-// its own strategy state instead of inheriting the master's copy.
 $handler = null;
 
 $worker->onWorkerStart = static function () use (&$handler, $readyFile, $workerPidFile, $requests): void {

@@ -12,10 +12,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(AsProcess::class)]
 final class AsProcessTest extends TestCase
 {
-    // ──────────────────────────────────────────────
-    // Constructor round-trip
-    // ──────────────────────────────────────────────
-
     public function testConstructorWithDefaultValues(): void
     {
         $attribute = new AsProcess();
@@ -71,7 +67,6 @@ final class AsProcessTest extends TestCase
         $params = $constructor->getParameters();
         $this->assertCount(5, $params);
 
-        // Second parameter (index 1) is $processes
         $processesParam = $params[1];
         $this->assertSame('processes', $processesParam->getName());
 
@@ -82,10 +77,6 @@ final class AsProcessTest extends TestCase
         $this->assertTrue($type->allowsNull());
     }
 
-    // ──────────────────────────────────────────────
-    // Reflection target
-    // ──────────────────────────────────────────────
-
     public function testAttributeCanBeAppliedToClass(): void
     {
         $reflection = new \ReflectionClass(AsProcess::class);
@@ -94,10 +85,6 @@ final class AsProcessTest extends TestCase
 
         $this->assertSame(\Attribute::TARGET_CLASS, $targets & \Attribute::TARGET_CLASS, 'AsProcess must allow TARGET_CLASS');
     }
-
-    // ──────────────────────────────────────────────
-    // Reflecting off a fixture class
-    // ──────────────────────────────────────────────
 
     public function testReflectAttributeReadsConstructorArguments(): void
     {
@@ -124,10 +111,6 @@ final class AsProcessTest extends TestCase
         $this->assertNull($attribute->processes);
         $this->assertNull($attribute->method);
     }
-
-    // ──────────────────────────────────────────────
-    // Regression protection
-    // ──────────────────────────────────────────────
 
     public function testConstructorParameterCountIsStable(): void
     {
@@ -188,10 +171,6 @@ final class AsProcessTest extends TestCase
         $this->assertTrue($reflection->isFinal(), 'AsProcess must be final');
     }
 }
-
-// ──────────────────────────────────────────────
-// Fixture classes
-// ──────────────────────────────────────────────
 
 #[AsProcess(name: 'fixture_process', processes: 3, method: 'run')]
 final readonly class FixtureProcess

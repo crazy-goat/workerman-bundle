@@ -1,20 +1,5 @@
 <?php
 
-/**
- * Standalone test runner for ProcessTerminator.
- *
- * Runs outside the PHPUnit process (via `php -n`, see tests/IsolatedPhp.php) to avoid
- * inheriting the grpc extension: its shutdown handler deadlocks in forked
- * children, which is exactly the behavior under test.
- *
- * Usage: php process_terminator_test.php <hard|soft> <code>
- *
- * Exit codes:
- *   0 = test passed
- *   1 = test failed (message on stderr)
- *   2 = invalid usage
- */
-
 declare(strict_types=1);
 
 /** @var int<1, max> $argc */

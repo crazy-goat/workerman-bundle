@@ -135,10 +135,6 @@ final class CacheWarmupTimeoutConfigTest extends TestCase
         self::assertSame(CacheWarmupTimeoutConfig::DEFAULT, CacheWarmupTimeoutConfig::resolve());
     }
 
-    /**
-     * Issue #759: on the Runner path Runtime::getRunner() runs pre-kernel-boot,
-     * so no set() has run yet — resolve() must read the env var lazily.
-     */
     public function testResolveReadsEnvVarFromServerWhenHolderEmpty(): void
     {
         $_SERVER[CacheWarmupTimeoutConfig::ENV_VAR] = '77';

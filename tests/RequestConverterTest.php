@@ -47,7 +47,6 @@ final class RequestConverterTest extends TestCase
 
         $rawRequest = new Request($buffer);
 
-        // Should not throw
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
@@ -74,7 +73,6 @@ final class RequestConverterTest extends TestCase
 
         $rawRequest = new Request($buffer);
 
-        // Should not throw
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
@@ -84,7 +82,6 @@ final class RequestConverterTest extends TestCase
         $this->assertIsArray($files);
         $this->assertCount(2, $files);
 
-        // Each file should be an UploadedFile instance
         foreach ($files as $file) {
             $this->assertInstanceOf(\Symfony\Component\HttpFoundation\File\UploadedFile::class, $file);
         }
@@ -233,7 +230,6 @@ final class RequestConverterTest extends TestCase
 
         $rawRequest = new Request($buffer);
 
-        // Should not throw
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
@@ -250,7 +246,6 @@ final class RequestConverterTest extends TestCase
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = new Request($buffer);
 
-        // Should not throw
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
         $this->assertInstanceOf(\Symfony\Component\HttpFoundation\Request::class, $symfonyRequest);
@@ -275,12 +270,6 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * AC #577: malformed multipart structure through RequestConverter must
-     * throw FileUploadValidationException (not bare InvalidArgumentException)
-     * and mark it as ClientInputExceptionInterface so the handler classifies
-     * it as a 400 client error.
-     */
     public function testMalformedMultipartFileStructureThrowsFileUploadValidationException(): void
     {
         $tmpFile = $this->createTempFile('test content');
@@ -290,7 +279,6 @@ final class RequestConverterTest extends TestCase
             'malformed_file' => [
                 'name' => 'test.txt',
                 'tmp_name' => $tmpFile,
-                // missing type, size, error — FileUploadValidator rejects this
             ],
         ]);
 
@@ -332,11 +320,6 @@ final class RequestConverterTest extends TestCase
         $this->assertSame($production, $benchmark);
     }
 
-    /**
-     * Issue #736: parameterised subjects used to render as identical rows with
-     * a null parameter column, so a reader could not tell the sets apart. The
-     * report must partition rows by variant and show the set name.
-     */
     public function testBenchmarkAggregateReportIdentifiesParameterSets(): void
     {
         $contents = file_get_contents(__DIR__ . '/../phpbench.json');
@@ -370,7 +353,6 @@ final class RequestConverterTest extends TestCase
         $buffer = "GET /control-byte HTTP/1.1\r\nHost: x\r\nX-A: {$value}\r\n\r\n";
         $rawRequest = new Request($buffer);
 
-        // Accepted: TAB plus all bytes outside {0-8, 10-31, 127}.
         $isAccepted = $byte === 0x09 || ($byte >= 0x20 && $byte <= 0x7E) || $byte >= 0x80;
 
         if ($isAccepted) {
@@ -448,13 +430,6 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * #566: the "expected array, got X" error must be raised from exactly
-     * one place now that the separate validate() pass has been collapsed
-     * into processFiles(). This test exercises the top-level non-array
-     * entry through toSymfonyRequest, which now goes through the single
-     * processFiles() traversal instead of validate() + processFiles().
-     */
     public function testExpectedArrayErrorRaisedFromSingleTraversal(): void
     {
         $this->expectException(FileUploadValidationException::class);
@@ -468,16 +443,6 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * #566: a non-array element inside an indexed file list (files[]) must
-     * produce "expected array, got X" from the single traversal, not a
-     * TypeError from passing a non-array to UploadedFile.
-     *
-     * The list must have a valid file entry in position 0 so isFileList()
-     * classifies it as a list (a scalar first element would push it down the
-     * nested-associative branch instead). The scalar in position 1 then hits
-     * the is_array guard inside the list-conversion loop.
-     */
     public function testNonArrayElementInFileListThroughConverter(): void
     {
         $this->expectException(FileUploadValidationException::class);
@@ -502,12 +467,6 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * #566: a non-array element in a file list nested inside an associative
-     * container (gallery[images][]) must raise "expected array, got X" from
-     * the single traversal. This exercises the is_array guard in the nested
-     * list-conversion branch, mirroring the top-level case.
-     */
     public function testNonArrayElementInNestedFileListThroughConverter(): void
     {
         $this->expectException(FileUploadValidationException::class);
@@ -534,13 +493,6 @@ final class RequestConverterTest extends TestCase
         RequestConverter::toSymfonyRequest($rawRequest);
     }
 
-    /**
-     * #566: contract test — nested uploads (files[], documents[0], nested
-     * associative fields) must convert to the same UploadedFile structure
-     * after collapsing to a single traversal. Verifies that the output
-     * shape (keys, UploadedFile instances, client names) is identical for
-     * single file, file list, and nested associative structures.
-     */
     public function testNestedUploadsConvertToIdenticalUploadedFileStructure(): void
     {
         $tmpAvatar = $this->createTempFile('avatar content');
@@ -594,14 +546,12 @@ final class RequestConverterTest extends TestCase
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
         $files = $symfonyRequest->files->all();
 
-        // Single file → UploadedFile (not array)
         $this->assertInstanceOf(
             \Symfony\Component\HttpFoundation\File\UploadedFile::class,
             $files['single'],
         );
         $this->assertSame('avatar.png', $files['single']->getClientOriginalName());
 
-        // File list → array of UploadedFile with numeric keys
         $this->assertIsArray($files['documents']);
         $this->assertCount(2, $files['documents']);
         $this->assertInstanceOf(
@@ -615,7 +565,6 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('doc1.pdf', $files['documents'][0]->getClientOriginalName());
         $this->assertSame('doc2.pdf', $files['documents'][1]->getClientOriginalName());
 
-        // Nested associative → array with string keys, each an UploadedFile
         $this->assertIsArray($files['user']);
         $this->assertArrayHasKey('avatar', $files['user']);
         $this->assertArrayHasKey('resume', $files['user']);
@@ -631,11 +580,6 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('resume.pdf', $files['user']['resume']->getClientOriginalName());
     }
 
-    /**
-     * #566: contract test — a file list nested inside a nested associative
-     * container (gallery[images][]) must convert correctly in the single
-     * traversal.
-     */
     public function testFileListNestedInAssociativeContainerConvertsCorrectly(): void
     {
         $tmpImg1 = $this->createTempFile('image1 content');
@@ -675,11 +619,6 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('image2.jpg', $files['gallery']['images'][1]->getClientOriginalName());
     }
 
-    /**
-     * #566: the "unrecognized structure" error must still be raised from
-     * the single traversal for a nested array that is neither a file list,
-     * a single file entry, nor a valid nested container.
-     */
     public function testUnrecognizedStructureRaisedFromSingleTraversal(): void
     {
         $this->expectException(FileUploadValidationException::class);
@@ -711,25 +650,19 @@ final class RequestConverterTest extends TestCase
         $rawRequest = new Request($buffer);
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
 
-        // Headers should be in server bag with HTTP_ prefix
         $this->assertSame('example.com', $symfonyRequest->server->get('HTTP_HOST'));
         $this->assertSame('application/json', $symfonyRequest->server->get('HTTP_ACCEPT'));
 
-        // Authorization should be parsed into PHP_AUTH_USER/PHP_AUTH_PW via ServerBag
-        // getUser()/getPassword() read these from headers, which are populated by ServerBag::getHeaders()
         $this->assertSame('user', $symfonyRequest->getUser());
         $this->assertSame('pass', $symfonyRequest->getPassword());
 
-        // Verify PHP_AUTH_* are in headers (populated by ServerBag from HTTP_AUTHORIZATION)
         $this->assertSame('user', $symfonyRequest->headers->get('PHP_AUTH_USER'));
         $this->assertSame('pass', $symfonyRequest->headers->get('PHP_AUTH_PW'));
 
-        // Content-Type and Content-Length should NOT have HTTP_ prefix (CGI convention)
         $this->assertSame('application/json', $symfonyRequest->server->get('CONTENT_TYPE'));
         $this->assertSame('123', $symfonyRequest->server->get('CONTENT_LENGTH'));
         $this->assertSame('digest', $symfonyRequest->server->get('CONTENT_MD5'));
 
-        // HTTP_CONTENT_TYPE should NOT exist (moved to CONTENT_TYPE)
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_TYPE'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_LENGTH'));
         $this->assertNull($symfonyRequest->server->get('HTTP_CONTENT_MD5'));
@@ -748,7 +681,6 @@ final class RequestConverterTest extends TestCase
     {
         $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n";
         $rawRequest = new Request($buffer);
-        // Ensure no connection is attached (unit test scenario)
         $rawRequest->connection = null;
 
         $symfonyRequest = RequestConverter::toSymfonyRequest($rawRequest);
@@ -1176,11 +1108,6 @@ final class RequestConverterTest extends TestCase
         }
     }
 
-    /**
-     * AC #638: the per-worker bookkeeping for dropped underscore header names
-     * must be bounded by a constant — client-supplied header names must not
-     * drive unbounded static-map memory growth or log volume.
-     */
     public function testDroppedUnderscoreHeaderLogIsBoundedPerWorker(): void
     {
         $this->resetUnderscoreHeaderLogState();
@@ -1194,7 +1121,6 @@ final class RequestConverterTest extends TestCase
             Worker::$daemonize = true;
             Worker::$logFile = $logFile;
 
-            // 66 distinct client-controlled names: two beyond the 64-entry cap.
             for ($i = 0; $i < 66; ++$i) {
                 $headerName = 'X-Dropped_' . $i;
                 $buffer = "GET /test HTTP/1.1\r\nHost: localhost\r\n";
@@ -1210,10 +1136,8 @@ final class RequestConverterTest extends TestCase
             $this->assertStringNotContainsString('x-dropped_64', $log);
             $this->assertStringNotContainsString('x-dropped_65', $log);
 
-            // The static map itself must not exceed the cap either.
             $this->assertCount(64, $this->getLoggedUnderscoreHeaderMap());
 
-            // Repeating a name inside the cap still logs nothing new.
             RequestConverter::toSymfonyRequest(new Request(
                 "GET /test HTTP/1.1\r\nHost: localhost\r\nX-Dropped_0: value\r\n\r\n",
             ));
@@ -1301,10 +1225,6 @@ final class RequestConverterTest extends TestCase
 
     public function testCookieDecodingMatchesPhpSapi(): void
     {
-        // Expected values are exactly what PHP's $_COOKIE produces for the same
-        // header: php_default_treat_data() decodes cookie values with
-        // php_raw_url_decode() semantics (%XX decoded, '+' preserved verbatim)
-        // and does not decode cookie names.
         $buffer = "GET /test HTTP/1.1\r\n";
         $buffer .= "Host: localhost\r\n";
         $buffer .= "Cookie: plus=a+b; pct20=a%20b; pct3D=a%3Db; nonascii=%C4%85%C4%87; name%3Bx=keep\r\n";
@@ -1335,9 +1255,6 @@ final class RequestConverterTest extends TestCase
 
     public function testDuplicateCookieNamesLastWins(): void
     {
-        // Existing bundle behaviour: the last occurrence wins. PHP's $_COOKIE
-        // keeps the first occurrence instead; the divergence is documented in
-        // docs/security.md and intentionally not changed here.
         $buffer = "GET /test HTTP/1.1\r\n";
         $buffer .= "Host: localhost\r\n";
         $buffer .= "Cookie: dup=first; dup=second%20value\r\n";
@@ -1364,13 +1281,6 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * Characterisation pin for a documented deviation from `$_COOKIE`
-     * (docs/security.md, "Known intentional deviations"): PHP's SAPI stops
-     * registering cookies once max_input_vars (default 1000) is reached and
-     * drops the remaining pairs, while the bundle parses every pair in the
-     * Cookie header. If this behaviour ever changes, the deviation paragraph
-     * in docs/security.md must change with it.
-     *
      * @see https://github.com/crazy-goat/workerman-bundle/issues/628
      */
     public function testCookieParsingIsNotCappedAtMaxInputVars(): void
@@ -1605,12 +1515,6 @@ final class RequestConverterTest extends TestCase
         $this->assertSame('a, b', $symfonyRequest->server->get('HTTP_X_FOLD'));
     }
 
-    /**
-     * #718: an obs-fold continuation (leading-space header name) must not be
-     * forwarded under a $_SERVER key containing a literal space (e.g.
-     * "HTTP_ X_FOLD"). The well-formed name is still joined on the slow path;
-     * the malformed leading-space key is dropped.
-     */
     public function testObsFoldWhitespacePrefixedHeaderNameIsNotForwardedUnderSpaceKey(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -1622,17 +1526,11 @@ final class RequestConverterTest extends TestCase
         $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
         $server = $symfonyRequest->server->all();
 
-        // The malformed space-prefixed key must NOT exist.
         $this->assertArrayNotHasKey('HTTP_ X_FOLD', $server);
 
-        // The well-formed key is still present and joined.
         $this->assertSame('a, b', $symfonyRequest->server->get('HTTP_X_FOLD'));
     }
 
-    /**
-     * #718: a trailing-whitespace header name must be dropped so it is never
-     * forwarded under a $_SERVER key containing a literal space.
-     */
     public function testTrailingWhitespaceHeaderNameIsDropped(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -1643,17 +1541,10 @@ final class RequestConverterTest extends TestCase
         $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
         $server = $symfonyRequest->server->all();
 
-        // The malformed trailing-space key must NOT exist.
         $this->assertArrayNotHasKey('HTTP_X_TRAIL ', $server);
-        // The trimmed key must also not be silently created.
         $this->assertArrayNotHasKey('HTTP_X_TRAIL', $server);
     }
 
-    /**
-     * #718 (review round 1, F-1): an internal-space header name (e.g.
-     * "X-Fold Bar") is a malformed token and must also be dropped, not
-     * forwarded under the literal-space key "HTTP_X_FOLD BAR".
-     */
     public function testInternalSpaceHeaderNameIsDropped(): void
     {
         $buffer = "GET /test HTTP/1.1\r\n";
@@ -1664,9 +1555,7 @@ final class RequestConverterTest extends TestCase
         $symfonyRequest = RequestConverter::toSymfonyRequest(new Request($buffer));
         $server = $symfonyRequest->server->all();
 
-        // The malformed internal-space key must NOT exist.
         $this->assertArrayNotHasKey('HTTP_X_FOLD BAR', $server);
-        // No silently-trimmed variant may be created either.
         $this->assertArrayNotHasKey('HTTP_X_FOLD_BAR', $server);
     }
 
@@ -1904,8 +1793,6 @@ final class RequestConverterTest extends TestCase
     }
 
     /**
-     * Call a private static method via reflection for unit testing.
-     *
      * @param array<int, mixed> $args
      */
     private function callPrivateStaticMethod(string $methodName, array $args): mixed
@@ -1915,10 +1802,6 @@ final class RequestConverterTest extends TestCase
         return $reflection->invokeArgs(null, $args);
     }
 
-    /**
-     * Reset the per-worker underscore-header bookkeeping via reflection so
-     * tests are deterministic regardless of execution order.
-     */
     private function resetUnderscoreHeaderLogState(): void
     {
         $class = new \ReflectionClass(RequestConverter::class);
@@ -1982,8 +1865,6 @@ final class RequestConverterTest extends TestCase
     {
         $rawRequest = new Request($buffer);
 
-        // Workerman's Request does not expose a public API for file injection.
-        // Reflection is required to simulate malformed file uploads for testing.
         $reflection = new \ReflectionClass($rawRequest);
         $dataProperty = $reflection->getProperty('data');
         $dataProperty->setValue($rawRequest, ['files' => $files]);

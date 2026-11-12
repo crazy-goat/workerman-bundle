@@ -2,20 +2,12 @@
 
 declare(strict_types=1);
 
-// Pin the umask for the test process itself (issue #778): in-process kernel
-// boots in the suite create var/cache descendants, and a permissive
-// invoking-shell umask would leave them world-writable. The daemon is a
-// separate process that resets the umask itself (Symfony Runtime and
-// Worker::daemonize() both call umask(0)), so its tree is hardened
-// post-start in harden_test_var_tree() below.
 umask(0077);
 
 include __DIR__ . '/../../vendor/autoload.php';
 
 \CrazyGoat\WorkermanBundle\Test\App\TestPorts::applyCacheDir(\dirname(__DIR__, 2));
 
-// PollingMonitorWatcher tests call Utils::reload(reloadAllWorkers: true) which
-// sends SIGUSR1 to posix_getppid() — the PHPUnit parent process. Ignore it.
 if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
     \pcntl_async_signals(true);
     \pcntl_signal(\SIGUSR1, \SIG_IGN);
@@ -25,13 +17,6 @@ if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
 \workerman_start();
 \harden_test_var_tree();
 
-/**
- * Symfony's Runtime (debug) and Workerman's Worker::daemonize() both reset the
- * process umask to 0, so the daemon's var/cache and var/log trees end up
- * world-writable under a permissive invoking umask (issue #778). The daemon is
- * already running when this returns, so reinforce the modes: directories lose
- * group/other access, files lose group/other write.
- */
 function harden_test_var_tree(): void
 {
     foreach ([__DIR__ . '/../../var/cache', __DIR__ . '/../../var/log'] as $root) {
@@ -82,8 +67,6 @@ function workerman_start(): void
         \proc_close($process);
     }
 
-    // Wait for the daemon to bind its ports instead of a fixed sleep, so a
-    // slow start (cold cache, loaded CI runner) does not race the first test.
     $host = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::connectHost();
     $port = \CrazyGoat\WorkermanBundle\Test\App\TestPorts::http();
 

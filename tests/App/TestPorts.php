@@ -4,17 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\App;
 
-/**
- * Single source of truth for the ports the test daemon binds and every test
- * client connects to.
- *
- * The defaults keep the historical ports. Setting WMB_PORT_HTTP,
- * WMB_PORT_SECOND and WMB_PORT_THIRD lets parallel host worktrees run the
- * suite side by side; an unset or empty variable means the default.
- *
- * Values are resolved on every call (no static cache), so tests can change
- * the environment with putenv() and see the effect immediately.
- */
 final class TestPorts
 {
     public const ENV_HTTP = 'WMB_PORT_HTTP';
@@ -45,22 +34,13 @@ final class TestPorts
     }
 
     /**
-     * @return list<int> the three test ports in server order
+     * @return list<int>
      */
     public static function all(): array
     {
         return [self::http(), self::second(), self::third()];
     }
 
-    /**
-     * Base cache directory for a non-default port set, or null for the
-     * defaults (which keep the historical `var/cache/<env>` layout).
-     *
-     * Symfony caches the resolved listen addresses, so a run with WMB_PORT_*
-     * overrides must not reuse the container written for another port set or
-     * another WMB_LISTEN_ADDR. The short host hash keeps the directory name
-     * portable while covering both values.
-     */
     public static function cacheDir(string $projectDir): ?string
     {
         $ports = self::all();
@@ -71,10 +51,6 @@ final class TestPorts
         return $projectDir . '/var/cache/ports-' . \implode('-', $ports) . '-' . self::hostHash();
     }
 
-    /**
-     * Point APP_CACHE_DIR at the per-set directory when the defaults are not
-     * in use. Entry points call this before the kernel is created.
-     */
     public static function applyCacheDir(string $projectDir): void
     {
         $cacheDir = self::cacheDir($projectDir);
@@ -83,19 +59,11 @@ final class TestPorts
         }
     }
 
-    /**
-     * Address the daemon binds to, as set by WMB_LISTEN_ADDR.
-     */
     public static function host(): string
     {
         return \getenv('WMB_LISTEN_ADDR') ?: '127.0.0.1';
     }
 
-    /**
-     * Address a client uses to reach the daemon. Wildcard binds are not
-     * routable, so clients use loopback; IPv6 literals are bracketed because
-     * that is the form fsockopen() and URLs accept.
-     */
     public static function connectHost(): string
     {
         $host = self::host();
@@ -111,17 +79,11 @@ final class TestPorts
         return self::formatHost($host);
     }
 
-    /**
-     * Workerman listen address for one of the test ports.
-     */
     public static function listen(int $port): string
     {
         return 'http://' . self::formatHost(self::host()) . ':' . self::portOrFail($port);
     }
 
-    /**
-     * HTTP URL a test client can call on one of the test ports.
-     */
     public static function url(int $port, string $path = ''): string
     {
         return 'http://' . self::connectHost() . ':' . self::portOrFail($port) . $path;

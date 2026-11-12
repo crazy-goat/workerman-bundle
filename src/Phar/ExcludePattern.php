@@ -5,64 +5,20 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Phar;
 
 /**
- * A compiled exclude pattern for PHAR file filtering.
- *
- * Takes a raw user-supplied pattern string and compiles it to a regex.
- * The compilation rules are:
- *  - If the pattern starts and ends with the same non-alphanumeric character
- *    (e.g. /pattern/ or #pattern#), that character is treated as a regex
- *    delimiter and stripped.
- *  - If the resulting inner expression does not start with ^, it is prefixed.
- *  - The final expression is wrapped in #...# delimiters for preg_match.
- *
- * Defence-in-depth against accidental ReDoS (issue #334):
- *  - The raw pattern is structurally inspected for nested unbounded
- *    quantifiers (e.g. `(a+)+`, `(.+)*`) at construction time. These are
- *    known classic catastrophic-backtracking shapes; the constructor
- *    throws `InvalidArgumentException` if any are detected.
- *  - The compiled regex is dry-run against a small probe string to confirm
- *    PCRE accepts it. Compilation failure throws `InvalidArgumentException`.
- *  - Each match runs `@preg_match` and treats a `false` result as "no
- *    match", so a pattern that somehow slipped through and trips the
- *    backtrack limit cannot hang the build. The bounded
- *    `pcre.backtrack_limit` / `pcre.recursion_limit` are now established
- *    once per filtering pass by `PcreLimitGuard` (issue #568) rather than
- *    raised and restored on every call.
- *
  * @internal
  */
 final readonly class ExcludePattern
 {
-    /**
-     * Defence ceiling for PCRE backtracking per call. Slightly higher than
-     * PHP's default (1,000,000) but still bounded, so a pathological user
-     * pattern cannot hang the build indefinitely.
-     *
-     * Public so {@see PcreLimitGuard} can establish the same ceiling once
-     * per filtering pass without duplicating the value.
-     */
     public const BACKTRACK_LIMIT = 1_000_000;
 
-    /**
-     * Defence ceiling for PCRE recursion depth per call.
-     *
-     * Public so {@see PcreLimitGuard} can establish the same ceiling once
-     * per filtering pass without duplicating the value.
-     */
     public const RECURSION_LIMIT = 100_000;
 
-    /**
-     * Probe string used at construction time to verify the compiled regex
-     * is well-formed and does not immediately explode.
-     */
     private const REGEX_PROBE = 'probe';
 
     private string $regex;
 
     /**
-     * @throws \InvalidArgumentException when the pattern is malformed, when
-     *                                  it contains a nested unbounded
-     *                                  quantifier, or when PCRE rejects it.
+     * @throws \InvalidArgumentException
      */
     public function __construct(string $raw)
     {
@@ -104,22 +60,12 @@ final readonly class ExcludePattern
     }
 
     /**
-     * Must be called inside a PcreLimitGuard pass (e.g. via
-     * PharBuilder::build()) for the bounded ReDoS ceilings to apply;
-     * outside a pass the process-default PCRE limits are in effect.
-     *
      * @see PcreLimitGuard
      */
     public function matches(string $path): bool
     {
         $result = @preg_match($this->regex, $path);
         if ($result === false) {
-            // Catastrophic backtracking tripped the limit; treat as "no match"
-            // so the file is included rather than the build hanging. The
-            // proper guard is the structural check in the constructor; this
-            // branch is a safety net. The bounded pcre.backtrack_limit /
-            // pcre.recursion_limit are established once per filtering pass
-            // by PcreLimitGuard (issue #568).
             return false;
         }
 
@@ -127,35 +73,22 @@ final readonly class ExcludePattern
     }
 
     /**
-     * Reject patterns whose structure is known to allow catastrophic
-     * backtracking on sufficiently long input.
-     *
-     * The check is conservative: it does not catch every possible ReDoS
-     * shape, but it reliably rejects the textbook cases such as `(a+)+`,
-     * `(a*)*b`, `(.+)*`, `(a|a)+`. The per-call backtrack-limit guard in
-     * `matches()` covers everything else.
-     *
      * @throws \InvalidArgumentException
      */
     private function guardAgainstNestedUnboundedQuantifiers(string $raw, string $inner): void
     {
         $length = strlen($inner);
         $i = 0;
-        // Each frame records whether any quantifier has been applied to an
-        // operand inside the group, *not* counting quantifiers that close
-        // the group itself.
         $groupStack = [];
 
         while ($i < $length) {
             $ch = $inner[$i];
 
-            // Skip escaped characters.
             if ($ch === '\\') {
                 $i += 2;
                 continue;
             }
 
-            // Inside a character class we only look for the closing bracket.
             if ($ch === '[') {
                 $j = $i + 1;
                 while ($j < $length) {
@@ -173,20 +106,14 @@ final readonly class ExcludePattern
                 continue;
             }
 
-            // Group opener. `(?`, `(?=`, `(?!`, `(?<...>` are still group
-            // openers (alternation / lookahead), so we push a frame for them
-            // too; we only need to skip the optional `?` modifier character.
             if ($ch === '(') {
                 $groupStack[] = false;
-                // Consume any `?` modifier so it isn't read as the group's
-                // body content.
                 if ($i + 1 < $length && $inner[$i + 1] === '?') {
                     if ($i + 2 < $length && (in_array($inner[$i + 2], [':', '=', '!'], true))) {
                         $i += 3;
                         continue;
                     }
                     if ($i + 2 < $length && $inner[$i + 2] === '<') {
-                        // Named group (?<name>...) — skip up to `>`.
                         $end = strpos($inner, '>', $i + 3);
                         $i = ($end === false) ? $length : $end + 1;
                         continue;
@@ -199,10 +126,6 @@ final readonly class ExcludePattern
             }
 
             if ($ch === ')') {
-                // Look ahead: if the very next character is a quantifier and
-                // the group we're closing already had a quantifier applied to
-                // an operand inside it, we have the textbook `(EXPR with
-                // quantifier)+` shape — ReDoS bait.
                 if ($groupStack === []) {
                     $i++;
                     continue;
@@ -225,8 +148,6 @@ final readonly class ExcludePattern
             }
 
             if (in_array($ch, ['+', '*', '?'], true)) {
-                // Mark every open group on the stack as "has inner quantifier"
-                // so the closing `)` + quantifier check above fires.
                 foreach (array_keys($groupStack) as $idx) {
                     $groupStack[$idx] = true;
                 }
@@ -235,7 +156,6 @@ final readonly class ExcludePattern
             }
 
             if ($ch === '{') {
-                // Read a {n,m} quantifier.
                 $end = strpos($inner, '}', $i);
                 if ($end === false) {
                     $i++;

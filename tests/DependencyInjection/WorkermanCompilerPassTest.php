@@ -131,7 +131,6 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->container->register('named_middleware', StaticFilesMiddleware::class)
             ->setArguments(['$rootDirectory' => __DIR__]);
 
-        // A missing directory does not fail the container build.
         $this->compilerPass->process($this->container);
 
         $this->assertSame(['/does/not/exist/public', __DIR__], $this->recordedStaticRoots());
@@ -397,7 +396,7 @@ final class WorkermanCompilerPassTest extends TestCase
         $this->assertSame(KernelInterface::class, (string) $args[0]);
         $this->assertInstanceOf(Reference::class, $args[1]);
         $this->assertSame('workerman.response_converter', (string) $args[1]);
-        $this->assertNull($args[2]); // logger (optional)
+        $this->assertNull($args[2]);
         $this->assertSame('%workerman.trusted_hosts%', $args[3]);
     }
 
@@ -528,7 +527,6 @@ final class WorkermanCompilerPassTest extends TestCase
             ->addTag('workerman.response_converter.strategy', ['priority' => 100]);
         $this->container->register('strategy.medium', \stdClass::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 50]);
-        // Register another low-priority strategy to verify stable sort behavior
         $this->container->register('strategy.low.another', \stdClass::class)
             ->addTag('workerman.response_converter.strategy', ['priority' => 0]);
 
@@ -537,8 +535,6 @@ final class WorkermanCompilerPassTest extends TestCase
         $responseConverter = $this->container->getDefinition('workerman.response_converter');
         $references = array_keys($responseConverter->getArguments()[0]);
 
-        // Expected: descending priority (100, 50, 0, 0). For equal priorities,
-        // uasort preserves insertion order (low before low.another).
         $expected = ['strategy.high', 'strategy.medium', 'strategy.low', 'strategy.low.another'];
         $this->assertSame($expected, $references, 'Response converter strategies must be sorted by priority descending');
     }

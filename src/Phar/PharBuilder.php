@@ -5,13 +5,6 @@ declare(strict_types=1);
 namespace CrazyGoat\WorkermanBundle\Phar;
 
 /**
- * Builds a PHAR archive of the host Symfony application.
- *
- * Pure builder — takes a build configuration array and writes a PHAR.
- * Console UI lives in the command classes; this service is reusable
- * by both BuildPharCommand and BuildBinCommand without going through
- * Symfony's Command lifecycle.
- *
  * @internal
  */
 final readonly class PharBuilder
@@ -43,10 +36,7 @@ final readonly class PharBuilder
      *     exclude_files?: list<string>,
      *     custom_ini?: string|null,
      * } $buildConfig
-     *
-     * @return string Path to the built PHAR
-     *
-     * @throws \RuntimeException when the PHAR cannot be built
+     * @throws \RuntimeException
      */
     public function build(array $buildConfig, string $pharPath, bool $includeTests = false): string
     {
@@ -89,11 +79,6 @@ final readonly class PharBuilder
 
         $filtered = new \CallbackFilterIterator($iterator, $filter->shouldInclude(...));
 
-        // Establish the bounded PCRE limits once for the whole filtering
-        // pass (issue #568): ExcludePattern::matches() used to raise and
-        // restore pcre.backtrack_limit / pcre.recursion_limit on every
-        // call — four ini_set() calls per pattern per file. Restore on the
-        // way out, including when buildFromIterator() throws.
         $limitGuard = new PcreLimitGuard();
         $limitGuard->enter();
         try {
@@ -126,7 +111,6 @@ final readonly class PharBuilder
      *     exclude_files?: list<string>,
      *     custom_ini?: string|null,
      * } $buildConfig
-     *
      * @return ExcludePattern[]
      */
     private function buildExcludePatterns(array $buildConfig): array
@@ -164,7 +148,6 @@ final readonly class PharBuilder
      *     exclude_files?: list<string>,
      *     custom_ini?: string|null,
      * } $buildConfig
-     *
      * @return string[]
      */
     private function buildExcludeFiles(array $buildConfig): array
@@ -177,38 +160,25 @@ final readonly class PharBuilder
         return array_values(array_filter($raw, static fn(string $f): bool => $f !== ''));
     }
 
-    /**
-     * Check if a relative path matches a built-in exclusion pattern.
-     */
     public static function isExcluded(string $relativePath): bool
     {
-        // Standard patterns: build dir, VCS, dev tools, cache, etc.
         if (preg_match('#^(build/|\\.git/|\\.github/|tests/|docs/|var/)#', $relativePath)) {
             return true;
         }
 
-        // Config/dev files at the root
         if (preg_match('#^(phpunit\.xml|\.php-cs-fixer|phpstan\.neon|rector\.php)$#', $relativePath)) {
             return true;
         }
 
-        // PHAR/binary output files at root
         if (preg_match('#^[^/]+\.(phar|bin)$#', $relativePath)) {
             return true;
         }
 
-        // Env files at root
         return (bool) preg_match('#^\.env#', $relativePath);
     }
 
-    /**
-     * Valid characters for PHAR aliases: alphanumeric, dot, underscore, hyphen.
-     */
     private const ALLOWED_ALIAS_PATTERN = '/^[A-Za-z0-9._-]+$/';
 
-    /**
-     * Valid PHP fully-qualified class name pattern.
-     */
     private const ALLOWED_KERNEL_CLASS_PATTERN = '/^(\\\\?[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)+(\\\\[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)*$/';
 
     /**
@@ -228,12 +198,6 @@ final readonly class PharBuilder
      *     exclude_files?: list<string>,
      *     custom_ini?: string|null,
      * } $buildConfig
-     *
-     * Placeholders replaced in the stub template:
-     *   __PHAR_ALIAS__    — PHAR archive alias
-     *   __KERNEL_CLASS__  — Symfony kernel FQCN
-     *   __RUNTIME_CLASS__ — Workerman Runtime class FQCN
-     *   __APP_ENV__       — default environment name
      */
     public function generateStub(array $buildConfig, string $pharAlias = 'app.phar'): string
     {
@@ -262,9 +226,7 @@ final readonly class PharBuilder
     }
 
     /**
-     * Validate that the PHAR alias contains only safe characters.
-     *
-     * @throws \RuntimeException if the alias contains invalid characters
+     * @throws \RuntimeException
      */
     private function validatePharAlias(string $pharAlias): void
     {
@@ -281,9 +243,7 @@ final readonly class PharBuilder
     }
 
     /**
-     * Validate that the kernel class is a syntactically valid PHP FQCN.
-     *
-     * @throws \RuntimeException if the class name contains invalid characters
+     * @throws \RuntimeException
      */
     private function validateKernelClass(string $kernelClass): void
     {

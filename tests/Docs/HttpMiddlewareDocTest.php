@@ -12,9 +12,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * The facts of docs/middlewares.md and docs/http-server.md must match the code (issue #878, section 5).
- */
 #[CoversNothing]
 final class HttpMiddlewareDocTest extends TestCase
 {
@@ -57,7 +54,6 @@ final class HttpMiddlewareDocTest extends TestCase
         $page = DocsHelper::read(self::MIDDLEWARES);
         $source = DocsHelper::read('src/Middleware/StaticFilesMiddleware.php');
 
-        // The headers and the Cache-Control value must be the ones that the middleware sets.
         preg_match_all("/->header\\('([A-Za-z-]+)', (?:'([^']+)'|\\$)/", $source, $matches, PREG_SET_ORDER);
         self::assertNotEmpty($matches, 'The middleware sets no header any more: update this test and the page.');
 
@@ -102,9 +98,6 @@ final class HttpMiddlewareDocTest extends TestCase
         }
     }
 
-    /**
-     * The middleware service examples must be valid service definitions. They do not need `public: true`: the bundle makes the services public itself (issue #964).
-     */
     #[DataProvider('pageProvider')]
     public function testMiddlewareServiceExamplesAreValidServices(string $page): void
     {

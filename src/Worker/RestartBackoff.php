@@ -7,13 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Worker;
 use CrazyGoat\WorkermanBundle\Util\ProcessTerminator;
 use Workerman\Worker;
 
-/**
- * Exponential restart backoff shared by supervised processes and HTTP workers.
- *
- * State is kept per worker slot in `<runtime_dir>/restart/`. The counter grows
- * while a slot fails quickly, resets after a run at least `healthyAfter`
- * seconds long, and produces one "unhealthy" log line at `maxFailures`.
- */
 final readonly class RestartBackoff
 {
     private const SLEEP_SLICE_MICROSECONDS = 100_000;
@@ -27,8 +20,8 @@ final readonly class RestartBackoff
     private int $maxDelay;
 
     /**
-     * @param \Closure(int): void|null $sleep Test seam: replaces the real interruptible sleep.
-     * @param \Closure(): int|null     $now   Test seam: replaces time().
+     * @param \Closure(int): void|null $sleep
+     * @param \Closure(): int|null     $now
      */
     public function __construct(
         private string $runtimeDir,
@@ -45,7 +38,7 @@ final readonly class RestartBackoff
     }
 
     /**
-     * @param mixed[] $restartConfig The resolved `workerman.restart` config.
+     * @param mixed[] $restartConfig
      */
     public static function fromConfig(
         string $runtimeDir,
@@ -63,12 +56,6 @@ final readonly class RestartBackoff
     }
 
     /**
-     * Wait before this worker slot starts, then record the attempt.
-     *
-     * The wait is split into short slices. Stop and reload signals are
-     * temporarily handled directly so the child ends immediately on every
-     * event loop (Select, ext-event, ...), not after the full delay.
-     *
      * @param \Closure(string): void $log
      */
     public function beforeStart(string $key, string $kind, string $label, \Closure $log): void
@@ -88,9 +75,6 @@ final readonly class RestartBackoff
 
         $wait = $this->delayForFailures($failures);
         if ($wait > 0) {
-            // Record the attempt before sleeping. If the child is killed
-            // during the wait, startedAt stays 0, so the next start counts it
-            // as a fast failure instead of mistaking the wait for a healthy run.
             $this->write($key, [
                 'failures' => $failures + 1,
                 'startedAt' => 0,
@@ -112,9 +96,6 @@ final readonly class RestartBackoff
         ]);
     }
 
-    /**
-     * Forget one worker slot, for example after an intentional reload.
-     */
     public function forget(string $key): void
     {
         $path = $this->statePath($key, false);
@@ -128,12 +109,6 @@ final readonly class RestartBackoff
         }
     }
 
-    /**
-     * Create the state directory before the master forks workers.
-     *
-     * A root master that drops workers to `user`/`group` must hand the
-     * directory to them, otherwise the child cannot write its state file.
-     */
     public static function prepare(string $runtimeDir, ?string $user, ?string $group): void
     {
         $directory = self::stateDirectory($runtimeDir);
@@ -150,15 +125,10 @@ final readonly class RestartBackoff
         }
 
         if (($user !== null && $user !== '') || ($group !== null && $group !== '')) {
-            // A root master may have created the PID directory as 0700 root;
-            // the worker then cannot traverse into the chowned leaf.
             @chmod(dirname($directory), 0711);
         }
     }
 
-    /**
-     * Forget all per-slot state, for example when the master starts again.
-     */
     public static function reset(string $runtimeDir): void
     {
         $directory = self::stateDirectory($runtimeDir, false);
@@ -173,9 +143,6 @@ final readonly class RestartBackoff
         }
     }
 
-    /**
-     * The wait before a start, given the number of consecutive fast failures.
-     */
     public function delayForFailures(int $failures): int
     {
         if ($failures <= 0 || $this->delay <= 0) {
@@ -207,8 +174,6 @@ final readonly class RestartBackoff
         foreach ($signals as $signal) {
             $previous[$signal] = pcntl_signal_get_handler($signal);
             pcntl_signal($signal, static function (): never {
-                // SIGKILL on grpc hosts: a plain exit() can hang in the
-                // extension's shutdown handler (see ProcessTerminator).
                 ProcessTerminator::terminate(0);
             }, false);
         }
@@ -228,13 +193,6 @@ final readonly class RestartBackoff
     }
 
     /**
-     * Re-register the stop and reload handlers through the active event loop.
-     *
-     * pcntl_signal() only restores the Select loop's wrapper. Event, Swoole
-     * and Swow register signals outside the pcntl table, so restoring the
-     * captured pcntl handler there would leave the child deaf to stop and
-     * reload (async signals stay off in worker processes).
-     *
      * @param list<int>                $signals
      * @param array<int, callable|int> $previous
      */

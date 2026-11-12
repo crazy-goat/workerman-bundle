@@ -8,9 +8,6 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * docs/logging-monitoring.md must match the config tree, and its examples must stay consistent (issue #878, section 14).
- */
 #[CoversNothing]
 final class LoggingMonitoringDocTest extends TestCase
 {

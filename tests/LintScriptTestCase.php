@@ -6,33 +6,14 @@ namespace CrazyGoat\WorkermanBundle\Test;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Shared sandbox/subprocess harness for the lint-script tests (issue #1046).
- *
- * The lint scripts (`bin/check-*.php`) are driven as subprocesses: the
- * passing case runs against the real tree, every failure scenario runs
- * against a synthetic fixture in a throw-away sandbox directory that is
- * removed after each test. This base class owns the duplicated harness
- * (`setUp()`/`tearDown()`, the `runScript()` subprocess runner, and the
- * recursive sandbox cleanup); subclasses only name their script and their
- * sandbox prefix and add their fixture helpers.
- */
 abstract class LintScriptTestCase extends TestCase
 {
     protected string $sandbox = '';
 
     protected string $script = '';
 
-    /**
-     * Basename of the script under `bin/` this test class drives,
-     * e.g. `check-exception-usage.php`.
-     */
     abstract protected function getScriptName(): string;
 
-    /**
-     * Prefix of the throw-away sandbox directory under the system temp
-     * dir, e.g. `check-exception-usage-test-`.
-     */
     abstract protected function getSandboxPrefix(): string;
 
     protected function setUp(): void
@@ -57,13 +38,8 @@ abstract class LintScriptTestCase extends TestCase
     }
 
     /**
-     * Runs the script with the given arguments. The environment is inherited
-     * from the current process (so that PATH, HOME, and any CI vars the
-     * script might need are available), overlaid with any explicit overrides.
-     *
      * @param array<string, string> $env
      * @param list<string>          $args
-     *
      * @return array{code: int, out: string, err: string}
      */
     protected function runScript(array $env, array $args): array

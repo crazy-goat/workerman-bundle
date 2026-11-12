@@ -7,15 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Behavioural tests for bin/check-coverage.php.
- *
- * The fixture (tests/Fixtures/clover-small.xml) contains class-, file- and
- * project-level <metrics> nodes whose statement counts do NOT add up to a
- * simple multiple of one another. A naive summation of every //metrics node
- * hashes to 260/360 = 72.22%, whereas the real project aggregate is
- * 75/100 = 75.00%. These tests pin the script to the project aggregate.
- */
 final class CheckCoverageGateTest extends TestCase
 {
     private const PROJECT_STATEMENTS = 100;
@@ -45,8 +36,6 @@ final class CheckCoverageGateTest extends TestCase
     {
         $output = $this->runScript('0.0');
 
-        // Naive summation of the fixture's metrics yields 360 statements /
-        // 260 covered; make sure the script did NOT report those.
         self::assertStringNotContainsString(
             '(260/360 statements)',
             $output['stdout'],
@@ -81,9 +70,6 @@ final class CheckCoverageGateTest extends TestCase
     {
         $output = $this->runScriptOn('0.0', __DIR__ . '/Fixtures/clover-files-only.xml');
 
-        // Both fixtures converge on 75/100 = 75.00%, but this one reaches it
-        // via the fallback that sums /file/metrics (60+40 / 40+35) instead of
-        // reading a single project-level aggregate.
         self::assertStringContainsString(
             sprintf('Coverage: %.2f%% (%d/%d statements)', self::PROJECT_PERCENT, self::PROJECT_COVERED, self::PROJECT_STATEMENTS),
             $output['stdout'],

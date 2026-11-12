@@ -2,22 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * Minimal Workerman HTTP worker for issue #577 E2E acceptance criteria.
- *
- * argv:
- *   1 = vendor/autoload.php path
- *   2 = listen port (int)
- *   3 = mode: "handler" | "backstop" | "cache576"
- *   4 = ready file path (written from onWorkerStart)
- *   5 = worker pid file path (written from onWorkerStart with getmypid())
- *   6 = work dir for Workerman pid/log/status files
- *
- * handler  — full production path: HttpRequestHandler try/catch + errorHandler
- * backstop — no handler try; RequestConverter throws out of onMessage into
- *            $connection->errorHandler (proves backstop independence)
- */
-
 /** @var list<string> $argv */
 
 if (($argc ?? 0) < 7) {
@@ -73,8 +57,6 @@ Worker::$logFile = $workDir . '/workerman.log';
 Worker::$statusFile = $workDir . '/workerman.status';
 Worker::$daemonize = false;
 Worker::$stdoutFile = $workDir . '/stdout.log';
-// Workerman parses CLI argv for start/stop/... — force start without relying
-// on script argv (we already consumed it for our own options).
 Worker::$command = 'start';
 
 $kernel = new class implements KernelInterface {
@@ -236,7 +218,6 @@ $worker->name = 'sec577-e2e';
 $worker->count = 1;
 $worker->reusePort = false;
 
-// Mirror ServerWorker::onConnect errorHandler backstop (issue #577).
 $worker->onConnect = static function (TcpConnection $connection): void {
     $connection->context ??= new \stdClass();
     $connection->errorHandler = static function (\Throwable $e) use ($connection): void {
@@ -261,8 +242,6 @@ if ($mode === 'handler') {
         $handler($connection, $request);
     };
 } else {
-    // Backstop-only: throwable from RequestConverter escapes onMessage into
-    // TcpConnection::error() → $connection->errorHandler. No handler try.
     $worker->onMessage = static function (TcpConnection $connection, BundleRequest $request): void {
         RequestConverter::toSymfonyRequest($request);
         $connection->send("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");

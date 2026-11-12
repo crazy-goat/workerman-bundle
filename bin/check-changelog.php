@@ -2,70 +2,12 @@
 
 declare(strict_types=1);
 
-/**
- * Validates the structure of CHANGELOG.md and exits non-zero on any violation.
- *
- * The rules were mined from `.pi-subagents/artifacts/` review history (issue
- * #686 phase 4) and wired into `composer lint` by issue #654: duplicate Keep a
- * Changelog subheadings (#641), out-of-order version headings (#255) and a
- * stale or missing `[Unreleased]` section (#356) all used to pass CI silently,
- * because every linter in the repository covered only PHP. This script is the
- * single source of truth for the rules — `tests/ChangelogStructureTest.php`
- * drives it as a subprocess, and `composer lint` runs it directly (so the
- * pre-push hook and the CI Lint job run it too).
- *
- * Rules enforced:
- *   - exactly one `## [Unreleased]` heading, and it is the first version
- *     heading in the file;
- *   - released headings match `## [x.y.z] - YYYY-MM-DD` (with a real calendar
- *     date) and are strictly descending;
- *   - a Keep a Changelog subheading (`### Added`, `### Changed`, `### Fixed`,
- *     `### Removed`, `### Deprecated`, `### Security`) appears at most once
- *     per version block;
- *   - every top-level `- ` entry carries an issue reference (`[#123]` link or
- *     a bare `(#123)`), except entries frozen in
- *     LEGACY_ENTRIES_WITHOUT_A_REFERENCE.
- *
- * Lines inside fenced code blocks (``` or ~~~, CommonMark) are ignored: a
- * fenced example showing a changelog heading is documentation, not structure.
- * An unterminated fence is reported at its opening line and no other checks
- * run — the parse is incomplete past that point. Issue
- * references are matched against prose only — inline-code spans are stripped
- * first, and an anchor link (`[x](#123)`) does not count as a reference.
- *
- * Usage: php bin/check-changelog.php [options]
- *
- * Options:
- *   --root=DIR            repository root whose CHANGELOG.md is checked
- *                         (default: the parent of bin/)
- *   --help                show this help
- *
- * Environment:
- *   CHANGELOG_CHECK_ROOT  same as --root=, overridden by it. Using this
- *                         variable is reported as a warning — a structural
- *                         gate whose target can be switched invisibly is not
- *                         a gate.
- *
- * Exit codes:
- *   0  the changelog is structurally valid
- *   1  violations found
- *   2  usage error (unknown option, missing root, missing/unreadable file)
- */
-
 const CHANGELOG_ROOT_ENV = 'CHANGELOG_CHECK_ROOT';
 
-/** The file this script validates, relative to the resolved root. */
 const CHANGELOG_FILE = 'CHANGELOG.md';
 
-/** Subheadings that must appear at most once per version block. */
 const KEEP_A_CHANGELOG_SUBHEADINGS = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
 
-/**
- * Exact first line (including the leading "- ") of every changelog entry that
- * predates the "every entry carries an issue reference" convention. Frozen on
- * purpose: adding to this list should be rare and deliberate, never the fix
- * for a newly written entry that forgot its reference.
- */
 const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
     '- New developer helper `bin/gh-branch`: creates or switches to the',
     '- Extract `configureHandler()` from `ServerWorker::onWorkerStart()` — reduces closure complexity',
@@ -82,25 +24,12 @@ const LEGACY_ENTRIES_WITHOUT_A_REFERENCE = [
 ];
 
 /**
- * Blank every line inside a fenced code block (and the fence markers
- * themselves), keeping positions 1:1 so line numbers survive. Both CommonMark
- * fence syntaxes are honoured — ``` and ~~~ — and, per CommonMark, a fence is
- * closed only by a run of its own character **at least as long as the
- * opener**, so a ``` line inside a ```` fence stays blanked.
- *
- * A fenced example showing what a changelog heading looks like is
- * documentation, not structure — without this, `## [x.y.z] - date` inside a
- * fence counts as a released heading and splits version blocks.
- *
  * @param list<string> $lines
- *
- * @return array{lines: list<string>, unterminated_at: int|null} the sanitized
- *         lines and, when a fence was opened but never closed, the 1-based
- *         line of the opening marker
+ * @return array{lines: list<string>, unterminated_at: int|null}
  */
 function outsideFences(array $lines): array
 {
-    /** @var array{char: string, length: int}|null $fence the opening marker */
+    /** @var array{char: string, length: int}|null $fence */
     $fence = null;
     $unterminatedAt = null;
 
@@ -137,22 +66,13 @@ function outsideFences(array $lines): array
     return ['lines' => $lines, 'unterminated_at' => $unterminatedAt];
 }
 
-/**
- * The prose of an entry: its text with inline-code spans removed (a backticked
- * `` `(#123)` `` quotes a reference shape without being one).
- */
 function entryProse(string $text): string
 {
     return (string) preg_replace('/`[^`]*`/', '', $text);
 }
 
 /**
- * Every structural violation in the given changelog lines, each a
- * human-readable message ("line N: …" wherever a line applies). An empty list
- * means the changelog is structurally valid.
- *
  * @param list<string> $lines
- *
  * @return list<string>
  */
 function validateChangelogLines(array $lines): array
@@ -161,9 +81,6 @@ function validateChangelogLines(array $lines): array
     $fenced = outsideFences($lines);
     $lines = $fenced['lines'];
 
-    // An unterminated fence blinds the checker to everything after its
-    // opening line, so no verdict beyond "close it" is reliable — report the
-    // cause and stop instead of emitting misleading downstream messages.
     if ($fenced['unterminated_at'] !== null) {
         return [sprintf(
             'line %d: unterminated code fence opened here — nothing after this line was checked',
@@ -177,7 +94,6 @@ function validateChangelogLines(array $lines): array
         $violations[] = 'CHANGELOG.md has no "## [...]" version headings at all';
     }
 
-    // 1. `[Unreleased]` present exactly once, and first.
     $unreleasedIndexes = array_keys(array_filter(
         $headings,
         static fn(array $heading): bool => $heading['raw'] === '## [Unreleased]',
@@ -192,7 +108,6 @@ function validateChangelogLines(array $lines): array
         $violations[] = '"## [Unreleased]" must be the first version heading in the file';
     }
 
-    // 2. Released headings well-formed and strictly descending.
     $releasedCount = 0;
     $previousVersion = null;
 
@@ -211,8 +126,6 @@ function validateChangelogLines(array $lines): array
 
         $version = $matches[1];
 
-        // Shape alone is not enough: 2026-13-45 matches the pattern but is
-        // not a date.
         if (!checkChangelogIsIsoDate($matches[2])) {
             $violations[] = sprintf(
                 'line %d: "%s" is not an ISO-8601 calendar date (YYYY-MM-DD)',
@@ -239,7 +152,6 @@ function validateChangelogLines(array $lines): array
         $violations[] = 'CHANGELOG.md has no released version headings';
     }
 
-    // 3. Keep a Changelog subheadings unique per version block.
     foreach (versionBlocks($lines) as $block) {
         $counts = [];
 
@@ -263,13 +175,9 @@ function validateChangelogLines(array $lines): array
         }
     }
 
-    // 4. Every top-level entry carries an issue reference, frozen legacy
-    // entries excepted.
     $missingReferences = [];
 
     foreach (topLevelEntries($lines) as $entry) {
-        // An anchor link (`[x](#123)`) points inside the page, not at an
-        // issue — remove it before looking for a reference.
         $prose = (string) preg_replace('/\]\(#\d+\)/', '', entryProse($entry['text']));
 
         if (preg_match('/\[#\d+\]|\(#\d+\)/', $prose) === 1) {
@@ -298,12 +206,7 @@ function validateChangelogLines(array $lines): array
 }
 
 /**
- * All `## [` headings with their 1-based line numbers. The raw heading is
- * rtrimmed so a trailing space still compares equal to `## [Unreleased]` and
- * never produces a misleading "does not match" pair instead.
- *
  * @param list<string> $lines
- *
  * @return list<array{raw: string, line: int}>
  */
 function versionHeadings(array $lines): array
@@ -319,10 +222,6 @@ function versionHeadings(array $lines): array
     return $headings;
 }
 
-/**
- * True when the value is a real ISO-8601 calendar date — shape (YYYY-MM-DD)
- * plus a valid month/day, so `2026-13-45` is rejected.
- */
 function checkChangelogIsIsoDate(string $value): bool
 {
     if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $matches) !== 1) {
@@ -333,11 +232,7 @@ function checkChangelogIsIsoDate(string $value): bool
 }
 
 /**
- * Splits the file into blocks, one per `## [` heading, each carrying the
- * `### …` subheadings that follow the heading up to the next one.
- *
  * @param list<string> $lines
- *
  * @return list<array{heading: string, subheadings: list<string>}>
  */
 function versionBlocks(array $lines): array
@@ -357,9 +252,6 @@ function versionBlocks(array $lines): array
         }
 
         if ($current !== null && preg_match('/^### (.+)$/', $line, $matches) === 1) {
-            // trimmed like the `## [` headings: extra leading or trailing
-            // spaces must not turn a known subheading into an unknown one and
-            // dodge duplicate detection.
             $current['subheadings'][] = trim($matches[1]);
         }
     }
@@ -372,13 +264,7 @@ function versionBlocks(array $lines): array
 }
 
 /**
- * Top-level `- ` bullets (no leading indentation — a nested `  - ` bullet is
- * a continuation detail of its parent, not its own entry), each gathered
- * together with its wrapped continuation lines up to the next bullet, heading
- * or blank line.
- *
  * @param list<string> $lines
- *
  * @return list<array{text: string, firstLine: string, line: int}>
  */
 function topLevelEntries(array $lines): array
@@ -431,7 +317,6 @@ function checkChangelogPrintUsage(array $args): void
 
 /**
  * @param list<string> $argv
- *
  * @return array{root: string, root_from_env: bool}
  */
 function checkChangelogParseArgs(array $argv): array
@@ -480,8 +365,6 @@ function checkChangelogMain(array $options): void
 {
     $path = $options['root'] . '/' . CHANGELOG_FILE;
 
-    // Which tree was checked is part of the result: an environment variable
-    // that silently redirects the check must never be invisible in its output.
     fwrite(STDOUT, sprintf("check-changelog: root %s\n", $options['root']));
 
     if ($options['root_from_env']) {

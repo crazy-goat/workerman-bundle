@@ -10,10 +10,6 @@ use PhpBench\Attributes\Iterations;
 use PhpBench\Attributes\Revs;
 use PhpBench\Attributes\Warmup;
 
-/**
- * Benchmark PeriodicalTrigger::getNextRunDate — the scheduler hot path that
- * calculates the next execution time for periodic tasks.
- */
 #[BeforeMethods('init')]
 #[Revs(1000)]
 #[Iterations(5)]

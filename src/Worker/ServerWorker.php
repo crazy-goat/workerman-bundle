@@ -88,17 +88,7 @@ final readonly class ServerWorker
             $connection->context->lastActivity = time();
             $connection->context->requestCompleted = false;
 
-            // Defence-in-depth backstop: if a throwable escapes
-            // HttpRequestHandler's own try/catch (e.g. from a future
-            // throw site added after this fix, or from a Workerman
-            // callback that never passes through the handler), close
-            // the connection cleanly instead of letting Workerman call
-            // Worker::stopAll(250) which terminates the whole worker
-            // process. See issue #577.
             $connection->errorHandler = function (\Throwable $e) use ($connection): void {
-                // Log unconditionally — an escaped throwable should never
-                // happen and operators need visibility. Use error_log()
-                // because the PSR-3 logger is not easily reachable here.
                 error_log(sprintf(
                     'Unhandled throwable escaped HttpRequestHandler; closing connection: %s in %s:%d',
                     $e->getMessage(),
@@ -135,9 +125,6 @@ final readonly class ServerWorker
                             continue;
                         }
 
-                        // A connection that is still sending data (a big file download) is
-                        // active as long as bytes keep moving. A stalled client has no
-                        // progress and is closed by the timeout as before (issue #899).
                         $isSending = ($connection->context->streamSending ?? false) === true
                             || $connection->getSendBufferQueueSize() > 0;
                         if ($isSending && $connection->bytesWritten !== ($connection->context->lastBytesWritten ?? null)) {
@@ -147,9 +134,6 @@ final readonly class ServerWorker
                             continue;
                         }
 
-                        // Bytes of the next request wait in the receive buffer: a new request has
-                        // started on this keep-alive connection. It gets connection_timeout from now
-                        // on, like the first request, and not keepalive_timeout (issue #907).
                         if (($connection->context->requestCompleted ?? false) === true && $connection->getRecvBufferQueueSize() > 0) {
                             $connection->context->requestCompleted = false;
                             $connection->context->lastActivity = $now;
@@ -206,11 +190,7 @@ final readonly class ServerWorker
     }
 
     /**
-     * Boot kernel, resolve the request handler and middlewares, and configure the handler.
-     *
      * @param ServerConfig $serverConfig
-     *
-     * @return callable The fully configured request handler
      */
     private function configureHandler(
         KernelInterface $kernel,
@@ -243,7 +223,6 @@ final readonly class ServerWorker
 
     /**
      * @param ServerConfig $serverConfig
-     *
      * @return array{ssl: array{local_cert: string, local_pk: string}}
      */
     private function createSslContext(array $serverConfig): array

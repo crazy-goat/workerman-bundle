@@ -18,25 +18,10 @@ final class ProcessTest extends KernelTestCase
     {
         $this->varDir = dirname(__DIR__) . '/var';
 
-        // Clean up marker files from prior runs so leftover state cannot
-        // cause false failures (Issue #348 review warning #3). Reset BOTH
-        // markers: a stale entry in either could otherwise satisfy the
-        // fresh-entry waits below when the daemon stalls mid-run or a prior
-        // run was killed before its shutdown cleanup ran (Issue #645).
         @unlink($this->varDir . '/' . ProcessMarkerPaths::START_MARKER);
         @unlink($this->varDir . '/' . ProcessMarkerPaths::ERROR_MARKER);
     }
 
-    /**
-     * Regression-protective: the supervised process must keep refreshing its
-     * status file. The supervisor restarts the process after it exits, so a
-     * recent timestamp proves the start → run → exit → restart cycle works.
-     *
-     * The 10s window accommodates slow macOS hosts where `__invoke()` boot,
-     * shutdown and supervisor respawn can exceed 4s — see #534. The heartbeat
-     * rewrite in {@see TestProcess} keeps the timestamp inside this window on
-     * any platform; the relaxed budget is a secondary safety net.
-     */
     public function testProcessIsLive(): void
     {
         $content = $this->waitForFile(ProcessMarkerPaths::STATUS_FILE)
@@ -48,11 +33,6 @@ final class ProcessTest extends KernelTestCase
         );
     }
 
-    /**
-     * Regression-protective: ProcessStartEvent must be dispatched before the
-     * service method runs. If the dispatch site in ProcessHandler is removed
-     * or reordered, this test fails.
-     */
     public function testProcessStartEventIsDispatched(): void
     {
         $freshAfter = time() - 1;
@@ -62,9 +42,6 @@ final class ProcessTest extends KernelTestCase
         $latest = $this->findLatestEntryForProcess($entries, 'Test process');
         $this->assertNotNull($latest, 'No ProcessStartEvent entry found for "Test process"');
 
-        // Backstop recency check only: the fresh-entry wait above is the
-        // actual fix for #645. The issue suggested widening this window, but
-        // that is no longer needed and must not be done.
         $this->assertGreaterThan(
             time() - 4,
             $latest['timestamp'],
@@ -72,12 +49,6 @@ final class ProcessTest extends KernelTestCase
         );
     }
 
-    /**
-     * Regression-protective: ProcessErrorEvent must NOT fire during normal
-     * operation. The test process exits cleanly (exit 0), so any error event
-     * for "Test process" indicates a regression in ProcessHandler or the
-     * service invocation path.
-     */
     public function testNoProcessErrorEventDuringNormalOperation(): void
     {
         $path = $this->varDir . '/' . ProcessMarkerPaths::ERROR_MARKER;
@@ -95,12 +66,6 @@ final class ProcessTest extends KernelTestCase
         );
     }
 
-    /**
-     * Regression-protective: ProcessErrorEvent MUST fire when a process
-     * service throws. The TestErrorProcess throws RuntimeException on every
-     * invocation; the supervisor restarts it, so the error marker should
-     * contain a recent entry for "Test error process".
-     */
     public function testProcessErrorEventIsDispatchedOnThrowable(): void
     {
         $freshAfter = time() - 1;
@@ -110,9 +75,6 @@ final class ProcessTest extends KernelTestCase
         $latest = $this->findLatestEntryForProcess($entries, 'Test error process');
         $this->assertNotNull($latest, 'No ProcessErrorEvent entry found for "Test error process"');
 
-        // Backstop recency check only: the fresh-entry wait above is the
-        // actual fix for #645. The issue suggested widening this window, but
-        // that is no longer needed and must not be done.
         $this->assertGreaterThan(
             time() - 4,
             $latest['timestamp'],
@@ -126,12 +88,6 @@ final class ProcessTest extends KernelTestCase
         );
     }
 
-    /**
-     * Signal-handling regression: sending SIGTERM to the process worker
-     * must result in graceful exit and supervisor restart. The start-event
-     * marker must be refreshed after the kill, proving the supervisor
-     * detected the death and respawned the worker.
-     */
     #[RequiresPhpExtension('pcntl')]
     #[RequiresPhpExtension('posix')]
     public function testProcessSurvivesSigtermAndIsRestartedBySupervisor(): void
@@ -141,7 +97,6 @@ final class ProcessTest extends KernelTestCase
             self::failLiveServer('Could not locate process worker PID');
         }
 
-        // Record the current start-marker timestamp so we can detect a refresh.
         $beforeContent = @file_get_contents($this->varDir . '/' . ProcessMarkerPaths::START_MARKER);
         $beforeTimestamp = 0;
         if ($beforeContent !== false) {
@@ -150,11 +105,8 @@ final class ProcessTest extends KernelTestCase
             $beforeTimestamp = $latest['timestamp'] ?? 0;
         }
 
-        // Send SIGTERM to the worker. Workerman's default handler exits cleanly.
         posix_kill($workerPid, SIGTERM);
 
-        // Wait for the supervisor to restart the worker and dispatch a new
-        // ProcessStartEvent. The marker timestamp must advance.
         $refreshed = Wait::until(function () use ($beforeTimestamp): bool {
             $content = @file_get_contents($this->varDir . '/' . ProcessMarkerPaths::START_MARKER);
             if ($content === false) {
@@ -172,10 +124,6 @@ final class ProcessTest extends KernelTestCase
         );
     }
 
-    /**
-     * Find the PID of the [Process] worker by reading the master PID file
-     * and scanning its children via /proc (Linux) or ps (macOS/BSD).
-     */
     #[RequiresPhpExtension('pcntl')]
     #[RequiresPhpExtension('posix')]
     private function findProcessWorkerPid(): int|null
@@ -278,18 +226,6 @@ final class ProcessTest extends KernelTestCase
     }
 
     /**
-     * Wait for a marker file to gain a freshly appended entry for the given
-     * process and return all of its parsed entries.
-     *
-     * A merely non-empty file is not enough: entries left over from previous
-     * runs or written before a daemon stall could otherwise satisfy the
-     * caller (Issue #645). Freshness is scoped to the expected process name:
-     * the marker is shared by every supervised process, so an unrelated
-     * process restarting must not satisfy a wait. Polls at a 200ms interval
-     * until at least one parsed entry for $processName has a timestamp
-     * >= $freshAfter, or a generous ~15s deadline passes to tolerate slow
-     * macOS daemon respawns (see #534). Returns [] on timeout.
-     *
      * @return list<array{timestamp: int, process: string, message?: string}>
      */
     private function waitForMarkerEntries(string $relativePath, string $processName, int $freshAfter): array
@@ -319,13 +255,6 @@ final class ProcessTest extends KernelTestCase
     }
 
     /**
-     * Parse append-only marker file content into structured entries.
-     *
-     * The final line is only parsed when it is newline-terminated: the file
-     * is read concurrently with the daemon's FILE_APPEND writes, so a
-     * partially written trailing line (no process field yet, truncated
-     * message) must not be treated as a valid entry (Issue #645 review).
-     *
      * @return list<array{timestamp: int, process: string, message?: string}>
      */
     private function parseMarkerEntries(string $content): array
@@ -333,8 +262,6 @@ final class ProcessTest extends KernelTestCase
         $entries = [];
         $lines = explode("\n", $content);
         if (end($lines) !== '') {
-            // Trailing line was not terminated by a newline: still being
-            // written, ignore it.
             array_pop($lines);
         }
         foreach ($lines as $line) {
@@ -355,8 +282,6 @@ final class ProcessTest extends KernelTestCase
     }
 
     /**
-     * Find the most recent entry for a given process name.
-     *
      * @param list<array{timestamp: int, process: string, message?: string}> $entries
      * @return array{timestamp: int, process: string, message?: string}|null
      */

@@ -4,16 +4,6 @@ declare(strict_types=1);
 
 namespace CrazyGoat\WorkermanBundle\Test\Fixtures\PollingMonitorWatcher;
 
-/**
- * SplFileInfo subclass that counts stat-related calls.
- *
- * Used by tests to verify PollingMonitorWatcher doesn't make redundant
- * stat() syscalls per file. Each stat-touching method bumps a shared
- * static counter so a single test can assert the cumulative call count.
- *
- * Every method that triggers a stat/lstat syscall is overridden so a
- * regression under any name (getFileInfo, getSize, isFile, etc.) is caught.
- */
 final class CountingSplFileInfo extends \SplFileInfo
 {
     public static int $statCallCount = 0;

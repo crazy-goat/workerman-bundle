@@ -139,7 +139,6 @@ final class BinaryFileResponseReflectorTest extends TestCase
         $first = $reflector->getOffset($response);
         $second = $reflector->getOffset($response);
 
-        // Verify a second instance also returns cached result
         $reflector2 = new BinaryFileResponseReflector();
         $third = $reflector2->getOffset($response);
 

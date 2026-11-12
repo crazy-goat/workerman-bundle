@@ -12,10 +12,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(AsTask::class)]
 final class AsTaskTest extends TestCase
 {
-    // ──────────────────────────────────────────────
-    // Constructor round-trip
-    // ──────────────────────────────────────────────
-
     public function testConstructorWithDefaultValues(): void
     {
         $attribute = new AsTask();
@@ -87,10 +83,6 @@ final class AsTaskTest extends TestCase
         $this->assertSame(0, $attribute->jitter);
     }
 
-    // ──────────────────────────────────────────────
-    // Type safety
-    // ──────────────────────────────────────────────
-
     public function testJitterParameterIsNullableInt(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -114,10 +106,6 @@ final class AsTaskTest extends TestCase
         $this->assertTrue($type->allowsNull());
     }
 
-    // ──────────────────────────────────────────────
-    // Reflection target
-    // ──────────────────────────────────────────────
-
     public function testAttributeCanBeAppliedToClass(): void
     {
         $reflection = new \ReflectionClass(AsTask::class);
@@ -126,10 +114,6 @@ final class AsTaskTest extends TestCase
 
         $this->assertSame(\Attribute::TARGET_CLASS, $targets & \Attribute::TARGET_CLASS, 'AsTask must allow TARGET_CLASS');
     }
-
-    // ──────────────────────────────────────────────
-    // Reflecting off a fixture class
-    // ──────────────────────────────────────────────
 
     public function testReflectAttributeReadsConstructorArguments(): void
     {
@@ -172,10 +156,6 @@ final class AsTaskTest extends TestCase
         $this->assertNull($attribute->method);
         $this->assertNull($attribute->jitter);
     }
-
-    // ──────────────────────────────────────────────
-    // Regression protection
-    // ──────────────────────────────────────────────
 
     public function testConstructorParameterCountIsStable(): void
     {
@@ -235,10 +215,6 @@ final class AsTaskTest extends TestCase
         $this->assertTrue($reflection->isFinal(), 'AsTask must be final');
     }
 }
-
-// ──────────────────────────────────────────────
-// Fixture classes
-// ──────────────────────────────────────────────
 
 #[AsTask(name: 'fixture_task', schedule: '0 */2 * * *', method: 'process', jitter: 15)]
 final readonly class FixtureTask

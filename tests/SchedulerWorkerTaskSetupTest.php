@@ -15,9 +15,6 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Workerman\Worker;
 
-/**
- * Issue #970: one task that cannot be set up must not stop the other tasks.
- */
 final class SchedulerWorkerTaskSetupTest extends TestCase
 {
     private string $tmpDir;

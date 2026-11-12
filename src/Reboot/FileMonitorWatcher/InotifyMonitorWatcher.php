@@ -17,7 +17,7 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
     private array $pathByWd = [];
     /** @var array<string, true> */
     private array $watchedPaths = [];
-    /** @var array<string, true> Paths whose failed add_watch was already reported */
+    /** @var array<string, true> */
     private array $loggedWatchFailures = [];
     private \Closure|null $reloadCallback = null;
 
@@ -30,15 +30,12 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 $fd = false;
             }
             if ($fd === false) {
-                // No free inotify instance (max_user_instances) or file descriptor.
-                // Degrade like the no-extension case: no file watching, no crash.
                 try {
                     @Worker::log(
                         'InotifyMonitorWatcher: inotify_init() failed, files are not watched; '
                         . 'check /proc/sys/fs/inotify/max_user_instances and the open files limit',
                     );
                 } catch (\ErrorException) {
-                    // Advisory logging must not abort startup when no log fd is available.
                 }
 
                 return;
@@ -47,26 +44,16 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             $this->fd = $fd;
             stream_set_blocking($this->fd, false);
 
-            // Phase 1: Watch only top-level directories for instant startup.
-            // Deep subdirectories are watched lazily after the event loop runs.
             foreach ($this->sourceDir as $dir) {
                 $this->watchDir($dir);
             }
 
-            // Phase 2: Schedule a deferred recursive walk so existing subdirectories
-            // are still watched, but without blocking the event loop at boot.
             Worker::$globalEvent->delay(self::DEFERRED_WALK_DELAY, $this->deferredWalk(...));
 
             Worker::$globalEvent->onReadable($this->fd, $this->onNotify(...));
         }
     }
 
-    /**
-     * Deferred recursive walk that watches all existing subdirectories.
-     *
-     * Called once after the event loop starts. This avoids a synchronous
-     * full-directory walk at boot, which can be slow on very large source trees.
-     */
     private function deferredWalk(): void
     {
         foreach ($this->sourceDir as $dir) {
@@ -98,9 +85,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 unset($this->pathByWd[$event['wd']]);
                 if ($path !== null) {
                     unset($this->watchedPaths[$path]);
-                    // A reported failure is only relevant while the path is
-                    // tracked; if the directory reappears and fails again, the
-                    // new failure must be reported, not silently suppressed.
                     unset($this->loggedWatchFailures[$path]);
                 }
                 continue;
@@ -109,10 +93,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             if ($this->isFlagSet($event['mask'], IN_MOVED_FROM | IN_ISDIR)) {
                 $parentPath = $this->pathByWd[$event['wd']] ?? null;
                 if ($parentPath !== null) {
-                    // The kernel watch follows the moved inode, so no
-                    // IN_IGNORED ever fires: drop the stale bookkeeping for
-                    // the old location (and the watched directories it
-                    // contained) instead.
                     $this->forgetWatchedTree($parentPath . '/' . $event['name']);
                 }
                 continue;
@@ -133,8 +113,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 continue;
             }
 
-            // Bookkeeping above always runs, even while a reload is pending;
-            // only the reload scheduling is skipped once one is already armed.
             if ($this->reloadCallback instanceof \Closure) {
                 continue;
             }
@@ -148,14 +126,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
         }
     }
 
-    /**
-     * Watch a directory and any subdirectories it already contains.
-     *
-     * A directory moved into the tree (or created and populated in one step)
-     * can arrive with children already present; those children never produce
-     * events because no watch existed when they were created, so their
-     * watches have to be established by walking the subtree.
-     */
     private function watchDirTree(string $path): void
     {
         if (!$this->watchDir($path)) {
@@ -169,7 +139,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
                 \RecursiveIteratorIterator::SELF_FIRST,
             );
         } catch (\UnexpectedValueException) {
-            // Directory disappeared between the event and this walk.
             return;
         }
 
@@ -181,13 +150,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
         }
     }
 
-    /**
-     * Drop the bookkeeping for a directory that left the watched tree.
-     *
-     * The kernel watch follows the inode across the move, so no IN_IGNORED
-     * fires for it or for the watched directories it contained; their
-     * entries are stale and must be forgotten here.
-     */
     private function forgetWatchedTree(string $path): void
     {
         unset($this->watchedPaths[$path], $this->loggedWatchFailures[$path]);
@@ -198,10 +160,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
         }
     }
 
-    /**
-     * Add a watch for one directory. Idempotent per path; safe to call from
-     * every entry point (start, deferred walk, event processing).
-     */
     private function watchDir(string $path): bool
     {
         if (isset($this->watchedPaths[$path])) {
@@ -223,9 +181,6 @@ final class InotifyMonitorWatcher extends FileMonitorWatcher
             return false;
         }
 
-        // A watch surviving a move keeps its descriptor, so the descriptor may
-        // already be mapped to the old location of this directory: drop that
-        // stale path to keep both maps consistent.
         $previousPath = $this->pathByWd[$wd] ?? null;
         if ($previousPath !== null && $previousPath !== $path) {
             unset($this->watchedPaths[$previousPath]);

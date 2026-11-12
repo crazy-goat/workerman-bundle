@@ -7,20 +7,6 @@ namespace CrazyGoat\WorkermanBundle\Test;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Drives `bin/check-changelog.php` as a subprocess (issue #654).
- *
- * The structural rules themselves live in the script — the single source of
- * truth — so `composer lint` (and through it the pre-push hook and the CI
- * Lint job) enforces exactly what these tests assert. They were mined from
- * `.pi-subagents/artifacts/` review history (#686 phase 4): duplicate
- * subheadings (#641), out-of-order versions (#255) and a stale `[Unreleased]`
- * section (#356) recurred across ~9 review artifacts. See the script header
- * for the rules and for the narrowed legacy-reference rationale.
- *
- * Only the passing case touches the real CHANGELOG.md; every failure scenario
- * runs against a synthetic fixture in a throw-away sandbox.
- */
 #[CoversNothing]
 final class ChangelogStructureTest extends TestCase
 {
@@ -56,7 +42,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testADuplicateSubheadingFails(): void
     {
-        // #641: two `### Fixed` sections inside one version block.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -86,7 +71,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testOutOfOrderVersionHeadingsFail(): void
     {
-        // #255: an older version heading below a newer one.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -118,7 +102,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAMissingUnreleasedSectionFails(): void
     {
-        // #356: everything already dumped into released headings.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -326,9 +309,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testDuplicateReleasedVersionHeadingsFail(): void
     {
-        // Pins the equality boundary of the descending-order rule: equal
-        // versions are not strictly older, so relaxing version_compare() >= 0
-        // to > 0 would let this pass.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -374,8 +354,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAnOnlyUnreleasedFileFailsForWantOfReleasedHeadings(): void
     {
-        // Pins the F-6 behaviour deliberately inherited from the pre-refactor
-        // test: a changelog with nothing released yet does not pass.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -394,9 +372,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAnUnknownSubheadingIsSilentlySkipped(): void
     {
-        // `### Fix` is not a Keep a Changelog subheading — misspelled or
-        // custom sections are outside this gate's scope, so they neither
-        // fail nor take part in duplicate detection.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -447,8 +422,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAFencedHeadingNeverCountsAsStructure(): void
     {
-        // The only released heading in the file lives inside a code fence —
-        // documentation showing what a heading looks like, not a heading.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -503,8 +476,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testADuplicateSubheadingIsStillCaughtWhenACopyHidesInAFence(): void
     {
-        // Two real duplicates plus a fenced copy: the fenced copy must not
-        // inflate the count past the two genuine ones.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -537,7 +508,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testABacktickedReferenceShapeIsNotAReference(): void
     {
-        // Inline code quotes the shape of a reference without being one.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -562,7 +532,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAnAnchorLinkIsNotAReference(): void
     {
-        // `[x](#123)` links inside the page; it cites no issue.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -588,7 +557,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAnImpossibleCalendarDateFails(): void
     {
-        // Shape alone accepts 2026-13-45; the date must be real.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -613,8 +581,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testATrailingSpaceOnTheUnreleasedHeadingIsTolerated(): void
     {
-        // Markdown ignores trailing whitespace; the diagnostic used to be a
-        // misleading "found 0" + "does not match" pair.
         $this->writeChangelog("# Changelog\n\n## [Unreleased] \n\n### Added\n\n"
             . "- New ([#900](https://github.com/crazy-goat/workerman-bundle/issues/900))\n\n"
             . "## [0.26.0] - 2026-08-15\n\n### Fixed\n\n"
@@ -627,7 +593,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testATildeFencedHeadingNeverCountsAsStructure(): void
     {
-        // CommonMark's second fence syntax: ~~~ must blank exactly like ```.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -654,8 +619,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testABacktickFenceIsNotClosedByATildeMarker(): void
     {
-        // A fence is closed by its own marker only: the ``` fence swallows
-        // the ~~~ line and everything in it stays blanked.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -686,9 +649,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAnUnterminatedFenceIsReportedAtItsOpeningLine(): void
     {
-        // Everything past the opener is invisible to the checker, so the one
-        // message that matters names the cause instead of misleading
-        // downstream generics.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -711,10 +671,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testASubheadingWithTrailingSpaceStillCountsAsADuplicate(): void
     {
-        // `### Fixed ` must not escape duplicate detection as an unknown
-        // subheading just because of trailing whitespace. The trailing spaces
-        // are injected via regex so they survive any editor's trailing-
-        // whitespace stripping of this source file.
         $this->writeChangelog((string) preg_replace(
             '/^### Fixed$/m',
             '### Fixed ',
@@ -747,10 +703,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testAFourBacktickFenceIsNotClosedByAnInnerTripleBacktick(): void
     {
-        // CommonMark: a fence closes on a run of its own character at least
-        // as long as the opener. The ``` inside the ```` fence is content —
-        // without the length rule it would close early and leak the heading
-        // into the parse as a real release.
         $this->writeChangelog(<<<'MARKDOWN'
             # Changelog
 
@@ -778,10 +730,6 @@ final class ChangelogStructureTest extends TestCase
 
     public function testASubheadingWithLeadingSpacesStillCountsAsADuplicate(): void
     {
-        // `###   Fixed` renders as "Fixed" in Markdown; leading whitespace
-        // must not turn it into an unknown subheading that dodges duplicate
-        // detection. The spaces are injected via str_replace so they survive
-        // any editor's trailing-whitespace stripping of this source file.
         $this->writeChangelog(str_replace(
             '### Fixed',
             '###   Fixed',
@@ -824,9 +772,6 @@ final class ChangelogStructureTest extends TestCase
         }
     }
 
-    /**
-     * A minimal changelog that satisfies every rule of the script.
-     */
     private function writeValidChangelog(): void
     {
         $this->writeChangelog(<<<'MARKDOWN'
@@ -853,9 +798,6 @@ final class ChangelogStructureTest extends TestCase
     }
 
     /**
-     * Runs the script against the sandbox and asserts it failed with exit
-     * code 1 — every call site asserts on the message, none on the mechanics.
-     *
      * @return array{code: int, out: string, err: string}
      */
     private function runChecked(): array
@@ -868,11 +810,8 @@ final class ChangelogStructureTest extends TestCase
     }
 
     /**
-     * Runs the script with exactly the given arguments and environment.
-     *
      * @param array<string, string> $env
      * @param list<string> $args
-     *
      * @return array{code: int, out: string, err: string}
      */
     private function runScript(array $env, array $args): array

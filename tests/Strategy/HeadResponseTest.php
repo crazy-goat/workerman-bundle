@@ -24,9 +24,6 @@ final class HeadResponseTest extends TestCase
 
     public function testEmptyHeadersFastPathReplacesContentLengthBeforeConnection(): void
     {
-        // Workerman's empty-headers serialization branch emits
-        // "Content-Length: N" followed by "Connection: keep-alive"; the value
-        // must be rewritten there too (issue #643 regression guard).
         $response = new HeadResponse(200, [], 999);
 
         $wire = (string) $response;

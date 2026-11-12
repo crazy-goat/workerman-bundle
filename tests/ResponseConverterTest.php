@@ -21,7 +21,6 @@ final class ResponseConverterTest extends TestCase
 
     protected function setUp(): void
     {
-        // Create a mock TcpConnection - we only need it passed through, not actually used
         $this->connection = $this->createMock(TcpConnection::class);
         HeaderNameNormalizer::resetCache();
     }
@@ -47,7 +46,6 @@ final class ResponseConverterTest extends TestCase
         $this->expectException(NoResponseStrategyException::class);
         $this->expectExceptionMessage('No strategy found');
 
-        // Empty strategies array
         $converter = new ResponseConverter([]);
         $converter->convert(new Response(), $this->connection, '1.1', 'GET');
     }
@@ -62,7 +60,6 @@ final class ResponseConverterTest extends TestCase
             'X-Custom' => 'custom-value',
         ]);
 
-        // Should not throw - headers are passed to strategy
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
@@ -74,13 +71,11 @@ final class ResponseConverterTest extends TestCase
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
-        // Symfony stores some headers in lowercase internally
         $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'content-type' => 'text/html',
             'content-disposition' => 'attachment',
         ]);
 
-        // Should not throw - headers are normalized and passed to strategy
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $this->assertSame(200, $workermanResponse->getStatusCode());
@@ -90,7 +85,6 @@ final class ResponseConverterTest extends TestCase
 
     public function testConvertHandlesIterableStrategies(): void
     {
-        // Test with Generator (simulating DI tagged_iterator)
         $generator = function () {
             yield new DefaultResponseStrategy();
         };
@@ -117,19 +111,10 @@ final class ResponseConverterTest extends TestCase
 
         $workermanResponse = $converter->convert($streamedResponse, $this->connection, '1.1', 'GET');
 
-        // Content is sent directly via $connection->send(), not buffered in response
         $this->assertSame('', $workermanResponse->rawBody());
         $this->assertSame(200, $workermanResponse->getStatusCode());
     }
 
-    /**
-     * Issue #621 / finding F-2: the `bool $shouldClose` parameter on
-     * ResponseConverter::convert() must be threaded through to the
-     * method-aware strategy. A StreamedResponse converted with
-     * `$shouldClose = true` over HTTP/1.1 must carry `Connection: close` in
-     * the head the strategy sends directly — the converter is the only path
-     * from SymfonyController's close-intent computation to the strategy.
-     */
     public function testConvertThreadsShouldCloseToStreamedStrategy(): void
     {
         $this->connection->context = new \stdClass();
@@ -156,12 +141,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertStringContainsString('Transfer-Encoding: chunked', $sendCalls[0]);
     }
 
-    /**
-     * Issue #621 / finding F-2: the default `$shouldClose = false` must keep
-     * the streamed head free of `Connection: close` over an HTTP/1.1 keep-alive
-     * connection. Guards against a regression that drops the parameter default
-     * or always stamps close.
-     */
     public function testConvertDefaultShouldCloseKeepsStreamedHeadKeepAlive(): void
     {
         $this->connection->context = new \stdClass();
@@ -181,7 +160,6 @@ final class ResponseConverterTest extends TestCase
             echo 'streamed content';
         });
 
-        // 4-arg call — relies on the $shouldClose default of false.
         $converter->convert($streamedResponse, $this->connection, '1.1', 'GET');
 
         $this->assertNotEmpty($sendCalls);
@@ -224,7 +202,6 @@ final class ResponseConverterTest extends TestCase
         $r1 = $converter->convert($response1, $this->connection, '1.1', 'GET');
         $r2 = $converter->convert($response2, $this->connection, '1.1', 'GET');
 
-        // Both calls hit the static cache on the second invocation
         $this->assertSame('"v1"', $r1->getHeader('ETag'));
         $this->assertSame('"v2"', $r2->getHeader('ETag'));
     }
@@ -234,14 +211,12 @@ final class ResponseConverterTest extends TestCase
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);
 
-        // First call populates the cache
         $response1 = new Response('a', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'content-type' => 'text/html',
             'x-custom-one' => 'first',
         ]);
         $converter->convert($response1, $this->connection, '1.1', 'GET');
 
-        // Second call on same instance hits cache entries
         $response2 = new Response('b', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'content-type' => 'application/json',
             'x-custom-two' => 'second',
@@ -272,12 +247,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('0', $workermanResponse->getHeader('DNT'));
     }
 
-    /**
-     * Transport-owned headers must be stripped centrally so the transport
-     * (Workerman's Http::encode() / Response::__toString()) is the sole
-     * authority on message framing. Otherwise array_merge_recursive in
-     * Response::withHeaders() emits duplicates — see issue #579.
-     */
     #[DataProvider('transportHeadersProvider')]
     public function testConvertStripsTransportOwnedHeaders(string $headerName): void
     {
@@ -313,10 +282,6 @@ final class ResponseConverterTest extends TestCase
         ];
     }
 
-    /**
-     * Set-Cookie legitimately needs multiple values (one Set-Cookie header per
-     * cookie), so flattening must not collapse it to a single string.
-     */
     public function testConvertFlattensSingleHeaderValueWithoutFilteringCopy(): void
     {
         $converter = new ResponseConverter([new DefaultResponseStrategy()]);
@@ -347,10 +312,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertStringContainsString('b=2', (string) $setCookie[1]);
     }
 
-    /**
-     * Content-Range must NOT be stripped — Workerman sets it via header()
-     * (which overwrites), and Symfony's value is correct for ranged responses.
-     */
     public function testConvertPreservesContentRangeHeader(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -365,13 +326,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('bytes 0-99/5000', $workermanResponse->getHeader('Content-Range'));
     }
 
-    /**
-     * A HEAD response legitimately carries the Content-Length the
-     * corresponding GET would produce (RFC 9110 §9.3.2), so the
-     * application-provided value must survive the transport-header strip for
-     * HEAD requests (issue #643). Other transport-owned headers are still
-     * stripped.
-     */
     public function testConvertPreservesAppContentLengthForHeadRequest(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -395,11 +349,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertStringContainsString("X-Custom: kept\r\n", $wire);
     }
 
-    /**
-     * The same response converted for a non-HEAD request must keep the
-     * unconditional strip: the transport computes Content-Length from the
-     * actual body (issue #579, #643).
-     */
     public function testConvertStripsAppContentLengthForNonHeadRequest(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -414,10 +363,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertNull($workermanResponse->getHeader('Content-Length'));
     }
 
-    /**
-     * A header whose values are all null (Symfony can produce these) must be
-     * dropped, not emitted as an empty line on the wire.
-     */
     public function testConvertDropsAllNullHeaderValues(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -426,7 +371,6 @@ final class ResponseConverterTest extends TestCase
         $response = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
             'X-Custom' => 'kept',
         ]);
-        // Force a header with only null values, as Symfony can produce.
         $response->headers->set('X-Empty', null);
 
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
@@ -440,12 +384,6 @@ final class ResponseConverterTest extends TestCase
         return implode('-', array_map(ucfirst(...), explode('-', strtolower($name))));
     }
 
-    /**
-     * Issue #574: the header-name normalisation cache must stay bounded no
-     * matter how many distinct header names the application emits. Drive
-     * 10 000 distinct names through extractHeaders() via convert() and
-     * assert the cache never exceeds the cap.
-     */
     public function testConvertHeaderNameCacheStaysBoundedUnderDistinctNameFlood(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -465,11 +403,6 @@ final class ResponseConverterTest extends TestCase
         );
     }
 
-    /**
-     * Issue #574: an evicted name must normalise identically on a subsequent
-     * request — a cache miss after eviction produces the same string as a
-     * cache hit.
-     */
     public function testConvertEvictedHeaderNameNormalisesIdenticallyOnReRequest(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -482,7 +415,6 @@ final class ResponseConverterTest extends TestCase
         $first = $converter->convert($response, $this->connection, '1.1', 'GET');
         $this->assertSame('value', $first->getHeader('X-Eviction-Probe-Header'));
 
-        // Force eviction of every currently cached entry, including ours.
         $overflow = HeaderNameNormalizer::HEADER_CACHE_MAX_SIZE + 1;
         for ($i = 0; $i < $overflow; ++$i) {
             $flood = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
@@ -492,14 +424,10 @@ final class ResponseConverterTest extends TestCase
         }
         $this->assertArrayNotHasKey('x-eviction-probe-header', HeaderNameNormalizer::cache());
 
-        // Cache miss after eviction: same normalisation as the cache hit.
         $second = $converter->convert($response, $this->connection, '1.1', 'GET');
         $this->assertSame('value', $second->getHeader('X-Eviction-Probe-Header'));
     }
 
-    /**
-     * Issue #574: implausibly long header names must not occupy cache slots.
-     */
     public function testConvertSkipsCachingImplausiblyLongHeaderNames(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -512,19 +440,12 @@ final class ResponseConverterTest extends TestCase
         $workermanResponse = $converter->convert($response, $this->connection, '1.1', 'GET');
 
         $this->assertSame('value', $workermanResponse->getHeader('X-' . ucfirst(str_repeat('a', 200))));
-        // Symfony auto-adds Date/Content-Type, so the cache is not empty —
-        // but no key longer than the plausibility limit may be present.
         $this->assertArrayNotHasKey($longName, HeaderNameNormalizer::cache());
         foreach (array_keys(HeaderNameNormalizer::cache()) as $key) {
             $this->assertLessThanOrEqual(HeaderNameNormalizer::HEADER_NAME_MAX_BYTES, strlen((string) $key));
         }
     }
 
-    /**
-     * Issue #574: corrections-table entries and multi-segment names must be
-     * unaffected by the bounded cache — both on first pass (fresh cache) and
-     * on repeat after the entries have been evicted.
-     */
     public function testConvertCorrectionsAndMultiSegmentNamesSurviveCacheChurn(): void
     {
         $strategies = [new DefaultResponseStrategy()];
@@ -549,7 +470,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('1', $first->getHeader('DNT'));
         $this->assertSame('multi', $first->getHeader('X-Multi-Segment-Header-Name'));
 
-        // Evict everything, then re-request: output must be identical.
         $overflow = HeaderNameNormalizer::HEADER_CACHE_MAX_SIZE + 1;
         for ($i = 0; $i < $overflow; ++$i) {
             $flood = new Response('content', \Symfony\Component\HttpFoundation\Response::HTTP_OK, [
@@ -566,13 +486,6 @@ final class ResponseConverterTest extends TestCase
         $this->assertSame('multi', $second->getHeader('X-Multi-Segment-Header-Name'));
     }
 
-    /**
-     * Issue #726: extractHeaders() reuses the normalizer's internal lowercased
-     * cache key for the transport-header comparison, so the normalized form
-     * must always lowercase back to the input. Any future CORRECTIONS entry
-     * whose value lowercases differently from its key (e.g. 'dnt' →
-     * 'Do-Not-Track') would silently break the transport-header strip.
-     */
     #[DataProvider('normalizeLowercaseInvariantProvider')]
     public function testNormalizedHeaderNameLowercasesBackToInput(string $name): void
     {
@@ -605,36 +518,21 @@ final class ResponseConverterTest extends TestCase
         ];
     }
 
-    /**
-     * Issue #726: the out-parameter must expose the exact cache key, both on a
-     * miss and on a hit reached through a differently-cased input of the same
-     * header name.
-     */
     public function testNormalizeExposesInternalLowercaseCacheKey(): void
     {
-        // Cache miss with a proper-cased input.
         $normalized = HeaderNameNormalizer::normalize('Content-Length', $lower);
         $this->assertSame('Content-Length', $normalized);
         $this->assertSame('content-length', $lower);
 
-        // Cache hit with a differently-cased input of the same header: the
-        // out-param must be the same key, not a value derived from the
-        // normalized result.
         $normalizedHit = HeaderNameNormalizer::normalize('CONTENT-LENGTH', $lowerHit);
         $this->assertSame('Content-Length', $normalizedHit);
         $this->assertSame('content-length', $lowerHit);
         $this->assertSame($lower, $lowerHit);
     }
 
-    /**
-     * Issue #726: extractHeaders() compares the transport-header strip against
-     * the normalizer's lowercased cache key. On a warm cache the key must still
-     * identify the header case-insensitively — in particular the HEAD
-     * Content-Length exception (issue #643) must survive a cache hit.
-     */
     public function testHeadContentLengthExceptionSurvivesWarmNormalizerCache(): void
     {
-        HeaderNameNormalizer::normalize('content-length'); // warm the cache
+        HeaderNameNormalizer::normalize('content-length');
 
         $strategies = [new DefaultResponseStrategy()];
         $converter = new ResponseConverter($strategies);

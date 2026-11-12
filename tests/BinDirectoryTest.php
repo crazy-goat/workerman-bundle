@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversNothing]
 final class BinDirectoryTest extends TestCase
 {
-    /** Ignore the global and system git config and the git env of the caller: the test must not touch the developer's hooks. */
     private const CLEAN_GIT_ENV = 'env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 ';
 
     private string $projectDir;
@@ -45,10 +44,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('install-git-hook.php', $content);
     }
 
-    /**
-     * FAQ-015 is promoted against this test: the hook must run `composer lint`
-     * (which calls `bin/lint.sh`) and a lint failure must actually block the push.
-     */
     public function testThePrePushHookBlocksOnALintFailure(): void
     {
         $installer = file_get_contents($this->projectDir . '/bin/install-git-hook.php');
@@ -92,7 +87,6 @@ final class BinDirectoryTest extends TestCase
         }
 
         $sandbox = $this->makeSandbox();
-        // The write goes through the link and works, but the user does not own /dev/null, so chmod() fails.
         $this->assertTrue(symlink('/dev/null', $sandbox . '/.git/hooks/pre-push'));
 
         $output = [];
@@ -111,7 +105,6 @@ final class BinDirectoryTest extends TestCase
         exec($git . 'init -q 2>&1 && ' . $git . '-c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init 2>&1 && ' . $git . 'worktree add -q ' . escapeshellarg($sandbox . '-wt') . ' 2>&1', $gitOutput, $gitCode);
         $this->assertSame(0, $gitCode, implode("\n", $gitOutput));
 
-        // A linked worktree: `.git` is a file there.
         mkdir($sandbox . '-wt/bin', 0o775, true);
         copy($sandbox . '/bin/install-git-hook.php', $sandbox . '-wt/bin/install-git-hook.php');
         exec(self::CLEAN_GIT_ENV . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($sandbox . '-wt/bin/install-git-hook.php') . ' 2>&1', $output, $code);
@@ -120,7 +113,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertTrue(is_executable($sandbox . '/.git/hooks/pre-push'));
         unlink($sandbox . '/.git/hooks/pre-push');
 
-        // core.hooksPath: the hook goes there, not into .git/hooks.
         $hooksPath = $sandbox . '/custom-hooks';
         mkdir($hooksPath);
         exec($git . 'config core.hooksPath ' . escapeshellarg($hooksPath) . ' 2>&1');
@@ -198,10 +190,6 @@ final class BinDirectoryTest extends TestCase
         }
     }
 
-    /**
-     * bin/wait-for-ports.php polls TCP ports until they accept connections.
-     * It replaces the fixed `sleep 1` in the composer test scripts (#592).
-     */
     public function testWaitForPortsRejectsMissingArgs(): void
     {
         $output = [];
@@ -221,10 +209,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('did not become ready', implode("\n", $output));
     }
 
-    /**
-     * A port the OS just handed out and that is not one of the test daemon
-     * ports: hard-coding 19999 broke the suite when WMB_PORT_* used it.
-     */
     private function unusedPort(): int
     {
         for ($attempt = 0; $attempt < 10; $attempt++) {
@@ -269,11 +253,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertStringContainsString('bin/README.md', $content);
     }
 
-    /**
-     * CONTRIBUTING.md used to claim "PHPStan level 6" while phpstan.neon.dist
-     * already ran level 8 (issue #693). Pin the doc against the config so a
-     * level bump cannot drift stale a second time.
-     */
     public function testContributingPhpstanLevelMatchesConfig(): void
     {
         $neonContent = file_get_contents($this->projectDir . '/phpstan.neon.dist');
@@ -293,17 +272,6 @@ final class BinDirectoryTest extends TestCase
         );
     }
 
-    /**
-     * CONTRIBUTING.md states the coverage threshold in prose while
-     * composer.json's `coverage:check` is the single source of truth. Pin the
-     * prose to the config so a threshold change cannot leave the doc stale,
-     * the same drift class as the PHPStan level in #693.
-     *
-     * Every line naming the threshold is checked, so drift in any one
-     * occurrence fails. The counter only requires at least one mention: a
-     * deliberate consolidation of the prose must stay green, while an emptied
-     * or reworded-away mention must not pass vacuously.
-     */
     public function testContributingCoverageThresholdMatchesComposer(): void
     {
         $composerContent = file_get_contents($this->projectDir . '/composer.json');
@@ -323,8 +291,6 @@ final class BinDirectoryTest extends TestCase
         }
         $this->assertNotNull($threshold, 'coverage:check must pass an explicit threshold to check-coverage.php');
 
-        // Prose form: integral values drop the trailing ".0" (80.0 -> "80"),
-        // non-integral values keep one decimal (85.5 -> "85.5").
         $display = $threshold === floor($threshold)
             ? (string) (int) $threshold
             : number_format($threshold, 1, '.', '');
@@ -374,7 +340,7 @@ final class BinDirectoryTest extends TestCase
 
         foreach ($files as $file) {
             if ($file === 'CHANGELOG.md') {
-                continue; // history legitimately names removed tools
+                continue;
             }
 
             $content = (string) file_get_contents($this->projectDir . '/' . $file);
@@ -384,12 +350,6 @@ final class BinDirectoryTest extends TestCase
         }
     }
 
-    /**
-     * A linked worktree's `.git` is a file pointing at the main checkout's
-     * `.git/worktrees/<name>`. The container mounts only the worktree, so the
-     * helper must mount that common dir read-only at the same absolute path
-     * (including paths with spaces) or `git ls-files` fails inside (#867).
-     */
     public function testDockerTestWorktreeMountsTheGitCommonDirOfALinkedWorktree(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -423,12 +383,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertContains($worktree . ':/app', $args);
     }
 
-    /**
-     * The common-dir probe must not inherit the caller's git environment. An
-     * exported GIT_DIR/GIT_COMMON_DIR pointing at another repository would
-     * otherwise make the helper mount that repo (or nothing) instead of the
-     * worktree's real common dir (#867).
-     */
     public function testDockerTestWorktreeIgnoresTheCallersGitEnvironment(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -469,11 +423,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertNotContains($otherGitDir . ':' . $otherGitDir . ':ro', $args, 'the caller GIT_DIR must not be mounted');
     }
 
-    /**
-     * `git rev-parse --git-common-dir` returns a relative `.git` in the main
-     * checkout. It is inside the worktree bind mount already, so mounting it
-     * again would only shadow it.
-     */
     public function testDockerTestWorktreeDoesNotMountAGitDirInsideTheWorktree(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -500,10 +449,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertNotContains($commonDir . ':' . $commonDir . ':ro', $args);
     }
 
-    /**
-     * The cache file stores absolute paths. Every env has one, and a cache
-     * written by the container must not survive the run (#867).
-     */
     public function testDockerTestWorktreeCleansEveryEnvironmentCacheAroundTheRun(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -555,11 +500,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertWorkermanCachesAreGone($sandbox);
     }
 
-    /**
-     * `rm -rf var/cache/<env>/` follows a symlinked env dir and deletes its
-     * target. The cleanup must remove the link itself; a plain
-     * `rm -rf var/cache/*` does that, the trailing slash does not (#867).
-     */
     public function testDockerTestWorktreeDoesNotFollowASymlinkedEnvironmentCache(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -588,10 +528,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertFileExists($outside . '/dev/protected.txt', 'cleanup must not delete the symlink target');
     }
 
-    /**
-     * A symlinked var/cache itself can point anywhere. The helper must refuse
-     * it before the first cleanup instead of deleting the target's contents.
-     */
     public function testDockerTestWorktreeRefusesASymlinkedCacheDirectory(): void
     {
         $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
@@ -630,10 +566,6 @@ final class BinDirectoryTest extends TestCase
         $this->assertSame(0, $code, implode("\n", $output));
     }
 
-    /**
-     * A fake `docker` that records its arguments and simulates the container
-     * writing the config cache into the bind mount.
-     */
     private function makeFakeDocker(string $binDir): void
     {
         $this->assertTrue(mkdir($binDir, 0o775, true));
@@ -666,7 +598,6 @@ SH;
 
     /**
      * @param array<string, string> $environment
-     *
      * @return array{0: int, 1: string}
      */
     private function runDockerTestWorktree(string $worktree, string $binDir, array $environment): array
@@ -688,8 +619,6 @@ SH;
             $cacheDir = $dir . '/var/cache/' . $env . '/workerman';
             $this->assertTrue(mkdir($cacheDir, 0o775, true));
             $this->assertNotFalse(file_put_contents($cacheDir . '/config.cache.php', 'stale'));
-            // A warm kernel container cache makes Runner::warmUpCache() skip
-            // the warmers, so the config cache must not be deleted alone.
             $this->assertNotFalse(file_put_contents($dir . '/var/cache/' . $env . '/ContainerSentinel.php.meta', 'warm'));
         }
     }
