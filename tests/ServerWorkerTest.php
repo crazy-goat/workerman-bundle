@@ -1265,6 +1265,9 @@ final class ServerWorkerTest extends TestCase
             $this->assertInstanceOf(\stdClass::class, $withoutActivity->context);
             $withoutActivity->context->lastActivity = null;
             $withoutContext->context = null;
+            (new \ReflectionProperty(TcpConnection::class, 'sendBuffer'))->setValue($withoutContext, 'pending');
+            (new \ReflectionMethod(ServerWorker::class, 'sweepConnection'))->invoke(null, $withoutContext, time() + 10, 1, 1);
+            $this->assertNull($withoutContext->context);
 
             $this->runEventLoopFor($eventLoop, 2.2);
 
