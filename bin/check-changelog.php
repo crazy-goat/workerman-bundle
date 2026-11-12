@@ -77,7 +77,6 @@ function entryProse(string $text): string
  */
 function validateChangelogLines(array $lines): array
 {
-    $violations = [];
     $fenced = outsideFences($lines);
     $lines = $fenced['lines'];
 
@@ -89,6 +88,22 @@ function validateChangelogLines(array $lines): array
     }
 
     $headings = versionHeadings($lines);
+
+    return [
+        ...unreleasedHeadingViolations($headings),
+        ...releasedHeadingViolations($headings),
+        ...duplicateSubheadingViolations($lines),
+        ...missingReferenceViolations($lines),
+    ];
+}
+
+/**
+ * @param list<array{raw: string, line: int}> $headings
+ * @return list<string>
+ */
+function unreleasedHeadingViolations(array $headings): array
+{
+    $violations = [];
 
     if ($headings === []) {
         $violations[] = 'CHANGELOG.md has no "## [...]" version headings at all';
@@ -108,6 +123,16 @@ function validateChangelogLines(array $lines): array
         $violations[] = '"## [Unreleased]" must be the first version heading in the file';
     }
 
+    return $violations;
+}
+
+/**
+ * @param list<array{raw: string, line: int}> $headings
+ * @return list<string>
+ */
+function releasedHeadingViolations(array $headings): array
+{
+    $violations = [];
     $releasedCount = 0;
     $previousVersion = null;
 
@@ -117,24 +142,15 @@ function validateChangelogLines(array $lines): array
         }
 
         $releasedCount++;
+        $parsed = parseReleasedHeading($heading);
 
-        if (preg_match('/^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/', $heading['raw'], $matches) !== 1) {
-            $violations[] = sprintf('line %d: "%s" does not match "## [x.y.z] - YYYY-MM-DD"', $heading['line'], $heading['raw']);
-
-            continue;
-        }
-
-        $version = $matches[1];
-
-        if (!checkChangelogIsIsoDate($matches[2])) {
-            $violations[] = sprintf(
-                'line %d: "%s" is not an ISO-8601 calendar date (YYYY-MM-DD)',
-                $heading['line'],
-                $matches[2],
-            );
+        if ($parsed['violation'] !== null) {
+            $violations[] = $parsed['violation'];
 
             continue;
         }
+
+        $version = $parsed['version'];
 
         if ($previousVersion !== null && version_compare($version, $previousVersion) >= 0) {
             $violations[] = sprintf(
@@ -152,18 +168,45 @@ function validateChangelogLines(array $lines): array
         $violations[] = 'CHANGELOG.md has no released version headings';
     }
 
+    return $violations;
+}
+
+/**
+ * @param array{raw: string, line: int} $heading
+ * @return array{version: string, violation: string|null}
+ */
+function parseReleasedHeading(array $heading): array
+{
+    if (preg_match('/^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/', $heading['raw'], $matches) !== 1) {
+        return ['version' => '', 'violation' => sprintf('line %d: "%s" does not match "## [x.y.z] - YYYY-MM-DD"', $heading['line'], $heading['raw'])];
+    }
+
+    if (!checkChangelogIsIsoDate($matches[2])) {
+        return ['version' => '', 'violation' => sprintf(
+            'line %d: "%s" is not an ISO-8601 calendar date (YYYY-MM-DD)',
+            $heading['line'],
+            $matches[2],
+        )];
+    }
+
+    return ['version' => $matches[1], 'violation' => null];
+}
+
+/**
+ * @param list<string> $lines
+ * @return list<string>
+ */
+function duplicateSubheadingViolations(array $lines): array
+{
+    $violations = [];
+
     foreach (versionBlocks($lines) as $block) {
-        $counts = [];
+        $known = array_filter(
+            $block['subheadings'],
+            static fn(string $subheading): bool => \in_array($subheading, KEEP_A_CHANGELOG_SUBHEADINGS, true),
+        );
 
-        foreach ($block['subheadings'] as $subheading) {
-            if (!\in_array($subheading, KEEP_A_CHANGELOG_SUBHEADINGS, true)) {
-                continue;
-            }
-
-            $counts[$subheading] = ($counts[$subheading] ?? 0) + 1;
-        }
-
-        foreach ($counts as $subheading => $count) {
+        foreach (array_count_values($known) as $subheading => $count) {
             if ($count > 1) {
                 $violations[] = sprintf(
                     '"%s" has %d "### %s" subheadings — a Keep a Changelog subheading must appear at most once per version block',
@@ -175,6 +218,15 @@ function validateChangelogLines(array $lines): array
         }
     }
 
+    return $violations;
+}
+
+/**
+ * @param list<string> $lines
+ * @return list<string>
+ */
+function missingReferenceViolations(array $lines): array
+{
     $missingReferences = [];
 
     foreach (topLevelEntries($lines) as $entry) {
@@ -191,18 +243,17 @@ function validateChangelogLines(array $lines): array
         $missingReferences[] = sprintf('line %d: %s', $entry['line'], $entry['firstLine']);
     }
 
-    if ($missingReferences !== []) {
-        $violations[] = sprintf(
-            'changelog entries with no issue/PR reference and not on the frozen legacy list: %d',
-            \count($missingReferences),
-        );
-
-        foreach ($missingReferences as $missingReference) {
-            $violations[] = $missingReference;
-        }
+    if ($missingReferences === []) {
+        return [];
     }
 
-    return $violations;
+    return [
+        sprintf(
+            'changelog entries with no issue/PR reference and not on the frozen legacy list: %d',
+            \count($missingReferences),
+        ),
+        ...$missingReferences,
+    ];
 }
 
 /**

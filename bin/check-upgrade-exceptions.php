@@ -5,6 +5,12 @@ declare(strict_types=1);
 const UPGRADE_EXCEPTIONS_DIR_REL = 'src/Exception';
 const UPGRADE_EXCEPTIONS_FILE = 'UPGRADE.md';
 
+const UPGRADE_EXCEPTIONS_NAMED_TYPE_PATTERNS = [
+    '/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)\s*;/m',
+    '/\bcatch\s*\(\s*(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\b/',
+    '/\bnew\s+(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\s*\(/',
+];
+
 /**
  * @param list<string> $argv
  * @return array{root: string}
@@ -71,65 +77,21 @@ function checkUpgradeExceptionsShortName(string $name): string
  */
 function checkUpgradeExceptionsParseTree(string $path): array
 {
-    $source = @file_get_contents($path);
-
-    if ($source === false) {
-        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: cannot read %s\n", $path));
-        exit(2);
-    }
-
-    $markerPos = strpos($source, '**Exception hierarchy:**');
-
-    if ($markerPos === false) {
-        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (no **Exception hierarchy:** section found in %s)\n", UPGRADE_EXCEPTIONS_FILE));
-        exit(1);
-    }
-
-    $scope = substr($source, $markerPos);
-
-    if (!preg_match_all('/```text\n(.*?)\n```/s', $scope, $blocks)) {
-        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no ```text block found in %s\n", UPGRADE_EXCEPTIONS_FILE));
-        exit(1);
-    }
-
-    $tree = $blocks[1][0];
-
-    if (!str_contains($tree, '├──') && !str_contains($tree, '└──')) {
-        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (the first ```text block after **Exception hierarchy:** holds no hierarchy listing) found in %s\n", UPGRADE_EXCEPTIONS_FILE));
-        exit(1);
-    }
-
     $names = [];
     $edges = [];
     $explicit = [];
     $stack = [];
 
-    foreach (explode("\n", $tree) as $line) {
+    foreach (explode("\n", checkUpgradeExceptionsReadTreeBlock($path)) as $line) {
         if (trim($line) === '') {
             continue;
         }
 
-        $ascii = str_replace(['│', '├──', '└──', '──'], ['|', '+--', '+--', '--'], $line);
-        $marker = strpos($ascii, '+--');
-
-        if ($marker === false) {
-            $depth = 0;
-            $rest = trim($ascii);
-        } else {
-            $depth = 1 + intdiv($marker, 4);
-            $rest = trim(substr($ascii, $marker + 3));
-        }
-
-        if (!preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(extends\s*([^)]+)\))?/', $rest, $m)) {
-            fwrite(STDERR, sprintf("check-upgrade-exceptions: error: cannot parse tree line: %s\n", $line));
-            exit(1);
-        }
-
-        $name = $m[1];
+        [$depth, $name, $explicitParent] = checkUpgradeExceptionsParseTreeLine($line);
         $names[$name] = true;
 
-        if (isset($m[2]) && trim($m[2]) !== '') {
-            $explicit[] = ['child' => $name, 'parent' => checkUpgradeExceptionsShortName($m[2])];
+        if ($explicitParent !== null) {
+            $explicit[] = ['child' => $name, 'parent' => $explicitParent];
         }
 
         $stack[$depth] = $name;
@@ -152,10 +114,7 @@ function checkUpgradeExceptionsParseTree(string $path): array
     return ['names' => $names, 'edges' => $edges, 'explicit' => $explicit];
 }
 
-/**
- * @return array<string, true>
- */
-function checkUpgradeExceptionsParseNamedTypes(string $path): array
+function checkUpgradeExceptionsReadUpgradeFile(string $path): string
 {
     $source = @file_get_contents($path);
 
@@ -164,55 +123,114 @@ function checkUpgradeExceptionsParseNamedTypes(string $path): array
         exit(2);
     }
 
-    $scope = $source;
+    return $source;
+}
+
+function checkUpgradeExceptionsReadTreeBlock(string $path): string
+{
+    $source = checkUpgradeExceptionsReadUpgradeFile($path);
     $markerPos = strpos($source, '**Exception hierarchy:**');
 
-    if ($markerPos !== false) {
-        $after = substr($source, $markerPos);
-
-        if (preg_match('/```text\n(.*?)\n```/s', $after, $blocks)) {
-            $blockPos = strpos($after, $blocks[0][0]);
-
-            if ($blockPos !== false) {
-                $start = $markerPos + $blockPos;
-                $scope = substr($source, 0, $start) . substr($source, $start + strlen($blocks[0][0]));
-            }
-        }
+    if ($markerPos === false) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (no **Exception hierarchy:** section found in %s)\n", UPGRADE_EXCEPTIONS_FILE));
+        exit(1);
     }
 
+    $scope = substr($source, $markerPos);
+
+    if (!preg_match_all('/```text\n(.*?)\n```/s', $scope, $blocks)) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no ```text block found in %s\n", UPGRADE_EXCEPTIONS_FILE));
+        exit(1);
+    }
+
+    $tree = $blocks[1][0];
+
+    if (!str_contains($tree, '├──') && !str_contains($tree, '└──')) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: no exception-hierarchy tree (the first ```text block after **Exception hierarchy:** holds no hierarchy listing) found in %s\n", UPGRADE_EXCEPTIONS_FILE));
+        exit(1);
+    }
+
+    return $tree;
+}
+
+/**
+ * @return array{0: int, 1: string, 2: string|null}
+ */
+function checkUpgradeExceptionsParseTreeLine(string $line): array
+{
+    $ascii = str_replace(['│', '├──', '└──', '──'], ['|', '+--', '+--', '--'], $line);
+    $marker = strpos($ascii, '+--');
+
+    if ($marker === false) {
+        $depth = 0;
+        $rest = trim($ascii);
+    } else {
+        $depth = 1 + intdiv($marker, 4);
+        $rest = trim(substr($ascii, $marker + 3));
+    }
+
+    if (!preg_match('/^([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(extends\s*([^)]+)\))?/', $rest, $m)) {
+        fwrite(STDERR, sprintf("check-upgrade-exceptions: error: cannot parse tree line: %s\n", $line));
+        exit(1);
+    }
+
+    $explicitParent = isset($m[2]) && trim($m[2]) !== '' ? checkUpgradeExceptionsShortName($m[2]) : null;
+
+    return [$depth, $m[1], $explicitParent];
+}
+
+/**
+ * @return array<string, true>
+ */
+function checkUpgradeExceptionsParseNamedTypes(string $path): array
+{
+    $scope = checkUpgradeExceptionsNamedTypeScope(checkUpgradeExceptionsReadUpgradeFile($path));
     $names = [];
 
     if (preg_match_all('/(?<!`)`([^`\n]+)`(?!`)/', $scope, $spans)) {
         foreach ($spans[1] as $span) {
             $span = trim($span);
 
-            if (!preg_match('/^(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)$/', $span)) {
-                continue;
+            if (preg_match('/^(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)$/', $span)) {
+                checkUpgradeExceptionsAddNamedType($names, $span);
             }
-
-            checkUpgradeExceptionsAddNamedType($names, $span);
         }
     }
 
-    if (preg_match_all('/^\h*use\s+(?!function\s|const\s)((?:[A-Za-z_][A-Za-z0-9_]*\\\\)*[A-Za-z_][A-Za-z0-9_]*Exception)\s*;/m', $scope, $uses)) {
-        foreach ($uses[1] as $name) {
-            checkUpgradeExceptionsAddNamedType($names, $name);
-        }
-    }
-
-    if (preg_match_all('/\bcatch\s*\(\s*(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\b/', $scope, $catches)) {
-        foreach ($catches[1] as $name) {
-            checkUpgradeExceptionsAddNamedType($names, $name);
-        }
-    }
-
-    if (preg_match_all('/\bnew\s+(\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*Exception)\s*\(/', $scope, $news)) {
-        foreach ($news[1] as $name) {
-            checkUpgradeExceptionsAddNamedType($names, $name);
+    foreach (UPGRADE_EXCEPTIONS_NAMED_TYPE_PATTERNS as $pattern) {
+        if (preg_match_all($pattern, $scope, $found)) {
+            foreach ($found[1] as $name) {
+                checkUpgradeExceptionsAddNamedType($names, $name);
+            }
         }
     }
 
     return $names;
+}
+
+function checkUpgradeExceptionsNamedTypeScope(string $source): string
+{
+    $markerPos = strpos($source, '**Exception hierarchy:**');
+
+    if ($markerPos === false) {
+        return $source;
+    }
+
+    $after = substr($source, $markerPos);
+
+    if (!preg_match('/```text\n(.*?)\n```/s', $after, $blocks)) {
+        return $source;
+    }
+
+    $blockPos = strpos($after, $blocks[0][0]);
+
+    if ($blockPos === false) {
+        return $source;
+    }
+
+    $start = $markerPos + $blockPos;
+
+    return substr($source, 0, $start) . substr($source, $start + strlen($blocks[0][0]));
 }
 
 /**
@@ -451,6 +469,121 @@ function checkUpgradeExceptionsReadNameList(array $tokens, int $from, int $count
 }
 
 /**
+ * @param list<string> $srcNames
+ * @param list<string> $docNames
+ * @return list<string>
+ */
+function checkUpgradeExceptionsNameFailures(array $srcNames, array $docNames): array
+{
+    $failures = [];
+
+    foreach (array_diff($srcNames, $docNames) as $missing) {
+        $failures[] = sprintf('check-upgrade-exceptions: error: %s is declared in %s but missing from the %s exception-hierarchy tree', $missing, UPGRADE_EXCEPTIONS_DIR_REL, UPGRADE_EXCEPTIONS_FILE);
+    }
+
+    foreach (array_diff($docNames, $srcNames) as $extra) {
+        $failures[] = sprintf('check-upgrade-exceptions: error: %s is listed in the %s exception-hierarchy tree but declares no type in %s', $extra, UPGRADE_EXCEPTIONS_FILE, UPGRADE_EXCEPTIONS_DIR_REL);
+    }
+
+    return $failures;
+}
+
+/**
+ * @param array{parent: string|null, interfaces: list<string>} $declaration
+ */
+function checkUpgradeExceptionsDescribeHeritage(array $declaration): string
+{
+    return ($declaration['parent'] ?? '(nothing)')
+        . ($declaration['interfaces'] === [] ? '' : ' implements ' . implode(', ', $declaration['interfaces']));
+}
+
+/**
+ * @param list<array{child: string, parent: string}> $edges
+ * @param array<string, array{parent: string|null, interfaces: list<string>}> $declared
+ * @return list<string>
+ */
+function checkUpgradeExceptionsEdgeFailures(array $edges, array $declared): array
+{
+    $failures = [];
+
+    foreach ($edges as $edge) {
+        $child = $edge['child'];
+        $parent = $edge['parent'];
+
+        if (!isset($declared[$child]) || !isset($declared[$parent])) {
+            continue;
+        }
+
+        $actual = $declared[$child];
+        $candidates = $actual['interfaces'];
+
+        if ($actual['parent'] !== null) {
+            $candidates[] = $actual['parent'];
+        }
+
+        if (!\in_array($parent, $candidates, true)) {
+            $failures[] = sprintf(
+                'check-upgrade-exceptions: error: %s is nested under %s in %s but extends %s',
+                $child,
+                $parent,
+                UPGRADE_EXCEPTIONS_FILE,
+                checkUpgradeExceptionsDescribeHeritage($actual),
+            );
+        }
+    }
+
+    return $failures;
+}
+
+/**
+ * @param list<array{child: string, parent: string}> $explicit
+ * @param array<string, array{parent: string|null, interfaces: list<string>}> $declared
+ * @return list<string>
+ */
+function checkUpgradeExceptionsExplicitParentFailures(array $explicit, array $declared): array
+{
+    $failures = [];
+
+    foreach ($explicit as $item) {
+        $child = $item['child'];
+
+        if (!isset($declared[$child])) {
+            continue;
+        }
+
+        if ($declared[$child]['parent'] !== $item['parent'] && !\in_array($item['parent'], $declared[$child]['interfaces'], true)) {
+            $failures[] = sprintf(
+                'check-upgrade-exceptions: error: %s says "(extends %s)" in %s but the declaration extends %s',
+                $child,
+                $item['parent'],
+                UPGRADE_EXCEPTIONS_FILE,
+                checkUpgradeExceptionsDescribeHeritage($declared[$child]),
+            );
+        }
+    }
+
+    return $failures;
+}
+
+/**
+ * @param array<string, true> $namedTypes
+ * @param array<string, array{parent: string|null, interfaces: list<string>}> $declared
+ * @return list<string>
+ */
+function checkUpgradeExceptionsNamedTypeFailures(array $namedTypes, array $declared): array
+{
+    $failures = [];
+
+    foreach (array_keys($namedTypes) as $named) {
+        if (!isset($declared[$named])) {
+            $failures[] = sprintf('check-upgrade-exceptions: error: %s is named in %s but declares no type in %s', $named, UPGRADE_EXCEPTIONS_FILE, UPGRADE_EXCEPTIONS_DIR_REL);
+        }
+    }
+
+    return $failures;
+}
+
+/**
  * @param array{root: string} $options
  */
 function checkUpgradeExceptionsMain(array $options): void
@@ -483,67 +616,12 @@ function checkUpgradeExceptionsMain(array $options): void
     $srcNames = array_keys($declared);
     sort($srcNames);
 
-    $failures = [];
-
-    foreach (array_diff($srcNames, $docNames) as $missing) {
-        $failures[] = sprintf('check-upgrade-exceptions: error: %s is declared in %s but missing from the %s exception-hierarchy tree', $missing, UPGRADE_EXCEPTIONS_DIR_REL, UPGRADE_EXCEPTIONS_FILE);
-    }
-
-    foreach (array_diff($docNames, $srcNames) as $extra) {
-        $failures[] = sprintf('check-upgrade-exceptions: error: %s is listed in the %s exception-hierarchy tree but declares no type in %s', $extra, UPGRADE_EXCEPTIONS_FILE, UPGRADE_EXCEPTIONS_DIR_REL);
-    }
-
-    foreach ($tree['edges'] as $edge) {
-        $child = $edge['child'];
-        $parent = $edge['parent'];
-
-        if (!isset($declared[$child]) || !isset($declared[$parent])) {
-            continue;
-        }
-
-        $actual = $declared[$child];
-        $candidates = $actual['interfaces'];
-
-        if ($actual['parent'] !== null) {
-            $candidates[] = $actual['parent'];
-        }
-
-        if (!\in_array($parent, $candidates, true)) {
-            $failures[] = sprintf(
-                'check-upgrade-exceptions: error: %s is nested under %s in %s but extends %s%s',
-                $child,
-                $parent,
-                UPGRADE_EXCEPTIONS_FILE,
-                $actual['parent'] ?? '(nothing)',
-                $actual['interfaces'] === [] ? '' : ' implements ' . implode(', ', $actual['interfaces']),
-            );
-        }
-    }
-
-    foreach ($tree['explicit'] as $item) {
-        $child = $item['child'];
-
-        if (!isset($declared[$child])) {
-            continue;
-        }
-
-        if ($declared[$child]['parent'] !== $item['parent'] && !\in_array($item['parent'], $declared[$child]['interfaces'], true)) {
-            $failures[] = sprintf(
-                'check-upgrade-exceptions: error: %s says "(extends %s)" in %s but the declaration extends %s%s',
-                $child,
-                $item['parent'],
-                UPGRADE_EXCEPTIONS_FILE,
-                $declared[$child]['parent'] ?? '(nothing)',
-                $declared[$child]['interfaces'] === [] ? '' : ' implements ' . implode(', ', $declared[$child]['interfaces']),
-            );
-        }
-    }
-
-    foreach (array_keys(checkUpgradeExceptionsParseNamedTypes($upgradeFile)) as $named) {
-        if (!isset($declared[$named])) {
-            $failures[] = sprintf('check-upgrade-exceptions: error: %s is named in %s but declares no type in %s', $named, UPGRADE_EXCEPTIONS_FILE, UPGRADE_EXCEPTIONS_DIR_REL);
-        }
-    }
+    $failures = [
+        ...checkUpgradeExceptionsNameFailures($srcNames, $docNames),
+        ...checkUpgradeExceptionsEdgeFailures($tree['edges'], $declared),
+        ...checkUpgradeExceptionsExplicitParentFailures($tree['explicit'], $declared),
+        ...checkUpgradeExceptionsNamedTypeFailures(checkUpgradeExceptionsParseNamedTypes($upgradeFile), $declared),
+    ];
 
     if ($failures !== []) {
         foreach ($failures as $failure) {
