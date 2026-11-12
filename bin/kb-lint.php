@@ -582,113 +582,133 @@ function parseArgs(array $argv): array
 }
 
 /**
- * @param array{fix: bool, json: bool, root: string, root_from_env: bool} $options
+ * @param list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $entries
+ * @param array<string, string> $seenIds
+ * @param-out array<string, string> $seenIds
+ * @return array{errors: list<string>, stale: list<string>}
  */
-function main(array $options): int
+function checkEntries(array $entries, string $prefix, array &$seenIds): array
 {
     $errors = [];
-    $warnings = [];
+    $stale = [];
 
-    if ($options['root_from_env']) {
-        $warnings[] = sprintf('root overridden via %s', ROOT_ENV);
+    foreach ($entries as $entry) {
+        $errors = [...$errors, ...validateEntry($entry, $prefix)];
+
+        $id = $entry['meta']['id'] ?? '';
+        $location = sprintf('%s:%d', $entry['file'], $entry['line']);
+
+        if ($id !== '' && isset($seenIds[$id])) {
+            $errors[] = sprintf('%s: duplicate id %s (already used by %s)', $location, $id, $seenIds[$id]);
+        } elseif ($id !== '') {
+            $seenIds[$id] = $location;
+        }
+
+        if (($entry['meta']['status'] ?? '') === 'stale') {
+            $stale[] = sprintf('%s: %s "%s"', $location, $id, $entry['title']);
+        }
     }
 
-    $stale = [];
-    $duplicates = [];
-    $files = [];
-    $allEntries = [];
-    $seenIds = [];
+    return ['errors' => $errors, 'stale' => $stale];
+}
 
-    foreach (KB_FILES as $relative => $prefix) {
-        $absolute = $options['root'] . '/' . $relative;
+/**
+ * @param array{
+ *     entries: list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}>,
+ *     errors: list<string>,
+ *     lines: int,
+ *     index: ?array{start: int, end: int, body: list<string>, footprint: int},
+ *     first_section: ?int,
+ *     index_heading: ?int
+ * } $parsed
+ * @return array{errors: list<string>, warnings: list<string>}
+ */
+function checkIndex(string $relative, string $absolute, array $parsed, bool $fix): array
+{
+    if ($parsed['index'] === null && $parsed['index_heading'] !== null) {
+        return ['errors' => [sprintf(
+            '%s:%d: a "Tag index" heading but no index markers (add %s / %s below it, or remove the heading, then run --fix)',
+            $relative,
+            $parsed['index_heading'],
+            INDEX_START,
+            INDEX_END,
+        )], 'warnings' => []];
+    }
 
-        if (!is_file($absolute)) {
-            $errors[] = sprintf('%s: knowledge-base file is missing', $relative);
-
-            continue;
+    if ($parsed['index'] === null) {
+        if (!$fix) {
+            return ['errors' => [sprintf('%s: no tag index (add %s / %s, or run --fix)', $relative, INDEX_START, INDEX_END)], 'warnings' => []];
         }
 
-        $parsed = parseFile($relative, $absolute);
-        $errors = [...$errors, ...$parsed['errors']];
+        writeIndex($absolute, $parsed['entries'], null, $parsed['first_section']);
 
-        foreach ($parsed['entries'] as $entry) {
-            $errors = [...$errors, ...validateEntry($entry, $prefix)];
+        return ['errors' => [], 'warnings' => [sprintf('%s: tag index created', $relative)]];
+    }
 
-            $id = $entry['meta']['id'] ?? '';
-            if ($id !== '') {
-                if (isset($seenIds[$id])) {
-                    $errors[] = sprintf(
-                        '%s:%d: duplicate id %s (already used by %s)',
-                        $entry['file'],
-                        $entry['line'],
-                        $id,
-                        $seenIds[$id],
-                    );
-                } else {
-                    $seenIds[$id] = sprintf('%s:%d', $entry['file'], $entry['line']);
-                }
-            }
+    if (renderIndex($parsed['entries']) === $parsed['index']['body']) {
+        return ['errors' => [], 'warnings' => []];
+    }
 
-            if (($entry['meta']['status'] ?? '') === 'stale') {
-                $stale[] = sprintf('%s:%d: %s "%s"', $entry['file'], $entry['line'], $id, $entry['title']);
-            }
+    if (!$fix) {
+        return ['errors' => [sprintf('%s: tag index is out of sync with the entries (run --fix)', $relative)], 'warnings' => []];
+    }
 
-            $allEntries[] = $entry;
-        }
+    writeIndex($absolute, $parsed['entries'], $parsed['index'], $parsed['first_section']);
 
-        $indexLines = $parsed['index'] !== null ? $parsed['index']['footprint'] : 0;
-        $budgeted = $parsed['lines'] - $indexLines;
+    return ['errors' => [], 'warnings' => [sprintf('%s: tag index regenerated', $relative)]];
+}
 
-        if ($budgeted > LINE_BUDGET) {
-            $warnings[] = sprintf(
-                '%s: %d lines (index excluded) is over the %d-line budget — promote or drop entries',
-                $relative,
-                $budgeted,
-                LINE_BUDGET,
-            );
-        }
+/**
+ * @param array<string, string> $seenIds
+ * @param-out array<string, string> $seenIds
+ * @return array{errors: list<string>, warnings: list<string>, stale: list<string>, entries: list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}>, file: array{path: string, entries: int, lines: int, budgeted_lines: int, over_budget: bool}}
+ */
+function lintFile(string $relative, string $absolute, string $prefix, bool $fix, array &$seenIds): array
+{
+    $parsed = parseFile($relative, $absolute);
+    $checked = checkEntries($parsed['entries'], $prefix, $seenIds);
+    $warnings = [];
 
-        if ($parsed['index'] === null && $parsed['index_heading'] !== null) {
-            $errors[] = sprintf(
-                '%s:%d: a "Tag index" heading but no index markers (add %s / %s below it, or remove the heading, then run --fix)',
-                $relative,
-                $parsed['index_heading'],
-                INDEX_START,
-                INDEX_END,
-            );
-        } elseif ($parsed['index'] === null) {
-            if ($options['fix']) {
-                writeIndex($absolute, $parsed['entries'], null, $parsed['first_section']);
-                $warnings[] = sprintf('%s: tag index created', $relative);
-            } else {
-                $errors[] = sprintf('%s: no tag index (add %s / %s, or run --fix)', $relative, INDEX_START, INDEX_END);
-            }
-        } else {
-            $expected = renderIndex($parsed['entries']);
+    $indexLines = $parsed['index'] !== null ? $parsed['index']['footprint'] : 0;
+    $budgeted = $parsed['lines'] - $indexLines;
 
-            if ($expected !== $parsed['index']['body']) {
-                if ($options['fix']) {
-                    writeIndex($absolute, $parsed['entries'], $parsed['index'], $parsed['first_section']);
-                    $warnings[] = sprintf('%s: tag index regenerated', $relative);
-                } else {
-                    $errors[] = sprintf('%s: tag index is out of sync with the entries (run --fix)', $relative);
-                }
-            }
-        }
+    if ($budgeted > LINE_BUDGET) {
+        $warnings[] = sprintf(
+            '%s: %d lines (index excluded) is over the %d-line budget — promote or drop entries',
+            $relative,
+            $budgeted,
+            LINE_BUDGET,
+        );
+    }
 
-        if ($options['fix']) {
-            normalizeTrailingNewline($absolute);
-        }
+    $index = checkIndex($relative, $absolute, $parsed, $fix);
 
-        $files[] = [
+    if ($fix) {
+        normalizeTrailingNewline($absolute);
+    }
+
+    return [
+        'errors' => [...$parsed['errors'], ...$checked['errors'], ...$index['errors']],
+        'warnings' => [...$warnings, ...$index['warnings']],
+        'stale' => $checked['stale'],
+        'entries' => $parsed['entries'],
+        'file' => [
             'path' => $relative,
             'entries' => \count($parsed['entries']),
             'lines' => $parsed['lines'],
             'budgeted_lines' => $budgeted,
             'over_budget' => $budgeted > LINE_BUDGET,
-        ];
-    }
+        ],
+    ];
+}
 
+/**
+ * @param list<array{file: string, line: int, title: string, meta: array<string, string>, body: list<string>}> $allEntries
+ * @return list<string>
+ */
+function findDuplicates(array $allEntries): array
+{
+    $duplicates = [];
     $comparable = array_values(array_filter(
         $allEntries,
         static fn(array $entry): bool => ($entry['meta']['status'] ?? '') !== 'promoted',
@@ -720,30 +740,43 @@ function main(array $options): int
         }
     }
 
-    $warnings = [...$warnings, ...$duplicates];
-    $ok = $errors === [];
+    return $duplicates;
+}
 
-    if ($options['json']) {
-        echo json_encode([
-            'ok' => $ok,
-            'root' => $options['root'],
-            'root_from_env' => $options['root_from_env'],
-            'files' => $files,
-            'entries' => \count($allEntries),
-            'errors' => $errors,
-            'warnings' => $warnings,
-            'stale' => $stale,
-            'duplicates' => $duplicates,
-            'line_budget' => LINE_BUDGET,
-            'stale_after_cycles' => STALE_AFTER_CYCLES,
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+/**
+ * @param array{fix: bool, json: bool, root: string, root_from_env: bool} $options
+ * @param array{errors: list<string>, warnings: list<string>, stale: list<string>, duplicates: list<string>, files: list<array{path: string, entries: int, lines: int, budgeted_lines: int, over_budget: bool}>, entries: int} $report
+ */
+function printJsonReport(array $options, array $report): int
+{
+    $ok = $report['errors'] === [];
 
-        exit($ok ? 0 : 1);
-    }
+    echo json_encode([
+        'ok' => $ok,
+        'root' => $options['root'],
+        'root_from_env' => $options['root_from_env'],
+        'files' => $report['files'],
+        'entries' => $report['entries'],
+        'errors' => $report['errors'],
+        'warnings' => $report['warnings'],
+        'stale' => $report['stale'],
+        'duplicates' => $report['duplicates'],
+        'line_budget' => LINE_BUDGET,
+        'stale_after_cycles' => STALE_AFTER_CYCLES,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
 
+    return $ok ? 0 : 1;
+}
+
+/**
+ * @param array{fix: bool, json: bool, root: string, root_from_env: bool} $options
+ * @param array{errors: list<string>, warnings: list<string>, stale: list<string>, duplicates: list<string>, files: list<array{path: string, entries: int, lines: int, budgeted_lines: int, over_budget: bool}>, entries: int} $report
+ */
+function printTextReport(array $options, array $report): int
+{
     fwrite(STDOUT, sprintf("kb-lint: root %s\n", $options['root']));
 
-    foreach ($files as $file) {
+    foreach ($report['files'] as $file) {
         fwrite(STDOUT, sprintf(
             "kb-lint: %s — %d entries, %d lines (%d budgeted, limit %d)\n",
             $file['path'],
@@ -754,32 +787,74 @@ function main(array $options): int
         ));
     }
 
-    foreach ($stale as $entry) {
+    foreach ($report['stale'] as $entry) {
         fwrite(STDOUT, sprintf("kb-lint: stale (0 hits in %d cycles, remove at the next retro): %s\n", STALE_AFTER_CYCLES, $entry));
     }
 
-    foreach ($warnings as $warning) {
+    foreach ($report['warnings'] as $warning) {
         fwrite(STDOUT, 'kb-lint: warning: ' . $warning . "\n");
     }
 
-    foreach ($errors as $error) {
+    foreach ($report['errors'] as $error) {
         fwrite(STDERR, 'kb-lint: error: ' . $error . "\n");
     }
 
-    if (!$ok) {
-        fwrite(STDERR, sprintf("kb-lint: FAILED — %d error(s)\n", \count($errors)));
+    if ($report['errors'] !== []) {
+        fwrite(STDERR, sprintf("kb-lint: FAILED — %d error(s)\n", \count($report['errors'])));
 
-        exit(1);
+        return 1;
     }
 
     fwrite(STDOUT, sprintf(
         "kb-lint: OK — %d entries, %d warning(s), %d stale\n",
-        \count($allEntries),
-        \count($warnings),
-        \count($stale),
+        $report['entries'],
+        \count($report['warnings']),
+        \count($report['stale']),
     ));
 
-    exit(0);
+    return 0;
+}
+
+/**
+ * @param array{fix: bool, json: bool, root: string, root_from_env: bool} $options
+ */
+function main(array $options): int
+{
+    $errors = [];
+    $warnings = $options['root_from_env'] ? [sprintf('root overridden via %s', ROOT_ENV)] : [];
+    $stale = [];
+    $files = [];
+    $allEntries = [];
+    $seenIds = [];
+
+    foreach (KB_FILES as $relative => $prefix) {
+        $absolute = $options['root'] . '/' . $relative;
+
+        if (!is_file($absolute)) {
+            $errors[] = sprintf('%s: knowledge-base file is missing', $relative);
+
+            continue;
+        }
+
+        $linted = lintFile($relative, $absolute, $prefix, $options['fix'], $seenIds);
+        $errors = [...$errors, ...$linted['errors']];
+        $warnings = [...$warnings, ...$linted['warnings']];
+        $stale = [...$stale, ...$linted['stale']];
+        $allEntries = [...$allEntries, ...$linted['entries']];
+        $files[] = $linted['file'];
+    }
+
+    $duplicates = findDuplicates($allEntries);
+    $report = [
+        'errors' => $errors,
+        'warnings' => [...$warnings, ...$duplicates],
+        'stale' => $stale,
+        'duplicates' => $duplicates,
+        'files' => $files,
+        'entries' => \count($allEntries),
+    ];
+
+    exit($options['json'] ? printJsonReport($options, $report) : printTextReport($options, $report));
 }
 
 try {

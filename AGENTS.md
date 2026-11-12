@@ -41,7 +41,8 @@ composer bench           # PHPBench
 `bin/lint.sh` runs `composer validate --strict`, `composer audit` (skipped when
 `LINT_SKIP_AUDIT=1`, which the pre-push hook sets: audit needs the network and a new advisory
 would block every push; CI always audits), PHP-CS-Fixer (dry run),
-PHPStan (**level 8**), Rector (dry run), `bin/kb-lint.php`, `bin/check-changelog.php`,
+PHPStan (**level 8**, plus the cognitive-complexity limits in `phpstan.neon.dist`, which only go
+down), Rector (dry run), `bin/kb-lint.php`, `bin/check-changelog.php`,
 `bin/check-exception-usage.php`, `bin/check-test-annotations.php`, `shellcheck` on every shell script (including extensionless
 ones such as `bin/docker-test`) and `hadolint` on the Dockerfile. It runs every step and fails
 if any step failed. `shellcheck` and `hadolint` must be installed; a missing tool is a failure.

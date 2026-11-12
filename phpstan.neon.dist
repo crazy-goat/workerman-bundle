@@ -1,5 +1,11 @@
+includes:
+	- vendor/tomasvotruba/cognitive-complexity/config/extension.neon
+
 parameters:
 	level: 8
+	cognitive_complexity:
+		function: 50
+		class: 150
 	treatPhpDocTypesAsCertain: false
 	bootstrapFiles:
 		- tools/php-cs-fixer/autoload.php

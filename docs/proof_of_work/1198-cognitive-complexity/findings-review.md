@@ -1,0 +1,15 @@
+# Findings: #1198 (review)
+
+| Round | File:line | What is wrong | Severity | What happened to it |
+|---|---|---|---|---|
+| 1 | `tests/LintScopeTest.php:32-53`, `CONTRIBUTING.md:324-326` | R1-1: the gate checks only `phpstan.neon.dist`. An inline `@phpstan-ignore complexity.functionLike` (verified to suppress the rule), a bare `@phpstan-ignore-next-line`, or an extra `includes:` file that overrides `cognitive_complexity` all bypass it. CONTRIBUTING says `LintScopeTest` "fails if either appears", which reads as covering the whole repository. | low | fixed in round 2 (coder): `tests/CognitiveComplexityGateTest.php` scans the comment tokens of the analysed PHP for `complexity.` ignores and for bare `-next-line` / `-line` ignores on declaration lines, asserts that the extension is the only include, and forbids a tracked `phpstan.neon` / `phpstan.dist.neon`. `tests/PollingMonitorWatcherTest.php:81` was fixed, and CONTRIBUTING now matches what is enforced. Review round 2: **fixed**, verified (`tests/CognitiveComplexityGateTest.php:31-38, 66-71, 147-167`; lint clean; provider cases :105-117). |
+| 1 | `tests/LintScopeTest.php:42-43` | R1-2: the `function:` and `class:` limit regexes take the first such key anywhere in the file, not the keys inside the `cognitive_complexity:` block. | nit | fixed in round 2 (coder): the limits are read from the `parameters → cognitive_complexity` block by an indentation-block reader, which requires exactly the keys `function` and `class`. A decoy key above the block is now caught (mutation-checked). Review round 2: **fixed**, verified (`tests/CognitiveComplexityGateTest.php:43-52`). |
+| 2 | `tests/CognitiveComplexityGateTest.php:57-64` | R2-1: config-level bypasses remain. An `ignoreErrors` message regex that avoids `complexity.` and `cognitive complexity` (e.g. `'#keep it under \d+#'`), or a `parameters.excludePaths` entry, silences the rule and passes every assertion. Pin `ignoreErrors` to an allowlist of the current messages and forbid `excludePaths`. | low | open |
+| 2 | `tests/CognitiveComplexityGateTest.php:66-71, 267-276` | R2-2: `gitLsFiles()` returns `[]` when git fails (no repo, `safe.directory`), so `testNoOtherPhpstanConfigIsTracked` passes vacuously. Assert the config itself is listed first, or also check `file_exists`. | nit | open |
+| 2 | `tests/PollingMonitorWatcherTest.php:80-83` | R2-3: the narrowed `@phpstan-ignore missingType.generics` could likely be replaced by `@param \ReflectionClass<object> $class`, removing the ignore. Optional. | nit | open |
+
+### Round 2 resolution (maintainer)
+
+- R2-1: fixed. `testTheConfigHasNoBaselineAndNoComplexityIgnore` forbids `excludePaths` and pins the `ignoreErrors` message list to the two reviewed entries; verified by appending a `'#keep it under#'` ignore and an `excludePaths` entry, each failing the test.
+- R2-2: fixed. `testNoOtherPhpstanConfigIsTracked` first asserts `git ls-files` lists `phpstan.neon.dist`, so a failing git cannot make the check vacuous.
+- R2-3: not done (optional nit).

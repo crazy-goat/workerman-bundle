@@ -314,6 +314,25 @@ Superseded pull-request runs are cancelled, but a `master` run is never cancelle
 - PHP 8.2+ syntax
 - Follow PSR-12 coding standards (enforced by PHP-CS-Fixer)
 - Static analysis with PHPStan level 8
+- Cognitive complexity is capped by PHPStan (`tomasvotruba/cognitive-complexity`, included explicitly in
+  `phpstan.neon.dist` because `phpstan/extension-installer` is not installed):
+  - the limits are `cognitive_complexity.function` and `cognitive_complexity.class` in `phpstan.neon.dist`
+    (currently 50 per function or method and 150 per class); a score equal to the limit passes
+  - the same limits apply to every analysed path (`src/`, `tests/`, `benchmarks/`, `bin/`, `tools/`)
+  - closures and arrow functions count into the enclosing function or method, so moving a branch into a
+    closure does not lower the score; extract a named function or method instead
+  - the limits only go down (#1198): a function over the limit is refactored, never excluded.
+    `tests/CognitiveComplexityGateTest.php` fails when:
+    - a limit is raised, or `phpstan.neon.dist` has a baseline, a `complexity.` ignore, or an include
+      other than the extension
+    - `phpstan.neon` or `phpstan.dist.neon` is tracked, because either one takes precedence over
+      `phpstan.neon.dist`
+    - a comment in an analysed PHP file can silence the rule: an `@phpstan-ignore` that names a
+      `complexity.` identifier, or an `@phpstan-ignore-next-line` / `@phpstan-ignore-line` whose line
+      holds a function, class or attribute (PHPStan treats text after these two as a comment, so they
+      silence every error on that line)
+    - other `@phpstan-ignore-next-line` uses (on a statement) are allowed; prefer
+      `@phpstan-ignore <identifier>`
 - Automated refactoring with Rector
 - No narrative comments (enforced by the custom PHP-CS-Fixer rule `CrazyGoat/no_narrative_comments` in
   `tools/php-cs-fixer/`; `composer lint` reports a violation, `composer lint-fix` removes it):

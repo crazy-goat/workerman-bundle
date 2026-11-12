@@ -82,94 +82,106 @@ final readonly class ExcludePattern
         $groupStack = [];
 
         while ($i < $length) {
-            $ch = $inner[$i];
-
-            if ($ch === '\\') {
-                $i += 2;
-                continue;
-            }
-
-            if ($ch === '[') {
-                $j = $i + 1;
-                while ($j < $length) {
-                    $cj = $inner[$j];
-                    if ($cj === '\\') {
-                        $j += 2;
-                        continue;
-                    }
-                    if ($cj === ']') {
-                        break;
-                    }
-                    $j++;
-                }
-                $i = min($j + 1, $length);
-                continue;
-            }
-
-            if ($ch === '(') {
-                $groupStack[] = false;
-                if ($i + 1 < $length && $inner[$i + 1] === '?') {
-                    if ($i + 2 < $length && (in_array($inner[$i + 2], [':', '=', '!'], true))) {
-                        $i += 3;
-                        continue;
-                    }
-                    if ($i + 2 < $length && $inner[$i + 2] === '<') {
-                        $end = strpos($inner, '>', $i + 3);
-                        $i = ($end === false) ? $length : $end + 1;
-                        continue;
-                    }
-                    $i += 2;
-                    continue;
-                }
-                $i++;
-                continue;
-            }
-
-            if ($ch === ')') {
-                if ($groupStack === []) {
-                    $i++;
-                    continue;
-                }
-                $groupHasInnerQuantifier = array_pop($groupStack);
-                if ($groupHasInnerQuantifier && $i + 1 < $length) {
-                    $next = $inner[$i + 1];
-                    if (in_array($next, ['+', '*', '?'], true)) {
-                        throw $this->rejectNestedUnbounded($raw);
-                    }
-                    if ($next === '{') {
-                        $end = strpos($inner, '}', $i + 2);
-                        if ($end !== false) {
-                            throw $this->rejectNestedUnbounded($raw);
-                        }
-                    }
-                }
-                $i++;
-                continue;
-            }
-
-            if (in_array($ch, ['+', '*', '?'], true)) {
-                foreach (array_keys($groupStack) as $idx) {
-                    $groupStack[$idx] = true;
-                }
-                $i++;
-                continue;
-            }
-
-            if ($ch === '{') {
-                $end = strpos($inner, '}', $i);
-                if ($end === false) {
-                    $i++;
-                    continue;
-                }
-                foreach (array_keys($groupStack) as $idx) {
-                    $groupStack[$idx] = true;
-                }
-                $i = $end + 1;
-                continue;
-            }
-
-            $i++;
+            $i = match ($inner[$i]) {
+                '\\' => $i + 2,
+                '[' => $this->skipCharacterClass($inner, $i),
+                '(' => $this->openGroup($inner, $i, $groupStack),
+                ')' => $this->closeGroup($raw, $inner, $i, $groupStack),
+                '+', '*', '?' => $this->consumeQuantifier($groupStack, $i + 1),
+                '{' => $this->consumeBraceQuantifier($inner, $i, $groupStack),
+                default => $i + 1,
+            };
         }
+    }
+
+    private function skipCharacterClass(string $inner, int $open): int
+    {
+        $length = strlen($inner);
+        $j = $open + 1;
+        while ($j < $length && $inner[$j] !== ']') {
+            $j += $inner[$j] === '\\' ? 2 : 1;
+        }
+
+        return min($j + 1, $length);
+    }
+
+    /**
+     * @param list<bool> $groupStack
+     * @param-out list<bool> $groupStack
+     */
+    private function openGroup(string $inner, int $open, array &$groupStack): int
+    {
+        $groupStack[] = false;
+        if (($inner[$open + 1] ?? '') !== '?') {
+            return $open + 1;
+        }
+
+        $marker = $inner[$open + 2] ?? '';
+        if (in_array($marker, [':', '=', '!'], true)) {
+            return $open + 3;
+        }
+
+        if ($marker === '<') {
+            $end = strpos($inner, '>', $open + 3);
+
+            return $end === false ? strlen($inner) : $end + 1;
+        }
+
+        return $open + 2;
+    }
+
+    /**
+     * @param list<bool> $groupStack
+     * @param-out list<bool> $groupStack
+     * @throws \InvalidArgumentException
+     */
+    private function closeGroup(string $raw, string $inner, int $close, array &$groupStack): int
+    {
+        if ($groupStack === []) {
+            return $close + 1;
+        }
+
+        $groupHasInnerQuantifier = array_pop($groupStack);
+        if ($groupHasInnerQuantifier && $this->isQuantifierAt($inner, $close + 1)) {
+            throw $this->rejectNestedUnbounded($raw);
+        }
+
+        return $close + 1;
+    }
+
+    private function isQuantifierAt(string $inner, int $position): bool
+    {
+        $next = $inner[$position] ?? '';
+        if (in_array($next, ['+', '*', '?'], true)) {
+            return true;
+        }
+
+        return $next === '{' && str_contains(substr($inner, $position + 1), '}');
+    }
+
+    /**
+     * @param list<bool> $groupStack
+     * @param-out list<bool> $groupStack
+     */
+    private function consumeQuantifier(array &$groupStack, int $next): int
+    {
+        $groupStack = array_map(static fn(): bool => true, $groupStack);
+
+        return $next;
+    }
+
+    /**
+     * @param list<bool> $groupStack
+     * @param-out list<bool> $groupStack
+     */
+    private function consumeBraceQuantifier(string $inner, int $open, array &$groupStack): int
+    {
+        $end = strpos($inner, '}', $open);
+        if ($end === false) {
+            return $open + 1;
+        }
+
+        return $this->consumeQuantifier($groupStack, $end + 1);
     }
 
     private function rejectNestedUnbounded(string $raw): \InvalidArgumentException
