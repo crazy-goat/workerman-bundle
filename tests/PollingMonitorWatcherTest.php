@@ -78,7 +78,7 @@ final class PollingMonitorWatcherTest extends TestCase
     }
 
     /**
-     * @phpstan-ignore-next-line missingType.generics
+     * @phpstan-ignore missingType.generics
      */
     private function findProperty(\ReflectionClass $class, string $name): \ReflectionProperty
     {
