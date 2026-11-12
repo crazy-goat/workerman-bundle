@@ -454,6 +454,153 @@ final class NoNarrativeCommentsFixerTest extends TestCase
 
                     PHP,
             ],
+            'removing-a-comment-never-glues-operators' => [
+                <<<'PHP'
+                    <?php
+
+                    $r = $a-/* x */-$b;
+                    $r = $c+/**/+$d;
+                    $r = $e- /* y */-$f;
+                    $r = $g-/* z */ -$h;
+                    $r = $x/* */+ +$y;
+                    $r = $i./* w */5;
+
+                    PHP,
+                <<<'PHP'
+                    <?php
+
+                    $r = $a- -$b;
+                    $r = $c+ +$d;
+                    $r = $e- -$f;
+                    $r = $g- -$h;
+                    $r = $x+ +$y;
+                    $r = $i. 5;
+
+                    PHP,
+            ],
+            'directives-must-start-the-comment' => [
+                <<<'PHP'
+                    <?php
+
+                    function a(): void
+                    {
+                        // we used to need phpcs: here
+                        foo();
+                        // remove @phpstan-ignore once the stub is fixed
+                        bar(); # see @psalm-suppress notes
+                        /* old @codeCoverageIgnore marker */
+                        baz(); /*  @phpstan-ignore argument.type */
+                        #   @codeCoverageIgnore
+                        qux(); /**
+                         * @phpstan-ignore-next-line
+                         */
+                    }
+
+                    PHP,
+                <<<'PHP'
+                    <?php
+
+                    function a(): void
+                    {
+                        foo();
+                        bar();
+                        baz(); /*  @phpstan-ignore argument.type */
+                        #   @codeCoverageIgnore
+                        qux(); /**
+                         * @phpstan-ignore-next-line
+                         */
+                    }
+
+                    PHP,
+            ],
+            'one-line-docblock-keeps-every-tag' => [
+                <<<'PHP'
+                    <?php
+
+                    /** @param int $a the first @param int $b the second @return int sum */
+                    function add(int $a, int $b): int
+                    {
+                        return $a + $b;
+                    }
+
+                    PHP,
+                <<<'PHP'
+                    <?php
+
+                    /** @param int $a @param int $b @return int */
+                    function add(int $a, int $b): int
+                    {
+                        return $a + $b;
+                    }
+
+                    PHP,
+            ],
+            'test-annotations-are-left-for-the-attribute-migration' => [
+                <<<'PHP'
+                    <?php
+
+                    final class ATest
+                    {
+                        /**
+                         * Runs only with inotify.
+                         *
+                         * @requires extension inotify
+                         * @group e2e
+                         */
+                        public function testA(): void
+                        {
+                        }
+
+                        /** Provider-driven. @dataProvider cases */
+                        public function testB(int $a): void
+                        {
+                        }
+                    }
+
+                    /**
+                     * Benchmarks.
+                     *
+                     * @BeforeMethods({"setUp"})
+                     * @Revs(1000)
+                     */
+                    final class ABench
+                    {
+                    }
+
+                    PHP,
+                <<<'PHP'
+                    <?php
+
+                    final class ATest
+                    {
+                        /**
+                         * Runs only with inotify.
+                         *
+                         * @requires extension inotify
+                         * @group e2e
+                         */
+                        public function testA(): void
+                        {
+                        }
+
+                        /** Provider-driven. @dataProvider cases */
+                        public function testB(int $a): void
+                        {
+                        }
+                    }
+
+                    /**
+                     * Benchmarks.
+                     *
+                     * @BeforeMethods({"setUp"})
+                     * @Revs(1000)
+                     */
+                    final class ABench
+                    {
+                    }
+
+                    PHP,
+            ],
             'already-clean-code-is-unchanged' => [
                 <<<'PHP'
                     <?php
@@ -497,6 +644,75 @@ final class NoNarrativeCommentsFixerTest extends TestCase
 
         [$code, $output] = $this->runFixer($file, true);
         $this->assertSame(0, $code, 'The fixer must be idempotent: ' . $output);
+
+        $this->assertSame(
+            $this->codeTokens($input),
+            $this->codeTokens((string) file_get_contents($file)),
+            'Removing comments must never change the non-comment token stream',
+        );
+    }
+
+    public function testNoAllowedTagIsEverDropped(): void
+    {
+        $tags = [
+            '@param int $a',
+            '@param array<string, list<int>> $map',
+            '@param string|null &$out',
+            '@param int ...$rest',
+            '@param-out string $out',
+            '@return array{ok: bool}',
+            '@return static',
+            '@throws \\RuntimeException',
+            '@var list<string>',
+            '@var Foo $foo',
+            '@deprecated',
+            '@internal',
+            '@see Foo::bar()',
+            '@phpstan-param positive-int $a the count',
+            '@phpstan-return list<int>',
+            '@phpstan-impure',
+            '@psalm-suppress MixedArgument',
+            '@template T of object',
+            '@phpstan-ignore-next-line missingType.generics',
+            '@codeCoverageIgnore',
+        ];
+
+        $code = "<?php\n\n";
+        $expected = [];
+        foreach ($tags as $position => $tag) {
+            $code .= "/**\n * Summary {$position}.\n *\n * {$tag} some description\n */\nfunction multi{$position}(): void\n{\n}\n\n";
+            $code .= "/** {$tag} described @internal also */\nfunction single{$position}(): void\n{\n}\n\n";
+            $code .= "/**\n * @internal\n * {$tag}\n * @deprecated\n */\nfunction bare{$position}(): void\n{\n}\n\n";
+            $expected[] = str_starts_with($tag, '@phpstan-') || str_starts_with($tag, '@psalm-') || str_starts_with($tag, '@template')
+                ? $tag . ' some description'
+                : $tag;
+        }
+
+        $file = self::$sandbox . '/all-tags.php';
+        file_put_contents($file, $code);
+        [$exitCode, $output] = $this->runFixer($file, false);
+        $this->assertSame(0, $exitCode, $output);
+        $fixed = (string) file_get_contents($file);
+
+        foreach ($tags as $position => $tag) {
+            $this->assertStringContainsString(' * ' . $expected[$position] . "\n */\nfunction multi{$position}()", $fixed, $tag . ' was dropped from a multi-line docblock');
+            $this->assertMatchesRegularExpression('~/\*\* ' . preg_quote($tag, '~') . '.* @internal \*/\nfunction single' . $position . '\(~', $fixed, $tag . ' was dropped from a one-line docblock');
+            $this->assertStringContainsString("/**\n * @internal\n * {$tag}\n * @deprecated\n */\nfunction bare{$position}()", $fixed, $tag . ' was dropped from a docblock of bare tags');
+        }
+    }
+
+    public function testUnparsableTypeFailsLoudly(): void
+    {
+        $file = self::$sandbox . '/unparsable.php';
+        $input = "<?php\n\n/**\n * @return array<int the list\n */\nfunction a(): array\n{\n    return [];\n}\n";
+        file_put_contents($file, $input);
+
+        foreach ([true, false] as $dryRun) {
+            [$code, $output] = $this->runFixer($file, $dryRun);
+            $this->assertNotSame(0, $code, 'An unparsable type must fail php-cs-fixer');
+            $this->assertStringContainsString('cannot parse the type of "@return array<int the list"', $output);
+            $this->assertSame($input, file_get_contents($file));
+        }
     }
 
     public function testDryRunReportsViolation(): void
@@ -525,12 +741,28 @@ final class NoNarrativeCommentsFixerTest extends TestCase
     }
 
     /**
+     * @return list<string>
+     */
+    private function codeTokens(string $code): array
+    {
+        $result = [];
+        foreach (token_get_all($code) as $token) {
+            if (\is_array($token) && \in_array($token[0], [\T_COMMENT, \T_DOC_COMMENT, \T_WHITESPACE], true)) {
+                continue;
+            }
+            $result[] = \is_array($token) ? $token[1] : $token;
+        }
+
+        return $result;
+    }
+
+    /**
      * @return array{int, string}
      */
     private function runFixer(string $file, bool $dryRun): array
     {
         $command = \sprintf(
-            '%s %s fix --config=%s --path-mode=override --sequential %s %s 2>&1',
+            '%s %s fix -vv --config=%s --path-mode=override --sequential %s %s 2>&1',
             escapeshellarg(PHP_BINARY),
             escapeshellarg(self::$projectDir . '/vendor/bin/php-cs-fixer'),
             escapeshellarg(self::$sandbox . '/config.php'),

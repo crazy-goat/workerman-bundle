@@ -17,7 +17,7 @@ final class NoNarrativeCommentsFixer extends AbstractFixer implements Whitespace
 {
     public const NAME = 'CrazyGoat/no_narrative_comments';
 
-    private const DIRECTIVE_REGEX = '~@phpstan-ignore|@codeCoverageIgnore|phpcs:|@psalm-suppress~i';
+    private const DIRECTIVE_REGEX = '~^(?://|#|/\*+)[\s*]*(?:@phpstan-ignore|@codeCoverageIgnore|phpcs:|@psalm-suppress)~i';
 
     private const TYPED_TAGS = ['param', 'param-out', 'return', 'throws', 'var'];
 
@@ -75,6 +75,10 @@ final class NoNarrativeCommentsFixer extends AbstractFixer implements Whitespace
                 continue;
             }
 
+            if (TestAnnotationTags::find($token->getContent()) !== null) {
+                continue;
+            }
+
             $stripped = $this->stripDocBlock($token->getContent());
             if ($stripped === null) {
                 $this->removeComment($tokens, $index);
@@ -92,15 +96,13 @@ final class NoNarrativeCommentsFixer extends AbstractFixer implements Whitespace
 
         $inner = $match[1];
         if (!str_contains($inner, "\n")) {
-            $kept = $this->keptLines([['', trim($inner)]]);
+            $parts = preg_split('~\h+(?=@[A-Za-z])~', trim($inner)) ?: [trim($inner)];
+            $kept = $this->keptLines(array_map(static fn(string $part): array => ['', $part], $parts));
             if ($kept === []) {
                 return null;
             }
-            if (\count($kept) === 1) {
-                return '/** ' . $kept[0][1] . ' */';
-            }
 
-            return $this->renderMultiLine($kept, ' ');
+            return '/** ' . implode(' ', array_map(static fn(array $line): string => $line[1], $kept)) . ' */';
         }
 
         $rawLines = explode("\n", $inner);
@@ -218,7 +220,12 @@ final class NoNarrativeCommentsFixer extends AbstractFixer implements Whitespace
         $text = implode("\n", array_map(static fn(array $line): string => $line[1], $group));
         $length = $this->typedTagLength($text, $tag, \in_array($lowerTag, self::NAMED_TAGS, true));
         if ($length === null) {
-            return $group;
+            throw new \UnexpectedValueException(\sprintf(
+                '%s: cannot parse the type of "%s"; fix the type, or use the @phpstan-%s form, which is kept verbatim.',
+                self::NAME,
+                strtok($first, "\n"),
+                $lowerTag,
+            ));
         }
 
         $keptLines = explode("\n", rtrim(substr($text, 0, $length)));
@@ -284,22 +291,40 @@ final class NoNarrativeCommentsFixer extends AbstractFixer implements Whitespace
             return;
         }
 
-        if ($prevWhitespace !== null && !str_contains($prevWhitespace, "\n") && $prevIndex !== null) {
+        if ($prevWhitespace !== null && !str_contains($prevWhitespace, "\n") && $prevIndex !== null
+            && ($nextWhitespace !== null || !$next instanceof Token || $this->joinsSafely($beforePrev, $next))) {
             $tokens->clearAt($prevIndex);
 
             return;
         }
 
         if ($nextWhitespace !== null && !str_contains($nextWhitespace, "\n") && $nextIndex !== null) {
-            $tokens->clearAt($nextIndex);
+            $afterNextIndex = $tokens->getNonEmptySibling($nextIndex, 1);
+            $afterNext = $afterNextIndex === null ? null : $this->tokenAt($tokens, $afterNextIndex);
+            if ($prevWhitespace !== null || $this->joinsSafely($prev, $afterNext)) {
+                $tokens->clearAt($nextIndex);
+            }
 
             return;
         }
 
         if ($prev instanceof Token && $next instanceof Token && $prevWhitespace === null && $nextWhitespace === null
-            && preg_match('~[\w$]$~', $prev->getContent()) === 1 && preg_match('~^[\w$\\\\]~', $next->getContent()) === 1) {
+            && !$this->joinsSafely($prev, $next)) {
             $tokens->offsetSet($index, new Token([\T_WHITESPACE, ' ']));
         }
+    }
+
+    private function joinsSafely(?Token $left, ?Token $right): bool
+    {
+        if (!$left instanceof Token || !$right instanceof Token) {
+            return true;
+        }
+
+        $joined = token_get_all('<?php ' . $left->getContent() . $right->getContent());
+        array_shift($joined);
+        $contents = array_map(static fn(array|string $token): string => \is_array($token) ? $token[1] : $token, $joined);
+
+        return $contents === [$left->getContent(), $right->getContent()];
     }
 
     /**
