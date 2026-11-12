@@ -332,6 +332,22 @@ Symlinked certificate and key paths are **rejected by default**. This prevents:
 
 These checks are applied in addition to the existing `is_readable()` validation, which catches non-existent files and permission issues.
 
+## PHAR Exclude Patterns (ReDoS Protection)
+
+`build.exclude_patterns` are user-supplied PCRE regexes applied to every file path during
+`workerman:build:phar`. A pathological pattern such as `(a+)+` could otherwise backtrack
+catastrophically and hang the build. Two layers prevent that:
+
+- **Rejected at compile time**: patterns with nested unbounded quantifiers, and patterns PCRE
+  refuses to compile, fail with `InvalidArgumentException` before the source tree is traversed.
+- **Bounded at match time**: for the whole filtering pass the PCRE backtrack and recursion limits
+  are lowered to fixed ceilings and restored afterwards. A pattern that hits a limit is treated
+  as "no match" instead of hanging the build.
+
+The threat is an accidental denial of service by the person configuring the build, not a remote
+attacker: patterns come from your own configuration. Details and safe idioms:
+[build-packaging.md](build-packaging.md).
+
 ## SFX Download Protection (Zip-Slip)
 
 The `SfxDownloader` downloads and extracts `phpmicro.sfx` from upstream HTTPS mirrors. Before extracting a downloaded ZIP archive, each entry name is validated against path traversal attacks (zip-slip):

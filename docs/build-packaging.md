@@ -116,12 +116,15 @@ build performs defense-in-depth:
 2. **PCRE compile check.** Each compiled regex is dry-run against a
    short probe string to confirm PCRE accepts it. Patterns that PCRE
    itself rejects are surfaced with a clear error message.
-3. **Per-call backtrack limit.** Every `preg_match` call wraps the
-   pattern in a temporary `pcre.backtrack_limit` of 1,000,000 (raised
-   from PHP's default) and a `pcre.recursion_limit` of 100,000. Both
-   ini values are restored after the call. If the limit still trips
-   (catastrophic backtracking on a pattern the structural lint allowed
-   through), `matches()` returns `false` instead of hanging the build.
+3. **Bounded PCRE limits for the whole filtering pass.** While the
+   PHAR is built, `PcreLimitGuard` sets `pcre.backtrack_limit` to
+   1,000,000 (raised from PHP's default) and `pcre.recursion_limit` to
+   100,000 once for the entire pass and restores the previous values
+   afterwards, even when the build fails. Setting them once instead of
+   around every `preg_match` call keeps the filter cheap on large trees
+   (#568). If a limit still trips (catastrophic backtracking on a
+   pattern the structural lint allowed through), `matches()` returns
+   `false` (the file is not excluded) instead of hanging the build.
 
 Recommended safe idioms:
 
