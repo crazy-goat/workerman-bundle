@@ -25,6 +25,7 @@ final readonly class SfxDownloader
     /**
      * @throws SfxExtractionException
      * @throws \RuntimeException
+     * @throws \Throwable
      */
     public function fetch(
         string $url,
@@ -68,7 +69,7 @@ final readonly class SfxDownloader
 
             try {
                 $destination = $this->extractZip($destination, $destinationDir);
-            } catch (\RuntimeException $e) {
+            } catch (\Throwable $e) {
                 if (is_file($destination)) {
                     $removed = @unlink($destination);
                     if (!$removed) {
@@ -376,6 +377,7 @@ final readonly class SfxDownloader
     /**
      * @throws SfxExtractionException
      * @throws \RuntimeException
+     * @throws \Throwable
      */
     private function extractZip(string $zipPath, string $destinationDir): string
     {
@@ -434,6 +436,7 @@ final readonly class SfxDownloader
     /**
      * @return string[]
      * @throws \RuntimeException
+     * @throws \Throwable
      */
     private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir): array
     {
@@ -460,17 +463,19 @@ final readonly class SfxDownloader
 
                 $this->assertEntryContainedIn($destinationBase, $name, $zipPath);
 
-                if (!$zip->extractTo($destinationDir, $name)) {
+                if (!@$zip->extractTo($destinationDir, $name)) {
+                    $error = error_get_last()['message'] ?? 'unknown error';
                     throw new \RuntimeException(sprintf(
-                        'Failed to extract entry "%s" from zip archive "%s".',
+                        'Failed to extract entry "%s" from zip archive "%s": %s',
                         $name,
                         $zipPath,
+                        $error,
                     ));
                 }
 
                 $extractedEntries[] = $name;
             }
-        } catch (\RuntimeException $e) {
+        } catch (\Throwable $e) {
             $this->removeExtractedEntries($extractedEntries, $destinationDir);
             throw $e;
         }

@@ -702,10 +702,10 @@ final class SfxDownloaderTest extends TestCase
         }
 
         try {
-            @(new SfxDownloader())->fetch(
+            $this->runWithoutWarningLeak(fn(): string => (new SfxDownloader())->fetch(
                 'https://example.invalid/phpmicro.sfx.zip',
                 $dir,
-            );
+            ));
             self::fail('Expected a RuntimeException when the third entry cannot be extracted.');
         } catch (\RuntimeException $e) {
             self::assertStringContainsString('Failed to extract entry "blocked/third.bin"', $e->getMessage());
@@ -719,6 +719,62 @@ final class SfxDownloaderTest extends TestCase
         self::assertDirectoryDoesNotExist($dir . '/gooddir');
         self::assertFileDoesNotExist($dir . '/standalone.bin');
         self::assertSame(['.', '..', 'blocked'], scandir($dir));
+    }
+
+    #[RequiresPhpExtension('zip')]
+    public function testExtractZipRollsBackAndRemovesArchiveUnderThrowingErrorHandler(): void
+    {
+        $dir = $this->tempDir . '/dest';
+        mkdir($dir, 0755, true);
+        file_put_contents($dir . '/blocked', 'pre-existing file, not a directory');
+
+        $zipPath = $dir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'good.bin' => 'good-content',
+            'blocked/third.bin' => 'third-content',
+        ]);
+
+        set_error_handler(static function (int $errno, string $errstr): bool {
+            throw new \ErrorException($errstr, 0, $errno);
+        });
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $dir,
+            );
+            self::fail('Expected an exception when the second entry cannot be extracted.');
+        } catch (\ErrorException $e) {
+            self::assertStringContainsString('blocked/third.bin', $e->getMessage());
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertFileDoesNotExist($zipPath);
+        self::assertFileDoesNotExist($dir . '/good.bin');
+        self::assertSame('pre-existing file, not a directory', file_get_contents($dir . '/blocked'));
+    }
+
+    /**
+     * @param callable(): mixed $call
+     */
+    private function runWithoutWarningLeak(callable $call): void
+    {
+        $warningEmitted = false;
+        set_error_handler(static function (int $errno) use (&$warningEmitted): bool {
+            if ((error_reporting() & $errno) === 0) {
+                return true;
+            }
+
+            $warningEmitted = true;
+
+            return true;
+        });
+        try {
+            $call();
+        } finally {
+            restore_error_handler();
+            self::assertFalse($warningEmitted, 'fetch() must not leak a PHP warning; the extraction failure is reported through the exception.');
+        }
     }
 
     #[RequiresPhpExtension('zip')]
@@ -749,10 +805,10 @@ final class SfxDownloaderTest extends TestCase
         ini_set('error_log', $logFile);
         try {
             try {
-                @(new SfxDownloader())->fetch(
+                $this->runWithoutWarningLeak(fn(): string => (new SfxDownloader())->fetch(
                     'https://example.invalid/phpmicro.sfx.zip',
                     $dir,
-                );
+                ));
                 self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
             } catch (\RuntimeException $e) {
                 self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
@@ -804,10 +860,10 @@ final class SfxDownloaderTest extends TestCase
         ini_set('error_log', $logFile);
         try {
             try {
-                @(new SfxDownloader())->fetch(
+                $this->runWithoutWarningLeak(fn(): string => (new SfxDownloader())->fetch(
                     'https://example.invalid/phpmicro.sfx.zip',
                     $dir,
-                );
+                ));
                 self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
             } catch (\RuntimeException $e) {
                 self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
@@ -860,10 +916,10 @@ final class SfxDownloaderTest extends TestCase
         ini_set('error_log', $logFile);
         try {
             try {
-                @(new SfxDownloader())->fetch(
+                $this->runWithoutWarningLeak(fn(): string => (new SfxDownloader())->fetch(
                     'https://example.invalid/phpmicro.sfx.zip',
                     $dir,
-                );
+                ));
                 self::fail('Expected a RuntimeException when the second entry cannot be extracted.');
             } catch (\RuntimeException $e) {
                 self::assertStringContainsString('Failed to extract entry "blocked/newfile.bin"', $e->getMessage());
