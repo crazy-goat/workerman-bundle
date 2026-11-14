@@ -181,6 +181,37 @@ final class MasterFingerprintTest extends TestCase
         $this->assertDirectoryExists($target);
     }
 
+    public function testWriteToNamesTempFileWhenRenameAndUnlinkBothFail(): void
+    {
+        MasterFingerprintFailureStreamWrapper::register();
+        MasterFingerprintFailureStreamWrapper::reset(unlinkFails: true);
+
+        $logFile = $this->tmpDir . '/error.log';
+        ini_set('error_log', $logFile);
+        try {
+            try {
+                (new MasterFingerprint(1234, 5678, 1000))->writeTo('fingerprintfail://root/test.fingerprint');
+                self::fail('Expected a RuntimeException when rename and unlink both fail.');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('Unable to rename fingerprint temp file', $e->getMessage());
+                self::assertMatchesRegularExpression(
+                    '#fingerprintfail://root/\.test\.fingerprint\.[0-9a-f]+\.tmp#',
+                    $e->getMessage(),
+                );
+            }
+        } finally {
+            ini_restore('error_log');
+        }
+
+        $logContent = @file_get_contents($logFile);
+        self::assertIsString($logContent, 'Failed to read error_log capture file.');
+        self::assertMatchesRegularExpression(
+            '#fingerprintfail://root/\.test\.fingerprint\.[0-9a-f]+\.tmp#',
+            $logContent,
+        );
+        self::assertCount(1, MasterFingerprintFailureStreamWrapper::unlinkedPaths());
+    }
+
     public function testWriteToThrowsAndCleansTempFileWhenChmodFails(): void
     {
         MasterFingerprintFailureStreamWrapper::register();
@@ -366,6 +397,8 @@ final class MasterFingerprintFailureStreamWrapper
 
     private static bool $writeFails = false;
 
+    private static bool $unlinkFails = false;
+
     /** @var array<string, true> */
     private static array $openFiles = [];
 
@@ -392,10 +425,11 @@ final class MasterFingerprintFailureStreamWrapper
         self::$registered = true;
     }
 
-    public static function reset(bool $chmodFails = false, bool $writeFails = false): void
+    public static function reset(bool $chmodFails = false, bool $writeFails = false, bool $unlinkFails = false): void
     {
         self::$chmodFails = $chmodFails;
         self::$writeFails = $writeFails;
+        self::$unlinkFails = $unlinkFails;
         self::$openFiles = [];
         self::$unlinkedPaths = [];
     }
@@ -475,6 +509,11 @@ final class MasterFingerprintFailureStreamWrapper
     public function unlink(string $path): bool
     {
         self::$unlinkedPaths[] = $path;
+
+        if (self::$unlinkFails) {
+            return false;
+        }
+
         unset(self::$openFiles[$path]);
 
         return true;

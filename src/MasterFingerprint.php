@@ -141,7 +141,19 @@ final readonly class MasterFingerprint
         }
 
         if (!@\rename($tempPath, $path)) {
-            @\unlink($tempPath);
+            if (!@\unlink($tempPath)) {
+                \error_log(\sprintf(
+                    'Unable to remove fingerprint temp file "%s" after a failed rename to "%s"; the temp file stays on disk. Remove it manually.',
+                    $tempPath,
+                    $path,
+                ));
+                throw new \RuntimeException(\sprintf(
+                    'Unable to rename fingerprint temp file to "%s"; the temp file "%s" could not be removed and stays on disk. Remove it manually.',
+                    $path,
+                    $tempPath,
+                ));
+            }
+
             throw new \RuntimeException(\sprintf('Unable to rename fingerprint temp file to "%s"', $path));
         }
     }
