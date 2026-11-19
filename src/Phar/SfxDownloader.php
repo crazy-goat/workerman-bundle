@@ -382,8 +382,10 @@ final readonly class SfxDownloader
         $zip = $this->openArchive($zipPath);
 
         try {
-            $entryNames = $this->listEntryNames($zip);
-            $extractedEntries = $this->extractToDirectory($zip, $zipPath, $destinationDir);
+            $entryNames = $this->listEntryNames($zip, $zipPath);
+            $extraction = $this->extractToDirectory($zip, $zipPath, $destinationDir, $entryNames);
+            $extractedEntries = $extraction['extracted'];
+            $preExisting = $extraction['preExisting'];
         } finally {
             $zip->close();
         }
@@ -391,7 +393,7 @@ final readonly class SfxDownloader
         try {
             return $this->locateSfxEntry($entryNames, $zipPath, $destinationDir);
         } catch (SfxExtractionException $e) {
-            $this->removeExtractedEntries($extractedEntries, $destinationDir);
+            $this->removeExtractedEntries($extractedEntries, $destinationDir, $preExisting);
             throw $e;
         }
     }
@@ -417,25 +419,31 @@ final readonly class SfxDownloader
      * @return string[]
      * @throws \RuntimeException
      */
-    private function listEntryNames(\ZipArchive $zip): array
+    private function listEntryNames(\ZipArchive $zip, string $zipPath): array
     {
         $names = [];
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = $zip->getNameIndex($i);
-            if (is_string($name) && $name !== '') {
-                $this->validateEntryName($name);
-                $names[] = $name;
+            if (!is_string($name) || $name === '') {
+                throw new \RuntimeException(sprintf(
+                    'Zip archive "%s" contains an entry with an unreadable name (index %d); refusing to extract it.',
+                    $zipPath,
+                    $i,
+                ));
             }
+            $this->validateEntryName($name);
+            $names[] = $name;
         }
 
         return $names;
     }
 
     /**
-     * @return string[]
+     * @param string[] $entryNames
+     * @return array{extracted: list<string>, preExisting: array<string, true>}
      * @throws \RuntimeException
      */
-    private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir): array
+    private function extractToDirectory(\ZipArchive $zip, string $zipPath, string $destinationDir, array $entryNames): array
     {
         $resolvedDestination = realpath($destinationDir);
         if ($resolvedDestination === false) {
@@ -443,19 +451,12 @@ final readonly class SfxDownloader
         }
         $destinationBase = rtrim($resolvedDestination, '/\\');
 
+        $preExisting = $this->snapshotPreExistingEntries($entryNames, $destinationBase);
+
         $extractedEntries = [];
 
         try {
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $name = $zip->getNameIndex($i);
-                if (!is_string($name) || $name === '') {
-                    throw new \RuntimeException(sprintf(
-                        'Zip archive "%s" contains an entry with an unreadable name (index %d); refusing to extract it.',
-                        $zipPath,
-                        $i,
-                    ));
-                }
-
+            foreach ($entryNames as $name) {
                 $this->validateEntryName($name);
 
                 $this->assertEntryContainedIn($destinationBase, $name, $zipPath);
@@ -471,33 +472,71 @@ final readonly class SfxDownloader
                 $extractedEntries[] = $name;
             }
         } catch (\RuntimeException $e) {
-            $this->removeExtractedEntries($extractedEntries, $destinationDir);
+            $this->removeExtractedEntries($extractedEntries, $destinationDir, $preExisting);
             throw $e;
         }
 
-        return $extractedEntries;
+        return ['extracted' => $extractedEntries, 'preExisting' => $preExisting];
+    }
+
+    /**
+     * @param string[] $entryNames
+     * @return array<string, true>
+     */
+    private function snapshotPreExistingEntries(array $entryNames, string $destinationBase): array
+    {
+        $candidates = [];
+        foreach ($entryNames as $name) {
+            $relative = rtrim($name, '/');
+            $candidates[$relative] = true;
+            foreach ($this->ancestorDirs($relative) as $dir) {
+                $candidates[$dir] = true;
+            }
+        }
+
+        return array_filter(
+            $candidates,
+            static fn(bool $ignored, string $relative): bool => is_link($destinationBase . DIRECTORY_SEPARATOR . $relative)
+                || file_exists($destinationBase . DIRECTORY_SEPARATOR . $relative),
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function ancestorDirs(string $relative): array
+    {
+        $dirs = [];
+        $dir = dirname($relative);
+        while (!in_array($dir, ['', '.', '/'], true)) {
+            $dirs[] = $dir;
+            $dir = dirname($dir);
+        }
+
+        return $dirs;
     }
 
     /**
      * @param string[] $extractedEntries
+     * @param array<string, true> $preExisting
      */
-    private function removeExtractedEntries(array $extractedEntries, string $destinationDir): void
+    private function removeExtractedEntries(array $extractedEntries, string $destinationDir, array $preExisting): void
     {
         $base = rtrim($destinationDir, '/\\');
 
         $parents = [];
         foreach ($extractedEntries as $name) {
-            $dir = ltrim(dirname($name), '/');
-            while ($dir !== '' && $dir !== '.') {
+            foreach ($this->ancestorDirs(rtrim($name, '/')) as $dir) {
                 $parents[$dir] = true;
-                $dir = dirname($dir);
-                if ($dir === '.' || $dir === '/') {
-                    break;
-                }
             }
         }
 
         $allPaths = array_merge($extractedEntries, array_keys($parents));
+        $allPaths = array_filter(
+            $allPaths,
+            static fn(string $name): bool => !isset($preExisting[rtrim($name, '/')]),
+        );
         usort(
             $allPaths,
             static fn(string $a, string $b): int =>

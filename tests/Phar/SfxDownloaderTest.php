@@ -681,6 +681,111 @@ final class SfxDownloaderTest extends TestCase
     }
 
     #[RequiresPhpExtension('zip')]
+    public function testExtractZipPreservesPreExistingFileOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        file_put_contents($this->tempDir . '/phpmicro.sfx', 'old-binary');
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $this->createZipWithEntry($zipPath, [
+            'phpmicro.sfx' => 'new-content',
+            'sub/evil.bin' => 'escaped-content',
+        ]);
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($zipPath);
+
+        self::assertFileExists($this->tempDir . '/phpmicro.sfx');
+        self::assertTrue(is_link($this->tempDir . '/sub'));
+    }
+
+    #[RequiresPhpExtension('zip')]
+    public function testExtractZipPreservesPreExistingEmptyDirectoryOnMidExtractionFailure(): void
+    {
+        $outside = sys_get_temp_dir() . '/sfx-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        $this->cleanupDirs[] = $outside;
+
+        if (!@symlink($outside, $this->tempDir . '/sub')) {
+            self::markTestSkipped('symlink() is not available on this platform.');
+        }
+
+        mkdir($this->tempDir . '/emptydir', 0755, true);
+
+        $zipPath = $this->tempDir . '/phpmicro.sfx.zip';
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        $zip->addEmptyDir('emptydir');
+        $zip->addFromString('standalone.bin', 'standalone-content');
+        $zip->addFromString('sub/evil.bin', 'escaped-content');
+        $zip->close();
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/phpmicro.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected a RuntimeException for the escaping zip entry.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('resolves outside the destination directory', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($zipPath);
+
+        self::assertFileDoesNotExist($this->tempDir . '/standalone.bin');
+        self::assertDirectoryExists($this->tempDir . '/emptydir');
+        self::assertTrue(is_link($this->tempDir . '/sub'));
+    }
+
+    #[RequiresPhpExtension('zip')]
+    public function testExtractZipPreservesPreExistingDirectoryWhenNoSfxEntryFound(): void
+    {
+        mkdir($this->tempDir . '/subdir', 0755, true);
+
+        $zipPath = $this->tempDir . '/orphan.sfx.zip';
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE) !== true) {
+            throw new \RuntimeException('Failed to create test zip: ' . $zipPath);
+        }
+        $zip->addEmptyDir('subdir');
+        $zip->addEmptyDir('subdir/nested');
+        $zip->close();
+
+        try {
+            (new SfxDownloader())->fetch(
+                'https://example.invalid/orphan.sfx.zip',
+                $this->tempDir,
+            );
+            self::fail('Expected SfxExtractionException for an archive with no usable entry.');
+        } catch (SfxExtractionException $e) {
+            self::assertStringContainsString('Could not locate extracted SFX file', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($zipPath);
+
+        self::assertDirectoryExists($this->tempDir . '/subdir');
+        self::assertDirectoryDoesNotExist($this->tempDir . '/subdir/nested');
+    }
+
+    #[RequiresPhpExtension('zip')]
     public function testExtractZipRollsBackEntriesWhenLaterEntryCannotBeExtracted(): void
     {
         $dir = $this->tempDir . '/dest';
@@ -722,7 +827,7 @@ final class SfxDownloaderTest extends TestCase
     }
 
     #[RequiresPhpExtension('zip')]
-    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedFile(): void
+    public function testExtractZipPreservesPreExistingFileWhenLaterEntryCannotBeExtracted(): void
     {
         $dir = $this->tempDir . '/dest';
         $locked = $dir . '/locked';
@@ -742,7 +847,7 @@ final class SfxDownloaderTest extends TestCase
         if (is_writable($locked) || is_writable($blocked)) {
             chmod($locked, 0755);
             chmod($blocked, 0755);
-            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+            self::markTestSkipped('Cannot simulate a failed extraction: the directory stays writable (running as root?).');
         }
 
         $logFile = $this->tempDir . '/error.log';
@@ -764,18 +869,20 @@ final class SfxDownloaderTest extends TestCase
         }
 
         $logContent = @file_get_contents($logFile);
-        self::assertIsString($logContent, 'Failed to read error_log capture file.');
-        self::assertStringContainsString(
-            sprintf('Unable to remove extracted file "%s"', $locked . '/goodfile.bin'),
-            $logContent,
-            'The error_log should contain the cleanup warning for the file that stayed on disk.',
-        );
+        if (is_string($logContent)) {
+            self::assertStringNotContainsString(
+                sprintf('Unable to remove extracted file "%s"', $locked . '/goodfile.bin'),
+                $logContent,
+                'Rollback must not attempt to remove a pre-existing file, so no cleanup warning may be logged for it.',
+            );
+        }
 
         self::assertFileExists($locked . '/goodfile.bin');
+        self::assertFileDoesNotExist($blocked . '/newfile.bin');
     }
 
     #[RequiresPhpExtension('zip')]
-    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedDirectory(): void
+    public function testExtractZipPreservesPreExistingEmptyDirectoryWhenLaterEntryCannotBeExtracted(): void
     {
         $dir = $this->tempDir . '/dest';
         $locked = $dir . '/locked';
@@ -797,7 +904,7 @@ final class SfxDownloaderTest extends TestCase
         if (is_writable($locked) || is_writable($blocked)) {
             chmod($locked, 0755);
             chmod($blocked, 0755);
-            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+            self::markTestSkipped('Cannot simulate a failed extraction: the directory stays writable (running as root?).');
         }
 
         $logFile = $this->tempDir . '/error.log';
@@ -819,18 +926,20 @@ final class SfxDownloaderTest extends TestCase
         }
 
         $logContent = @file_get_contents($logFile);
-        self::assertIsString($logContent, 'Failed to read error_log capture file.');
-        self::assertStringContainsString(
-            sprintf('Unable to remove extracted directory "%s"', $locked . '/empty'),
-            $logContent,
-            'The error_log should contain the cleanup warning for the empty directory that stayed on disk.',
-        );
+        if (is_string($logContent)) {
+            self::assertStringNotContainsString(
+                sprintf('Unable to remove extracted directory "%s"', $locked . '/empty'),
+                $logContent,
+                'Rollback must not attempt to remove a pre-existing directory, so no cleanup warning may be logged for it.',
+            );
+        }
 
         self::assertDirectoryExists($locked . '/empty');
+        self::assertFileDoesNotExist($blocked . '/newfile.bin');
     }
 
     #[RequiresPhpExtension('zip')]
-    public function testExtractZipLogsWarningWhenRollbackCannotRemoveExtractedSymlink(): void
+    public function testExtractZipPreservesPreExistingSymlinkWhenLaterEntryCannotBeExtracted(): void
     {
         $dir = $this->tempDir . '/dest';
         $locked = $dir . '/locked';
@@ -853,7 +962,7 @@ final class SfxDownloaderTest extends TestCase
         if (is_writable($locked) || is_writable($blocked)) {
             chmod($locked, 0755);
             chmod($blocked, 0755);
-            self::markTestSkipped('Cannot simulate a failed cleanup: the directory stays writable (running as root?).');
+            self::markTestSkipped('Cannot simulate a failed extraction: the directory stays writable (running as root?).');
         }
 
         $logFile = $this->tempDir . '/error.log';
@@ -875,14 +984,18 @@ final class SfxDownloaderTest extends TestCase
         }
 
         $logContent = @file_get_contents($logFile);
-        self::assertIsString($logContent, 'Failed to read error_log capture file.');
-        self::assertStringContainsString(
-            sprintf('Unable to remove extracted symlink "%s"', $locked . '/link.bin'),
-            $logContent,
-            'The error_log should contain the cleanup warning for the symlink that stayed on disk.',
-        );
+        if (is_string($logContent)) {
+            self::assertStringNotContainsString(
+                sprintf('Unable to remove extracted symlink "%s"', $locked . '/link.bin'),
+                $logContent,
+                'Rollback must not attempt to remove a pre-existing symlink, so no cleanup warning may be logged for it.',
+            );
+        }
 
         self::assertTrue(is_link($locked . '/link.bin'));
+        self::assertSame('../real.bin', readlink($locked . '/link.bin'));
+        self::assertFileExists($dir . '/real.bin');
+        self::assertFileDoesNotExist($blocked . '/newfile.bin');
     }
 
     public function testWriteStreamThrowsWhenWriteIsShort(): void
