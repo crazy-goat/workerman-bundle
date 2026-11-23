@@ -79,6 +79,10 @@ The installer asks git where the hooks folder is (`git rev-parse --git-path hook
    `coverage:check` parses it to enforce the line-coverage threshold (**80%**),
    defined once in `composer.json`. CI runs the same check with PCOV on the
    PHP 8.2 / Symfony 6.4 matrix leg, so the gate is reproducible locally.
+   Fixture runners and the test daemon are separate processes: when a coverage
+   run is active they write serialized coverage to `var/coverage-subprocess/`,
+   and `bin/merge-coverage.php` merges it into the same Clover report before the
+   threshold check.
 
    > **Troubleshooting "Address already in use"**
    > - Find the process occupying the port: `lsof -i :8888` or `ss -tlnp | grep 8888`

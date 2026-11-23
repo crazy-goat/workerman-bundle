@@ -33,6 +33,45 @@ final class IsolatedPhpTest extends TestCase
         self::assertSame($expected, IsolatedPhp::extensionsToLoad(['pcntl', 'posix'], $loadedHere, $loadedWithoutIni));
     }
 
+
+    public function testCoverageRunAddsPcovFlagsToTheIsolatedCommand(): void
+    {
+        if (!extension_loaded('pcov')) {
+            self::markTestSkipped('pcov is not loaded');
+        }
+
+        $previous = getenv('WMB_SUBPROCESS_COVERAGE_DIR');
+        putenv('WMB_SUBPROCESS_COVERAGE_DIR=' . sys_get_temp_dir() . '/wmb-isolated-coverage');
+
+        try {
+            $command = IsolatedPhp::command();
+        } finally {
+            if ($previous === false) {
+                putenv('WMB_SUBPROCESS_COVERAGE_DIR');
+            } else {
+                putenv('WMB_SUBPROCESS_COVERAGE_DIR=' . $previous);
+            }
+        }
+
+        self::assertContains('pcov.enabled=1', $command);
+        self::assertContains('pcov.directory=' . dirname(__DIR__) . '/src', $command);
+
+        $process = proc_open(
+            [...$command, '-r', 'echo extension_loaded("pcov") ? "1" : "0";'],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        self::assertSame('1', $stdout);
+        self::assertSame('', $stderr);
+    }
+
     public function testTheCommandGivesAPhpWithPcntlAndPosixButWithoutGrpc(): void
     {
         if (!extension_loaded('pcntl') || !extension_loaded('posix')) {

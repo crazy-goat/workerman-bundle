@@ -44,6 +44,16 @@ is below a threshold. Usage: `php bin/check-coverage.php <clover.xml> <threshold
 The threshold is required (a number from 0 to 100); without it the script exits 2 and
 never passes. Used by `composer coverage:check`.
 
+### `merge-coverage.php`
+
+Merges PHPUnit's serialized coverage with the coverage written by fixture
+runners and the test daemon, then writes the Clover report that
+`check-coverage.php` reads. Usage:
+`php bin/merge-coverage.php <main.cov> <subprocess-dir> <clover.xml>`.
+`composer test:coverage` wires the three paths; the subprocess files are
+written only when `WMB_SUBPROCESS_COVERAGE_DIR` is set and a coverage driver
+is active.
+
 ### `check-changelog.php`
 
 Structurally validates `CHANGELOG.md`: exactly one `[Unreleased]` heading and

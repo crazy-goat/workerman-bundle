@@ -108,6 +108,28 @@ final class CoverageCiGateTest extends TestCase
         );
     }
 
+    public function testCoverageScriptMergesSubprocessCoverage(): void
+    {
+        $composerFile = __DIR__ . '/../composer.json';
+        $composer = json_decode((string) file_get_contents($composerFile), true);
+        self::assertIsArray($composer);
+
+        $scripts = $composer['scripts']['test:coverage'] ?? null;
+        self::assertIsArray($scripts);
+
+        $commands = implode("\n", $scripts);
+        $phpunit = strpos($commands, '--coverage-php var/coverage-main.cov');
+        $stop = strrpos($commands, 'index.php stop');
+        $merge = strpos($commands, 'php bin/merge-coverage.php var/coverage-main.cov var/coverage-subprocess var/coverage.xml');
+        self::assertNotFalse($phpunit);
+        self::assertNotFalse($stop);
+        self::assertNotFalse($merge);
+        self::assertLessThan($stop, $phpunit, 'PHPUnit must run before the daemon is stopped');
+        self::assertLessThan($merge, $stop, 'The daemon must stop before its coverage is merged');
+        self::assertStringContainsString('WMB_SUBPROCESS_COVERAGE_DIR=var/coverage-subprocess', $commands);
+        self::assertLessThan(strpos($commands, 'index.php start -d'), strpos($commands, 'rm -rf var/coverage-subprocess'));
+    }
+
     public function testCoverageScriptExistsAndIsExecutable(): void
     {
         $script = __DIR__ . '/../bin/check-coverage.php';

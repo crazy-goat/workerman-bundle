@@ -8,6 +8,29 @@ include __DIR__ . '/../../vendor/autoload.php';
 
 \CrazyGoat\WorkermanBundle\Test\App\TestPorts::applyCacheDir(\dirname(__DIR__, 2));
 
+$coverageRequested = false;
+foreach ($_SERVER['argv'] ?? [] as $argument) {
+    if (\is_string($argument) && \str_starts_with($argument, '--coverage')) {
+        $coverageRequested = true;
+        break;
+    }
+}
+
+if ($coverageRequested) {
+    $subprocessCoverageDir = \dirname(__DIR__, 2) . '/var/coverage-subprocess';
+    if (getenv('WMB_SUBPROCESS_COVERAGE_DIR') === false) {
+        if (\is_dir($subprocessCoverageDir)) {
+            foreach (\glob($subprocessCoverageDir . '/*.cov') ?: [] as $staleCoverageFile) {
+                @\unlink($staleCoverageFile);
+            }
+        }
+    }
+    \putenv('WMB_SUBPROCESS_COVERAGE_DIR=' . $subprocessCoverageDir);
+    if (!\is_dir($subprocessCoverageDir)) {
+        @\mkdir($subprocessCoverageDir, 0700, true);
+    }
+}
+
 if (\extension_loaded('pcntl') && \defined('SIGUSR1')) {
     \pcntl_async_signals(true);
     \pcntl_signal(\SIGUSR1, \SIG_IGN);

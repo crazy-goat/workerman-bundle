@@ -14,6 +14,8 @@ $testName = $argv[1];
 
 require __DIR__ . '/../../vendor/autoload.php';
 
+\CrazyGoat\WorkermanBundle\Test\App\SubprocessCoverage::start();
+
 /** @var array<string> */
 $logMessages = [];
 
