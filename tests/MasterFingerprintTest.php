@@ -224,6 +224,11 @@ final class MasterFingerprintTest extends TestCase
             '#^fingerprintfail://root/\.test\.fingerprint\.[0-9a-f]+\.tmp$#',
             $unlinked[0],
         );
+        $this->assertSame(
+            [['close', $unlinked[0]], ['unlink', $unlinked[0]]],
+            MasterFingerprintFailureStreamWrapper::streamEvents(),
+            'The temp stream must be closed by the production fclose() before it is unlinked',
+        );
     }
 
     public function testReadFromReturnsNullWhenFileDoesNotExist(): void
@@ -372,6 +377,9 @@ final class MasterFingerprintFailureStreamWrapper
     /** @var list<string> */
     private static array $unlinkedPaths = [];
 
+    /** @var list<array{0: string, 1: string}> */
+    private static array $streamEvents = [];
+
     /**
      * @var resource|null
      */
@@ -398,6 +406,7 @@ final class MasterFingerprintFailureStreamWrapper
         self::$writeFails = $writeFails;
         self::$openFiles = [];
         self::$unlinkedPaths = [];
+        self::$streamEvents = [];
     }
 
     /**
@@ -414,6 +423,14 @@ final class MasterFingerprintFailureStreamWrapper
     public static function unlinkedPaths(): array
     {
         return self::$unlinkedPaths;
+    }
+
+    /**
+     * @return list<array{0: string, 1: string}>
+     */
+    public static function streamEvents(): array
+    {
+        return self::$streamEvents;
     }
 
     /**
@@ -469,13 +486,14 @@ final class MasterFingerprintFailureStreamWrapper
 
     public function stream_close(): void
     {
+        self::$streamEvents[] = ['close', $this->path];
         unset(self::$openFiles[$this->path]);
     }
 
     public function unlink(string $path): bool
     {
         self::$unlinkedPaths[] = $path;
-        unset(self::$openFiles[$path]);
+        self::$streamEvents[] = ['unlink', $path];
 
         return true;
     }
