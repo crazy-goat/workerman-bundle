@@ -12,6 +12,8 @@ if ($argc < 3) {
 
 require __DIR__ . '/../../vendor/autoload.php';
 
+\CrazyGoat\WorkermanBundle\Test\App\SubprocessCoverage::start();
+
 $mode = $argv[1];
 $code = (int) $argv[2];
 

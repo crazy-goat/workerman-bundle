@@ -94,10 +94,13 @@
             "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
         ],
         "test:coverage": [
-            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php restart -d",
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop",
+            "rm -rf var/coverage-subprocess",
+            "WMB_SUBPROCESS_COVERAGE_DIR=var/coverage-subprocess APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php start -d",
             "php bin/wait-for-test-ports.php",
-            "php -d phar.readonly=0 vendor/bin/phpunit --coverage-clover var/coverage.xml",
-            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop"
+            "WMB_SUBPROCESS_COVERAGE_DIR=var/coverage-subprocess php -d phar.readonly=0 vendor/bin/phpunit --coverage-clover var/coverage.xml --coverage-php var/coverage-main.cov",
+            "APP_RUNTIME=CrazyGoat\\\\WorkermanBundle\\\\Runtime php tests/App/index.php stop",
+            "php bin/merge-coverage.php var/coverage-main.cov var/coverage-subprocess var/coverage.xml"
         ],
         "coverage:check": [
             "php bin/check-coverage.php var/coverage.xml 80.0"

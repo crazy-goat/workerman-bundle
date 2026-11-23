@@ -13,6 +13,8 @@ if ($testName === '' || $autoloadPath === '' || $tempDir === '' || !is_dir($temp
 
 require $autoloadPath;
 
+\CrazyGoat\WorkermanBundle\Test\App\SubprocessCoverage::start();
+
 function fail(string $message): never
 {
     fwrite(STDERR, "FAIL: $message\n");

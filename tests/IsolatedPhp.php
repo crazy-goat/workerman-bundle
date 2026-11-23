@@ -18,11 +18,25 @@ final class IsolatedPhp
     {
         $extensionDir = (string) ini_get('extension_dir');
         $loadedHere = array_values(array_filter(self::REQUIRED, extension_loaded(...)));
+        $required = self::REQUIRED;
+
+        if (getenv('WMB_SUBPROCESS_COVERAGE_DIR') !== false && extension_loaded('pcov')) {
+            $required[] = 'pcov';
+            $loadedHere[] = 'pcov';
+        }
+
         $command = [PHP_BINARY, '-n', '-d', 'extension_dir=' . $extensionDir];
 
-        foreach (self::extensionsToLoad(self::REQUIRED, $loadedHere, self::loadedWithoutIni($extensionDir)) as $extension) {
+        foreach (self::extensionsToLoad($required, $loadedHere, self::loadedWithoutIni($extensionDir)) as $extension) {
             $command[] = '-d';
             $command[] = 'extension=' . $extension;
+        }
+
+        if (\in_array('pcov', $required, true)) {
+            $command[] = '-d';
+            $command[] = 'pcov.enabled=1';
+            $command[] = '-d';
+            $command[] = 'pcov.directory=' . \dirname(__DIR__) . '/src';
         }
 
         return $command;
