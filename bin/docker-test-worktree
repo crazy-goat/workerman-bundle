@@ -57,18 +57,6 @@ die_usage() {
   exit 2
 }
 
-command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
-
-# Build the image when missing, like bin/docker-test does: without this a
-# fresh clone would trigger a doomed Docker Hub pull for a local-only image.
-# Pass the current UID/GID so Linux bind mounts stay writable (Docker Desktop
-# ignores them, which is harmless); see the usage() note below.
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "docker-test-worktree: image $IMAGE not found, building it" >&2
-  docker build -t "$IMAGE" --build-arg "APP_UID=$(id -u)" --build-arg "APP_GID=$(id -g)" . >&2 ||
-    die "docker build failed"
-fi
-
 # --- parse arguments ---
 WORKTREE="$PWD"
 PUBLISH=0
@@ -109,6 +97,25 @@ validate_port() {
 validate_port WMB_PORT_HTTP "$PORT_HTTP"
 validate_port WMB_PORT_SECOND "$PORT_SECOND"
 validate_port WMB_PORT_THIRD "$PORT_THIRD"
+
+# Docker is only needed past this point: --help and argument errors exit
+# above, so they work without Docker installed. The port overrides are
+# validated before the build too, so an invalid override fails before Docker
+# does any work.
+command -v docker >/dev/null 2>&1 || die "'docker' not found (install Docker or Docker Desktop)"
+
+# Build the image when missing, like bin/docker-test does: without this a
+# fresh clone would trigger a doomed Docker Hub pull for a local-only image.
+# Pass the current UID/GID so Linux bind mounts stay writable (Docker Desktop
+# ignores them, which is harmless); see the usage() note below.
+# The build context is the resolved worktree, not the caller's directory, so
+# running the helper from elsewhere still builds the requested checkout.
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  [[ -f "$WORKTREE/Dockerfile" ]] || die "no Dockerfile in worktree: $WORKTREE"
+  echo "docker-test-worktree: image $IMAGE not found, building it from $WORKTREE" >&2
+  docker build -t "$IMAGE" --build-arg "APP_UID=$(id -u)" --build-arg "APP_GID=$(id -g)" "$WORKTREE" >&2 ||
+    die "docker build failed"
+fi
 
 # A Symfony env cache stores ABSOLUTE paths. A cache written inside the
 # container holds /app/... paths and poisons host runs ("mkdir(): Read-only
