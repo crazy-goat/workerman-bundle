@@ -556,6 +556,107 @@ final class BinDirectoryTest extends TestCase
         $this->assertFileExists($outside . '/dev/protected.txt', 'refusing must delete nothing');
     }
 
+    public function testDockerTestWorktreeHelpWorksWithoutDocker(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktreeWithArgs(['--help'], $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+        ]);
+
+        $this->assertSame(0, $code, $output);
+        $this->assertStringContainsString('usage: docker-test-worktree', $output);
+        $this->assertFileDoesNotExist($argsLog, '--help must not call docker at all');
+    }
+
+    public function testDockerTestWorktreeBuildsTheRequestedWorktree(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+        $this->assertNotFalse(file_put_contents($sandbox . '/Dockerfile', "FROM scratch\n"));
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktreeWithArgs([$sandbox], $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+            'FAKE_DOCKER_IMAGE_MISSING' => '1',
+        ], $binDir);
+
+        $this->assertSame(0, $code, $output);
+        $args = file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $this->assertIsArray($args, 'fake docker must record its arguments');
+        $this->assertContains('build', $args, 'a missing image must trigger a build');
+        $this->assertContains($sandbox, $args, 'the build context must be the requested worktree');
+        $this->assertNotContains('.', $args, 'the build context must not be the caller directory');
+    }
+
+    public function testDockerTestWorktreeRefusesToBuildWithoutADockerfile(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+            'FAKE_DOCKER_IMAGE_MISSING' => '1',
+        ]);
+
+        $this->assertNotSame(0, $code, $output);
+        $this->assertStringContainsString('no Dockerfile in worktree: ' . $sandbox, $output);
+        $args = file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $this->assertIsArray($args, 'fake docker must record its arguments');
+        $this->assertNotContains('build', $args, 'a worktree without a Dockerfile must not be built');
+    }
+
+    public function testDockerTestWorktreeValidatesPortsBeforeBuilding(): void
+    {
+        $sandbox = sys_get_temp_dir() . '/docker-wt test-' . bin2hex(random_bytes(6));
+        $this->sandboxes[] = $sandbox;
+        $this->initGitRepository($sandbox);
+        $this->assertNotFalse(file_put_contents($sandbox . '/Dockerfile', "FROM scratch\n"));
+
+        $binDir = $sandbox . '/fake-bin';
+        $argsLog = $sandbox . '/docker-args.log';
+        $this->makeFakeDocker($binDir);
+
+        [$code, $output] = $this->runDockerTestWorktree($sandbox, $binDir, [
+            'FAKE_DOCKER_ARGS_LOG' => $argsLog,
+            'FAKE_DOCKER_STATE_LOG' => $sandbox . '/docker-state.log',
+            'FAKE_DOCKER_WORKTREE' => $sandbox,
+            'FAKE_DOCKER_WRITE_CACHE' => '0',
+            'FAKE_DOCKER_IMAGE_MISSING' => '1',
+            'WMB_PORT_HTTP' => 'abc',
+        ]);
+
+        $this->assertNotSame(0, $code, $output);
+        $this->assertStringContainsString('WMB_PORT_HTTP must be a TCP port number between 1 and 65535', $output);
+        $args = is_file($argsLog) ? file($argsLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+        $this->assertIsArray($args, 'fake docker must record its arguments');
+        $this->assertNotContains('build', $args, 'an invalid port override must fail before Docker does any work');
+    }
+
     private function initGitRepository(string $dir): void
     {
         $this->assertTrue(mkdir($dir, 0o775, true));
@@ -573,6 +674,9 @@ final class BinDirectoryTest extends TestCase
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "${FAKE_DOCKER_ARGS_LOG}"
 if [[ "$1" == "image" ]]; then
+  if [[ "$2" == "inspect" && "${FAKE_DOCKER_IMAGE_MISSING:-0}" == "1" ]]; then
+    exit 1
+  fi
   exit 0
 fi
 if [[ "$1" == "run" ]]; then
@@ -602,13 +706,33 @@ SH;
      */
     private function runDockerTestWorktree(string $worktree, string $binDir, array $environment): array
     {
+        return $this->runDockerTestWorktreeWithArgs([$worktree], $binDir, $environment);
+    }
+
+    /**
+     * @param list<string> $args
+     * @param array<string, string> $environment
+     * @return array{0: int, 1: string}
+     */
+    private function runDockerTestWorktreeWithArgs(array $args, string $binDir, array $environment, ?string $cwd = null): array
+    {
         $prefix = self::CLEAN_GIT_ENV . 'PATH=' . escapeshellarg($binDir . ':' . getenv('PATH')) . ' ';
         foreach ($environment as $name => $value) {
             $prefix .= $name . '=' . escapeshellarg($value) . ' ';
         }
 
+        $command = $prefix . 'bash ' . escapeshellarg($this->projectDir . '/bin/docker-test-worktree');
+        foreach ($args as $arg) {
+            $command .= ' ' . escapeshellarg($arg);
+        }
+        $command .= ' 2>&1';
+
+        if ($cwd !== null) {
+            $command = 'cd ' . escapeshellarg($cwd) . ' && ' . $command;
+        }
+
         $output = [];
-        exec($prefix . 'bash ' . escapeshellarg($this->projectDir . '/bin/docker-test-worktree') . ' ' . escapeshellarg($worktree) . ' 2>&1', $output, $code);
+        exec($command, $output, $code);
 
         return [$code, implode("\n", $output)];
     }
